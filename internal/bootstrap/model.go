@@ -1,0 +1,26 @@
+// Package bootstrap implements the business logic for gh agentic bootstrap.
+package bootstrap
+
+// BootstrapConfig holds all values collected by the bootstrap form.
+// It is populated by RunForm and passed to the execution steps.
+type BootstrapConfig struct {
+	// Topology is the project structure: "Embedded" or "Organisation".
+	Topology string
+
+	// Owner is the GitHub account or organisation login where the repo will be created.
+	Owner string
+
+	// ProjectName is the short name of the project, validated to be lowercase
+	// with hyphens only and no spaces.
+	ProjectName string
+
+	// Description is a short human-readable description of the project.
+	Description string
+
+	// Stack is the primary language/framework: "Go", "Java Quarkus",
+	// "Java Spring Boot", "TypeScript Node.js", "Python", "Rust", or "Other".
+	Stack string
+
+	// Antora indicates whether an Antora documentation site should be scaffolded.
+	Antora bool
+}
