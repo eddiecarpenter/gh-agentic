@@ -279,10 +279,16 @@ in the relevant domain repo(s). No branch, no commit, no PR.
 1. Read context (see Session Initialisation)
 2. Read the target Requirement issue in full
 3. Converse with the human to scope the Feature(s)
-4. Create Feature issue(s) in the domain repo with `feature` + `backlog` label
-5. Wire sub-issue relationship: Feature → parent Requirement (cross-repo)
-6. Add Feature to org Project, set Domain field
-7. When human confirms ready: apply `in-design` label → triggers Feature Design Session
+4. Identify whether the Feature has UI/UX impact:
+   - Not every requirement has a UI impact
+   - A single requirement may produce multiple features, some with UI impact and some without
+   - For any feature with UI impact: design the UX now — ASCII mockups, flow descriptions,
+     field layout, error states, colour/theming decisions — and include it in the feature issue
+   - Do not leave UX decisions to the Feature Design Session or implementation
+5. Create Feature issue(s) in the domain repo with `feature` + `backlog` label
+6. Wire sub-issue relationship: Feature → parent Requirement
+7. Add Feature to org Project
+8. When human confirms ready: apply `in-design` label → triggers Feature Design Session
 
 ### Feature Design Session (Phase 3)
 
@@ -414,6 +420,38 @@ Always ask a human before:
 - Modifying core business logic (charging, payments, financial calculations)
 - Introducing new dependencies
 - **Modifying any contract** — see Contract Rules below
+
+---
+
+## Recipe Rules
+
+Goose recipes live in two places:
+
+| Path | Editable | Purpose |
+|---|---|---|
+| `.goose/recipes/*.yaml` | ❌ Never (managed by template) | The complete recipe — instructions, parameters, model settings |
+| `base/recipes/*.md` | ❌ Never | Human-readable reference docs for each session type |
+
+**`.goose/recipes/*.yaml` files are managed by the `agentic-development` template.**
+**`base/recipes/*.md` files are read-only reference documentation.**
+Neither should ever be modified locally.
+
+The six standard recipes are:
+
+| File | Stage | Trigger |
+|---|---|---|
+| `requirements-session.yaml` | Stage 1 | Human (interactive) |
+| `feature-scoping.yaml` | Stage 2 | Human (interactive) |
+| `feature-design.yaml` | Stage 3 | Automatic — `in-design` label |
+| `dev-session.yaml` | Stage 4 | Automatic — `in-development` label |
+| `pr-review-session.yaml` | Stage 4b | Automatic — PR review submitted |
+| `issue-session.yaml` | Stage 4c | Automatic — issue assigned to agent |
+| `foreground-recovery.yaml` | Recovery | Human (interactive) — workflow failure |
+
+- Customisation of agent behaviour belongs in `AGENTS.local.md`
+- If a recipe needs to change, raise it against `eddiecarpenter/agentic-development`
+  and let it flow in via `gh agentic sync`
+- `gh agentic verify` detects and flags any local modifications to recipe files
 
 ---
 
