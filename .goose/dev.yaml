@@ -1,0 +1,4 @@
+version: 1
+title: dev Session
+description: See base/recipes/dev.md for full instructions
+instructions: "Read base/recipes/dev.md and follow it exactly."

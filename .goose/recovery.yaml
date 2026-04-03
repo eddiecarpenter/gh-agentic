@@ -1,0 +1,4 @@
+version: 1
+title: recovery Session
+description: See base/recipes/recovery.md for full instructions
+instructions: "Read base/recipes/recovery.md and follow it exactly."
