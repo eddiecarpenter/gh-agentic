@@ -2,12 +2,14 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // newBootstrapCmd constructs the `gh agentic bootstrap` subcommand.
@@ -33,7 +35,17 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintln(w, "bootstrap: preflight passed — form not yet implemented")
+			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners)
+			if errors.Is(err, bootstrap.ErrAborted) {
+				fmt.Fprintln(w, ui.Muted.Render("Aborted."))
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+
+			// Placeholder until execution steps (Phase 0a steps 3-9) are implemented.
+			fmt.Fprintf(w, "bootstrap: form complete — project %q owner %q\n", cfg.ProjectName, cfg.Owner)
 			return nil
 		},
 	}
