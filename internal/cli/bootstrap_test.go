@@ -24,20 +24,23 @@ func TestBootstrapCmd_Help(t *testing.T) {
 	}
 }
 
-func TestBootstrapCmd_Run_PrintsNotImplemented(t *testing.T) {
+func TestBootstrapCmd_Run_SubcommandRegistered(t *testing.T) {
+	// Verify that the bootstrap subcommand is registered and reachable via --help.
+	// The full RunE path (preflight → form → execution) is covered by
+	// internal/bootstrap package tests using injected dependencies.
 	buf := &bytes.Buffer{}
 	root := newRootCmd()
 	root.SetOut(buf)
 	root.SetErr(buf)
-	root.SetArgs([]string{"bootstrap"})
+	root.SetArgs([]string{"bootstrap", "--help"})
 
 	err := root.Execute()
 	if err != nil {
-		t.Fatalf("Execute() bootstrap returned unexpected error: %v", err)
+		t.Fatalf("Execute() bootstrap --help returned unexpected error: %v", err)
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, "not yet implemented") {
-		t.Errorf("expected stub output 'not yet implemented', got: %s", out)
+	if !strings.Contains(out, "agentic development environment") {
+		t.Errorf("expected bootstrap help to mention 'agentic development environment', got: %s", out)
 	}
 }
