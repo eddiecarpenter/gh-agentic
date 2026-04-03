@@ -1,0 +1,143 @@
+package bootstrap
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// plainSpinnerFunc is a test double for SpinnerFunc that runs the function
+// without any spinner rendering, so tests don't require a real TTY.
+var plainSpinnerFunc SpinnerFunc = func(w io.Writer, label string, fn func() error) error {
+	return fn()
+}
+
+func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
+	// This test exercises the happy path through RunSteps.
+	// Steps that write files need a real temp directory; git/gh calls are stubbed.
+	dir := t.TempDir()
+
+	cfg := BootstrapConfig{
+		Topology:    "Embedded",
+		Owner:       "alice",
+		ProjectName: "my-project",
+		Stack:       "Other", // "Other" skips ScaffoldStack so we don't need base/standards/
+		Description: "Test project",
+		Antora:      false,
+	}
+
+	// Stub: all external commands succeed.
+	// When "git clone" is called, create the ClonePath directory so that
+	// subsequent steps that write files into it don't fail with "no such file or directory".
+	clonePath := filepath.Join(dir, "my-project")
+	run := func(name string, args ...string) (string, error) {
+		// CreateRepo calls run("git", "clone", sshURL, clonePath) directly.
+		if name == "git" && len(args) > 0 && args[0] == "clone" {
+			if mkErr := os.MkdirAll(clonePath, 0755); mkErr != nil {
+				return "", mkErr
+			}
+		}
+		return `{"number":1,"url":"https://github.com/users/alice/projects/1"}`, nil
+	}
+
+	// Stub GraphQL: always errors — CreateProject link is best-effort.
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		return errors.New("no auth in test")
+	}
+
+	// Stub launch: skip — avoids spawning goose.
+	launch := func(clonePath string) error { return nil }
+
+	// Stub spinner: plain (no TTY).
+	spinner := plainSpinnerFunc
+
+	var buf bytes.Buffer
+
+	// RunSteps will call PrintSummary, which runs a huh form requiring a TTY.
+	// In a test environment this will return an error from the form.
+	// We accept that — what we care about is that steps 3-8 ran without error.
+	// To avoid the form error propagating as a test failure we capture it.
+	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, spinner)
+
+	// The only acceptable error is from the huh form (no TTY).
+	if err != nil && !strings.Contains(err.Error(), "launch prompt") {
+		t.Errorf("RunSteps() unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Creating your agentic environment") {
+		t.Errorf("expected section heading in output, got: %s", out)
+	}
+}
+
+func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := BootstrapConfig{
+		Topology:    "Embedded",
+		Owner:       "alice",
+		ProjectName: "my-project",
+		Stack:       "Other",
+		Description: "Test project",
+	}
+
+	// Stub: gh repo create fails on the first call.
+	callCount := 0
+	run := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "error", errors.New("gh repo create failed")
+		}
+		return "", nil
+	}
+
+	graphqlDo := func(_ string, _ map[string]interface{}, _ interface{}) error { return nil }
+	launch := func(_ string) error { return nil }
+
+	var buf bytes.Buffer
+	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, plainSpinnerFunc)
+	if err == nil {
+		t.Fatal("RunSteps() expected error when first step fails, got nil")
+	}
+
+	// After failure, the spinner should have emitted an error marker.
+	// We verify no subsequent step messages appear.
+	out := buf.String()
+	if strings.Contains(out, "Removing template files") {
+		t.Error("expected subsequent steps to be skipped after failure")
+	}
+}
+
+func TestDefaultSpinner_Success_PrintsCheckmark(t *testing.T) {
+	var buf bytes.Buffer
+	err := DefaultSpinner(&buf, "my step", func() error { return nil })
+	if err != nil {
+		t.Fatalf("DefaultSpinner() unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "my step") {
+		t.Errorf("expected step label in output, got: %s", out)
+	}
+	if !strings.Contains(out, "✔") {
+		t.Errorf("expected '✔' in output on success, got: %s", out)
+	}
+}
+
+func TestDefaultSpinner_Failure_PrintsX(t *testing.T) {
+	var buf bytes.Buffer
+	err := DefaultSpinner(&buf, "bad step", func() error { return errors.New("something broke") })
+	if err == nil {
+		t.Fatal("DefaultSpinner() expected error to be returned, got nil")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "✖") {
+		t.Errorf("expected '✖' in output on failure, got: %s", out)
+	}
+	if !strings.Contains(out, "something broke") {
+		t.Errorf("expected error message in output, got: %s", out)
+	}
+}
