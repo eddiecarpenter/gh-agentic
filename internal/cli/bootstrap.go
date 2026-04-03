@@ -44,9 +44,22 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			// Placeholder until execution steps (Phase 0a steps 3-9) are implemented.
-			fmt.Fprintf(w, "bootstrap: form complete — project %q owner %q\n", cfg.ProjectName, cfg.Owner)
-			return nil
+			workDir := bootstrap.DefaultWorkDirOrHome()
+
+			graphqlDo, err := bootstrap.DefaultGraphQLDo()
+			if err != nil {
+				return fmt.Errorf("initialising GitHub GraphQL client: %w", err)
+			}
+
+			return bootstrap.RunSteps(
+				w,
+				cfg,
+				workDir,
+				bootstrap.DefaultRunCommand,
+				graphqlDo,
+				bootstrap.DefaultLaunchGoose,
+				bootstrap.DefaultSpinner,
+			)
 		},
 	}
 }
