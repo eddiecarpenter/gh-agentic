@@ -1,8 +1,12 @@
 package verify
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 )
 
 // CheckCLAUDEMD verifies that CLAUDE.md exists in the repo root.
@@ -103,6 +107,170 @@ func CheckREADMEMD(root string) CheckResult {
 	}
 	return CheckResult{
 		Name:   "README.md exists",
+		Status: Pass,
+	}
+}
+
+// ──────────���───────────────────────────────────────────────────────────────────
+// Directory integrity checks
+// ──────────────��────────────────────────────────���──────────────────────────────
+
+// expectedRecipeYAMLs are the standard Goose recipe files expected in .goose/recipes/.
+var expectedRecipeYAMLs = []string{
+	"dev-session.yaml",
+	"feature-design.yaml",
+	"feature-scoping.yaml",
+	"foreground-recovery.yaml",
+	"issue-session.yaml",
+	"pr-review-session.yaml",
+	"requirements-session.yaml",
+}
+
+// expectedWorkflowYMLs are the standard pipeline workflow files expected in .github/workflows/.
+// ci.yml is project-specific and excluded from this list.
+var expectedWorkflowYMLs = []string{
+	"dev-session.yml",
+	"feature-complete.yml",
+	"feature-design.yml",
+	"issue-session.yml",
+	"pr-review-session.yml",
+}
+
+// CheckBaseDir verifies that the base/ directory exists and has no uncommitted
+// modifications. Uses RunCommandFunc for git operations.
+func CheckBaseDir(root string, run bootstrap.RunCommandFunc) CheckResult {
+	basePath := filepath.Join(root, "base")
+	if _, err := os.Stat(basePath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    "base/ exists and is unmodified",
+			Status:  Fail,
+			Message: "base/ directory not found",
+		}
+	}
+
+	// Check for uncommitted modifications via git diff.
+	out, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git diff HEAD -- base/", strings.ReplaceAll(root, "'", "'\\''")))
+	if err != nil {
+		// If git fails (e.g. not a git repo), treat as warning.
+		return CheckResult{
+			Name:    "base/ exists and is unmodified",
+			Status:  Warning,
+			Message: "could not check git status: " + strings.TrimSpace(fmt.Sprintf("%v", err)),
+		}
+	}
+
+	if strings.TrimSpace(out) != "" {
+		return CheckResult{
+			Name:    "base/ exists and is unmodified",
+			Status:  Fail,
+			Message: "base/ has uncommitted modifications",
+		}
+	}
+
+	return CheckResult{
+		Name:   "base/ exists and is unmodified",
+		Status: Pass,
+	}
+}
+
+// CheckBaseRecipes verifies that base/recipes/*.md files exist and are unmodified.
+// Uses RunCommandFunc for git operations.
+func CheckBaseRecipes(root string, run bootstrap.RunCommandFunc) CheckResult {
+	recipesPath := filepath.Join(root, "base", "recipes")
+	if _, err := os.Stat(recipesPath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    "base/recipes/*.md unmodified",
+			Status:  Warning,
+			Message: "base/recipes/ directory not found",
+		}
+	}
+
+	// Check for modifications via git diff on base/recipes/.
+	out, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git diff HEAD -- base/recipes/", strings.ReplaceAll(root, "'", "'\\''")))
+	if err != nil {
+		return CheckResult{
+			Name:    "base/recipes/*.md unmodified",
+			Status:  Warning,
+			Message: "could not check git status: " + strings.TrimSpace(fmt.Sprintf("%v", err)),
+		}
+	}
+
+	if strings.TrimSpace(out) != "" {
+		return CheckResult{
+			Name:    "base/recipes/*.md unmodified",
+			Status:  Warning,
+			Message: "base/recipes/ has local modifications",
+		}
+	}
+
+	return CheckResult{
+		Name:   "base/recipes/*.md unmodified",
+		Status: Pass,
+	}
+}
+
+// CheckGooseRecipes verifies that .goose/recipes/ contains all expected YAML files.
+func CheckGooseRecipes(root string) CheckResult {
+	recipesPath := filepath.Join(root, ".goose", "recipes")
+	if _, err := os.Stat(recipesPath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    ".goose/recipes/ exists and complete",
+			Status:  Fail,
+			Message: ".goose/recipes/ directory not found",
+		}
+	}
+
+	var missing []string
+	for _, name := range expectedRecipeYAMLs {
+		path := filepath.Join(recipesPath, name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			missing = append(missing, name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return CheckResult{
+			Name:    ".goose/recipes/ exists and complete",
+			Status:  Fail,
+			Message: fmt.Sprintf("missing: %s", strings.Join(missing, ", ")),
+		}
+	}
+
+	return CheckResult{
+		Name:   ".goose/recipes/ exists and complete",
+		Status: Pass,
+	}
+}
+
+// CheckWorkflows verifies that .github/workflows/ contains all expected pipeline files.
+func CheckWorkflows(root string) CheckResult {
+	workflowsPath := filepath.Join(root, ".github", "workflows")
+	if _, err := os.Stat(workflowsPath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    ".github/workflows/ exists and complete",
+			Status:  Fail,
+			Message: ".github/workflows/ directory not found",
+		}
+	}
+
+	var missing []string
+	for _, name := range expectedWorkflowYMLs {
+		path := filepath.Join(workflowsPath, name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			missing = append(missing, name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return CheckResult{
+			Name:    ".github/workflows/ exists and complete",
+			Status:  Fail,
+			Message: fmt.Sprintf("missing: %s", strings.Join(missing, ", ")),
+		}
+	}
+
+	return CheckResult{
+		Name:   ".github/workflows/ exists and complete",
 		Status: Pass,
 	}
 }

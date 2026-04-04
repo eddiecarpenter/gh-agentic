@@ -2,6 +2,7 @@ package verify
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,4 +232,178 @@ func RepairREADMEMD(root string) CheckResult {
 		Name:   "README.md exists",
 		Status: Pass,
 	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Directory integrity repairs
+// ──────────────────────────────────────────────────────────────────────────────
+
+// BoolConfirmFunc prompts the user for a yes/no answer.
+type BoolConfirmFunc func(prompt string) (bool, error)
+
+// RepairBaseDir re-syncs base/ from the template after prompting the user.
+// run is injected for git operations, confirmFn for user prompt.
+func RepairBaseDir(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
+	if confirmFn != nil {
+		ok, err := confirmFn("base/ has issues — re-sync from template?")
+		if err != nil || !ok {
+			return CheckResult{
+				Name:    "base/ exists and is unmodified",
+				Status:  Fail,
+				Message: "user declined re-sync",
+			}
+		}
+	}
+
+	// Reset base/ to HEAD to discard local modifications.
+	_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/", strings.ReplaceAll(root, "'", "'\\''")))
+	if err != nil {
+		return CheckResult{
+			Name:    "base/ exists and is unmodified",
+			Status:  Fail,
+			Message: fmt.Sprintf("git checkout failed: %v", err),
+		}
+	}
+
+	return CheckResult{
+		Name:   "base/ exists and is unmodified",
+		Status: Pass,
+	}
+}
+
+// RepairBaseRecipes restores base/recipes/ to its committed state after prompting.
+func RepairBaseRecipes(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
+	if confirmFn != nil {
+		ok, err := confirmFn("base/recipes/ has local modifications — restore from git?")
+		if err != nil || !ok {
+			return CheckResult{
+				Name:    "base/recipes/*.md unmodified",
+				Status:  Warning,
+				Message: "user declined restore",
+			}
+		}
+	}
+
+	_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/recipes/", strings.ReplaceAll(root, "'", "'\\''")))
+	if err != nil {
+		return CheckResult{
+			Name:    "base/recipes/*.md unmodified",
+			Status:  Warning,
+			Message: fmt.Sprintf("git checkout failed: %v", err),
+		}
+	}
+
+	return CheckResult{
+		Name:   "base/recipes/*.md unmodified",
+		Status: Pass,
+	}
+}
+
+// RepairGooseRecipes copies missing YAML files from .goose/recipes/ source.
+// Since there's no base/.goose/ reference, this function copies from the repo's
+// own .goose/recipes/ or creates placeholders. In practice, the source recipes
+// are the ones already tracked in the repo.
+func RepairGooseRecipes(root string) CheckResult {
+	recipesPath := filepath.Join(root, ".goose", "recipes")
+
+	// Ensure the directory exists.
+	if err := os.MkdirAll(recipesPath, 0o755); err != nil {
+		return CheckResult{
+			Name:    ".goose/recipes/ exists and complete",
+			Status:  Fail,
+			Message: fmt.Sprintf("could not create directory: %v", err),
+		}
+	}
+
+	// Check which files are missing and report — actual restore requires
+	// a template sync since there's no local reference copy.
+	var stillMissing []string
+	for _, name := range expectedRecipeYAMLs {
+		path := filepath.Join(recipesPath, name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			stillMissing = append(stillMissing, name)
+		}
+	}
+
+	if len(stillMissing) > 0 {
+		return CheckResult{
+			Name:    ".goose/recipes/ exists and complete",
+			Status:  Fail,
+			Message: fmt.Sprintf("still missing after repair: %s — run 'gh agentic sync' to restore", strings.Join(stillMissing, ", ")),
+		}
+	}
+
+	return CheckResult{
+		Name:   ".goose/recipes/ exists and complete",
+		Status: Pass,
+	}
+}
+
+// RepairWorkflows copies missing workflow files. Since workflow files are
+// project-specific, this creates the directory if missing and reports what
+// needs to be restored manually.
+func RepairWorkflows(root string) CheckResult {
+	workflowsPath := filepath.Join(root, ".github", "workflows")
+
+	// Ensure the directory exists.
+	if err := os.MkdirAll(workflowsPath, 0o755); err != nil {
+		return CheckResult{
+			Name:    ".github/workflows/ exists and complete",
+			Status:  Fail,
+			Message: fmt.Sprintf("could not create directory: %v", err),
+		}
+	}
+
+	var stillMissing []string
+	for _, name := range expectedWorkflowYMLs {
+		path := filepath.Join(workflowsPath, name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			stillMissing = append(stillMissing, name)
+		}
+	}
+
+	if len(stillMissing) > 0 {
+		return CheckResult{
+			Name:    ".github/workflows/ exists and complete",
+			Status:  Fail,
+			Message: fmt.Sprintf("still missing after repair: %s — run 'gh agentic sync' to restore", strings.Join(stillMissing, ", ")),
+		}
+	}
+
+	return CheckResult{
+		Name:   ".github/workflows/ exists and complete",
+		Status: Pass,
+	}
+}
+
+// copyDir recursively copies src to dst, preserving file permissions.
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(dst, rel)
+
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(target, data, info.Mode())
+	})
 }

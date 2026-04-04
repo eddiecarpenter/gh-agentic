@@ -160,3 +160,127 @@ func TestRepairREADMEMD_CreatesFile(t *testing.T) {
 		t.Error("README.md should reference agentic development framework")
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Directory integrity repair tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairBaseDir_UserConfirms_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+	confirmFn := func(prompt string) (bool, error) {
+		return true, nil
+	}
+
+	result := RepairBaseDir(root, fakeRun, confirmFn)
+	if result.Status != Pass {
+		t.Errorf("expected Pass after confirmed repair, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairBaseDir_UserDeclines_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+	confirmFn := func(prompt string) (bool, error) {
+		return false, nil
+	}
+
+	result := RepairBaseDir(root, fakeRun, confirmFn)
+	if result.Status != Fail {
+		t.Errorf("expected Fail when user declines, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairBaseRecipes_UserConfirms_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+	confirmFn := func(prompt string) (bool, error) {
+		return true, nil
+	}
+
+	result := RepairBaseRecipes(root, fakeRun, confirmFn)
+	if result.Status != Pass {
+		t.Errorf("expected Pass after confirmed repair, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairBaseRecipes_UserDeclines_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+	confirmFn := func(prompt string) (bool, error) {
+		return false, nil
+	}
+
+	result := RepairBaseRecipes(root, fakeRun, confirmFn)
+	if result.Status != Warning {
+		t.Errorf("expected Warning when user declines, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairGooseRecipes_CreatesDir(t *testing.T) {
+	root := t.TempDir()
+	recipesDir := filepath.Join(root, ".goose", "recipes")
+
+	// Create all expected files.
+	if err := os.MkdirAll(recipesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range expectedRecipeYAMLs {
+		if err := os.WriteFile(filepath.Join(recipesDir, name), []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := RepairGooseRecipes(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass when all files present, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairGooseRecipes_MissingFiles_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	// Don't create any recipe files.
+	result := RepairGooseRecipes(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for missing recipe files, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "gh agentic sync") {
+		t.Error("message should suggest running 'gh agentic sync'")
+	}
+}
+
+func TestRepairWorkflows_CreatesDir(t *testing.T) {
+	root := t.TempDir()
+	workflowsDir := filepath.Join(root, ".github", "workflows")
+
+	// Create all expected files.
+	if err := os.MkdirAll(workflowsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range expectedWorkflowYMLs {
+		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := RepairWorkflows(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass when all files present, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairWorkflows_MissingFiles_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	result := RepairWorkflows(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for missing workflow files, got %v: %s", result.Status, result.Message)
+	}
+}

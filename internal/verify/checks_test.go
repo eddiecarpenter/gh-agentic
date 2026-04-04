@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -155,5 +156,207 @@ func TestFileChecks_TableDriven(t *testing.T) {
 				t.Errorf("expected %v when file missing, got %v: %s", tc.missingState, result.Status, result.Message)
 			}
 		})
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Directory integrity check tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckBaseDir_Present_NoModifications_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil // No diff output means no modifications.
+	}
+
+	result := CheckBaseDir(root, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckBaseDir_Missing_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := CheckBaseDir(root, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckBaseDir_Modified_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "diff --git a/base/file.md b/base/file.md\n+modified", nil
+	}
+
+	result := CheckBaseDir(root, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for modified base/, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckBaseRecipes_Present_NoModifications_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "base", "recipes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := CheckBaseRecipes(root, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckBaseRecipes_Missing_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := CheckBaseRecipes(root, fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckBaseRecipes_Modified_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "base", "recipes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "diff output", nil
+	}
+
+	result := CheckBaseRecipes(root, fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning for modified recipes, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseRecipes_AllPresent_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	recipesDir := filepath.Join(root, ".goose", "recipes")
+	if err := os.MkdirAll(recipesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range expectedRecipeYAMLs {
+		if err := os.WriteFile(filepath.Join(recipesDir, name), []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := CheckGooseRecipes(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseRecipes_DirMissing_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	result := CheckGooseRecipes(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseRecipes_SomeMissing_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	recipesDir := filepath.Join(root, ".goose", "recipes")
+	if err := os.MkdirAll(recipesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Only create first 3 files.
+	for _, name := range expectedRecipeYAMLs[:3] {
+		if err := os.WriteFile(filepath.Join(recipesDir, name), []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := CheckGooseRecipes(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for missing files, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckWorkflows_AllPresent_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	workflowsDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range expectedWorkflowYMLs {
+		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := CheckWorkflows(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckWorkflows_DirMissing_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	result := CheckWorkflows(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckWorkflows_SomeMissing_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	workflowsDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Only create first 2 files.
+	for _, name := range expectedWorkflowYMLs[:2] {
+		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := CheckWorkflows(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for missing workflows, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckBaseDir_GitFails_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("not a git repo")
+	}
+
+	result := CheckBaseDir(root, fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning when git fails, got %v: %s", result.Status, result.Message)
 	}
 }
