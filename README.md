@@ -1,6 +1,6 @@
 # gh-agentic
 
-A GitHub CLI extension that bootstraps and manages agentic development environments.
+A GitHub CLI extension that bootstraps and manages agentic software delivery environments.
 
 ## Install
 

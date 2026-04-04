@@ -3,7 +3,7 @@
 ## What it is
 
 A GitHub CLI extension that replaces `bootstrap.sh` and manages the lifecycle of
-agentic development environments. Installed and updated via `gh extension`.
+agentic software delivery environments. Installed and updated via `gh extension`.
 
 ```bash
 gh extension install eddiecarpenter/gh-agentic
