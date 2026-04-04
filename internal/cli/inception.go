@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -31,9 +32,24 @@ func newInceptionCmd() *cobra.Command {
 			fmt.Fprintln(w, "  "+ui.RenderOK("Agentic environment detected (owner: "+envCtx.Owner+")"))
 			fmt.Fprintln(w)
 
-			// Steps 2-5 will be wired in Task 4 (runner orchestration).
-			_ = envCtx
-			return nil
+			// Step 2: Collect configuration via interactive form.
+			cfg, err := inception.RunForm(w, *envCtx)
+			if errors.Is(err, inception.ErrAborted) {
+				fmt.Fprintln(w, ui.Muted.Render("Aborted."))
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+
+			// Steps 3-6: Execute inception steps with spinner.
+			return inception.RunSteps(
+				w,
+				cfg,
+				envCtx,
+				bootstrap.DefaultRunCommand,
+				inception.DefaultSpinner,
+			)
 		},
 	}
 }
