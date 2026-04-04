@@ -209,7 +209,7 @@ func TestCheckBaseDir_Modified_ReturnsFail(t *testing.T) {
 
 func TestCheckBaseRecipes_Present_NoModifications_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "base", "recipes"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "base", "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -237,7 +237,7 @@ func TestCheckBaseRecipes_Missing_ReturnsWarning(t *testing.T) {
 
 func TestCheckBaseRecipes_Modified_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "base", "recipes"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "base", "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
