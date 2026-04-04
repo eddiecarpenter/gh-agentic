@@ -8,7 +8,7 @@ import (
 
 func TestInceptionCmd_Help(t *testing.T) {
 	buf := &bytes.Buffer{}
-	root := newRootCmd("dev")
+	root := newRootCmd("dev", "")
 	root.SetOut(buf)
 	root.SetErr(buf)
 	root.SetArgs([]string{"inception", "--help"})
@@ -26,7 +26,7 @@ func TestInceptionCmd_Help(t *testing.T) {
 
 func TestInceptionCmd_SubcommandRegistered(t *testing.T) {
 	buf := &bytes.Buffer{}
-	root := newRootCmd("dev")
+	root := newRootCmd("dev", "")
 	root.SetOut(buf)
 	root.SetErr(buf)
 	root.SetArgs([]string{"inception", "--help"})

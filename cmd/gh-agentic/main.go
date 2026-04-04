@@ -10,12 +10,13 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/cli"
 )
 
-// version is set at build time by GoReleaser via ldflags.
-// Local dev builds report "dev".
+// version and date are set at build time by GoReleaser via ldflags.
+// Local dev builds report "dev" and an empty date.
 var version = "dev"
+var date = ""
 
 func main() {
-	if err := cli.Execute(version); err != nil {
+	if err := cli.Execute(version, date); err != nil {
 		if err != cli.ErrSilent {
 			fmt.Fprintln(os.Stderr, err)
 		}
