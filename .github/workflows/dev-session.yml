@@ -1,0 +1,79 @@
+name: Dev Session
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  dev-session:
+    if: github.event.label.name == 'in-development' && contains(github.event.issue.labels.*.name, 'feature')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Resolve feature branch
+        id: branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE=${{ github.event.issue.number }}
+          BRANCH=$(gh api repos/${{ github.repository }}/branches \
+            --jq ".[] | .name | select(startswith(\"feature/${ISSUE}-\"))")
+          if [ -z "$BRANCH" ]; then
+            echo "No branch found matching feature/${ISSUE}-*"
+            exit 1
+          fi
+          echo "name=$BRANCH" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.name }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install Goose CLI
+        run: |
+          curl -fsSL https://github.com/block/goose/releases/latest/download/download_cli.sh | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Run dev-session recipe
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          goose run \
+            --recipe .goose/recipes/dev-session.yaml \
+            --params feature_issue=${{ github.event.issue.number }} \
+            --params branch_name=${{ steps.branch.outputs.name }} \
+            --params repo=${{ github.repository }}
+
+      - name: Push branch
+        run: git push origin ${{ steps.branch.outputs.name }}
+
+      - name: Open PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL=$(gh pr create \
+            --title "feat: ${{ github.event.issue.title }}" \
+            --body "Closes #${{ github.event.issue.number }}" \
+            --base main \
+            --head ${{ steps.branch.outputs.name }})
+          echo "url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "PR opened: $PR_URL"
+
+      - name: Apply in-review label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit ${{ github.event.issue.number }} \
+            --remove-label "in-development" \
+            --add-label "in-review"

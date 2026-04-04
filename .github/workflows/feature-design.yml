@@ -1,0 +1,31 @@
+name: Feature Design
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  feature-design:
+    if: github.event.label.name == 'in-design' && contains(github.event.issue.labels.*.name, 'feature')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Goose CLI
+        run: |
+          curl -fsSL https://github.com/block/goose/releases/latest/download/download_cli.sh | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Run feature-design recipe
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          goose run \
+            --recipe .goose/recipes/feature-design.yaml \
+            --params feature_issue=${{ github.event.issue.number }} \
+            --params repo=${{ github.repository }}
