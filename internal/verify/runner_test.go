@@ -22,8 +22,8 @@ func TestRunVerify_AllPass_ReturnsNil(t *testing.T) {
 	if !strings.Contains(output, "✔") {
 		t.Errorf("expected ✔ in output, got: %s", output)
 	}
-	if !strings.Contains(output, "2 passed, 0 warnings, 0 repaired") {
-		t.Errorf("expected summary '2 passed, 0 warnings, 0 repaired', got: %s", output)
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected 'All checks passed' in output, got: %s", output)
 	}
 }
 
@@ -45,8 +45,11 @@ func TestRunVerify_WarningReturnsError(t *testing.T) {
 	if !strings.Contains(output, "⚠") {
 		t.Errorf("expected ⚠ in output, got: %s", output)
 	}
-	if !strings.Contains(output, "1 passed, 1 warnings, 0 repaired") {
-		t.Errorf("unexpected summary, got: %s", output)
+	if !strings.Contains(output, "1 passed") {
+		t.Errorf("expected '1 passed' in summary, got: %s", output)
+	}
+	if !strings.Contains(output, "1 warnings") {
+		t.Errorf("expected '1 warnings' in summary, got: %s", output)
 	}
 }
 
@@ -93,8 +96,8 @@ func TestRunVerify_RepairFixesFail(t *testing.T) {
 	if !strings.Contains(output, "repaired") {
 		t.Errorf("expected 'repaired' in output, got: %s", output)
 	}
-	if !strings.Contains(output, "0 passed, 0 warnings, 1 repaired") {
-		t.Errorf("unexpected summary, got: %s", output)
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected 'All checks passed' after repair, got: %s", output)
 	}
 }
 
@@ -116,8 +119,8 @@ func TestRunVerify_RepairFixesWarning(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "1 repaired") {
-		t.Errorf("expected '1 repaired' in summary, got: %s", output)
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected 'All checks passed' after repair, got: %s", output)
 	}
 }
 
@@ -147,8 +150,8 @@ func TestRunVerify_EmptyChecks_ReturnsNil(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "0 passed, 0 warnings, 0 repaired") {
-		t.Errorf("expected zero summary, got: %s", output)
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected 'All checks passed' for empty checks, got: %s", output)
 	}
 }
 
@@ -178,8 +181,11 @@ func TestRunVerify_MixedResults(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "1 passed, 0 warnings, 1 repaired") {
-		t.Errorf("unexpected summary, got: %s", output)
+	if !strings.Contains(output, "1 passed") {
+		t.Errorf("expected '1 passed' in summary, got: %s", output)
+	}
+	if !strings.Contains(output, "1 repaired") {
+		t.Errorf("expected '1 repaired' in summary, got: %s", output)
 	}
 	if !strings.Contains(output, "1 failed") {
 		t.Errorf("expected '1 failed' in summary, got: %s", output)

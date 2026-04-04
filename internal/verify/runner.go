@@ -53,15 +53,22 @@ func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 
 	// Print summary.
 	fmt.Fprintln(w)
-	summary := fmt.Sprintf("  %d passed, %d warnings, %d repaired", passed, warnings, repaired)
+	if warnings == 0 && failures == 0 {
+		fmt.Fprintln(w, "  "+ui.RenderOK("All checks passed"))
+		return nil
+	}
+
+	summary := fmt.Sprintf("  %d passed", passed)
+	if warnings > 0 {
+		summary += fmt.Sprintf(", %d warnings", warnings)
+	}
+	if repairFn != nil && repaired > 0 {
+		summary += fmt.Sprintf(", %d repaired", repaired)
+	}
 	if failures > 0 {
 		summary += fmt.Sprintf(", %d failed", failures)
 	}
 	fmt.Fprintln(w, summary)
 
-	if warnings > 0 || failures > 0 {
-		return fmt.Errorf("%d warnings, %d failures remain", warnings, failures)
-	}
-
-	return nil
+	return fmt.Errorf("%d warnings, %d failures remain", warnings, failures)
 }
