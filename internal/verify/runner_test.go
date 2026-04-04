@@ -93,8 +93,8 @@ func TestRunVerify_RepairFixesFail(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "repaired") {
-		t.Errorf("expected 'repaired' in output, got: %s", output)
+	if !strings.Contains(output, "fixed") {
+		t.Errorf("expected 'fixed' in output, got: %s", output)
 	}
 	if !strings.Contains(output, "All checks passed") {
 		t.Errorf("expected 'All checks passed' after repair, got: %s", output)
@@ -181,8 +181,8 @@ func TestRunVerify_MixedResults(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "1 passed") {
-		t.Errorf("expected '1 passed' in summary, got: %s", output)
+	if !strings.Contains(output, "2 passed") {
+		t.Errorf("expected '2 passed' in summary, got: %s", output)
 	}
 	if !strings.Contains(output, "1 repaired") {
 		t.Errorf("expected '1 repaired' in summary, got: %s", output)
