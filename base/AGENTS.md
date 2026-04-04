@@ -430,7 +430,7 @@ Goose recipes live in two places:
 | Path | Editable | Purpose |
 |---|---|---|
 | `.goose/recipes/*.yaml` | ❌ Never (managed by template) | The complete recipe — instructions, parameters, model settings |
-| `base/skills/*.md` | ❌ Never | Human-readable reference docs for each session type |
+| `base/skills/*.md` | ❌ Never | Human-readable reference docs for each session type (the skills) |
 
 **`.goose/recipes/*.yaml` files are managed by the `agentic-development` template.**
 **`base/skills/*.md` files are read-only reference documentation.**
