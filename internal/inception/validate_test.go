@@ -62,7 +62,10 @@ func TestValidateEnvironment_WithReposMD_ReturnsEnvContext(t *testing.T) {
 	if ctx.Owner != "acme-org" {
 		t.Errorf("ctx.Owner = %q, want %q", ctx.Owner, "acme-org")
 	}
-	if ctx.AgenticRepoRoot != dir {
+	// Resolve symlinks on both sides — macOS resolves /var -> /private/var after Chdir.
+	wantRoot, _ := filepath.EvalSymlinks(dir)
+	gotRoot, _ := filepath.EvalSymlinks(ctx.AgenticRepoRoot)
+	if gotRoot != wantRoot {
 		t.Errorf("ctx.AgenticRepoRoot = %q, want %q", ctx.AgenticRepoRoot, dir)
 	}
 }
