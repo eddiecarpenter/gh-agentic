@@ -332,12 +332,7 @@ func TestCheckWorkflows_SomeMissing_ReturnsFail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Only create first 2 files.
-	for _, name := range expectedWorkflowYMLs[:2] {
-		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("content"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// Create no files — directory exists but all expected files are missing.
 
 	result := CheckWorkflows(root)
 	if result.Status != Fail {

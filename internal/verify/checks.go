@@ -130,11 +130,7 @@ var expectedRecipeYAMLs = []string{
 // expectedWorkflowYMLs are the standard pipeline workflow files expected in .github/workflows/.
 // ci.yml is project-specific and excluded from this list.
 var expectedWorkflowYMLs = []string{
-	"dev-session.yml",
-	"feature-complete.yml",
-	"feature-design.yml",
-	"issue-session.yml",
-	"pr-review-session.yml",
+	"agentic-pipeline.yml",
 }
 
 // CheckBaseDir verifies that the base/ directory exists and has no uncommitted
