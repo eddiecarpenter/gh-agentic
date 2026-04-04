@@ -1,10 +1,12 @@
 package verify
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -320,14 +322,11 @@ func RepairBaseRecipes(root string, run bootstrap.RunCommandFunc, confirmFn Bool
 	}
 }
 
-// RepairGooseRecipes copies missing YAML files from .goose/recipes/ source.
-// Since there's no base/.goose/ reference, this function copies from the repo's
-// own .goose/recipes/ or creates placeholders. In practice, the source recipes
-// are the ones already tracked in the repo.
+// RepairGooseRecipes fetches missing recipe YAML files from the template repo
+// and writes them into .goose/recipes/. Reads TEMPLATE_SOURCE to know which
+// repo to fetch from. Uses run to shell out to `gh api`.
 func RepairGooseRecipes(root string) CheckResult {
 	recipesPath := filepath.Join(root, ".goose", "recipes")
-
-	// Ensure the directory exists.
 	if err := os.MkdirAll(recipesPath, 0o755); err != nil {
 		return CheckResult{
 			Name:    ".goose/recipes/ exists and complete",
@@ -336,12 +335,30 @@ func RepairGooseRecipes(root string) CheckResult {
 		}
 	}
 
-	// Check which files are missing and report — actual restore requires
-	// a template sync since there's no local reference copy.
+	// Read TEMPLATE_SOURCE to know which repo to fetch from.
+	sourceData, err := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
+	if err != nil {
+		return CheckResult{
+			Name:    ".goose/recipes/ exists and complete",
+			Status:  Fail,
+			Message: "TEMPLATE_SOURCE missing — cannot fetch recipes from template",
+		}
+	}
+	templateRepo := strings.TrimSpace(string(sourceData))
+
 	var stillMissing []string
 	for _, name := range expectedRecipeYAMLs {
-		path := filepath.Join(recipesPath, name)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
+		dst := filepath.Join(recipesPath, name)
+		if _, err := os.Stat(dst); err == nil {
+			continue // already present
+		}
+		// Fetch raw content from template via gh api.
+		content, fetchErr := fetchFileFromRepo(templateRepo, ".goose/recipes/"+name)
+		if fetchErr != nil {
+			stillMissing = append(stillMissing, name)
+			continue
+		}
+		if writeErr := os.WriteFile(dst, content, 0o644); writeErr != nil {
 			stillMissing = append(stillMissing, name)
 		}
 	}
@@ -350,23 +367,19 @@ func RepairGooseRecipes(root string) CheckResult {
 		return CheckResult{
 			Name:    ".goose/recipes/ exists and complete",
 			Status:  Fail,
-			Message: fmt.Sprintf("still missing after repair: %s — run 'gh agentic sync' to restore", strings.Join(stillMissing, ", ")),
+			Message: fmt.Sprintf("could not restore: %s", strings.Join(stillMissing, ", ")),
 		}
 	}
-
 	return CheckResult{
 		Name:   ".goose/recipes/ exists and complete",
 		Status: Pass,
 	}
 }
 
-// RepairWorkflows copies missing workflow files. Since workflow files are
-// project-specific, this creates the directory if missing and reports what
-// needs to be restored manually.
+// RepairWorkflows copies missing workflow files from base/.github/workflows/
+// if present (populated by sync), then falls back to fetching from the template.
 func RepairWorkflows(root string) CheckResult {
 	workflowsPath := filepath.Join(root, ".github", "workflows")
-
-	// Ensure the directory exists.
 	if err := os.MkdirAll(workflowsPath, 0o755); err != nil {
 		return CheckResult{
 			Name:    ".github/workflows/ exists and complete",
@@ -375,26 +388,70 @@ func RepairWorkflows(root string) CheckResult {
 		}
 	}
 
+	// Read TEMPLATE_SOURCE for fallback fetching.
+	sourceData, _ := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
+	templateRepo := strings.TrimSpace(string(sourceData))
+
 	var stillMissing []string
 	for _, name := range expectedWorkflowYMLs {
-		path := filepath.Join(workflowsPath, name)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			stillMissing = append(stillMissing, name)
+		dst := filepath.Join(workflowsPath, name)
+		if _, err := os.Stat(dst); err == nil {
+			continue // already present
 		}
+
+		// Try base/.github/workflows/ first (populated by sync).
+		baseSrc := filepath.Join(root, "base", ".github", "workflows", name)
+		if data, readErr := os.ReadFile(baseSrc); readErr == nil {
+			if writeErr := os.WriteFile(dst, data, 0o644); writeErr == nil {
+				continue
+			}
+		}
+
+		// Fall back to fetching from the template repo.
+		if templateRepo != "" {
+			if content, fetchErr := fetchFileFromRepo(templateRepo, ".github/workflows/"+name); fetchErr == nil {
+				if writeErr := os.WriteFile(dst, content, 0o644); writeErr == nil {
+					continue
+				}
+			}
+		}
+
+		stillMissing = append(stillMissing, name)
 	}
 
 	if len(stillMissing) > 0 {
 		return CheckResult{
 			Name:    ".github/workflows/ exists and complete",
 			Status:  Fail,
-			Message: fmt.Sprintf("still missing after repair: %s — run 'gh agentic sync' to restore", strings.Join(stillMissing, ", ")),
+			Message: fmt.Sprintf("could not restore: %s", strings.Join(stillMissing, ", ")),
 		}
 	}
-
 	return CheckResult{
 		Name:   ".github/workflows/ exists and complete",
 		Status: Pass,
 	}
+}
+
+// fetchFileFromRepo fetches the raw content of a file from a GitHub repo
+// using the gh API. Returns the decoded file bytes.
+func fetchFileFromRepo(repo, path string) ([]byte, error) {
+	cmd := exec.Command("gh", "api",
+		fmt.Sprintf("repos/%s/contents/%s", repo, path),
+		"--jq", ".content",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("gh api failed: %w", err)
+	}
+	// The API returns base64-encoded content with embedded newlines.
+	raw := strings.ReplaceAll(strings.TrimSpace(string(out)), "\\n", "\n")
+	// Strip surrounding quotes if jq returned a JSON string.
+	raw = strings.Trim(raw, `"`)
+	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(raw, "\n", ""))
+	if err != nil {
+		return nil, fmt.Errorf("decoding content: %w", err)
+	}
+	return decoded, nil
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
