@@ -7,68 +7,132 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
-// RunVerify executes all check functions, renders ✔/⚠/✖ per check, applies
-// the repair function to non-passing checks, and prints a summary line.
-// Returns an error if any unresolved warnings or failures remain after repair.
+// RunVerify runs all checks, prints the full result list, then (if repairFn is
+// set) runs repairs with clear before/after output and reprints the final state.
+// Returns an error if any unresolved warnings or failures remain.
 func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
-	var passed, warnings, repaired, failures int
+	// ── Phase 1: run all checks and collect results ───────────────────────────
+	results := make([]CheckResult, len(checks))
+	for i, fn := range checks {
+		results[i] = fn()
+	}
 
-	for _, check := range checks {
-		result := check()
+	// Print the full check list.
+	printResults(w, results)
 
-		switch result.Status {
-		case Pass:
-			fmt.Fprintln(w, "  "+ui.RenderOK(result.Name))
-			passed++
-
+	// Count issues.
+	var warnings, failures int
+	for _, r := range results {
+		switch r.Status {
 		case Warning:
-			fmt.Fprintln(w, "  "+ui.RenderWarning(result.Name+": "+result.Message))
-			if repairFn != nil {
-				updated := repairFn(result)
-				if updated != nil && updated.Status == Pass {
-					fmt.Fprintln(w, "    "+ui.RenderOK("repaired"))
-					repaired++
-				} else {
-					warnings++
-				}
-			} else {
-				warnings++
-			}
-
+			warnings++
 		case Fail:
-			fmt.Fprintln(w, "  "+ui.RenderError(result.Name+": "+result.Message))
-			if repairFn != nil {
-				updated := repairFn(result)
-				if updated != nil && updated.Status == Pass {
-					fmt.Fprintln(w, "    "+ui.RenderOK("repaired"))
-					repaired++
-				} else {
-					failures++
-				}
-			} else {
-				failures++
-			}
+			failures++
 		}
 	}
 
-	// Print summary.
+	// If nothing to repair, print summary and return.
+	if repairFn == nil || (warnings == 0 && failures == 0) {
+		fmt.Fprintln(w)
+		if warnings == 0 && failures == 0 {
+			fmt.Fprintln(w, "  "+ui.RenderOK("All checks passed"))
+			return nil
+		}
+		printSummary(w, results, 0)
+		return fmt.Errorf("%d warnings, %d failures remain", warnings, failures)
+	}
+
+	// ── Phase 2: repair ───────────────────────────────────────────────────────
+	issueCount := warnings + failures
 	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  %s\n", ui.Muted.Render(fmt.Sprintf("Repairing %d issue(s)...", issueCount)))
+
+	repaired := 0
+	for i, r := range results {
+		if r.Status == Pass {
+			continue
+		}
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  "+ui.Muted.Render("↻ "+r.Name))
+
+		updated := repairFn(r)
+		if updated != nil && updated.Status == Pass {
+			fmt.Fprintln(w, "  "+ui.RenderOK("fixed"))
+			results[i] = *updated
+			repaired++
+		} else {
+			msg := r.Message
+			if updated != nil && updated.Message != "" {
+				msg = updated.Message
+			}
+			fmt.Fprintln(w, "  "+ui.RenderError("still failing: "+msg))
+		}
+	}
+
+	// ── Final state ───────────────────────────────────────────────────────────
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  "+ui.Muted.Render("─── Final state ───"))
+	fmt.Fprintln(w)
+	printResults(w, results)
+	fmt.Fprintln(w)
+
+	// Recount after repairs.
+	warnings, failures = 0, 0
+	for _, r := range results {
+		switch r.Status {
+		case Warning:
+			warnings++
+		case Fail:
+			failures++
+		}
+	}
+
 	if warnings == 0 && failures == 0 {
 		fmt.Fprintln(w, "  "+ui.RenderOK("All checks passed"))
 		return nil
+	}
+
+	printSummary(w, results, repaired)
+	return fmt.Errorf("%d warnings, %d failures remain", warnings, failures)
+}
+
+// printResults renders the ✔/⚠/✖ line for each result.
+func printResults(w io.Writer, results []CheckResult) {
+	for _, r := range results {
+		switch r.Status {
+		case Pass:
+			fmt.Fprintln(w, "  "+ui.RenderOK(r.Name))
+		case Warning:
+			fmt.Fprintln(w, "  "+ui.RenderWarning(r.Name+": "+r.Message))
+		case Fail:
+			fmt.Fprintln(w, "  "+ui.RenderError(r.Name+": "+r.Message))
+		}
+	}
+}
+
+// printSummary prints the count line.
+func printSummary(w io.Writer, results []CheckResult, repaired int) {
+	var passed, warnings, failures int
+	for _, r := range results {
+		switch r.Status {
+		case Pass:
+			passed++
+		case Warning:
+			warnings++
+		case Fail:
+			failures++
+		}
 	}
 
 	summary := fmt.Sprintf("  %d passed", passed)
 	if warnings > 0 {
 		summary += fmt.Sprintf(", %d warnings", warnings)
 	}
-	if repairFn != nil && repaired > 0 {
+	if repaired > 0 {
 		summary += fmt.Sprintf(", %d repaired", repaired)
 	}
 	if failures > 0 {
 		summary += fmt.Sprintf(", %d failed", failures)
 	}
 	fmt.Fprintln(w, summary)
-
-	return fmt.Errorf("%d warnings, %d failures remain", warnings, failures)
 }
