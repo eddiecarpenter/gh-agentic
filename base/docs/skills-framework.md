@@ -1,4 +1,4 @@
-# Skills
+# Skills Framework
 
 ## What is a Skill?
 
@@ -23,18 +23,6 @@ Skill (base/skills/*.md)
 
 Each layer is independently swappable. Replacing Goose with another frontend
 requires only rewrapping the skills. The skills themselves remain unchanged.
-
-## Skill Inventory
-
-| File | Stage | Trigger | Purpose |
-|---|---|---|---|
-| `requirements-session.md` | Stage 1 | Human (interactive) | Capture business needs as Requirement issues |
-| `feature-scoping.md` | Stage 2 | Human (interactive) | Decompose Requirements into Feature issues |
-| `feature-design.md` | Stage 3 | Automatic — `in-design` label | Create Task sub-issues and feature branch |
-| `dev-session.md` | Stage 4 | Automatic — `in-development` label | Implement Tasks, commit, exit for workflow to push |
-| `pr-review-session.md` | Stage 4b | Automatic — PR review submitted | Process inline review comments |
-| `issue-session.md` | Stage 4c | Automatic — issue assigned to agent | Fix bugs or answer questions |
-| `foreground-recovery.md` | Recovery | Human (interactive) | Diagnose and fix workflow failures |
 
 ## Authoring Rules
 
