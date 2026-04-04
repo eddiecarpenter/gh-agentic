@@ -56,17 +56,20 @@ func newDoctorCmd() *cobra.Command {
 			repoName := currentRepo.Name
 			repoFullName := owner + "/" + repoName
 
+			// Single scanner shared across all confirm functions — creating
+			// multiple scanners on the same stdin causes buffering issues
+			// where the first scanner consumes input meant for later calls.
+			scanner := bufio.NewScanner(cmd.InOrStdin())
+
 			// Confirm functions for repair interactions.
 			// When --yes is set, all prompts are auto-confirmed.
 			textConfirm := func(prompt string) (string, error) {
 				if yes {
-					// Text prompts require a value — --yes cannot supply one.
-					// Return empty so the repair reports a clear skip.
+					// Text prompts require a real value — --yes cannot supply one.
 					fmt.Fprintf(w, "  %s: [skipped — provide value manually]\n", prompt)
 					return "", nil
 				}
 				fmt.Fprintf(w, "  %s: ", prompt)
-				scanner := bufio.NewScanner(cmd.InOrStdin())
 				if scanner.Scan() {
 					return strings.TrimSpace(scanner.Text()), nil
 				}
@@ -78,7 +81,6 @@ func newDoctorCmd() *cobra.Command {
 					return true, nil
 				}
 				fmt.Fprintf(w, "  %s [y/N]: ", prompt)
-				scanner := bufio.NewScanner(cmd.InOrStdin())
 				if scanner.Scan() {
 					answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
 					return answer == "y" || answer == "yes", nil
