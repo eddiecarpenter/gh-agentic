@@ -20,6 +20,7 @@ func newRootCmd() *cobra.Command {
 		Version: Version,
 	}
 	root.AddCommand(newBootstrapCmd())
+	root.AddCommand(newInceptionCmd())
 	return root
 }
 
