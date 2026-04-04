@@ -302,6 +302,172 @@ func TestPopulateRepo_PushFails_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestPopulateRepo_CopiesBase(t *testing.T) {
+	cloneDir := t.TempDir()
+	agenticDir := t.TempDir()
+
+	// Create a base/ directory with a file.
+	baseDir := filepath.Join(agenticDir, "base", "standards")
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "go.md"), []byte("# Go standards"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
+	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Verify base/ was copied.
+	data, err := os.ReadFile(filepath.Join(cloneDir, "base", "standards", "go.md"))
+	if err != nil {
+		t.Fatalf("expected base/standards/go.md to be copied: %v", err)
+	}
+	if string(data) != "# Go standards" {
+		t.Errorf("unexpected content: %s", string(data))
+	}
+}
+
+func TestPopulateRepo_CopiesGooseRecipes(t *testing.T) {
+	cloneDir := t.TempDir()
+	agenticDir := t.TempDir()
+
+	// Create .goose/recipes/ with YAML files.
+	recipesDir := filepath.Join(agenticDir, ".goose", "recipes")
+	if err := os.MkdirAll(recipesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	recipeFiles := []string{
+		"dev-session.yaml", "feature-design.yaml", "feature-scoping.yaml",
+		"foreground-recovery.yaml", "issue-session.yaml", "pr-review-session.yaml",
+		"requirements-session.yaml",
+	}
+	for _, name := range recipeFiles {
+		if err := os.WriteFile(filepath.Join(recipesDir, name), []byte("recipe: "+name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
+	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Verify all 7 recipe YAMLs were copied.
+	for _, name := range recipeFiles {
+		path := filepath.Join(cloneDir, ".goose", "recipes", name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected recipe %s to be copied", name)
+		}
+	}
+}
+
+func TestPopulateRepo_CopiesWorkflows_ExcludesCIYml(t *testing.T) {
+	cloneDir := t.TempDir()
+	agenticDir := t.TempDir()
+
+	// Create .github/workflows/ with workflow files including ci.yml.
+	workflowsDir := filepath.Join(agenticDir, ".github", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	workflowFiles := []string{
+		"ci.yml", "dev-session.yml", "feature-complete.yml",
+		"feature-design.yml", "issue-session.yml", "pr-review-session.yml",
+	}
+	for _, name := range workflowFiles {
+		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("workflow: "+name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
+	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Verify pipeline workflows were copied (5 files, NOT ci.yml).
+	expectedFiles := []string{"dev-session.yml", "feature-complete.yml", "feature-design.yml", "issue-session.yml", "pr-review-session.yml"}
+	for _, name := range expectedFiles {
+		path := filepath.Join(cloneDir, ".github", "workflows", name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected workflow %s to be copied", name)
+		}
+	}
+
+	// Verify ci.yml was NOT copied.
+	ciPath := filepath.Join(cloneDir, ".github", "workflows", "ci.yml")
+	if _, err := os.Stat(ciPath); err == nil {
+		t.Error("ci.yml should NOT be copied to the domain repo")
+	}
+}
+
+func TestPopulateRepo_UpdatesGitignore(t *testing.T) {
+	cloneDir := t.TempDir()
+	agenticDir := t.TempDir()
+
+	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
+	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(cloneDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("expected .gitignore to be created: %v", err)
+	}
+	content := string(data)
+	for _, entry := range []string{".goose/config/", ".goose/data/", ".goose/state/"} {
+		if !strings.Contains(content, entry) {
+			t.Errorf(".gitignore should contain %q, got:\n%s", entry, content)
+		}
+	}
+}
+
+func TestPopulateRepo_GitignoreIdempotent(t *testing.T) {
+	cloneDir := t.TempDir()
+	agenticDir := t.TempDir()
+
+	// Pre-create a .gitignore with the entries.
+	existing := ".goose/config/\n.goose/data/\n.goose/state/\n"
+	if err := os.WriteFile(filepath.Join(cloneDir, ".gitignore"), []byte(existing), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
+	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(cloneDir, ".gitignore"))
+	content := string(data)
+	// Should not duplicate entries.
+	if strings.Count(content, ".goose/config/") != 1 {
+		t.Errorf("expected .goose/config/ once, got:\n%s", content)
+	}
+}
+
 // --------------------------------------------------------------------------------------
 // Step 5 — RegisterInREPOS
 // --------------------------------------------------------------------------------------
