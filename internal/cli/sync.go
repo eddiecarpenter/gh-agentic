@@ -14,6 +14,7 @@ import (
 // newSyncCmd constructs the `gh agentic sync` subcommand.
 func newSyncCmd() *cobra.Command {
 	var force bool
+	var yes bool
 
 	cmd := &cobra.Command{
 		Use:   "sync",
@@ -21,7 +22,8 @@ func newSyncCmd() *cobra.Command {
 		Long: "Syncs the base/ directory from the upstream agentic-development template.\n" +
 			"Reads TEMPLATE_SOURCE and TEMPLATE_VERSION to determine what to sync.\n" +
 			"Shows a diff and asks for confirmation before committing.\n" +
-			"Pass --force to re-sync even when already at the latest version.",
+			"Pass --force to re-sync even when already at the latest version.\n" +
+			"Pass --yes to automatically confirm all prompts.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
@@ -34,19 +36,28 @@ func newSyncCmd() *cobra.Command {
 				}
 			}
 
+			confirmFn := sync.DefaultConfirm
+			if yes {
+				confirmFn = func(prompt string) (bool, error) {
+					fmt.Fprintf(w, "  %s [y/N]: y\n", prompt)
+					return true, nil
+				}
+			}
+
 			return sync.RunSync(
 				w,
 				repoRoot,
 				bootstrap.DefaultRunCommand,
 				sync.DefaultFetchRelease,
 				sync.DefaultSpinner,
-				sync.DefaultConfirm,
+				confirmFn,
 				force,
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "re-sync even if already at the latest version")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all prompts")
 	return cmd
 }
 
