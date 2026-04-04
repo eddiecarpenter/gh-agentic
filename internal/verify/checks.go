@@ -173,7 +173,7 @@ func CheckBaseDir(root string, run bootstrap.RunCommandFunc) CheckResult {
 // CheckBaseRecipes verifies that base/skills/*.md files exist and are unmodified.
 // Uses RunCommandFunc for git operations.
 func CheckBaseRecipes(root string, run bootstrap.RunCommandFunc) CheckResult {
-	recipesPath := filepath.Join(root, "base", "recipes")
+	recipesPath := filepath.Join(root, "base", "skills")
 	if _, err := os.Stat(recipesPath); os.IsNotExist(err) {
 		return CheckResult{
 			Name:    "base/skills/*.md unmodified",
