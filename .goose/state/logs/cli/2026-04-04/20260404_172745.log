@@ -1,4 +1,0 @@
-{"timestamp":"2026-04-04T04:27:45.833886Z","level":"INFO","fields":{"message":"CLI command executed","monotonic_counter.goose.cli_commands":1,"command":"run"},"target":"goose_cli::cli"}
-{"timestamp":"2026-04-04T04:27:45.835145Z","level":"INFO","fields":{"message":"Recipe execution started","monotonic_counter.goose.recipe_runs":1,"recipe_name":"dev-session.yaml","recipe_version":"1.0.0","session_type":"recipe","interface":"cli"},"target":"goose_cli::cli"}
-{"timestamp":"2026-04-04T04:27:46.643373Z","level":"INFO","fields":{"message":"🤖 Using model: default"},"target":"goose_cli::session::builder"}
-{"timestamp":"2026-04-04T04:27:47.073714Z","level":"INFO","fields":{"message":"Headless session started","monotonic_counter.goose.session_starts":1,"session_type":"recipe","interactive":false},"target":"goose_cli::cli"}
