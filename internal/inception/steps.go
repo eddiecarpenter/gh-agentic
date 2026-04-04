@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/fsutil"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -247,6 +249,44 @@ func PopulateRepo(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvC
 		return fmt.Errorf("writing README.md: %w", err)
 	}
 
+	// Copy base/ from the agentic repo into the domain repo.
+	baseSrc := filepath.Join(env.AgenticRepoRoot, "base")
+	baseDst := filepath.Join(state.ClonePath, "base")
+	if _, err := os.Stat(baseSrc); err == nil {
+		if err := fsutil.CopyDir(baseSrc, baseDst); err != nil {
+			return fmt.Errorf("copying base/: %w", err)
+		}
+	}
+
+	// Copy .goose/recipes/*.yaml from the agentic repo.
+	gooseRecipesSrc := filepath.Join(env.AgenticRepoRoot, ".goose", "recipes")
+	gooseRecipesDst := filepath.Join(state.ClonePath, ".goose", "recipes")
+	if _, err := os.Stat(gooseRecipesSrc); err == nil {
+		if err := os.MkdirAll(gooseRecipesDst, 0755); err != nil {
+			return fmt.Errorf("creating .goose/recipes/: %w", err)
+		}
+		if err := copyGlobFiles(gooseRecipesSrc, gooseRecipesDst, "*.yaml"); err != nil {
+			return fmt.Errorf("copying .goose/recipes/: %w", err)
+		}
+	}
+
+	// Copy .github/workflows/*.yml from the agentic repo, excluding ci.yml.
+	workflowsSrc := filepath.Join(env.AgenticRepoRoot, ".github", "workflows")
+	workflowsDst := filepath.Join(state.ClonePath, ".github", "workflows")
+	if _, err := os.Stat(workflowsSrc); err == nil {
+		if err := os.MkdirAll(workflowsDst, 0755); err != nil {
+			return fmt.Errorf("creating .github/workflows/: %w", err)
+		}
+		if err := copyGlobFilesExcluding(workflowsSrc, workflowsDst, "*.yml", []string{"ci.yml"}); err != nil {
+			return fmt.Errorf("copying .github/workflows/: %w", err)
+		}
+	}
+
+	// Update .gitignore with Goose session directories.
+	if err := appendGooseGitignore(state.ClonePath); err != nil {
+		return fmt.Errorf("updating .gitignore: %w", err)
+	}
+
 	// Stage, commit, and push.
 	out, err := runInDir(run, state.ClonePath, "git", "add", "-A")
 	if err != nil {
@@ -346,6 +386,120 @@ func PrintSummary(w io.Writer, cfg *InceptionConfig, state *StepState) {
 // --------------------------------------------------------------------------------------
 // Internal helpers
 // --------------------------------------------------------------------------------------
+
+// gooseGitignoreEntries are the Goose session directories to add to .gitignore.
+var gooseGitignoreEntries = []string{
+	".goose/config/",
+	".goose/data/",
+	".goose/state/",
+}
+
+// copyGlobFiles copies files matching a glob pattern from src to dst.
+func copyGlobFiles(src, dst, pattern string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		matched, err := filepath.Match(pattern, d.Name())
+		if err != nil {
+			return err
+		}
+		if !matched {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dst, d.Name()), data, info.Mode())
+	})
+}
+
+// copyGlobFilesExcluding copies files matching a glob pattern from src to dst,
+// excluding any files whose names appear in the exclude list.
+func copyGlobFilesExcluding(src, dst, pattern string, exclude []string) error {
+	excludeSet := make(map[string]bool, len(exclude))
+	for _, name := range exclude {
+		excludeSet[name] = true
+	}
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if excludeSet[d.Name()] {
+			return nil
+		}
+		matched, err := filepath.Match(pattern, d.Name())
+		if err != nil {
+			return err
+		}
+		if !matched {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dst, d.Name()), data, info.Mode())
+	})
+}
+
+// appendGooseGitignore appends Goose session directories to .gitignore in the
+// given repo root if they are not already present.
+func appendGooseGitignore(repoRoot string) error {
+	gitignorePath := filepath.Join(repoRoot, ".gitignore")
+
+	existing := ""
+	if data, err := os.ReadFile(gitignorePath); err == nil {
+		existing = string(data)
+	}
+
+	var toAdd []string
+	for _, entry := range gooseGitignoreEntries {
+		if !strings.Contains(existing, entry) {
+			toAdd = append(toAdd, entry)
+		}
+	}
+
+	if len(toAdd) == 0 {
+		return nil
+	}
+
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Add a newline separator if file doesn't end with one.
+	if existing != "" && !strings.HasSuffix(existing, "\n") {
+		if _, err := f.WriteString("\n"); err != nil {
+			return err
+		}
+	}
+
+	for _, entry := range toAdd {
+		if _, err := f.WriteString(entry + "\n"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
 
 // runInDir wraps RunCommandFunc so that the command runs with the given working directory.
 func runInDir(run bootstrap.RunCommandFunc, dir string, name string, args ...string) (string, error) {

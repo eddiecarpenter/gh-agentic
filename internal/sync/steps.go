@@ -2,12 +2,12 @@ package sync
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/fsutil"
 )
 
 // backupSuffix is the directory name suffix used for the base/ backup.
@@ -37,7 +37,7 @@ func BackupBase(repoRoot string) (string, error) {
 		return "", fmt.Errorf("creating backup directory: %w", err)
 	}
 
-	if err := copyDir(src, filepath.Join(backupDir, "base")); err != nil {
+	if err := fsutil.CopyDir(src, filepath.Join(backupDir, "base")); err != nil {
 		_ = os.RemoveAll(backupDir)
 		return "", fmt.Errorf("backing up base/: %w", err)
 	}
@@ -60,7 +60,7 @@ func CopyBase(tmpDir, repoRoot string) error {
 		return fmt.Errorf("removing existing base/: %w", err)
 	}
 
-	if err := copyDir(src, dst); err != nil {
+	if err := fsutil.CopyDir(src, dst); err != nil {
 		return fmt.Errorf("copying base/: %w", err)
 	}
 
@@ -122,7 +122,7 @@ func RestoreBase(repoRoot, backupDir string) error {
 		return fmt.Errorf("removing base/ for restore: %w", err)
 	}
 
-	if err := copyDir(src, dst); err != nil {
+	if err := fsutil.CopyDir(src, dst); err != nil {
 		return fmt.Errorf("restoring base/: %w", err)
 	}
 
@@ -140,38 +140,6 @@ func CleanupTemp(tmpDir string) error {
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
-
-// copyDir recursively copies src to dst, preserving file permissions.
-func copyDir(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-
-		target := filepath.Join(dst, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		return os.WriteFile(target, data, info.Mode())
-	})
-}
 
 // runInDir runs a command in the given directory via bash -c.
 func runInDir(run bootstrap.RunCommandFunc, dir string, name string, args ...string) (string, error) {
