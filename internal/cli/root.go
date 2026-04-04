@@ -19,7 +19,13 @@ func newRootCmd(version string) *cobra.Command {
 	root.AddCommand(newBootstrapCmd())
 	root.AddCommand(newInceptionCmd())
 	root.AddCommand(newSyncCmd())
-	root.AddCommand(newVerifyCmd())
+	doctorCmd := newDoctorCmd()
+	root.AddCommand(doctorCmd)
+	// "verify" is a hidden alias for backwards compatibility.
+	verifyAlias := *doctorCmd
+	verifyAlias.Use = "verify"
+	verifyAlias.Hidden = true
+	root.AddCommand(&verifyAlias)
 	return root
 }
 

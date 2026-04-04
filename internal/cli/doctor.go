@@ -14,20 +14,21 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/verify"
 )
 
-// newVerifyCmd constructs the `gh agentic verify` subcommand.
-func newVerifyCmd() *cobra.Command {
+// newDoctorCmd constructs the `gh agentic doctor` subcommand.
+func newDoctorCmd() *cobra.Command {
 	var repair bool
 
 	cmd := &cobra.Command{
-		Use:   "verify",
-		Short: "Verify an agentic environment for correctness",
+		Use:          "doctor",
+		Short:        "Check an agentic environment for correctness",
+		SilenceUsage: true,
 		Long: "Checks an existing agentic environment for correctness and repairs\n" +
 			"what it can automatically. Each check shows ✔ pass, ⚠ warning, or ✖ fail.\n" +
 			"Pass --repair to attempt automatic fixes for failed checks.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
-			fmt.Fprintln(w, ui.SectionHeading.Render("  Verify — check agentic environment"))
+			fmt.Fprintln(w, ui.SectionHeading.Render("  Doctor — check agentic environment"))
 			fmt.Fprintln(w)
 
 			// Resolve repo root. If TEMPLATE_SOURCE is not found (repo predates
@@ -127,11 +128,14 @@ func newVerifyCmd() *cobra.Command {
 				}
 			}
 
-			return verify.RunVerify(w, checks, repairFn)
+			if err := verify.RunVerify(w, checks, repairFn); err != nil {
+				fmt.Fprintln(w, "  Run 'gh agentic doctor --repair' to attempt automatic fixes.")
+				return err
+			}
+			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&repair, "repair", false, "attempt automatic repair of failed checks")
 	return cmd
 }
-
