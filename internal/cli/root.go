@@ -21,6 +21,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.AddCommand(newBootstrapCmd())
 	root.AddCommand(newInceptionCmd())
+	root.AddCommand(newSyncCmd())
 	return root
 }
 
