@@ -237,7 +237,12 @@ func TestCommitSync(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		var calls []string
 		run := func(name string, args ...string) (string, error) {
-			calls = append(calls, name+" "+strings.Join(args, " "))
+			joined := name + " " + strings.Join(args, " ")
+			calls = append(calls, joined)
+			// Simulate staged changes: git diff --cached --quiet exits non-zero.
+			if strings.Contains(joined, "diff") && strings.Contains(joined, "--cached") {
+				return "", fmt.Errorf("exit 1")
+			}
 			return "", nil
 		}
 
@@ -246,8 +251,8 @@ func TestCommitSync(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(calls) != 2 {
-			t.Fatalf("expected 2 calls, got %d: %v", len(calls), calls)
+		if len(calls) != 3 {
+			t.Fatalf("expected 3 calls, got %d: %v", len(calls), calls)
 		}
 
 		// Verify git add was called.
@@ -255,9 +260,33 @@ func TestCommitSync(t *testing.T) {
 			t.Errorf("first call should be git add: %s", calls[0])
 		}
 
+		// Verify git diff --cached --quiet was called.
+		if !strings.Contains(calls[1], "diff") || !strings.Contains(calls[1], "--cached") {
+			t.Errorf("second call should be git diff --cached: %s", calls[1])
+		}
+
 		// Verify git commit was called with correct message.
-		if !strings.Contains(calls[1], "commit") || !strings.Contains(calls[1], "sync base/") {
-			t.Errorf("second call should be git commit: %s", calls[1])
+		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync base/") {
+			t.Errorf("third call should be git commit: %s", calls[2])
+		}
+	})
+
+	t.Run("nothing to commit", func(t *testing.T) {
+		var calls []string
+		run := func(name string, args ...string) (string, error) {
+			joined := name + " " + strings.Join(args, " ")
+			calls = append(calls, joined)
+			// git diff --cached --quiet exits 0 = nothing staged.
+			return "", nil
+		}
+
+		err := CommitSync("/repo", "owner/template", "v0.2.0", run)
+		if err != nil {
+			t.Fatalf("expected nil when nothing to commit, got: %v", err)
+		}
+
+		if len(calls) != 2 {
+			t.Fatalf("expected 2 calls (add + diff check), got %d: %v", len(calls), calls)
 		}
 	})
 

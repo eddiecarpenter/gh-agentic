@@ -93,10 +93,16 @@ func UpdateVersion(repoRoot, version string) error {
 }
 
 // CommitSync stages base/ and TEMPLATE_VERSION, then commits with a descriptive message.
+// If nothing changed after staging, the commit is skipped cleanly.
 func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) error {
 	// Stage changes.
 	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION"); err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	// Check if anything is actually staged — exit 0 means no diff (nothing to commit).
+	if _, err := runInDir(run, repoRoot, "git", "diff", "--cached", "--quiet"); err == nil {
+		return nil
 	}
 
 	// Commit.
