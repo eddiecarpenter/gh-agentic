@@ -24,11 +24,8 @@ builds:
         goarch: arm64
 
 archives:
-  - formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
-    name_template: "gh-agentic_{{ .Os }}_{{ .Arch }}"
+  - formats: [binary]
+    name_template: "gh-agentic-{{ .Os }}-{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"
