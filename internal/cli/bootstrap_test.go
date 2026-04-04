@@ -8,7 +8,7 @@ import (
 
 func TestBootstrapCmd_Help(t *testing.T) {
 	buf := &bytes.Buffer{}
-	root := newRootCmd()
+	root := newRootCmd("dev")
 	root.SetOut(buf)
 	root.SetErr(buf)
 	root.SetArgs([]string{"bootstrap", "--help"})
@@ -29,7 +29,7 @@ func TestBootstrapCmd_Run_SubcommandRegistered(t *testing.T) {
 	// The full RunE path (preflight → form → execution) is covered by
 	// internal/bootstrap package tests using injected dependencies.
 	buf := &bytes.Buffer{}
-	root := newRootCmd()
+	root := newRootCmd("dev")
 	root.SetOut(buf)
 	root.SetErr(buf)
 	root.SetArgs([]string{"bootstrap", "--help"})

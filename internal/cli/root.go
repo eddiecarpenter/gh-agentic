@@ -7,17 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is the current release version of gh-agentic.
-const Version = "0.1.0"
-
 // newRootCmd constructs a fresh root cobra command. Called by Execute and in
 // tests so that each invocation starts from a clean command tree.
-func newRootCmd() *cobra.Command {
+func newRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:     "gh-agentic",
-		Short:   "Agentic development framework — environment management for gh",
-		Long:    "gh-agentic bootstraps and manages agentic development environments via the GitHub CLI.",
-		Version: Version,
+		Short:   "Agentic software delivery — environment management for gh",
+		Long:    "gh-agentic bootstraps and manages agentic software delivery environments via the GitHub CLI.",
+		Version: version,
 	}
 	root.AddCommand(newBootstrapCmd())
 	root.AddCommand(newInceptionCmd())
@@ -27,6 +24,6 @@ func newRootCmd() *cobra.Command {
 }
 
 // Execute builds and runs the root command. Called by main.go.
-func Execute() error {
-	return newRootCmd().Execute()
+func Execute(version string) error {
+	return newRootCmd(version).Execute()
 }

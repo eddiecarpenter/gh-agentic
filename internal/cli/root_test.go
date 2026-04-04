@@ -6,15 +6,9 @@ import (
 	"testing"
 )
 
-func TestVersion_Constant(t *testing.T) {
-	if Version == "" {
-		t.Error("Version must not be empty")
-	}
-}
-
 func TestExecute_Help(t *testing.T) {
 	buf := &bytes.Buffer{}
-	cmd := newRootCmd()
+	cmd := newRootCmd("dev")
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
 	cmd.SetArgs([]string{"--help"})
@@ -32,7 +26,7 @@ func TestExecute_Help(t *testing.T) {
 
 func TestExecute_Version(t *testing.T) {
 	buf := &bytes.Buffer{}
-	cmd := newRootCmd()
+	cmd := newRootCmd("v0.1.0-test")
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
 	cmd.SetArgs([]string{"--version"})
@@ -41,7 +35,7 @@ func TestExecute_Version(t *testing.T) {
 	_ = cmd.Execute()
 
 	out := buf.String()
-	if !strings.Contains(out, Version) {
-		t.Errorf("expected --version output to contain %q, got: %s", Version, out)
+	if !strings.Contains(out, "v0.1.0-test") {
+		t.Errorf("expected --version output to contain %q, got: %s", "v0.1.0-test", out)
 	}
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func TestSyncCmd_Registration(t *testing.T) {
-	root := newRootCmd()
+	root := newRootCmd("dev")
 
 	// Verify sync subcommand exists.
 	found := false
@@ -24,7 +24,7 @@ func TestSyncCmd_Registration(t *testing.T) {
 }
 
 func TestSyncCmd_HelpText(t *testing.T) {
-	root := newRootCmd()
+	root := newRootCmd("dev")
 
 	var buf bytes.Buffer
 	root.SetOut(&buf)
