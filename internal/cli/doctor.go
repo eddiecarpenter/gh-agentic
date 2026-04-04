@@ -17,6 +17,7 @@ import (
 // newDoctorCmd constructs the `gh agentic doctor` subcommand.
 func newDoctorCmd() *cobra.Command {
 	var repair bool
+	var yes bool
 
 	cmd := &cobra.Command{
 		Use:          "doctor",
@@ -24,7 +25,8 @@ func newDoctorCmd() *cobra.Command {
 		SilenceUsage: true,
 		Long: "Checks an existing agentic environment for correctness and repairs\n" +
 			"what it can automatically. Each check shows ✔ pass, ⚠ warning, or ✖ fail.\n" +
-			"Pass --repair to attempt automatic fixes for failed checks.",
+			"Pass --repair to attempt automatic fixes for failed checks.\n" +
+			"Pass --yes to automatically confirm all repair prompts.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
@@ -55,7 +57,14 @@ func newDoctorCmd() *cobra.Command {
 			repoFullName := owner + "/" + repoName
 
 			// Confirm functions for repair interactions.
+			// When --yes is set, all prompts are auto-confirmed.
 			textConfirm := func(prompt string) (string, error) {
+				if yes {
+					// Text prompts require a value — --yes cannot supply one.
+					// Return empty so the repair reports a clear skip.
+					fmt.Fprintf(w, "  %s: [skipped — provide value manually]\n", prompt)
+					return "", nil
+				}
 				fmt.Fprintf(w, "  %s: ", prompt)
 				scanner := bufio.NewScanner(cmd.InOrStdin())
 				if scanner.Scan() {
@@ -64,6 +73,10 @@ func newDoctorCmd() *cobra.Command {
 				return "", scanner.Err()
 			}
 			boolConfirm := func(prompt string) (bool, error) {
+				if yes {
+					fmt.Fprintf(w, "  %s [y/N]: y\n", prompt)
+					return true, nil
+				}
 				fmt.Fprintf(w, "  %s [y/N]: ", prompt)
 				scanner := bufio.NewScanner(cmd.InOrStdin())
 				if scanner.Scan() {
@@ -129,7 +142,7 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			if err := verify.RunVerify(w, checks, repairFn); err != nil {
-				fmt.Fprintln(w, "  Run 'gh agentic doctor --repair' to attempt automatic fixes.")
+				fmt.Fprintln(w, "  Run 'gh agentic doctor --repair --yes' to attempt automatic fixes.")
 				return ErrSilent
 			}
 			return nil
@@ -137,5 +150,6 @@ func newDoctorCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&repair, "repair", false, "attempt automatic repair of failed checks")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all repair prompts")
 	return cmd
 }
