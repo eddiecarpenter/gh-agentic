@@ -296,8 +296,21 @@ func RepairBaseDirWithWriter(w io.Writer, root string, run bootstrap.RunCommandF
 
 // RepairBaseRecipes restores base/skills/ to its committed state after prompting.
 func RepairBaseRecipes(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
+	skillsDir := filepath.Join(root, "base", "skills")
+
+	// If base/skills/ is simply absent (e.g. base/ was just synced this run
+	// and the directory now exists on disk via the sync commit), there is
+	// nothing to restore — the files are already correct.
+	if _, err := os.Stat(skillsDir); err == nil {
+		return CheckResult{
+			Name:   "base/skills/*.md unmodified",
+			Status: Pass,
+		}
+	}
+
+	// base/skills/ is absent and not on disk — try to restore from git.
 	if confirmFn != nil {
-		ok, err := confirmFn("base/skills/ has local modifications — restore from git?")
+		ok, err := confirmFn("base/skills/ is missing — restore from git?")
 		if err != nil || !ok {
 			return CheckResult{
 				Name:    "base/skills/*.md unmodified",
