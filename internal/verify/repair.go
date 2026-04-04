@@ -2,12 +2,14 @@ package verify
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
 // ConfirmFunc prompts the user for a text input and returns the value.
@@ -244,6 +246,11 @@ type BoolConfirmFunc func(prompt string) (bool, error)
 // RepairBaseDir re-syncs base/ from the template after prompting the user.
 // run is injected for git operations, confirmFn for user prompt.
 func RepairBaseDir(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
+	return RepairBaseDirWithWriter(io.Discard, root, run, confirmFn)
+}
+
+// RepairBaseDirWithWriter is like RepairBaseDir but writes sync output to w.
+func RepairBaseDirWithWriter(w io.Writer, root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
 	if confirmFn != nil {
 		ok, err := confirmFn("base/ has issues — re-sync from template?")
 		if err != nil || !ok {
@@ -257,13 +264,14 @@ func RepairBaseDir(root string, run bootstrap.RunCommandFunc, confirmFn BoolConf
 
 	baseDir := filepath.Join(root, "base")
 	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
-		// base/ has never been synced — run 'gh agentic sync' to populate it.
-		_, runErr := run("gh", "agentic", "sync")
-		if runErr != nil {
+		// base/ has never been synced — call sync.RunSync directly with force=true
+		// and an auto-confirm so it runs non-interactively.
+		autoConfirm := func(_ string) (bool, error) { return true, nil }
+		if syncErr := sync.RunSync(w, root, run, sync.DefaultFetchRelease, sync.DefaultSpinner, autoConfirm, true); syncErr != nil {
 			return CheckResult{
 				Name:    "base/ exists and is unmodified",
 				Status:  Fail,
-				Message: fmt.Sprintf("sync failed: %v", runErr),
+				Message: fmt.Sprintf("sync failed: %v", syncErr),
 			}
 		}
 	} else {

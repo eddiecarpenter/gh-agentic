@@ -109,17 +109,17 @@ func newDoctorCmd() *cobra.Command {
 						r = verify.RepairREPOSMD(root)
 					case "README.md exists":
 						r = verify.RepairREADMEMD(root)
-					case "base/ directory integrity":
-						r = verify.RepairBaseDir(root, run, boolConfirm)
-					case "base/skills/ integrity":
+					case "base/ exists and is unmodified":
+						r = verify.RepairBaseDirWithWriter(w, root, run, boolConfirm)
+					case "base/skills/*.md unmodified":
 						r = verify.RepairBaseRecipes(root, run, boolConfirm)
 					case ".goose/recipes/ exists and complete":
 						r = verify.RepairGooseRecipes(root)
 					case ".github/workflows/ exists and complete":
 						r = verify.RepairWorkflows(root)
-					case "GitHub labels configured":
+					case "Standard labels present":
 						r = verify.RepairLabels(repoFullName, run)
-					case "GitHub Project exists":
+					case "GitHub Project linked":
 						r = verify.RepairProject(owner, repoName, run)
 					default:
 						return nil
