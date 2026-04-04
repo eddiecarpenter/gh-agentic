@@ -168,6 +168,10 @@ func TestRepairREADMEMD_CreatesFile(t *testing.T) {
 
 func TestRepairBaseDir_UserConfirms_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
+	// Create base/ so the repair takes the git-checkout path (not sync).
+	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
