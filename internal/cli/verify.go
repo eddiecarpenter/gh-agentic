@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -28,10 +29,17 @@ func newVerifyCmd() *cobra.Command {
 			fmt.Fprintln(w, ui.SectionHeading.Render("  Verify — check agentic environment"))
 			fmt.Fprintln(w)
 
-			// Resolve repo root.
+			// Resolve repo root. If TEMPLATE_SOURCE is not found (repo predates
+			// the extension), fall back to cwd — TEMPLATE_SOURCE missing will
+			// surface as a failed check that --repair can fix.
 			root, err := findRepoRoot()
 			if err != nil {
-				return err
+				root, err = os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolving working directory: %w", err)
+				}
+				fmt.Fprintln(w, "  "+ui.RenderWarning("TEMPLATE_SOURCE not found — using current directory as root"))
+				fmt.Fprintln(w)
 			}
 
 			// Resolve repo full name (owner/repo) and owner from gh.
