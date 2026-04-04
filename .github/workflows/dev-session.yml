@@ -1,4 +1,4 @@
-name: Dev Session
+name: Dev Session (Stage 4)
 
 on:
   issues:
@@ -6,8 +6,9 @@ on:
 
 jobs:
   dev-session:
-    if: github.event.label.name == 'in-development' && contains(github.event.issue.labels.*.name, 'feature')
-    runs-on: ubuntu-latest
+    name: Dev Session
+    if: contains(github.event.issue.labels.*.name, 'feature') && github.event.label.name == 'in-development'
+    runs-on: self-hosted
     permissions:
       contents: write
       issues: write
@@ -17,7 +18,7 @@ jobs:
       - name: Resolve feature branch
         id: branch
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
           ISSUE=${{ github.event.issue.number }}
           BRANCH=$(gh api repos/${{ github.repository }}/branches \
@@ -28,51 +29,70 @@ jobs:
           fi
           echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           ref: ${{ steps.branch.outputs.name }}
           fetch-depth: 0
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
 
-      - name: Configure git
+      - name: Configure environment
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Install Goose CLI
-        run: |
-          curl -fsSL https://github.com/block/goose/releases/latest/download/download_cli.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          git config user.name "goose-agent"
+          git config user.email "270002424+goose-agent@users.noreply.github.com"
 
       - name: Run dev-session recipe
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: goose
         run: |
-          goose run \
-            --recipe .goose/recipes/dev-session.yaml \
-            --params feature_issue=${{ github.event.issue.number }} \
-            --params branch_name=${{ steps.branch.outputs.name }} \
-            --params repo=${{ github.repository }}
+          BRANCH="${{ steps.branch.outputs.name }}"
+          # Retry up to 3 times to handle transient Claude Code rate-limit errors.
+          # Each retry picks up from the last committed task.
+          for attempt in 1 2 3; do
+            echo "--- Dev session attempt ${attempt} ---"
+            goose run \
+              --recipe .goose/recipes/dev-session.yaml \
+              --params feature_issue=${{ github.event.issue.number }} \
+              --params branch_name=${BRANCH} \
+              --params repo=${{ github.repository }} && break
+            EXIT_CODE=$?
+            if [ $attempt -lt 3 ]; then
+              echo "Attempt ${attempt} failed (exit ${EXIT_CODE}). Waiting 60s before retry..."
+              sleep 60
+            else
+              echo "All ${attempt} attempts failed."
+              exit $EXIT_CODE
+            fi
+          done
+        env:
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.goose
+          GOOSE_PROVIDER: claude-code
+          GOOSE_MODEL: default
+          GOOSE_MODE: auto
+          GOOSE_DISABLE_SESSION_NAMING: "true"
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Push branch
+        if: success()
         run: git push origin ${{ steps.branch.outputs.name }}
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Open PR
-        id: pr
+        if: success()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
-          PR_URL=$(gh pr create \
+          gh pr create \
             --title "feat: ${{ github.event.issue.title }}" \
             --body "Closes #${{ github.event.issue.number }}" \
             --base main \
-            --head ${{ steps.branch.outputs.name }})
-          echo "url=$PR_URL" >> $GITHUB_OUTPUT
-          echo "PR opened: $PR_URL"
+            --head ${{ steps.branch.outputs.name }}
 
       - name: Apply in-review label
+        if: success()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
           gh issue edit ${{ github.event.issue.number }} \
             --remove-label "in-development" \

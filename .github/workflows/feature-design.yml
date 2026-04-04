@@ -1,4 +1,4 @@
-name: Feature Design
+name: Feature Design (Stage 3)
 
 on:
   issues:
@@ -6,26 +6,37 @@ on:
 
 jobs:
   feature-design:
-    if: github.event.label.name == 'in-design' && contains(github.event.issue.labels.*.name, 'feature')
-    runs-on: ubuntu-latest
+    name: Feature Design Session
+    if: contains(github.event.issue.labels.*.name, 'feature') && github.event.label.name == 'in-design'
+    runs-on: self-hosted
     permissions:
       contents: write
       issues: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
 
-      - name: Install Goose CLI
+      - name: Configure environment
         run: |
-          curl -fsSL https://github.com/block/goose/releases/latest/download/download_cli.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          git config user.name "goose-agent"
+          git config user.email "270002424+goose-agent@users.noreply.github.com"
 
       - name: Run feature-design recipe
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           goose run \
             --recipe .goose/recipes/feature-design.yaml \
             --params feature_issue=${{ github.event.issue.number }} \
             --params repo=${{ github.repository }}
+        env:
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.goose
+          GOOSE_PROVIDER: claude-code
+          GOOSE_MODEL: default
+          GOOSE_MODE: auto
+          GOOSE_DISABLE_SESSION_NAMING: "true"
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
