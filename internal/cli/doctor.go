@@ -130,7 +130,7 @@ func newDoctorCmd() *cobra.Command {
 
 			if err := verify.RunVerify(w, checks, repairFn); err != nil {
 				fmt.Fprintln(w, "  Run 'gh agentic doctor --repair' to attempt automatic fixes.")
-				return err
+				return ErrSilent
 			}
 			return nil
 		},
