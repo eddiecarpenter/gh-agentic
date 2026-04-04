@@ -255,13 +255,26 @@ func RepairBaseDir(root string, run bootstrap.RunCommandFunc, confirmFn BoolConf
 		}
 	}
 
-	// Reset base/ to HEAD to discard local modifications.
-	_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/", strings.ReplaceAll(root, "'", "'\\''")))
-	if err != nil {
-		return CheckResult{
-			Name:    "base/ exists and is unmodified",
-			Status:  Fail,
-			Message: fmt.Sprintf("git checkout failed: %v", err),
+	baseDir := filepath.Join(root, "base")
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		// base/ has never been synced — run 'gh agentic sync' to populate it.
+		_, runErr := run("gh", "agentic", "sync")
+		if runErr != nil {
+			return CheckResult{
+				Name:    "base/ exists and is unmodified",
+				Status:  Fail,
+				Message: fmt.Sprintf("sync failed: %v", runErr),
+			}
+		}
+	} else {
+		// base/ exists but has local modifications — restore from git.
+		_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/", strings.ReplaceAll(root, "'", "'\\''")))
+		if err != nil {
+			return CheckResult{
+				Name:    "base/ exists and is unmodified",
+				Status:  Fail,
+				Message: fmt.Sprintf("git checkout failed: %v", err),
+			}
 		}
 	}
 

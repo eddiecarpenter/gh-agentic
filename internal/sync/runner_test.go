@@ -66,6 +66,7 @@ func TestRunSync_UpToDate(t *testing.T) {
 		func(_ string) (string, error) { return "v1.0.0", nil },
 		testSpinner,
 		func(_ string) (bool, error) { return false, nil },
+		false,
 	)
 
 	if err != nil {
@@ -89,6 +90,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		func(_ string) (string, error) { return "v2.0.0", nil },
 		testSpinner,
 		func(_ string) (bool, error) { return true, nil }, // confirm yes
+		false,
 	)
 
 	if err != nil {
@@ -130,6 +132,7 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		func(_ string) (string, error) { return "v2.0.0", nil },
 		testSpinner,
 		func(_ string) (bool, error) { return false, nil }, // decline
+		false,
 	)
 
 	if err != nil {
@@ -171,6 +174,7 @@ func TestRunSync_FetchError(t *testing.T) {
 		func(_ string) (string, error) { return "", fmt.Errorf("API error") },
 		testSpinner,
 		func(_ string) (bool, error) { return false, nil },
+		false,
 	)
 
 	if err == nil {
