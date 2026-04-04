@@ -232,9 +232,13 @@ func TestRepairBaseRecipes_UserDeclines_ReturnsWarning(t *testing.T) {
 
 func TestRepairGooseRecipes_CreatesDir(t *testing.T) {
 	root := t.TempDir()
+	// Write TEMPLATE_SOURCE so the repair doesn't fail early.
+	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("owner/template"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	recipesDir := filepath.Join(root, ".goose", "recipes")
 
-	// Create all expected files.
+	// Create all expected files so no fetch is needed.
 	if err := os.MkdirAll(recipesDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -250,15 +254,15 @@ func TestRepairGooseRecipes_CreatesDir(t *testing.T) {
 	}
 }
 
-func TestRepairGooseRecipes_MissingFiles_ReturnsFail(t *testing.T) {
+func TestRepairGooseRecipes_MissingSource_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	// Don't create any recipe files.
+	// No TEMPLATE_SOURCE — repair should fail with a clear message.
 	result := RepairGooseRecipes(root)
 	if result.Status != Fail {
-		t.Errorf("expected Fail for missing recipe files, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Fail when TEMPLATE_SOURCE missing, got %v: %s", result.Status, result.Message)
 	}
-	if !strings.Contains(result.Message, "gh agentic sync") {
-		t.Error("message should suggest running 'gh agentic sync'")
+	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
+		t.Error("message should mention TEMPLATE_SOURCE")
 	}
 }
 
