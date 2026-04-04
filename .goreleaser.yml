@@ -12,6 +12,7 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
+      - -X main.date={{.Date}}
     goos:
       - linux
       - darwin

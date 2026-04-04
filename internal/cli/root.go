@@ -16,17 +16,18 @@ var ErrSilent = errors.New("silent exit")
 
 // newRootCmd constructs a fresh root cobra command. Called by Execute and in
 // tests so that each invocation starts from a clean command tree.
-func newRootCmd(version string) *cobra.Command {
+func newRootCmd(version, date string) *cobra.Command {
 	root := &cobra.Command{
-		Use:          "gh-agentic",
-		Short:        "Agentic software delivery — environment management for gh",
-		Long:         "gh-agentic bootstraps and manages agentic software delivery environments via the GitHub CLI.",
-		Version:      version,
+		Use:           "gh-agentic",
+		Short:         "Agentic software delivery — environment management for gh",
+		Long:          "gh-agentic bootstraps and manages agentic software delivery environments via the GitHub CLI.",
+		Version:       version,
 		SilenceErrors: true,
 	}
 	root.AddCommand(newBootstrapCmd())
 	root.AddCommand(newInceptionCmd())
 	root.AddCommand(newSyncCmd())
+	root.AddCommand(newVersionCmd(version, date))
 	doctorCmd := newDoctorCmd()
 	root.AddCommand(doctorCmd)
 	// "verify" is a hidden alias for backwards compatibility.
@@ -38,6 +39,6 @@ func newRootCmd(version string) *cobra.Command {
 }
 
 // Execute builds and runs the root command. Called by main.go.
-func Execute(version string) error {
-	return newRootCmd(version).Execute()
+func Execute(version, date string) error {
+	return newRootCmd(version, date).Execute()
 }

@@ -8,7 +8,7 @@ import (
 
 func TestExecute_Help(t *testing.T) {
 	buf := &bytes.Buffer{}
-	cmd := newRootCmd("dev")
+	cmd := newRootCmd("dev", "")
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
 	cmd.SetArgs([]string{"--help"})
@@ -26,7 +26,7 @@ func TestExecute_Help(t *testing.T) {
 
 func TestExecute_Version(t *testing.T) {
 	buf := &bytes.Buffer{}
-	cmd := newRootCmd("v0.1.0-test")
+	cmd := newRootCmd("v0.1.0-test", "")
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
 	cmd.SetArgs([]string{"--version"})
