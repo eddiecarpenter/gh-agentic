@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
@@ -42,18 +43,15 @@ func newVerifyCmd() *cobra.Command {
 				fmt.Fprintln(w)
 			}
 
-			// Resolve repo full name (owner/repo) and owner from gh.
-			repoFullName, err := bootstrap.DefaultRunCommand("gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
+			// Resolve repo full name (owner/repo) and owner via go-gh,
+			// which reads from git remote without shelling out to gh.
+			currentRepo, err := repository.Current()
 			if err != nil {
 				return fmt.Errorf("resolving repo name: %w", err)
 			}
-			repoFullName = strings.TrimSpace(repoFullName)
-			parts := strings.SplitN(repoFullName, "/", 2)
-			owner := parts[0]
-			repoName := ""
-			if len(parts) == 2 {
-				repoName = parts[1]
-			}
+			owner := currentRepo.Owner
+			repoName := currentRepo.Name
+			repoFullName := owner + "/" + repoName
 
 			// Confirm functions for repair interactions.
 			textConfirm := func(prompt string) (string, error) {
