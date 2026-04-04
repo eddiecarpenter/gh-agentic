@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 
@@ -95,11 +96,19 @@ func RunSync(
 		return err
 	}
 
-	// Step 3: Check if up to date.
-	if IsUpToDate(cfg.CurrentVersion, cfg.LatestVersion) {
+	// Step 3: Check if up to date — but still proceed if base/ is missing.
+	baseDir := filepath.Join(repoRoot, "base")
+	baseMissing := func() bool {
+		_, err := os.Stat(baseDir)
+		return os.IsNotExist(err)
+	}()
+	if IsUpToDate(cfg.CurrentVersion, cfg.LatestVersion) && !baseMissing {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "  "+ui.RenderOK("Already up to date ("+cfg.CurrentVersion+")"))
 		return nil
+	}
+	if baseMissing {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("base/ is missing — restoring from "+cfg.CurrentVersion))
 	}
 
 	fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))
