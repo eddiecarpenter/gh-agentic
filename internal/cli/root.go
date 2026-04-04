@@ -11,10 +11,11 @@ import (
 // tests so that each invocation starts from a clean command tree.
 func newRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
-		Use:     "gh-agentic",
-		Short:   "Agentic software delivery — environment management for gh",
-		Long:    "gh-agentic bootstraps and manages agentic software delivery environments via the GitHub CLI.",
-		Version: version,
+		Use:          "gh-agentic",
+		Short:        "Agentic software delivery — environment management for gh",
+		Long:         "gh-agentic bootstraps and manages agentic software delivery environments via the GitHub CLI.",
+		Version:      version,
+		SilenceErrors: true,
 	}
 	root.AddCommand(newBootstrapCmd())
 	root.AddCommand(newInceptionCmd())
