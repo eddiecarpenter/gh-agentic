@@ -1,3 +1,5 @@
 .idea/
 *.iml
-.goose/state/logs/
+.goose/config/
+.goose/data/
+.goose/state/
