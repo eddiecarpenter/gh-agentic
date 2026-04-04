@@ -4,8 +4,15 @@
 package cli
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 )
+
+// ErrSilent is returned by subcommands that have already printed a
+// user-friendly error message. main.go checks for it and exits non-zero
+// without printing anything further.
+var ErrSilent = errors.New("silent exit")
 
 // newRootCmd constructs a fresh root cobra command. Called by Execute and in
 // tests so that each invocation starts from a clean command tree.
