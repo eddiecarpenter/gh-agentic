@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -282,5 +283,93 @@ func TestRepairWorkflows_MissingFiles_ReturnsFail(t *testing.T) {
 	result := RepairWorkflows(root)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for missing workflow files, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub remote repair tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairLabels_CreatesMissingOnly(t *testing.T) {
+	// Existing labels: only requirement and feature.
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"}]`
+	var createdLabels []string
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		// First call is gh label list, subsequent calls are gh label create.
+		if len(args) > 0 && args[0] == "label" && args[1] == "list" {
+			return labelsJSON, nil
+		}
+		if len(args) > 0 && args[0] == "label" && args[1] == "create" {
+			createdLabels = append(createdLabels, args[2])
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairLabels("owner/repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// Should have created 7 labels (9 standard - 2 existing).
+	if len(createdLabels) != 7 {
+		t.Errorf("expected 7 labels created, got %d: %v", len(createdLabels), createdLabels)
+	}
+
+	// Verify requirement and feature were NOT in the created list.
+	for _, l := range createdLabels {
+		if l == "requirement" || l == "feature" {
+			t.Errorf("should not have created existing label %q", l)
+		}
+	}
+}
+
+func TestRepairLabels_AllPresent_ReturnsPass(t *testing.T) {
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
+	fakeRun := func(name string, args ...string) (string, error) {
+		return labelsJSON, nil
+	}
+
+	result := RepairLabels("owner/repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass when all labels present, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairLabels_CreateFails_ReturnsFail(t *testing.T) {
+	labelsJSON := `[]`
+	fakeRun := func(name string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "label" && args[1] == "list" {
+			return labelsJSON, nil
+		}
+		return "", fmt.Errorf("create failed")
+	}
+
+	result := RepairLabels("owner/repo", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail when creates fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProject_Success(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := RepairProject("owner", "my-project", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProject_Fails_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("create failed")
+	}
+
+	result := RepairProject("owner", "my-project", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
 }

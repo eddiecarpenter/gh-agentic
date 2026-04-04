@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -271,6 +272,121 @@ func CheckWorkflows(root string) CheckResult {
 
 	return CheckResult{
 		Name:   ".github/workflows/ exists and complete",
+		Status: Pass,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub remote checks
+// ──────────────────────────────────────────────────────────────────────────────
+
+// standardLabels are the 9 labels required in every agentic repo.
+var standardLabels = []string{
+	"requirement", "feature", "task", "backlog", "draft",
+	"in-design", "in-development", "in-review", "done",
+}
+
+// labelEntry is used to unmarshal JSON output from `gh label list`.
+type labelEntry struct {
+	Name string `json:"name"`
+}
+
+// CheckLabels verifies that all 9 standard labels exist in the repo.
+// repoFullName is "owner/repo". run is injected for gh operations.
+func CheckLabels(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	out, err := run("gh", "label", "list", "--repo", repoFullName, "--json", "name", "--limit", "100")
+	if err != nil {
+		return CheckResult{
+			Name:    "Standard labels present",
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to list labels: %v", err),
+		}
+	}
+
+	var labels []labelEntry
+	if err := json.Unmarshal([]byte(out), &labels); err != nil {
+		return CheckResult{
+			Name:    "Standard labels present",
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to parse label JSON: %v", err),
+		}
+	}
+
+	existing := make(map[string]bool, len(labels))
+	for _, l := range labels {
+		existing[l.Name] = true
+	}
+
+	var missing []string
+	for _, name := range standardLabels {
+		if !existing[name] {
+			missing = append(missing, name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return CheckResult{
+			Name:    "Standard labels present",
+			Status:  Fail,
+			Message: fmt.Sprintf("missing: %s", strings.Join(missing, ", ")),
+		}
+	}
+
+	return CheckResult{
+		Name:   "Standard labels present",
+		Status: Pass,
+	}
+}
+
+// MissingLabels returns the list of standard labels missing from the repo.
+// This is a helper used by RepairLabels to determine which labels to create.
+func MissingLabels(repoFullName string, run bootstrap.RunCommandFunc) []string {
+	out, err := run("gh", "label", "list", "--repo", repoFullName, "--json", "name", "--limit", "100")
+	if err != nil {
+		return standardLabels // If we can't list, assume all missing.
+	}
+
+	var labels []labelEntry
+	if err := json.Unmarshal([]byte(out), &labels); err != nil {
+		return standardLabels
+	}
+
+	existing := make(map[string]bool, len(labels))
+	for _, l := range labels {
+		existing[l.Name] = true
+	}
+
+	var missing []string
+	for _, name := range standardLabels {
+		if !existing[name] {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// CheckProject verifies that a GitHub Project exists for the repo owner.
+// owner is the GitHub account/org. run is injected for gh operations.
+func CheckProject(owner string, run bootstrap.RunCommandFunc) CheckResult {
+	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "100")
+	if err != nil {
+		return CheckResult{
+			Name:    "GitHub Project linked",
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to list projects: %v", err),
+		}
+	}
+
+	if strings.TrimSpace(out) == "" || strings.TrimSpace(out) == "[]" || strings.TrimSpace(out) == "{\"projects\":[]}" {
+		return CheckResult{
+			Name:    "GitHub Project linked",
+			Status:  Fail,
+			Message: "no GitHub Project found for owner " + owner,
+		}
+	}
+
+	return CheckResult{
+		Name:   "GitHub Project linked",
 		Status: Pass,
 	}
 }

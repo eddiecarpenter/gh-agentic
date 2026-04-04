@@ -376,6 +376,62 @@ func RepairWorkflows(root string) CheckResult {
 	}
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub remote repairs
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RepairLabels creates only the missing standard labels in the repo.
+// repoFullName is "owner/repo". run is injected for gh operations.
+func RepairLabels(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	missing := MissingLabels(repoFullName, run)
+	if len(missing) == 0 {
+		return CheckResult{
+			Name:   "Standard labels present",
+			Status: Pass,
+		}
+	}
+
+	var failed []string
+	for _, label := range missing {
+		_, err := run("gh", "label", "create", label, "--repo", repoFullName, "--force")
+		if err != nil {
+			failed = append(failed, label)
+		}
+	}
+
+	if len(failed) > 0 {
+		return CheckResult{
+			Name:    "Standard labels present",
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to create: %s", strings.Join(failed, ", ")),
+		}
+	}
+
+	return CheckResult{
+		Name:   "Standard labels present",
+		Status: Pass,
+	}
+}
+
+// RepairProject creates a GitHub Project for the owner.
+// owner is the GitHub account/org, repoName is the project title.
+// run is injected for gh operations.
+func RepairProject(owner string, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	_, err := run("gh", "project", "create", "--owner", owner, "--title", repoName)
+	if err != nil {
+		return CheckResult{
+			Name:    "GitHub Project linked",
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to create project: %v", err),
+		}
+	}
+
+	return CheckResult{
+		Name:   "GitHub Project linked",
+		Status: Pass,
+	}
+}
+
 // copyDir recursively copies src to dst, preserving file permissions.
 func copyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {

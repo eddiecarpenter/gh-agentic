@@ -360,3 +360,114 @@ func TestCheckBaseDir_GitFails_ReturnsWarning(t *testing.T) {
 		t.Errorf("expected Warning when git fails, got %v: %s", result.Status, result.Message)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub remote check tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckLabels_AllPresent_ReturnsPass(t *testing.T) {
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
+	fakeRun := func(name string, args ...string) (string, error) {
+		return labelsJSON, nil
+	}
+
+	result := CheckLabels("owner/repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckLabels_SomeMissing_ReturnsFail(t *testing.T) {
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"}]`
+	fakeRun := func(name string, args ...string) (string, error) {
+		return labelsJSON, nil
+	}
+
+	result := CheckLabels("owner/repo", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if result.Message == "" {
+		t.Error("expected message listing missing labels")
+	}
+}
+
+func TestCheckLabels_CommandFails_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("network error")
+	}
+
+	result := CheckLabels("owner/repo", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail on command error, got %v", result.Status)
+	}
+}
+
+func TestCheckLabels_WithExtraLabels_ReturnsPass(t *testing.T) {
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"},{"name":"bug"},{"name":"enhancement"}]`
+	fakeRun := func(name string, args ...string) (string, error) {
+		return labelsJSON, nil
+	}
+
+	result := CheckLabels("owner/repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass with extra labels, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProject_Exists_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `{"projects":[{"title":"my-project"}]}`, nil
+	}
+
+	result := CheckProject("owner", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProject_None_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `{"projects":[]}`, nil
+	}
+
+	result := CheckProject("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProject_CommandFails_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("auth error")
+	}
+
+	result := CheckProject("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail on command error, got %v", result.Status)
+	}
+}
+
+func TestMissingLabels_AllPresent_ReturnsEmpty(t *testing.T) {
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
+	fakeRun := func(name string, args ...string) (string, error) {
+		return labelsJSON, nil
+	}
+
+	missing := MissingLabels("owner/repo", fakeRun)
+	if len(missing) != 0 {
+		t.Errorf("expected no missing labels, got %v", missing)
+	}
+}
+
+func TestMissingLabels_SomeMissing_ReturnsOnlyMissing(t *testing.T) {
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"}]`
+	fakeRun := func(name string, args ...string) (string, error) {
+		return labelsJSON, nil
+	}
+
+	missing := MissingLabels("owner/repo", fakeRun)
+	if len(missing) != 7 {
+		t.Errorf("expected 7 missing labels, got %d: %v", len(missing), missing)
+	}
+}
