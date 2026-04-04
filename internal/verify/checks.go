@@ -174,23 +174,23 @@ func CheckBaseDir(root string, run bootstrap.RunCommandFunc) CheckResult {
 	}
 }
 
-// CheckBaseRecipes verifies that base/recipes/*.md files exist and are unmodified.
+// CheckBaseRecipes verifies that base/skills/*.md files exist and are unmodified.
 // Uses RunCommandFunc for git operations.
 func CheckBaseRecipes(root string, run bootstrap.RunCommandFunc) CheckResult {
 	recipesPath := filepath.Join(root, "base", "recipes")
 	if _, err := os.Stat(recipesPath); os.IsNotExist(err) {
 		return CheckResult{
-			Name:    "base/recipes/*.md unmodified",
+			Name:    "base/skills/*.md unmodified",
 			Status:  Warning,
-			Message: "base/recipes/ directory not found",
+			Message: "base/skills/ directory not found",
 		}
 	}
 
-	// Check for modifications via git diff on base/recipes/.
-	out, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git diff HEAD -- base/recipes/", strings.ReplaceAll(root, "'", "'\\''")))
+	// Check for modifications via git diff on base/skills/.
+	out, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git diff HEAD -- base/skills/", strings.ReplaceAll(root, "'", "'\\''")))
 	if err != nil {
 		return CheckResult{
-			Name:    "base/recipes/*.md unmodified",
+			Name:    "base/skills/*.md unmodified",
 			Status:  Warning,
 			Message: "could not check git status: " + strings.TrimSpace(fmt.Sprintf("%v", err)),
 		}
@@ -198,14 +198,14 @@ func CheckBaseRecipes(root string, run bootstrap.RunCommandFunc) CheckResult {
 
 	if strings.TrimSpace(out) != "" {
 		return CheckResult{
-			Name:    "base/recipes/*.md unmodified",
+			Name:    "base/skills/*.md unmodified",
 			Status:  Warning,
-			Message: "base/recipes/ has local modifications",
+			Message: "base/skills/ has local modifications",
 		}
 	}
 
 	return CheckResult{
-		Name:   "base/recipes/*.md unmodified",
+		Name:   "base/skills/*.md unmodified",
 		Status: Pass,
 	}
 }

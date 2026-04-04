@@ -271,30 +271,30 @@ func RepairBaseDir(root string, run bootstrap.RunCommandFunc, confirmFn BoolConf
 	}
 }
 
-// RepairBaseRecipes restores base/recipes/ to its committed state after prompting.
+// RepairBaseRecipes restores base/skills/ to its committed state after prompting.
 func RepairBaseRecipes(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
 	if confirmFn != nil {
-		ok, err := confirmFn("base/recipes/ has local modifications — restore from git?")
+		ok, err := confirmFn("base/skills/ has local modifications — restore from git?")
 		if err != nil || !ok {
 			return CheckResult{
-				Name:    "base/recipes/*.md unmodified",
+				Name:    "base/skills/*.md unmodified",
 				Status:  Warning,
 				Message: "user declined restore",
 			}
 		}
 	}
 
-	_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/recipes/", strings.ReplaceAll(root, "'", "'\\''")))
+	_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/skills/", strings.ReplaceAll(root, "'", "'\\''")))
 	if err != nil {
 		return CheckResult{
-			Name:    "base/recipes/*.md unmodified",
+			Name:    "base/skills/*.md unmodified",
 			Status:  Warning,
 			Message: fmt.Sprintf("git checkout failed: %v", err),
 		}
 	}
 
 	return CheckResult{
-		Name:   "base/recipes/*.md unmodified",
+		Name:   "base/skills/*.md unmodified",
 		Status: Pass,
 	}
 }
