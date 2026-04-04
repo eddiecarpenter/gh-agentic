@@ -63,6 +63,7 @@ func RunSync(
 	fetchRelease FetchReleaseFunc,
 	spinner SpinnerFunc,
 	confirm ConfirmFunc,
+	force bool,
 ) error {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, ui.SectionHeading.Render("  Sync — update base/ from upstream template"))
@@ -96,19 +97,20 @@ func RunSync(
 		return err
 	}
 
-	// Step 3: Check if up to date — but still proceed if base/ is missing.
+	// Step 3: Check if up to date — bypass when base/ is missing or --force is set.
 	baseDir := filepath.Join(repoRoot, "base")
-	baseMissing := func() bool {
-		_, err := os.Stat(baseDir)
-		return os.IsNotExist(err)
-	}()
-	if IsUpToDate(cfg.CurrentVersion, cfg.LatestVersion) && !baseMissing {
+	_, statErr := os.Stat(baseDir)
+	baseMissing := os.IsNotExist(statErr)
+	if IsUpToDate(cfg.CurrentVersion, cfg.LatestVersion) && !baseMissing && !force {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "  "+ui.RenderOK("Already up to date ("+cfg.CurrentVersion+")"))
 		return nil
 	}
-	if baseMissing {
+	switch {
+	case baseMissing:
 		fmt.Fprintln(w, "  "+ui.RenderWarning("base/ is missing — restoring from "+cfg.CurrentVersion))
+	case force:
+		fmt.Fprintln(w, "  "+ui.RenderWarning("--force set — re-syncing from "+cfg.CurrentVersion))
 	}
 
 	fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))

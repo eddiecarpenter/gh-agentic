@@ -13,19 +13,25 @@ import (
 
 // newSyncCmd constructs the `gh agentic sync` subcommand.
 func newSyncCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+
+	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync base/ from the upstream template",
 		Long: "Syncs the base/ directory from the upstream agentic-development template.\n" +
 			"Reads TEMPLATE_SOURCE and TEMPLATE_VERSION to determine what to sync.\n" +
-			"Shows a diff and asks for confirmation before committing.",
+			"Shows a diff and asks for confirmation before committing.\n" +
+			"Pass --force to re-sync even when already at the latest version.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
 			// Detect repo root by walking up from cwd.
 			repoRoot, err := findRepoRoot()
 			if err != nil {
-				return err
+				repoRoot, err = os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolving working directory: %w", err)
+				}
 			}
 
 			return sync.RunSync(
@@ -35,9 +41,13 @@ func newSyncCmd() *cobra.Command {
 				sync.DefaultFetchRelease,
 				sync.DefaultSpinner,
 				sync.DefaultConfirm,
+				force,
 			)
 		},
 	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "re-sync even if already at the latest version")
+	return cmd
 }
 
 // findRepoRoot walks up from the current working directory until it finds a
