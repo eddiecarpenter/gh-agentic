@@ -697,97 +697,135 @@ func TestCheckGhNotify_AllGood_ReturnsPass(t *testing.T) {
 // CheckProjectStatus tests
 // ──────────────────────────────────────────────────────────────────────────────
 
+// projectListJSON is the JSON returned by `gh project list --format json`.
+const projectListJSON = `{"projects":[{"id":"PVT_123","number":1}]}`
+
+// writeTestProjectTemplate creates a valid base/project-template.json fixture.
+func writeTestProjectTemplate(t *testing.T, root string) {
+	t.Helper()
+	baseDir := filepath.Join(root, "base")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `{
+  "statusOptions": [
+    {"name": "Backlog",        "color": "GRAY",   "description": "Prioritised, ready to start"},
+    {"name": "Scoping",        "color": "PURPLE", "description": "Requirement or feature being scoped"},
+    {"name": "Scheduled",      "color": "BLUE",   "description": "Scoped and queued, waiting for design"},
+    {"name": "In Design",      "color": "PINK",   "description": "Feature Design session active"},
+    {"name": "In Development", "color": "YELLOW", "description": "Dev Session active"},
+    {"name": "In Review",      "color": "ORANGE", "description": "PR open, awaiting review"},
+    {"name": "Done",           "color": "GREEN",  "description": "Merged and closed"}
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(baseDir, "project-template.json"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCheckProjectStatus_AllMatch_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
-		// First call: resolve project node ID (user query).
+		// First call: gh project list (resolve project node ID).
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
-		// Second call: fetch status options (canonical 6-option order).
-		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nDone", nil
+		// Second call: fetch status options (canonical 7-option order).
+		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil
 	}
 
-	result := CheckProjectStatus("owner", fakeRun)
+	result := CheckProjectStatus("owner", root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckProjectStatus_WrongOrder_ReturnsFail(t *testing.T) {
+func TestCheckProjectStatus_WrongOrder_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
 		// Wrong order: Done first.
-		return "Done\nBacklog\nScoping\nScheduled\nIn Design\nIn Development", nil
+		return "Done\nBacklog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review", nil
 	}
 
-	result := CheckProjectStatus("owner", fakeRun)
-	if result.Status != Fail {
-		t.Errorf("expected Fail for wrong order, got %v: %s", result.Status, result.Message)
+	result := CheckProjectStatus("owner", root, fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning for wrong order, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckProjectStatus_MissingOption_ReturnsFail(t *testing.T) {
+func TestCheckProjectStatus_MissingOption_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
 		// Only 5 options.
 		return "Backlog\nScoping\nScheduled\nIn Design\nDone", nil
 	}
 
-	result := CheckProjectStatus("owner", fakeRun)
-	if result.Status != Fail {
-		t.Errorf("expected Fail for missing option, got %v: %s", result.Status, result.Message)
+	result := CheckProjectStatus("owner", root, fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning for missing option, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckProjectStatus_ExtraOption_ReturnsFail(t *testing.T) {
+func TestCheckProjectStatus_ExtraOption_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
-		// 7 options (one extra).
-		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil
+		// 8 options (one extra).
+		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone\nArchived", nil
 	}
 
-	result := CheckProjectStatus("owner", fakeRun)
-	if result.Status != Fail {
-		t.Errorf("expected Fail for extra option, got %v: %s", result.Status, result.Message)
+	result := CheckProjectStatus("owner", root, fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning for extra option, got %v: %s", result.Status, result.Message)
 	}
 }
 
 func TestCheckProjectStatus_NoProject_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("no project found")
 	}
 
-	result := CheckProjectStatus("owner", fakeRun)
+	result := CheckProjectStatus("owner", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for no project, got %v: %s", result.Status, result.Message)
 	}
 }
 
 func TestCheckProjectStatus_GraphQLError_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
 		return "", fmt.Errorf("GraphQL error")
 	}
 
-	result := CheckProjectStatus("owner", fakeRun)
+	result := CheckProjectStatus("owner", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for GraphQL error, got %v: %s", result.Status, result.Message)
 	}
@@ -814,7 +852,7 @@ func TestCheckProjectCollaborator_UserPresent_ReturnsPass(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil // resolve project node ID
+			return projectListJSON, nil // resolve project node ID via gh project list
 		}
 		return "alice\ngoose-agent\nbob", nil // collaborators
 	}
@@ -830,7 +868,7 @@ func TestCheckProjectCollaborator_UserAbsent_ReturnsFail(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
 		return "alice\nbob", nil // goose-agent not present
 	}
@@ -846,7 +884,7 @@ func TestCheckProjectCollaborator_APIFailure_ReturnsFail(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
 		return "", fmt.Errorf("API error")
 	}

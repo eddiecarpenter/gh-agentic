@@ -302,9 +302,19 @@ func RepairGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
 // GitHub Project status repair
 // ──────────────────────────────────────────────────────────────────────────────
 
-// RepairProjectStatus applies the canonical 7 status options to the GitHub Project
-// via GraphQL mutation. Uses run to shell out to gh api graphql.
-func RepairProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult {
+// RepairProjectStatus applies the canonical status options from base/project-template.json
+// to the GitHub Project via GraphQL mutation. Uses run to shell out to gh api graphql.
+func RepairProjectStatus(owner string, root string, run bootstrap.RunCommandFunc) CheckResult {
+	// Load canonical options from project template.
+	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
+	if loadErr != nil {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: fmt.Sprintf("could not load project template: %v", loadErr),
+		}
+	}
+
 	// Step 1: Find the project node ID.
 	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
 	if projectNodeID == "" {
@@ -335,9 +345,9 @@ func RepairProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult
 		}
 	}
 
-	// Step 3: Build the mutation with canonical options.
+	// Step 3: Build the mutation with options from project template.
 	var optionEntries []string
-	for _, opt := range bootstrap.AgenticStatusOptions {
+	for _, opt := range tmpl.StatusOptions {
 		optionEntries = append(optionEntries, fmt.Sprintf(`{name: \"%s\", color: %s, description: \"%s\"}`, opt.Name, opt.Color, opt.Description))
 	}
 	optionsStr := strings.Join(optionEntries, ", ")

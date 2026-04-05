@@ -546,36 +546,34 @@ func fetchProjectNodeID(graphqlDo GraphQLDoFunc, owner string, number int) strin
 
 // StatusOption defines a single status column option for agentic projects.
 type StatusOption struct {
-	Name        string
-	Color       string
-	Description string
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
 }
 
-// AgenticStatusOptions defines the canonical 6-option status column configuration for agentic projects.
-// Exported so the verify package can reference the canonical set for check/repair.
-var AgenticStatusOptions = []StatusOption{
-	{Name: "Backlog", Color: "GRAY", Description: "Prioritised, ready to start"},
-	{Name: "Scoping", Color: "PURPLE", Description: "Requirement or feature being scoped"},
-	{Name: "Scheduled", Color: "BLUE", Description: "Scoped and queued, waiting for design"},
-	{Name: "In Design", Color: "PINK", Description: "Feature Design session active"},
-	{Name: "In Development", Color: "YELLOW", Description: "Dev Session active"},
-	{Name: "Done", Color: "GREEN", Description: "Merged and closed"},
-}
-
-// StatusOptionNames returns the canonical status option names in order.
-func StatusOptionNames() []string {
-	names := make([]string, len(AgenticStatusOptions))
-	for i, opt := range AgenticStatusOptions {
+// StatusOptionNames returns the canonical status option names from the given slice.
+// Deprecated: callers should use LoadProjectTemplate and extract names directly.
+func StatusOptionNames(options []StatusOption) []string {
+	names := make([]string, len(options))
+	for i, opt := range options {
 		names[i] = opt.Name
 	}
 	return names
 }
 
 // ConfigureProjectStatus customises the GitHub Project Status field options.
+// It reads canonical options from base/project-template.json in the cloned repo.
 // This is best-effort — failures are logged as warnings, not returned as errors.
 func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, graphqlDo GraphQLDoFunc) error {
 	if state.ProjectNodeID == "" {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Skipping status column customisation (no project node ID)"))
+		return nil
+	}
+
+	// Load canonical status options from the template JSON.
+	tmpl, err := LoadProjectTemplate(state.ClonePath)
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not load project template: "+err.Error()))
 		return nil
 	}
 
@@ -620,7 +618,7 @@ func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, 
 
 	// Build the singleSelectOptions input.
 	var optionInputs []map[string]string
-	for _, opt := range AgenticStatusOptions {
+	for _, opt := range tmpl.StatusOptions {
 		optionInputs = append(optionInputs, map[string]string{
 			"name":        opt.Name,
 			"color":       opt.Color,

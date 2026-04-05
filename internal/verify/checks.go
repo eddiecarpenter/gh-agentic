@@ -507,8 +507,9 @@ func CheckGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
 const checkProjectStatusName = "GitHub Project status options are standard"
 
 // CheckProjectStatus verifies that the GitHub Project has the canonical status
-// options in the correct order. Uses run to shell out to gh api graphql.
-func CheckProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult {
+// options in the correct order. Loads canonical options from base/project-template.json.
+// Mismatch is reported as Warning (not Fail) — local customisation is permitted.
+func CheckProjectStatus(owner string, root string, run bootstrap.RunCommandFunc) CheckResult {
 	// Step 1: Find the project node ID.
 	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
 	if projectNodeID == "" {
@@ -539,12 +540,21 @@ func CheckProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult 
 		}
 	}
 
-	// Step 3: Compare against canonical set.
-	canonical := bootstrap.StatusOptionNames()
-	if len(gotNames) != len(canonical) {
+	// Step 3: Load canonical set from base/project-template.json.
+	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
+	if loadErr != nil {
 		return CheckResult{
 			Name:    checkProjectStatusName,
 			Status:  Fail,
+			Message: fmt.Sprintf("could not load project template: %v", loadErr),
+		}
+	}
+	canonical := bootstrap.StatusOptionNames(tmpl.StatusOptions)
+
+	if len(gotNames) != len(canonical) {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Warning,
 			Message: fmt.Sprintf("expected %d options, got %d: %v", len(canonical), len(gotNames), gotNames),
 		}
 	}
@@ -553,7 +563,7 @@ func CheckProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult 
 		if gotNames[i] != name {
 			return CheckResult{
 				Name:    checkProjectStatusName,
-				Status:  Fail,
+				Status:  Warning,
 				Message: fmt.Sprintf("option %d: expected %q, got %q", i+1, name, gotNames[i]),
 			}
 		}
@@ -565,30 +575,33 @@ func CheckProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult 
 	}
 }
 
-// resolveProjectNodeIDViaRun resolves the project node ID for an owner by
-// trying user first, then org. Uses run to shell out to gh api graphql.
+// projectListResponse represents the JSON output from `gh project list --format json`.
+type projectListResponse struct {
+	Projects []struct {
+		ID     string `json:"id"`
+		Number int    `json:"number"`
+	} `json:"projects"`
+}
+
+// resolveProjectNodeIDViaRun resolves the project node ID for an owner using
+// `gh project list --owner`. This replaces the previous GraphQL user/org queries
+// which were fragile (#165/#167).
 func resolveProjectNodeIDViaRun(owner string, run bootstrap.RunCommandFunc) string {
-	// Try user query.
-	userQuery := fmt.Sprintf(`{ user(login: \"%s\") { projectsV2(first: 1) { nodes { id } } } }`, owner)
-	out, err := run("gh", "api", "graphql", "-f", "query="+userQuery, "--jq", ".data.user.projectsV2.nodes[0].id")
-	if err == nil {
-		id := strings.TrimSpace(out)
-		if id != "" && id != "null" {
-			return id
-		}
+	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "1")
+	if err != nil {
+		return ""
 	}
 
-	// Try org query.
-	orgQuery := fmt.Sprintf(`{ organization(login: \"%s\") { projectsV2(first: 1) { nodes { id } } } }`, owner)
-	out, err = run("gh", "api", "graphql", "-f", "query="+orgQuery, "--jq", ".data.organization.projectsV2.nodes[0].id")
-	if err == nil {
-		id := strings.TrimSpace(out)
-		if id != "" && id != "null" {
-			return id
-		}
+	var resp projectListResponse
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &resp); jsonErr != nil {
+		return ""
 	}
 
-	return ""
+	if len(resp.Projects) == 0 {
+		return ""
+	}
+
+	return resp.Projects[0].ID
 }
 
 // checkProjectCollaboratorName is the check name used for project collaborator verification.

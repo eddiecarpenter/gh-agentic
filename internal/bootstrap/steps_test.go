@@ -657,9 +657,34 @@ func TestCreateProject_SuccessfulLink(t *testing.T) {
 // Step 8b — ConfigureProjectStatus
 // --------------------------------------------------------------------------------------
 
+// writeTestProjectTemplate creates a valid base/project-template.json in root.
+func writeTestProjectTemplate(t *testing.T, root string) {
+	t.Helper()
+	baseDir := filepath.Join(root, "base")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `{
+  "statusOptions": [
+    {"name": "Backlog",        "color": "GRAY",   "description": "Prioritised, ready to start"},
+    {"name": "Scoping",        "color": "PURPLE", "description": "Requirement or feature being scoped"},
+    {"name": "Scheduled",      "color": "BLUE",   "description": "Scoped and queued, waiting for design"},
+    {"name": "In Design",      "color": "PINK",   "description": "Feature Design session active"},
+    {"name": "In Development", "color": "YELLOW", "description": "Dev Session active"},
+    {"name": "In Review",      "color": "ORANGE", "description": "PR open, awaiting review"},
+    {"name": "Done",           "color": "GREEN",  "description": "Merged and closed"}
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(baseDir, "project-template.json"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConfigureProjectStatus_UserAccount_ProceedsNormally(t *testing.T) {
 	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
-	state := &StepState{ProjectNodeID: "PVT_123"}
+	clonePath := t.TempDir()
+	writeTestProjectTemplate(t, clonePath)
+	state := &StepState{ProjectNodeID: "PVT_123", ClonePath: clonePath}
 
 	var queries []string
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
@@ -712,7 +737,9 @@ func TestConfigureProjectStatus_MissingProjectNodeID_SkipsWithWarning(t *testing
 
 func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *testing.T) {
 	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
-	state := &StepState{ProjectNodeID: "PVT_123"}
+	clonePath := t.TempDir()
+	writeTestProjectTemplate(t, clonePath)
+	state := &StepState{ProjectNodeID: "PVT_123", ClonePath: clonePath}
 
 	var queries []string
 	var updateVars map[string]interface{}
@@ -760,13 +787,13 @@ func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *t
 		t.Errorf("expected second call to be updateProjectV2Field, got: %s", queries[1])
 	}
 
-	// Verify 6 options are passed.
+	// Verify 7 options are passed (from project-template.json).
 	options, ok := updateVars["options"].([]map[string]string)
 	if !ok {
 		t.Fatalf("expected options to be []map[string]string, got %T", updateVars["options"])
 	}
-	if len(options) != 6 {
-		t.Errorf("expected 6 options, got %d", len(options))
+	if len(options) != 7 {
+		t.Errorf("expected 7 options, got %d", len(options))
 	}
 
 	// Verify descriptions are included.
@@ -780,14 +807,16 @@ func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *t
 	if options[0]["name"] != "Backlog" {
 		t.Errorf("expected first option to be Backlog, got %q", options[0]["name"])
 	}
-	if options[5]["name"] != "Done" {
-		t.Errorf("expected last option to be Done, got %q", options[5]["name"])
+	if options[6]["name"] != "Done" {
+		t.Errorf("expected last option to be Done, got %q", options[6]["name"])
 	}
 }
 
 func TestConfigureProjectStatus_GraphQLFetchFails_LogsWarning(t *testing.T) {
 	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
-	state := &StepState{ProjectNodeID: "PVT_123"}
+	clonePath := t.TempDir()
+	writeTestProjectTemplate(t, clonePath)
+	state := &StepState{ProjectNodeID: "PVT_123", ClonePath: clonePath}
 
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
 		return errors.New("network error")
@@ -805,7 +834,9 @@ func TestConfigureProjectStatus_GraphQLFetchFails_LogsWarning(t *testing.T) {
 
 func TestConfigureProjectStatus_UpdateFails_LogsWarning(t *testing.T) {
 	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
-	state := &StepState{ProjectNodeID: "PVT_123"}
+	clonePath := t.TempDir()
+	writeTestProjectTemplate(t, clonePath)
+	state := &StepState{ProjectNodeID: "PVT_123", ClonePath: clonePath}
 
 	callCount := 0
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
@@ -838,39 +869,6 @@ func TestConfigureProjectStatus_UpdateFails_LogsWarning(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "Could not update Status columns") {
 		t.Errorf("expected warning about update failure, got: %s", buf.String())
-	}
-}
-
-// --------------------------------------------------------------------------------------
-// AgenticStatusOptions and StatusOptionNames
-// --------------------------------------------------------------------------------------
-
-func TestAgenticStatusOptions_Has6Entries(t *testing.T) {
-	if len(AgenticStatusOptions) != 6 {
-		t.Errorf("expected 6 status options, got %d", len(AgenticStatusOptions))
-	}
-}
-
-func TestAgenticStatusOptions_AllHaveDescriptions(t *testing.T) {
-	for _, opt := range AgenticStatusOptions {
-		if opt.Description == "" {
-			t.Errorf("option %q has empty description", opt.Name)
-		}
-	}
-}
-
-func TestStatusOptionNames_ReturnsCorrectOrder(t *testing.T) {
-	names := StatusOptionNames()
-	expected := []string{
-		"Backlog", "Scoping", "Scheduled", "In Design", "In Development", "Done",
-	}
-	if len(names) != len(expected) {
-		t.Fatalf("expected %d names, got %d", len(expected), len(names))
-	}
-	for i, name := range names {
-		if name != expected[i] {
-			t.Errorf("name[%d] = %q, want %q", i, name, expected[i])
-		}
 	}
 }
 

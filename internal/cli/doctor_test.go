@@ -14,7 +14,7 @@ import (
 const standardLabelsJSON = `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"scoping"},{"name":"scheduled"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
 
 // projectJSON is the JSON output that MockRunner returns for gh project list --format json.
-const projectJSON = `{"projects":[{"title":"test-project"}]}`
+const projectJSON = `{"projects":[{"id":"PVT_test123","title":"test-project","number":1}]}`
 
 // setupDoctorFakeRepo creates a FakeRepo with all files needed for the doctor
 // checks to pass. It writes the extra files that NewFakeRepo does not include:
@@ -43,6 +43,19 @@ func setupDoctorFakeRepo(t *testing.T) *testutil.FakeRepo {
 	// base/skills/ must contain at least one .md for CheckBaseRecipes.
 	repo.Write(filepath.Join("base", "skills", "dev-session.md"), "# skill\n")
 
+	// base/project-template.json for CheckProjectStatus.
+	repo.Write(filepath.Join("base", "project-template.json"), `{
+  "statusOptions": [
+    {"name": "Backlog",        "color": "GRAY",   "description": "Prioritised, ready to start"},
+    {"name": "Scoping",        "color": "PURPLE", "description": "Requirement or feature being scoped"},
+    {"name": "Scheduled",      "color": "BLUE",   "description": "Scoped and queued, waiting for design"},
+    {"name": "In Design",      "color": "PINK",   "description": "Feature Design session active"},
+    {"name": "In Development", "color": "YELLOW", "description": "Dev Session active"},
+    {"name": "In Review",      "color": "ORANGE", "description": "PR open, awaiting review"},
+    {"name": "Done",           "color": "GREEN",  "description": "Merged and closed"}
+  ]
+}`)
+
 	return repo
 }
 
@@ -63,11 +76,14 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	// CheckProject: gh project list --owner testowner --format json --limit 100
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
-	// CheckProjectStatus: resolve project node ID (user query).
-	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ user(login: \"testowner\") { projectsV2(first: 1) { nodes { id } } } }`, "--jq", ".data.user.projectsV2.nodes[0].id"}, "PVT_test123", nil)
+	// resolveProjectNodeIDViaRun (used by CheckProjectStatus): gh project list --limit 1
+	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
 
-	// CheckProjectStatus: fetch status options.
-	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, "--jq", ".data.node.field.options[].name"}, "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nDone", nil)
+	// CheckProjectStatus: fetch status options via GraphQL.
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, "--jq", ".data.node.field.options[].name"}, "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil)
+
+	// resolveProjectNodeIDViaRun (used by CheckProjectCollaborator): gh project list --limit 1 (second call)
+	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
 
 	return m
 }

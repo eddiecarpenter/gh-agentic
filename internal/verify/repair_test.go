@@ -546,14 +546,16 @@ func TestRepairProject_Fails_ReturnsFail(t *testing.T) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	var mutationCalled bool
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		switch callCount {
 		case 1:
-			// Resolve project node ID (user query).
-			return "PVT_123", nil
+			// Resolve project node ID via gh project list.
+			return projectListJSON, nil
 		case 2:
 			// Fetch Status field ID.
 			return "FIELD_456", nil
@@ -571,7 +573,7 @@ func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectStatus("owner", fakeRun)
+	result := RepairProjectStatus("owner", root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -581,23 +583,27 @@ func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
 }
 
 func TestRepairProjectStatus_NoProject_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("no project found")
 	}
 
-	result := RepairProjectStatus("owner", fakeRun)
+	result := RepairProjectStatus("owner", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
 }
 
 func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		switch callCount {
 		case 1:
-			return "PVT_123", nil
+			return projectListJSON, nil
 		case 2:
 			return "FIELD_456", nil
 		case 3:
@@ -606,9 +612,25 @@ func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectStatus("owner", fakeRun)
+	result := RepairProjectStatus("owner", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectStatus_MissingTemplate_ReturnsFail(t *testing.T) {
+	root := t.TempDir() // No base/project-template.json.
+	fakeRun := func(name string, args ...string) (string, error) {
+		t.Fatal("run should not be called when template is missing")
+		return "", nil
+	}
+
+	result := RepairProjectStatus("owner", root, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "project template") {
+		t.Errorf("expected message about project template, got: %s", result.Message)
 	}
 }
 
@@ -622,7 +644,7 @@ func TestRepairProjectCollaborator_Success_ReturnsPass(t *testing.T) {
 		callCount++
 		switch callCount {
 		case 1:
-			return "PVT_123", nil // resolve project node ID
+			return projectListJSON, nil // resolve project node ID via gh project list
 		case 2:
 			return "USER_NODE_456", nil // resolve user node ID
 		case 3:
@@ -654,7 +676,7 @@ func TestRepairProjectCollaborator_UserResolutionFails_ReturnsFail(t *testing.T)
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
 		return "", fmt.Errorf("user not found")
 	}
@@ -671,7 +693,7 @@ func TestRepairProjectCollaborator_MutationFails_ReturnsFail(t *testing.T) {
 		callCount++
 		switch callCount {
 		case 1:
-			return "PVT_123", nil
+			return projectListJSON, nil
 		case 2:
 			return "USER_NODE_456", nil
 		case 3:
