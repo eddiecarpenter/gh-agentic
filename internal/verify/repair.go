@@ -305,7 +305,7 @@ func RepairGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
 
 // RepairProjectStatus applies the canonical status options from base/project-template.json
 // to the GitHub Project via GraphQL mutation. Uses run to shell out to gh api graphql.
-func RepairProjectStatus(owner string, root string, run bootstrap.RunCommandFunc) CheckResult {
+func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
 	// Load canonical options from project template.
 	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
 	if loadErr != nil {
@@ -317,7 +317,7 @@ func RepairProjectStatus(owner string, root string, run bootstrap.RunCommandFunc
 	}
 
 	// Step 1: Find the project node ID.
-	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return CheckResult{
 			Name:    checkProjectStatusName,
@@ -598,13 +598,13 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 // ResyncProjectItemStatuses is the exported entry point for resyncing all project
 // item statuses. It resolves the project node ID, fetches the status field ID and
 // options, and calls resyncProjectItemStatuses.
-func ResyncProjectItemStatuses(owner, root string, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
+func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
 	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
 	if loadErr != nil {
 		return 0, 0, fmt.Errorf("loading project template: %w", loadErr)
 	}
 
-	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return 0, 0, fmt.Errorf("no GitHub Project found for owner %s", owner)
 	}
@@ -630,7 +630,7 @@ func ResyncProjectItemStatuses(owner, root string, run bootstrap.RunCommandFunc)
 
 // RepairProjectCollaborator adds the configured agent user as a WRITER on the
 // GitHub Project. Uses run to shell out to gh api graphql.
-func RepairProjectCollaborator(owner string, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+func RepairProjectCollaborator(owner, repoName, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
 	if agentUser == "" {
 		return CheckResult{
 			Name:    checkProjectCollaboratorName,
@@ -640,7 +640,7 @@ func RepairProjectCollaborator(owner string, agentUser string, run bootstrap.Run
 	}
 
 	// Find the project node ID.
-	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return CheckResult{
 			Name:    checkProjectCollaboratorName,

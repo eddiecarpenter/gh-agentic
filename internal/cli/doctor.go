@@ -95,9 +95,9 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckGhNotify(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
-		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.root, run) },
-		func() verify.CheckResult { return verify.CheckProjectItemStatuses(cfg.owner, cfg.root, run) },
-		func() verify.CheckResult { return verify.CheckProjectCollaborator(cfg.owner, agentUser, run) },
+		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.repoName, cfg.root, run) },
+		func() verify.CheckResult { return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run) },
+		func() verify.CheckResult { return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run) },
 	}
 
 	// Repair function — only active when --repair flag is set.
@@ -135,9 +135,9 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "GitHub Project linked":
 				r = verify.RepairProject(cfg.owner, cfg.repoName, run)
 			case "GitHub Project status options are standard":
-				r = verify.RepairProjectStatus(cfg.owner, cfg.root, run)
+				r = verify.RepairProjectStatus(cfg.owner, cfg.repoName, cfg.root, run)
 			case "Agent user is a project collaborator":
-				r = verify.RepairProjectCollaborator(cfg.owner, agentUser, run)
+				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
 			default:
 				return nil
 			}
@@ -170,7 +170,7 @@ func runResyncStatuses(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		}
 	}
 
-	updated, correct, err := verify.ResyncProjectItemStatuses(cfg.owner, cfg.root, cfg.run)
+	updated, correct, err := verify.ResyncProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, cfg.run)
 	if err != nil {
 		return fmt.Errorf("resync failed: %w", err)
 	}

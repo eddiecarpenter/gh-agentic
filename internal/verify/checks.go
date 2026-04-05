@@ -509,9 +509,9 @@ const checkProjectStatusName = "GitHub Project status options are standard"
 // CheckProjectStatus verifies that the GitHub Project has the canonical status
 // options in the correct order. Loads canonical options from base/project-template.json.
 // Mismatch is reported as Warning (not Fail) — local customisation is permitted.
-func CheckProjectStatus(owner string, root string, run bootstrap.RunCommandFunc) CheckResult {
+func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
 	// Step 1: Find the project node ID.
-	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return CheckResult{
 			Name:    checkProjectStatusName,
@@ -579,15 +579,17 @@ func CheckProjectStatus(owner string, root string, run bootstrap.RunCommandFunc)
 type projectListResponse struct {
 	Projects []struct {
 		ID     string `json:"id"`
+		Title  string `json:"title"`
 		Number int    `json:"number"`
 	} `json:"projects"`
 }
 
 // resolveProjectNodeIDViaRun resolves the project node ID for an owner using
-// `gh project list --owner`. This replaces the previous GraphQL user/org queries
-// which were fragile (#165/#167).
-func resolveProjectNodeIDViaRun(owner string, run bootstrap.RunCommandFunc) string {
-	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "1")
+// `gh project list --owner`. It matches the project whose title equals repoName.
+// If no title matches, it falls back to the first project's ID (preserving
+// behaviour for single-project owners). Returns "" if no projects exist.
+func resolveProjectNodeIDViaRun(owner, repoName string, run bootstrap.RunCommandFunc) string {
+	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "100")
 	if err != nil {
 		return ""
 	}
@@ -601,6 +603,14 @@ func resolveProjectNodeIDViaRun(owner string, run bootstrap.RunCommandFunc) stri
 		return ""
 	}
 
+	// Match by title first.
+	for _, p := range resp.Projects {
+		if p.Title == repoName {
+			return p.ID
+		}
+	}
+
+	// Fallback: return the first project's ID.
 	return resp.Projects[0].ID
 }
 
@@ -610,9 +620,9 @@ const checkProjectItemStatusesName = "Project items have status assigned"
 // CheckProjectItemStatuses verifies that all project items have a status
 // field value assigned. Returns Warning if any items have no status, Pass
 // otherwise. Uses the same project resolution pattern as CheckProjectStatus.
-func CheckProjectItemStatuses(owner string, root string, run bootstrap.RunCommandFunc) CheckResult {
+func CheckProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
 	// Resolve project node ID.
-	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return CheckResult{
 			Name:    checkProjectItemStatusesName,
@@ -678,7 +688,7 @@ const checkProjectCollaboratorName = "Agent user is a project collaborator"
 
 // CheckProjectCollaborator verifies that the configured agent user is a collaborator
 // on the GitHub Project. Returns Pass with note when agentUser is empty (skips gracefully).
-func CheckProjectCollaborator(owner string, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
 	if agentUser == "" {
 		return CheckResult{
 			Name:    checkProjectCollaboratorName,
@@ -688,7 +698,7 @@ func CheckProjectCollaborator(owner string, agentUser string, run bootstrap.RunC
 	}
 
 	// Find the project node ID.
-	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return CheckResult{
 			Name:    checkProjectCollaboratorName,
