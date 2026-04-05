@@ -11,8 +11,27 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
-// newSyncCmd constructs the `gh agentic sync` subcommand.
+// syncDeps holds injectable dependencies for the sync command. Tests can
+// supply fakes; the production path uses newSyncCmd which fills in real defaults.
+type syncDeps struct {
+	run          bootstrap.RunCommandFunc
+	fetchRelease sync.FetchReleaseFunc
+	spinner      sync.SpinnerFunc
+}
+
+// newSyncCmd constructs the `gh agentic sync` subcommand with production defaults.
 func newSyncCmd() *cobra.Command {
+	return newSyncCmdWithDeps(syncDeps{
+		run:          bootstrap.DefaultRunCommand,
+		fetchRelease: sync.DefaultFetchRelease,
+		spinner:      sync.DefaultSpinner,
+	})
+}
+
+// newSyncCmdWithDeps constructs the `gh agentic sync` subcommand with the
+// given dependencies. This allows tests to inject fakes for run, fetchRelease,
+// and spinner without making real shell or network calls.
+func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 	var force bool
 	var yes bool
 
@@ -47,9 +66,9 @@ func newSyncCmd() *cobra.Command {
 			return sync.RunSync(
 				w,
 				repoRoot,
-				bootstrap.DefaultRunCommand,
-				sync.DefaultFetchRelease,
-				sync.DefaultSpinner,
+				deps.run,
+				deps.fetchRelease,
+				deps.spinner,
 				confirmFn,
 				force,
 			)
