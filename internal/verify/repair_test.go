@@ -562,13 +562,13 @@ func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
 		case 3:
 			// Update mutation.
 			mutationCalled = true
-			// Verify mutation contains canonical options.
-			for _, a := range args {
-				if strings.Contains(a, "updateProjectV2Field") && strings.Contains(a, "Scoping") && strings.Contains(a, "Done") {
-					return `{"data":{}}`, nil
-				}
-			}
 			return `{"data":{}}`, nil
+		case 4:
+			// fetchStatusOptionMap: fetch status options with id|name.
+			return "OPT_1|Backlog\nOPT_2|Scoping\nOPT_3|Scheduled\nOPT_4|In Design\nOPT_5|In Development\nOPT_6|In Review\nOPT_7|Done", nil
+		case 5:
+			// fetchAllProjectItems: return empty items list (no items to resync).
+			return `{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[]}}}}`, nil
 		}
 		return "", nil
 	}
