@@ -17,6 +17,9 @@ import (
 // ErrAborted is returned by RunForm when the user declines the final "Create project?" confirm.
 var ErrAborted = errors.New("aborted by user")
 
+// ErrFederatedRequiresOrg is returned when the user selects Federated topology with a personal account.
+var ErrFederatedRequiresOrg = errors.New("federated topology requires an org account")
+
 // Owner represents a selectable GitHub owner (personal account or organisation).
 type Owner struct {
 	// Login is the GitHub account or org login.
@@ -127,10 +130,26 @@ var stackOptions = []huh.Option[string]{
 	huh.NewOption("Other", "Other"),
 }
 
+// validateTopologyOwner checks whether the selected topology is valid for the given owner type.
+// Returns ErrFederatedRequiresOrg if a personal account selects Federated topology.
+// Returns nil for all other combinations (including personal + Single, which is valid but triggers a warning).
+func validateTopologyOwner(topology, ownerType string) error {
+	if ownerType == OwnerTypeUser && topology == "Federated" {
+		return ErrFederatedRequiresOrg
+	}
+	return nil
+}
+
+// isPersonalSingleTopology returns true when a personal account selects Single topology.
+// This combination is allowed but the caller should show a warning.
+func isPersonalSingleTopology(topology, ownerType string) bool {
+	return ownerType == OwnerTypeUser && topology == "Single"
+}
+
 // RunForm runs the three-group huh form, renders the summary box, and asks
 // for final confirmation. Returns a populated BootstrapConfig, or ErrAborted
 // if the user declines the final "Create project?" confirm.
-func RunForm(w io.Writer, fetchOwners FetchOwnersFunc) (BootstrapConfig, error) {
+func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc) (BootstrapConfig, error) {
 	var cfg BootstrapConfig
 
 	// --- Group 1: Topology ---
@@ -170,6 +189,44 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc) (BootstrapConfig, error) 
 	)
 	if err := ownerForm.Run(); err != nil {
 		return BootstrapConfig{}, fmt.Errorf("owner form: %w", err)
+	}
+
+	// --- Owner type validation ---
+	ownerType, err := detectOwnerType(cfg.Owner)
+	if err != nil {
+		return BootstrapConfig{}, fmt.Errorf("detecting owner type: %w", err)
+	}
+
+	if valErr := validateTopologyOwner(cfg.Topology, ownerType); valErr != nil {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  "+ui.RenderError("Federated topology requires an org account"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Personal accounts cannot host federated agentic environments."))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Choose Single topology or select an org as the owner."))
+		fmt.Fprintln(w)
+		return BootstrapConfig{}, ErrFederatedRequiresOrg
+	}
+
+	if isPersonalSingleTopology(cfg.Topology, ownerType) {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Kanban triggering not available on personal accounts"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("A project board will be created, but dragging cards will not"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("trigger pipeline workflows. Apply labels manually to trigger."))
+		fmt.Fprintln(w)
+
+		var continueConfirmed bool
+		warningForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Continue?").
+					Value(&continueConfirmed),
+			),
+		)
+		if err := warningForm.Run(); err != nil {
+			return BootstrapConfig{}, fmt.Errorf("warning confirm form: %w", err)
+		}
+		if !continueConfirmed {
+			return BootstrapConfig{}, ErrAborted
+		}
 	}
 
 	// --- Group 3: Project details ---

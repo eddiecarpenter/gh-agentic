@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -168,5 +169,101 @@ func TestFetchOwners_OrgAnnotationsPresent(t *testing.T) {
 	}
 	if !hasWarning {
 		t.Error("expected at least one owner labelled '⚠ has repos'")
+	}
+}
+
+// --- validateTopologyOwner tests ---
+
+func TestValidateTopologyOwner(t *testing.T) {
+	tests := []struct {
+		name      string
+		topology  string
+		ownerType string
+		wantErr   error
+	}{
+		{
+			name:      "personal + federated returns ErrFederatedRequiresOrg",
+			topology:  "Federated",
+			ownerType: OwnerTypeUser,
+			wantErr:   ErrFederatedRequiresOrg,
+		},
+		{
+			name:      "personal + single returns nil",
+			topology:  "Single",
+			ownerType: OwnerTypeUser,
+			wantErr:   nil,
+		},
+		{
+			name:      "org + federated returns nil",
+			topology:  "Federated",
+			ownerType: OwnerTypeOrg,
+			wantErr:   nil,
+		},
+		{
+			name:      "org + single returns nil",
+			topology:  "Single",
+			ownerType: OwnerTypeOrg,
+			wantErr:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateTopologyOwner(tc.topology, tc.ownerType)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Errorf("validateTopologyOwner(%q, %q) = %v, want %v", tc.topology, tc.ownerType, err, tc.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("validateTopologyOwner(%q, %q) unexpected error: %v", tc.topology, tc.ownerType, err)
+				}
+			}
+		})
+	}
+}
+
+// --- isPersonalSingleTopology tests ---
+
+func TestIsPersonalSingleTopology(t *testing.T) {
+	tests := []struct {
+		name      string
+		topology  string
+		ownerType string
+		want      bool
+	}{
+		{
+			name:      "personal + single returns true",
+			topology:  "Single",
+			ownerType: OwnerTypeUser,
+			want:      true,
+		},
+		{
+			name:      "personal + federated returns false",
+			topology:  "Federated",
+			ownerType: OwnerTypeUser,
+			want:      false,
+		},
+		{
+			name:      "org + single returns false",
+			topology:  "Single",
+			ownerType: OwnerTypeOrg,
+			want:      false,
+		},
+		{
+			name:      "org + federated returns false",
+			topology:  "Federated",
+			ownerType: OwnerTypeOrg,
+			want:      false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isPersonalSingleTopology(tc.topology, tc.ownerType)
+			if got != tc.want {
+				t.Errorf("isPersonalSingleTopology(%q, %q) = %v, want %v", tc.topology, tc.ownerType, got, tc.want)
+			}
+		})
 	}
 }
