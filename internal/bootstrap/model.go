@@ -28,7 +28,4 @@ type BootstrapConfig struct {
 	// Set after form completion and before RunSteps is called.
 	OwnerType string
 
-	// AgentUser is the GitHub username of the agent account used for pipeline
-	// automation. Defaults to "goose-agent" when set via the bootstrap form.
-	AgentUser string
 }

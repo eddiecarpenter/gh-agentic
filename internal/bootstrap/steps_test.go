@@ -508,52 +508,6 @@ func TestPopulateRepo_ReposMDContainsDescription(t *testing.T) {
 	}
 }
 
-func TestPopulateRepo_WritesAGENTUSER_WhenSet(t *testing.T) {
-	dir := t.TempDir()
-	cfg := BootstrapConfig{
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Stack:       "Go",
-		Description: "test project",
-		AgentUser:   "goose-agent",
-	}
-	state := &StepState{RepoName: "my-project", ClonePath: dir}
-
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
-		t.Fatalf("PopulateRepo() unexpected error: %v", err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(dir, "AGENT_USER"))
-	if err != nil {
-		t.Fatalf("expected AGENT_USER file, got error: %v", err)
-	}
-	if strings.TrimSpace(string(data)) != "goose-agent" {
-		t.Errorf("expected AGENT_USER to contain 'goose-agent', got: %q", string(data))
-	}
-}
-
-func TestPopulateRepo_SkipsAGENTUSER_WhenEmpty(t *testing.T) {
-	dir := t.TempDir()
-	cfg := BootstrapConfig{
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Stack:       "Go",
-		Description: "test project",
-		AgentUser:   "",
-	}
-	state := &StepState{RepoName: "my-project", ClonePath: dir}
-
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
-		t.Fatalf("PopulateRepo() unexpected error: %v", err)
-	}
-
-	if _, err := os.Stat(filepath.Join(dir, "AGENT_USER")); !os.IsNotExist(err) {
-		t.Error("expected AGENT_USER file to not exist when AgentUser is empty")
-	}
-}
-
 // --------------------------------------------------------------------------------------
 // Step 8 — CreateProject
 // --------------------------------------------------------------------------------------
@@ -758,13 +712,13 @@ func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *t
 		t.Errorf("expected second call to be updateProjectV2Field, got: %s", queries[1])
 	}
 
-	// Verify 7 options are passed.
+	// Verify 6 options are passed.
 	options, ok := updateVars["options"].([]map[string]string)
 	if !ok {
 		t.Fatalf("expected options to be []map[string]string, got %T", updateVars["options"])
 	}
-	if len(options) != 7 {
-		t.Errorf("expected 7 options, got %d", len(options))
+	if len(options) != 6 {
+		t.Errorf("expected 6 options, got %d", len(options))
 	}
 
 	// Verify descriptions are included.
@@ -775,11 +729,11 @@ func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *t
 	}
 
 	// Verify first and last option names.
-	if options[0]["name"] != "Scoping" {
-		t.Errorf("expected first option to be Scoping, got %q", options[0]["name"])
+	if options[0]["name"] != "Backlog" {
+		t.Errorf("expected first option to be Backlog, got %q", options[0]["name"])
 	}
-	if options[6]["name"] != "Done" {
-		t.Errorf("expected last option to be Done, got %q", options[6]["name"])
+	if options[5]["name"] != "Done" {
+		t.Errorf("expected last option to be Done, got %q", options[5]["name"])
 	}
 }
 
@@ -843,9 +797,9 @@ func TestConfigureProjectStatus_UpdateFails_LogsWarning(t *testing.T) {
 // AgenticStatusOptions and StatusOptionNames
 // --------------------------------------------------------------------------------------
 
-func TestAgenticStatusOptions_Has7Entries(t *testing.T) {
-	if len(AgenticStatusOptions) != 7 {
-		t.Errorf("expected 7 status options, got %d", len(AgenticStatusOptions))
+func TestAgenticStatusOptions_Has6Entries(t *testing.T) {
+	if len(AgenticStatusOptions) != 6 {
+		t.Errorf("expected 6 status options, got %d", len(AgenticStatusOptions))
 	}
 }
 
@@ -860,8 +814,7 @@ func TestAgenticStatusOptions_AllHaveDescriptions(t *testing.T) {
 func TestStatusOptionNames_ReturnsCorrectOrder(t *testing.T) {
 	names := StatusOptionNames()
 	expected := []string{
-		"Scoping", "Scheduled", "Backlog", "In Design",
-		"In Implementation", "In Review", "Done",
+		"Backlog", "Scoping", "Scheduled", "In Design", "In Development", "Done",
 	}
 	if len(names) != len(expected) {
 		t.Fatalf("expected %d names, got %d", len(expected), len(names))
@@ -1142,106 +1095,6 @@ func TestCreateProject_VariableSetSuccess_CallsGhVariable(t *testing.T) {
 	}
 	if !strings.Contains(joined, "alice/my-project") {
 		t.Errorf("expected repo name in args, got: %s", joined)
-	}
-}
-
-// --------------------------------------------------------------------------------------
-// Step 8d — AddProjectCollaborator
-// --------------------------------------------------------------------------------------
-
-func TestAddProjectCollaborator_Success(t *testing.T) {
-	cfg := BootstrapConfig{AgentUser: "goose-agent"}
-	state := &StepState{ProjectNodeID: "PVT_123"}
-
-	callCount := 0
-	run := func(name string, args ...string) (string, error) {
-		callCount++
-		if callCount == 1 {
-			return "USER_NODE_ID", nil // resolve user ID
-		}
-		return `{"data":{}}`, nil // mutation success
-	}
-
-	var buf bytes.Buffer
-	err := AddProjectCollaborator(&buf, cfg, state, run)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if callCount != 2 {
-		t.Errorf("expected 2 calls (resolve + mutate), got %d", callCount)
-	}
-}
-
-func TestAddProjectCollaborator_EmptyAgentUser_Skips(t *testing.T) {
-	cfg := BootstrapConfig{AgentUser: ""}
-	state := &StepState{ProjectNodeID: "PVT_123"}
-
-	run := func(name string, args ...string) (string, error) {
-		t.Fatal("run should not be called when agent user is empty")
-		return "", nil
-	}
-
-	var buf bytes.Buffer
-	err := AddProjectCollaborator(&buf, cfg, state, run)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestAddProjectCollaborator_EmptyProjectNodeID_Skips(t *testing.T) {
-	cfg := BootstrapConfig{AgentUser: "goose-agent"}
-	state := &StepState{ProjectNodeID: ""}
-
-	run := func(name string, args ...string) (string, error) {
-		t.Fatal("run should not be called when project node ID is empty")
-		return "", nil
-	}
-
-	var buf bytes.Buffer
-	err := AddProjectCollaborator(&buf, cfg, state, run)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestAddProjectCollaborator_UserResolutionFails_LogsWarning(t *testing.T) {
-	cfg := BootstrapConfig{AgentUser: "goose-agent"}
-	state := &StepState{ProjectNodeID: "PVT_123"}
-
-	run := func(name string, args ...string) (string, error) {
-		return "not found", errors.New("user not found")
-	}
-
-	var buf bytes.Buffer
-	err := AddProjectCollaborator(&buf, cfg, state, run)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "Could not resolve agent user") {
-		t.Errorf("expected warning about user resolution, got: %s", buf.String())
-	}
-}
-
-func TestAddProjectCollaborator_MutationFails_LogsWarning(t *testing.T) {
-	cfg := BootstrapConfig{AgentUser: "goose-agent"}
-	state := &StepState{ProjectNodeID: "PVT_123"}
-
-	callCount := 0
-	run := func(name string, args ...string) (string, error) {
-		callCount++
-		if callCount == 1 {
-			return "USER_NODE_ID", nil
-		}
-		return "mutation failed", errors.New("mutation error")
-	}
-
-	var buf bytes.Buffer
-	err := AddProjectCollaborator(&buf, cfg, state, run)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "Could not add agent user") {
-		t.Errorf("expected warning about mutation failure, got: %s", buf.String())
 	}
 }
 

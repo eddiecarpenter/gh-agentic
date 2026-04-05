@@ -310,13 +310,6 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 		return fmt.Errorf("writing README.md: %w", err)
 	}
 
-	// Write AGENT_USER if configured.
-	if cfg.AgentUser != "" {
-		if err := os.WriteFile(filepath.Join(state.ClonePath, "AGENT_USER"), []byte(cfg.AgentUser+"\n"), 0644); err != nil {
-			return fmt.Errorf("writing AGENT_USER: %w", err)
-		}
-	}
-
 	// Scaffold Antora if requested.
 	if cfg.Antora {
 		if err := scaffoldAntora(state.ClonePath, cfg.ProjectName); err != nil {
@@ -545,15 +538,14 @@ type StatusOption struct {
 	Description string
 }
 
-// AgenticStatusOptions defines the canonical 7-option status column configuration for agentic projects.
+// AgenticStatusOptions defines the canonical 6-option status column configuration for agentic projects.
 // Exported so the verify package can reference the canonical set for check/repair.
 var AgenticStatusOptions = []StatusOption{
+	{Name: "Backlog", Color: "GRAY", Description: "Prioritised, ready to start"},
 	{Name: "Scoping", Color: "PURPLE", Description: "Requirement or feature being scoped"},
 	{Name: "Scheduled", Color: "BLUE", Description: "Scoped and queued, waiting for design"},
-	{Name: "Backlog", Color: "GRAY", Description: "Prioritised, ready to start"},
 	{Name: "In Design", Color: "PINK", Description: "Feature Design session active"},
-	{Name: "In Implementation", Color: "YELLOW", Description: "Dev Session active"},
-	{Name: "In Review", Color: "ORANGE", Description: "PR open, awaiting review"},
+	{Name: "In Development", Color: "YELLOW", Description: "Dev Session active"},
 	{Name: "Done", Color: "GREEN", Description: "Merged and closed"},
 }
 
@@ -727,46 +719,6 @@ func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run
 	out, err = runInDir(run, state.ClonePath, "git", "push", "origin", "main")
 	if err != nil {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not push sync workflows: "+strings.TrimSpace(out)))
-		return nil
-	}
-
-	return nil
-}
-
-// --------------------------------------------------------------------------------------
-// Step 8d — AddProjectCollaborator
-// --------------------------------------------------------------------------------------
-
-// AddProjectCollaborator invites the configured agent user as a WRITER on the
-// GitHub Project. This is best-effort — failures are logged as warnings, not errors.
-func AddProjectCollaborator(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
-	if cfg.AgentUser == "" {
-		return nil
-	}
-	if state.ProjectNodeID == "" {
-		return nil
-	}
-
-	// Resolve the agent user's GitHub node ID.
-	userQuery := fmt.Sprintf(`{ user(login: "%s") { id } }`, cfg.AgentUser)
-	out, err := run("gh", "api", "graphql", "-f", "query="+userQuery, "--jq", ".data.user.id")
-	if err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not resolve agent user "+cfg.AgentUser+": "+strings.TrimSpace(out)))
-		return nil
-	}
-
-	userID := strings.TrimSpace(out)
-	if userID == "" || userID == "null" {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Agent user "+cfg.AgentUser+" not found on GitHub"))
-		return nil
-	}
-
-	// Invite as project collaborator with WRITER role.
-	mutation := fmt.Sprintf(`mutation { updateProjectV2Collaborators(input: { projectId: "%s", collaborators: [{ userId: "%s", role: WRITER }] }) { clientMutationId } }`,
-		state.ProjectNodeID, userID)
-	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
-	if err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not add agent user as collaborator: "+strings.TrimSpace(out)))
 		return nil
 	}
 

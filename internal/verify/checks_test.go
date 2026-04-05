@@ -484,6 +484,16 @@ func TestCheckGhNotify_PlistMissing_ReturnsFail(t *testing.T) {
 	defer func() { ghNotifyGOOS = orig }()
 	ghNotifyGOOS = "darwin"
 
+	// Skip if the plist already exists on this machine — the test requires it to be absent.
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home dir")
+	}
+	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.user.gh-notify.plist")
+	if _, statErr := os.Stat(plistPath); statErr == nil {
+		t.Skip("plist already exists on this machine — skipping PlistMissing test")
+	}
+
 	root := t.TempDir()
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
