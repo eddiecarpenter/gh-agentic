@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -403,4 +404,135 @@ func TestIntegrationRunSteps_Failure_Step6_LabelCreate(t *testing.T) {
 	}
 
 	mock.AssertExpectations(t)
+}
+
+func TestIntegrationRunSteps_Failure_RepoCreateFails(t *testing.T) {
+	workDir := t.TempDir()
+
+	cfg := BootstrapConfig{
+		Topology:    "Single",
+		Owner:       "testowner",
+		ProjectName: "test-project",
+		Description: "Test",
+		Stack:       "Go",
+		Antora:      false,
+		OwnerType:   OwnerTypeUser,
+	}
+
+	runner := &testutil.MockRunner{}
+
+	// Step 3 — CreateRepo: gh repo create fails immediately.
+	runner.Expect(
+		[]string{"gh", "repo", "create", "testowner/test-project",
+			"--template", "eddiecarpenter/agentic-development", "--private"},
+		"repository creation failed", fmt.Errorf("gh repo create failed"),
+	)
+
+	// No further expectations — nothing should be called after the failure.
+
+	graphqlDo := func(_ string, _ map[string]interface{}, _ interface{}) error {
+		return errors.New("no auth in test")
+	}
+	launch := func(_ string) error { return nil }
+
+	var buf bytes.Buffer
+	err := RunSteps(&buf, cfg, workDir, runner.RunCommand, graphqlDo, launch, testutil.NoopSpinner)
+
+	if err == nil {
+		t.Fatal("expected error from failing repo create")
+	}
+	if !strings.Contains(err.Error(), "gh repo create") {
+		t.Errorf("error should reference 'gh repo create', got: %v", err)
+	}
+
+	// Verify only the expected call was made — no subsequent steps ran.
+	runner.AssertExpectations(t)
+
+	output := buf.String()
+	if strings.Contains(output, "Removing template files") {
+		t.Error("subsequent steps should not appear in output after step 3 failure")
+	}
+}
+
+func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T) {
+	workDir := t.TempDir()
+	clonePath := filepath.Join(workDir, "test-project")
+
+	// Pre-create clone directory with required files (steps 3-5 need these).
+	if err := os.MkdirAll(filepath.Join(clonePath, "base", "standards"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clonePath, "bootstrap.sh"), []byte("#!/bin/bash"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clonePath, "bootstrap.sh.md5"), []byte("abc123"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goMD := "# Go Standards\n\n## Project Initialisation\n\n```bash\necho scaffold-ok\n```\n\n## Build Verification\n"
+	if err := os.WriteFile(filepath.Join(clonePath, "base", "standards", "go.md"), []byte(goMD), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{
+		Topology:    "Single",
+		Owner:       "testowner",
+		ProjectName: "test-project",
+		Description: "Test",
+		Stack:       "Go",
+		Antora:      false,
+		OwnerType:   OwnerTypeUser,
+	}
+
+	runner := &testutil.MockRunner{}
+
+	// Step 3 — CreateRepo: succeeds.
+	runner.Expect(
+		[]string{"gh", "repo", "create", "testowner/test-project",
+			"--template", "eddiecarpenter/agentic-development", "--private"},
+		"https://github.com/testowner/test-project", nil,
+	)
+	runner.Expect(
+		[]string{"git", "clone", "git@github.com:testowner/test-project.git", clonePath},
+		"", nil,
+	)
+
+	// Steps 4-5 use runInDir → unmatched → ("", nil) → succeed.
+	// Step 6 — ConfigureRepo: label creates succeed (direct calls, unmatched → ("", nil)).
+	// Step 7 — PopulateRepo: runInDir → unmatched → ("", nil) → succeeds.
+
+	// Step 8 — CreateProject: fails.
+	runner.Expect(
+		[]string{"gh", "project", "create", "--owner", "testowner", "--title", "test-project", "--format", "json"},
+		"project creation quota exceeded", fmt.Errorf("project create failed"),
+	)
+
+	// No expectations after this — steps 8b, 8c, and PrintSummary should not run.
+
+	graphqlDo := func(_ string, _ map[string]interface{}, _ interface{}) error {
+		return errors.New("no auth in test")
+	}
+	launch := func(_ string) error { return nil }
+
+	var buf bytes.Buffer
+	err := RunSteps(&buf, cfg, workDir, runner.RunCommand, graphqlDo, launch, testutil.NoopSpinner)
+
+	if err == nil {
+		t.Fatal("expected error from failing project create")
+	}
+	if !strings.Contains(err.Error(), "gh project create") {
+		t.Errorf("error should reference 'gh project create', got: %v", err)
+	}
+
+	// Verify all expectations were consumed (steps 3-7 ran, step 8 failed).
+	runner.AssertExpectations(t)
+
+	output := buf.String()
+	// Steps before the failure should have started.
+	if !strings.Contains(output, "Creating your agentic environment") {
+		t.Errorf("expected section heading in output, got: %s", output)
+	}
+	// PrintSummary should not have been reached.
+	if strings.Contains(output, "Bootstrap complete") {
+		t.Error("PrintSummary should not run after mid-pipeline failure")
+	}
 }
