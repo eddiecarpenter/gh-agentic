@@ -502,6 +502,58 @@ func resolveProjectNodeIDViaRun(owner string, run bootstrap.RunCommandFunc) stri
 	return ""
 }
 
+// checkProjectCollaboratorName is the check name used for project collaborator verification.
+const checkProjectCollaboratorName = "Agent user is a project collaborator"
+
+// CheckProjectCollaborator verifies that the configured agent user is a collaborator
+// on the GitHub Project. Returns Pass with note when agentUser is empty (skips gracefully).
+func CheckProjectCollaborator(owner string, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+	if agentUser == "" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Pass,
+			Message: "no agent user configured — skipping",
+		}
+	}
+
+	// Find the project node ID.
+	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	if projectNodeID == "" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: "no GitHub Project found for owner " + owner,
+		}
+	}
+
+	// Query project collaborators.
+	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { collaborators(first: 100) { nodes { login } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.collaborators.nodes[].login")
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to fetch collaborators: %v", err),
+		}
+	}
+
+	// Check if agent user is present in the list.
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(line) == agentUser {
+			return CheckResult{
+				Name:   checkProjectCollaboratorName,
+				Status: Pass,
+			}
+		}
+	}
+
+	return CheckResult{
+		Name:    checkProjectCollaboratorName,
+		Status:  Fail,
+		Message: agentUser + " is not a project collaborator",
+	}
+}
+
 
 // CheckProject verifies that a GitHub Project exists for the repo owner.
 // owner is the GitHub account/org. run is injected for gh operations.

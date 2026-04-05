@@ -675,6 +675,70 @@ func TestCheckProjectStatus_GraphQLError_ReturnsFail(t *testing.T) {
 	}
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// CheckProjectCollaborator tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckProjectCollaborator_EmptyAgentUser_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		t.Fatal("run should not be called when agent user is empty")
+		return "", nil
+	}
+
+	result := CheckProjectCollaborator("owner", "", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_UserPresent_ReturnsPass(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "PVT_123", nil // resolve project node ID
+		}
+		return "alice\ngoose-agent\nbob", nil // collaborators
+	}
+
+	result := CheckProjectCollaborator("owner", "goose-agent", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_UserAbsent_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "PVT_123", nil
+		}
+		return "alice\nbob", nil // goose-agent not present
+	}
+
+	result := CheckProjectCollaborator("owner", "goose-agent", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_APIFailure_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "PVT_123", nil
+		}
+		return "", fmt.Errorf("API error")
+	}
+
+	result := CheckProjectCollaborator("owner", "goose-agent", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
 func TestMissingLabels_SomeMissing_ReturnsOnlyMissing(t *testing.T) {
 	labelsJSON := `[{"name":"requirement"},{"name":"feature"}]`
 	fakeRun := func(name string, args ...string) (string, error) {
