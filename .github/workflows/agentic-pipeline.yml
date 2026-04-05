@@ -91,6 +91,7 @@ jobs:
         run: |
           ISSUE=${{ github.event.issue.number }}
           BRANCH=$(gh api repos/${{ github.repository }}/branches \
+            --paginate \
             --jq ".[] | .name | select(startswith(\"feature/${ISSUE}-\"))" \
             | head -1)
           if [ -z "$BRANCH" ]; then
