@@ -262,6 +262,68 @@ func RepairGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// GitHub Project status repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RepairProjectStatus applies the canonical 7 status options to the GitHub Project
+// via GraphQL mutation. Uses run to shell out to gh api graphql.
+func RepairProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult {
+	// Step 1: Find the project node ID.
+	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	if projectNodeID == "" {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: "no GitHub Project found for owner " + owner,
+		}
+	}
+
+	// Step 2: Fetch the Status field ID.
+	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to fetch Status field ID: %v", err),
+		}
+	}
+
+	fieldID := strings.TrimSpace(out)
+	if fieldID == "" || fieldID == "null" {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: "Status field not found on project",
+		}
+	}
+
+	// Step 3: Build the mutation with canonical options.
+	var optionEntries []string
+	for _, opt := range bootstrap.AgenticStatusOptions {
+		optionEntries = append(optionEntries, fmt.Sprintf(`{name: \"%s\", color: %s, description: \"%s\"}`, opt.Name, opt.Color, opt.Description))
+	}
+	optionsStr := strings.Join(optionEntries, ", ")
+
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Field(input: { fieldId: \"%s\", projectId: \"%s\", singleSelectOptions: [%s] }) { field { ... on ProjectV2SingleSelectField { id } } } }`,
+		fieldID, projectNodeID, optionsStr)
+
+	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to update status options: %v — %s", err, strings.TrimSpace(out)),
+		}
+	}
+
+	return CheckResult{
+		Name:   checkProjectStatusName,
+		Status: Pass,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Directory integrity repairs
 // ──────────────────────────────────────────────────────────────────────────────
 

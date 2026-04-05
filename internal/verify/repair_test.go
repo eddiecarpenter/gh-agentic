@@ -440,3 +440,74 @@ func TestRepairProject_Fails_ReturnsFail(t *testing.T) {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RepairProjectStatus tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
+	callCount := 0
+	var mutationCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			// Resolve project node ID (user query).
+			return "PVT_123", nil
+		case 2:
+			// Fetch Status field ID.
+			return "FIELD_456", nil
+		case 3:
+			// Update mutation.
+			mutationCalled = true
+			// Verify mutation contains canonical options.
+			for _, a := range args {
+				if strings.Contains(a, "updateProjectV2Field") && strings.Contains(a, "Scoping") && strings.Contains(a, "Done") {
+					return `{"data":{}}`, nil
+				}
+			}
+			return `{"data":{}}`, nil
+		}
+		return "", nil
+	}
+
+	result := RepairProjectStatus("owner", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !mutationCalled {
+		t.Error("expected update mutation to be called")
+	}
+}
+
+func TestRepairProjectStatus_NoProject_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("no project found")
+	}
+
+	result := RepairProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return "PVT_123", nil
+		case 2:
+			return "FIELD_456", nil
+		case 3:
+			return "mutation error", fmt.Errorf("mutation failed")
+		}
+		return "", nil
+	}
+
+	result := RepairProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
