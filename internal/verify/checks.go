@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 )
+
+// ghNotifyGOOS is the OS identifier used by CheckGhNotify.
+// It defaults to runtime.GOOS but can be overridden in tests.
+var ghNotifyGOOS = runtime.GOOS
 
 // CheckCLAUDEMD verifies that CLAUDE.md exists in the repo root.
 // Returns Fail if the file is missing.
@@ -359,6 +364,54 @@ func MissingLabels(repoFullName string, run bootstrap.RunCommandFunc) []string {
 		}
 	}
 	return missing
+}
+
+// CheckGhNotify verifies that the gh-notify LaunchAgent is installed and running.
+// On non-darwin systems the check passes immediately as not applicable.
+// root is the repo root, run is injected for launchctl operations.
+func CheckGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
+	const checkName = "gh-notify LaunchAgent installed"
+
+	if ghNotifyGOOS != "darwin" {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Pass,
+			Message: "not applicable on this OS",
+		}
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("could not determine home directory: %v", err),
+		}
+	}
+
+	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.user.gh-notify.plist")
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: "plist not found at ~/Library/LaunchAgents/com.user.gh-notify.plist",
+		}
+	}
+
+	_, err = run("launchctl", "list", "com.user.gh-notify")
+	if err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: "LaunchAgent not loaded",
+		}
+	}
+
+	return CheckResult{
+		Name:    checkName,
+		Status:  Pass,
+		Message: "gh-notify LaunchAgent installed and running",
+	}
 }
 
 // CheckProject verifies that a GitHub Project exists for the repo owner.

@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -61,7 +63,7 @@ func newBootstrapCmd() *cobra.Command {
 				return fmt.Errorf("initialising GitHub GraphQL client: %w", err)
 			}
 
-			return bootstrap.RunSteps(
+			if err := bootstrap.RunSteps(
 				w,
 				cfg,
 				workDir,
@@ -69,7 +71,12 @@ func newBootstrapCmd() *cobra.Command {
 				graphqlDo,
 				bootstrap.DefaultLaunchGoose,
 				bootstrap.DefaultSpinner,
-			)
+			); err != nil {
+				return err
+			}
+
+			clonePath := filepath.Join(workDir, cfg.ProjectName)
+			return PromptGhNotify(w, runtime.GOOS, clonePath, bootstrap.DefaultRunCommand, confirm)
 		},
 	}
 }
