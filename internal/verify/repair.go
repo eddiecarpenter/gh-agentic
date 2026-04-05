@@ -336,8 +336,9 @@ func RepairProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult
 	}
 
 	// Step 3: Build the mutation with canonical options.
+	// TODO: task 4 will add root parameter and load from base/project-template.json.
 	var optionEntries []string
-	for _, opt := range bootstrap.AgenticStatusOptions {
+	for _, opt := range defaultCanonicalStatusOptions() {
 		optionEntries = append(optionEntries, fmt.Sprintf(`{name: \"%s\", color: %s, description: \"%s\"}`, opt.Name, opt.Color, opt.Description))
 	}
 	optionsStr := strings.Join(optionEntries, ", ")

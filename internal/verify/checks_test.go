@@ -705,8 +705,8 @@ func TestCheckProjectStatus_AllMatch_ReturnsPass(t *testing.T) {
 		if callCount == 1 {
 			return "PVT_123", nil
 		}
-		// Second call: fetch status options (canonical 6-option order).
-		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nDone", nil
+		// Second call: fetch status options (canonical 7-option order).
+		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil
 	}
 
 	result := CheckProjectStatus("owner", fakeRun)
@@ -756,8 +756,8 @@ func TestCheckProjectStatus_ExtraOption_ReturnsFail(t *testing.T) {
 		if callCount == 1 {
 			return "PVT_123", nil
 		}
-		// 7 options (one extra).
-		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil
+		// 8 options (one extra).
+		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone\nArchived", nil
 	}
 
 	result := CheckProjectStatus("owner", fakeRun)
