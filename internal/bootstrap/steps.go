@@ -631,6 +631,91 @@ func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, 
 }
 
 // --------------------------------------------------------------------------------------
+// Step 8c — DeploySyncWorkflows (org accounts only)
+// --------------------------------------------------------------------------------------
+
+// syncWorkflowFiles lists the workflow files to copy for org accounts.
+var syncWorkflowFiles = []string{
+	"sync-label-to-status.yml",
+	"sync-status-to-label.yml",
+}
+
+// DeploySyncWorkflows copies kanban sync workflow files from base/.github/workflows/
+// into the bootstrapped repo's .github/workflows/ directory for org accounts.
+// For personal accounts this step is silently skipped.
+// Missing source files are handled gracefully (warning, not error).
+func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
+	if cfg.OwnerType != OwnerTypeOrg {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· Skipping sync workflow deployment (personal account)"))
+		return nil
+	}
+
+	sourceDir := filepath.Join(state.ClonePath, "base", ".github", "workflows")
+	destDir := filepath.Join(state.ClonePath, ".github", "workflows")
+
+	// Check which source files exist.
+	var toCopy []string
+	for _, f := range syncWorkflowFiles {
+		srcPath := filepath.Join(sourceDir, f)
+		if _, err := os.Stat(srcPath); err == nil {
+			toCopy = append(toCopy, f)
+		} else {
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Sync workflow "+f+" not found in base/ — skipping (dependency not yet met)"))
+		}
+	}
+
+	if len(toCopy) == 0 {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· No sync workflows to deploy"))
+		return nil
+	}
+
+	// Ensure destination directory exists.
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not create workflows directory: "+err.Error()))
+		return nil
+	}
+
+	// Copy each file.
+	for _, f := range toCopy {
+		srcPath := filepath.Join(sourceDir, f)
+		dstPath := filepath.Join(destDir, f)
+
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Could not read "+f+": "+err.Error()))
+			return nil
+		}
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Could not write "+f+": "+err.Error()))
+			return nil
+		}
+	}
+
+	// Stage the copied files.
+	out, err := runInDir(run, state.ClonePath, "git", "add", ".github/workflows/sync-label-to-status.yml", ".github/workflows/sync-status-to-label.yml")
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not stage sync workflows: "+strings.TrimSpace(out)))
+		return nil
+	}
+
+	// Commit.
+	out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", "chore: deploy kanban sync workflows")
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not commit sync workflows: "+strings.TrimSpace(out)))
+		return nil
+	}
+
+	// Push.
+	out, err = runInDir(run, state.ClonePath, "git", "push", "origin", "main")
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not push sync workflows: "+strings.TrimSpace(out)))
+		return nil
+	}
+
+	return nil
+}
+
+// --------------------------------------------------------------------------------------
 // Step 9 — PrintSummary + Goose launch
 // --------------------------------------------------------------------------------------
 

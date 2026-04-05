@@ -84,6 +84,10 @@ func RunSteps(
 			label: "Configuring project status columns",
 			fn:    func() error { return ConfigureProjectStatus(w, cfg, state, graphqlDo) },
 		},
+		{
+			label: "Deploying sync workflows",
+			fn:    func() error { return DeploySyncWorkflows(w, cfg, state, run) },
+		},
 	}
 
 	for _, s := range steps {

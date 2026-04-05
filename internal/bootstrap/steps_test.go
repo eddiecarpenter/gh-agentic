@@ -761,6 +761,126 @@ func TestConfigureProjectStatus_UpdateFails_LogsWarning(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------------------
+// Step 8c — DeploySyncWorkflows
+// --------------------------------------------------------------------------------------
+
+func TestDeploySyncWorkflows_UserAccount_SkipsSilently(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{ClonePath: t.TempDir()}
+	run := fakeRunFail("should not be called")
+
+	var buf bytes.Buffer
+	if err := DeploySyncWorkflows(&buf, cfg, state, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "personal account") {
+		t.Errorf("expected skip message for personal account, got: %s", buf.String())
+	}
+}
+
+func TestDeploySyncWorkflows_MissingSourceFiles_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	dir := t.TempDir()
+	state := &StepState{ClonePath: dir}
+	run := fakeRunOK("")
+
+	var buf bytes.Buffer
+	if err := DeploySyncWorkflows(&buf, cfg, state, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "not found in base/") {
+		t.Errorf("expected warning about missing source files, got: %s", out)
+	}
+	if !strings.Contains(out, "No sync workflows to deploy") {
+		t.Errorf("expected 'No sync workflows' message, got: %s", out)
+	}
+}
+
+func TestDeploySyncWorkflows_OrgSuccess_CopiesAndCommits(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	dir := t.TempDir()
+	state := &StepState{ClonePath: dir}
+
+	// Create source workflow files.
+	sourceDir := filepath.Join(dir, "base", ".github", "workflows")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"sync-label-to-status.yml", "sync-status-to-label.yml"} {
+		if err := os.WriteFile(filepath.Join(sourceDir, f), []byte("name: "+f), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var commands []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" {
+			commands = append(commands, strings.Join(args, " "))
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	if err := DeploySyncWorkflows(&buf, cfg, state, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify files were copied to destination.
+	destDir := filepath.Join(dir, ".github", "workflows")
+	for _, f := range []string{"sync-label-to-status.yml", "sync-status-to-label.yml"} {
+		data, err := os.ReadFile(filepath.Join(destDir, f))
+		if err != nil {
+			t.Errorf("expected %s in dest dir, got: %v", f, err)
+			continue
+		}
+		if !strings.Contains(string(data), f) {
+			t.Errorf("expected file content to contain %q, got: %s", f, string(data))
+		}
+	}
+
+	// Verify git add, commit, and push were called.
+	allCmds := strings.Join(commands, "\n")
+	if !strings.Contains(allCmds, "'git' 'add'") {
+		t.Error("expected git add to be called")
+	}
+	if !strings.Contains(allCmds, "'git' 'commit'") {
+		t.Error("expected git commit to be called")
+	}
+	if !strings.Contains(allCmds, "'git' 'push'") {
+		t.Error("expected git push to be called")
+	}
+}
+
+func TestDeploySyncWorkflows_GitAddFails_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	dir := t.TempDir()
+	state := &StepState{ClonePath: dir}
+
+	// Create source workflow files.
+	sourceDir := filepath.Join(dir, "base", ".github", "workflows")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"sync-label-to-status.yml", "sync-status-to-label.yml"} {
+		if err := os.WriteFile(filepath.Join(sourceDir, f), []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	run := fakeRunFail("git add failed")
+
+	var buf bytes.Buffer
+	err := DeploySyncWorkflows(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("expected nil error (best-effort), got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Could not stage sync workflows") {
+		t.Errorf("expected warning about staging failure, got: %s", buf.String())
+	}
+}
+
+// --------------------------------------------------------------------------------------
 // Step 8 — CreateProject (continued)
 // --------------------------------------------------------------------------------------
 
