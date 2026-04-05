@@ -528,6 +528,109 @@ func fetchProjectNodeID(graphqlDo GraphQLDoFunc, owner string, number int) strin
 }
 
 // --------------------------------------------------------------------------------------
+// Step 8b — ConfigureProjectStatus (org accounts only)
+// --------------------------------------------------------------------------------------
+
+// agenticStatusOptions defines the standard status column configuration for agentic projects.
+var agenticStatusOptions = []struct {
+	Name  string
+	Color string
+}{
+	{Name: "Backlog", Color: "GRAY"},
+	{Name: "In Design", Color: "BLUE"},
+	{Name: "In Development", Color: "ORANGE"},
+	{Name: "In Review", Color: "YELLOW"},
+	{Name: "Done", Color: "GREEN"},
+}
+
+// ConfigureProjectStatus customises the GitHub Project Status field options for org accounts.
+// For personal accounts this step is silently skipped.
+// This is best-effort — failures are logged as warnings, not returned as errors.
+func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, graphqlDo GraphQLDoFunc) error {
+	if cfg.OwnerType != OwnerTypeOrg {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· Skipping status column customisation (personal account)"))
+		return nil
+	}
+
+	if state.ProjectNodeID == "" {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Skipping status column customisation (no project node ID)"))
+		return nil
+	}
+
+	// Fetch the Status field ID.
+	statusQuery := `query($projectId: ID!) {
+		node(id: $projectId) {
+			... on ProjectV2 {
+				field(name: "Status") {
+					... on ProjectV2SingleSelectField {
+						id
+						options { id name }
+					}
+				}
+			}
+		}
+	}`
+
+	var statusResp struct {
+		Node struct {
+			Field struct {
+				ID      string `json:"id"`
+				Options []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"options"`
+			} `json:"field"`
+		} `json:"node"`
+	}
+
+	if err := graphqlDo(statusQuery, map[string]interface{}{
+		"projectId": state.ProjectNodeID,
+	}, &statusResp); err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not fetch Status field: "+err.Error()))
+		return nil
+	}
+
+	fieldID := statusResp.Node.Field.ID
+	if fieldID == "" {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Status field not found on project — skipping"))
+		return nil
+	}
+
+	// Build the singleSelectOptions input.
+	var optionInputs []map[string]string
+	for _, opt := range agenticStatusOptions {
+		optionInputs = append(optionInputs, map[string]string{
+			"name":  opt.Name,
+			"color": opt.Color,
+		})
+	}
+
+	updateMutation := `mutation($fieldId: ID!, $projectId: ID!, $options: [ProjectV2SingleSelectFieldOptionInput!]!) {
+		updateProjectV2Field(input: {
+			fieldId: $fieldId
+			projectId: $projectId
+			singleSelectOptions: $options
+		}) {
+			field {
+				... on ProjectV2SingleSelectField { id }
+			}
+		}
+	}`
+
+	var updateResp interface{}
+	if err := graphqlDo(updateMutation, map[string]interface{}{
+		"fieldId":   fieldID,
+		"projectId": state.ProjectNodeID,
+		"options":   optionInputs,
+	}, &updateResp); err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not update Status columns: "+err.Error()))
+		return nil
+	}
+
+	return nil
+}
+
+// --------------------------------------------------------------------------------------
 // Step 9 — PrintSummary + Goose launch
 // --------------------------------------------------------------------------------------
 

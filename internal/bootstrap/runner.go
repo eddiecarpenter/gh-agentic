@@ -80,6 +80,10 @@ func RunSteps(
 			label: "Creating GitHub Project",
 			fn:    func() error { return CreateProject(w, cfg, state, run, graphqlDo) },
 		},
+		{
+			label: "Configuring project status columns",
+			fn:    func() error { return ConfigureProjectStatus(w, cfg, state, graphqlDo) },
+		},
 	}
 
 	for _, s := range steps {
