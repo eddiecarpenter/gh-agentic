@@ -27,4 +27,5 @@ type BootstrapConfig struct {
 	// OwnerType is the detected GitHub owner type: OwnerTypeUser or OwnerTypeOrg.
 	// Set after form completion and before RunSteps is called.
 	OwnerType string
+
 }

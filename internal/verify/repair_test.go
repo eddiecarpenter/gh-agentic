@@ -440,3 +440,148 @@ func TestRepairProject_Fails_ReturnsFail(t *testing.T) {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RepairProjectStatus tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
+	callCount := 0
+	var mutationCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			// Resolve project node ID (user query).
+			return "PVT_123", nil
+		case 2:
+			// Fetch Status field ID.
+			return "FIELD_456", nil
+		case 3:
+			// Update mutation.
+			mutationCalled = true
+			// Verify mutation contains canonical options.
+			for _, a := range args {
+				if strings.Contains(a, "updateProjectV2Field") && strings.Contains(a, "Scoping") && strings.Contains(a, "Done") {
+					return `{"data":{}}`, nil
+				}
+			}
+			return `{"data":{}}`, nil
+		}
+		return "", nil
+	}
+
+	result := RepairProjectStatus("owner", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !mutationCalled {
+		t.Error("expected update mutation to be called")
+	}
+}
+
+func TestRepairProjectStatus_NoProject_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("no project found")
+	}
+
+	result := RepairProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return "PVT_123", nil
+		case 2:
+			return "FIELD_456", nil
+		case 3:
+			return "mutation error", fmt.Errorf("mutation failed")
+		}
+		return "", nil
+	}
+
+	result := RepairProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RepairProjectCollaborator tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairProjectCollaborator_Success_ReturnsPass(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return "PVT_123", nil // resolve project node ID
+		case 2:
+			return "USER_NODE_456", nil // resolve user node ID
+		case 3:
+			return `{"data":{}}`, nil // mutation success
+		}
+		return "", nil
+	}
+
+	result := RepairProjectCollaborator("owner", "goose-agent", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectCollaborator_EmptyAgentUser_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		t.Fatal("run should not be called when agent user is empty")
+		return "", nil
+	}
+
+	result := RepairProjectCollaborator("owner", "", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectCollaborator_UserResolutionFails_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "PVT_123", nil
+		}
+		return "", fmt.Errorf("user not found")
+	}
+
+	result := RepairProjectCollaborator("owner", "goose-agent", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectCollaborator_MutationFails_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return "PVT_123", nil
+		case 2:
+			return "USER_NODE_456", nil
+		case 3:
+			return "error", fmt.Errorf("mutation failed")
+		}
+		return "", nil
+	}
+
+	result := RepairProjectCollaborator("owner", "goose-agent", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}

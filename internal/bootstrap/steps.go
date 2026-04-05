@@ -531,27 +531,36 @@ func fetchProjectNodeID(graphqlDo GraphQLDoFunc, owner string, number int) strin
 // Step 8b — ConfigureProjectStatus (org accounts only)
 // --------------------------------------------------------------------------------------
 
-// agenticStatusOptions defines the standard status column configuration for agentic projects.
-var agenticStatusOptions = []struct {
-	Name  string
-	Color string
-}{
-	{Name: "Backlog", Color: "GRAY"},
-	{Name: "In Design", Color: "BLUE"},
-	{Name: "In Development", Color: "ORANGE"},
-	{Name: "In Review", Color: "YELLOW"},
-	{Name: "Done", Color: "GREEN"},
+// StatusOption defines a single status column option for agentic projects.
+type StatusOption struct {
+	Name        string
+	Color       string
+	Description string
 }
 
-// ConfigureProjectStatus customises the GitHub Project Status field options for org accounts.
-// For personal accounts this step is silently skipped.
+// AgenticStatusOptions defines the canonical 6-option status column configuration for agentic projects.
+// Exported so the verify package can reference the canonical set for check/repair.
+var AgenticStatusOptions = []StatusOption{
+	{Name: "Backlog", Color: "GRAY", Description: "Prioritised, ready to start"},
+	{Name: "Scoping", Color: "PURPLE", Description: "Requirement or feature being scoped"},
+	{Name: "Scheduled", Color: "BLUE", Description: "Scoped and queued, waiting for design"},
+	{Name: "In Design", Color: "PINK", Description: "Feature Design session active"},
+	{Name: "In Development", Color: "YELLOW", Description: "Dev Session active"},
+	{Name: "Done", Color: "GREEN", Description: "Merged and closed"},
+}
+
+// StatusOptionNames returns the canonical status option names in order.
+func StatusOptionNames() []string {
+	names := make([]string, len(AgenticStatusOptions))
+	for i, opt := range AgenticStatusOptions {
+		names[i] = opt.Name
+	}
+	return names
+}
+
+// ConfigureProjectStatus customises the GitHub Project Status field options.
 // This is best-effort — failures are logged as warnings, not returned as errors.
 func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, graphqlDo GraphQLDoFunc) error {
-	if cfg.OwnerType != OwnerTypeOrg {
-		fmt.Fprintln(w, "  "+ui.Muted.Render("· Skipping status column customisation (personal account)"))
-		return nil
-	}
-
 	if state.ProjectNodeID == "" {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Skipping status column customisation (no project node ID)"))
 		return nil
@@ -598,10 +607,11 @@ func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, 
 
 	// Build the singleSelectOptions input.
 	var optionInputs []map[string]string
-	for _, opt := range agenticStatusOptions {
+	for _, opt := range AgenticStatusOptions {
 		optionInputs = append(optionInputs, map[string]string{
-			"name":  opt.Name,
-			"color": opt.Color,
+			"name":        opt.Name,
+			"color":       opt.Color,
+			"description": opt.Description,
 		})
 	}
 

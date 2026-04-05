@@ -262,6 +262,131 @@ func RepairGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// GitHub Project status repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RepairProjectStatus applies the canonical 7 status options to the GitHub Project
+// via GraphQL mutation. Uses run to shell out to gh api graphql.
+func RepairProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult {
+	// Step 1: Find the project node ID.
+	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	if projectNodeID == "" {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: "no GitHub Project found for owner " + owner,
+		}
+	}
+
+	// Step 2: Fetch the Status field ID.
+	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to fetch Status field ID: %v", err),
+		}
+	}
+
+	fieldID := strings.TrimSpace(out)
+	if fieldID == "" || fieldID == "null" {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: "Status field not found on project",
+		}
+	}
+
+	// Step 3: Build the mutation with canonical options.
+	var optionEntries []string
+	for _, opt := range bootstrap.AgenticStatusOptions {
+		optionEntries = append(optionEntries, fmt.Sprintf(`{name: \"%s\", color: %s, description: \"%s\"}`, opt.Name, opt.Color, opt.Description))
+	}
+	optionsStr := strings.Join(optionEntries, ", ")
+
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Field(input: { fieldId: \"%s\", projectId: \"%s\", singleSelectOptions: [%s] }) { field { ... on ProjectV2SingleSelectField { id } } } }`,
+		fieldID, projectNodeID, optionsStr)
+
+	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to update status options: %v — %s", err, strings.TrimSpace(out)),
+		}
+	}
+
+	return CheckResult{
+		Name:   checkProjectStatusName,
+		Status: Pass,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub Project collaborator repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RepairProjectCollaborator adds the configured agent user as a WRITER on the
+// GitHub Project. Uses run to shell out to gh api graphql.
+func RepairProjectCollaborator(owner string, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+	if agentUser == "" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Pass,
+			Message: "no agent user configured",
+		}
+	}
+
+	// Find the project node ID.
+	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	if projectNodeID == "" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: "no GitHub Project found for owner " + owner,
+		}
+	}
+
+	// Resolve the agent user's GitHub node ID.
+	userQuery := fmt.Sprintf(`{ user(login: \"%s\") { id } }`, agentUser)
+	out, err := run("gh", "api", "graphql", "-f", "query="+userQuery, "--jq", ".data.user.id")
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to resolve user %s: %v", agentUser, err),
+		}
+	}
+
+	userID := strings.TrimSpace(out)
+	if userID == "" || userID == "null" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: "user " + agentUser + " not found on GitHub",
+		}
+	}
+
+	// Invite as project collaborator with WRITER role.
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Collaborators(input: { projectId: \"%s\", collaborators: [{ userId: \"%s\", role: WRITER }] }) { clientMutationId } }`,
+		projectNodeID, userID)
+	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to add collaborator: %v — %s", err, strings.TrimSpace(out)),
+		}
+	}
+
+	return CheckResult{
+		Name:   checkProjectCollaboratorName,
+		Status: Pass,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Directory integrity repairs
 // ──────────────────────────────────────────────────────────────────────────────
 

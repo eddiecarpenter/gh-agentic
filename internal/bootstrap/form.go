@@ -248,6 +248,7 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 				Value(&cfg.Antora),
 		),
 	)
+
 	if err := detailsForm.Run(); err != nil {
 		return BootstrapConfig{}, fmt.Errorf("project details form: %w", err)
 	}
