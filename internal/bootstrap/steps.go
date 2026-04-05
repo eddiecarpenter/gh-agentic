@@ -546,9 +546,9 @@ func fetchProjectNodeID(graphqlDo GraphQLDoFunc, owner string, number int) strin
 
 // StatusOption defines a single status column option for agentic projects.
 type StatusOption struct {
-	Name        string
-	Color       string
-	Description string
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
 }
 
 // AgenticStatusOptions defines the canonical 6-option status column configuration for agentic projects.
