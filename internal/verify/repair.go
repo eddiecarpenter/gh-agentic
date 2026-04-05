@@ -362,11 +362,9 @@ func RepairGooseRecipes(root string) CheckResult {
 	var stillMissing []string
 	for _, name := range expectedRecipeYAMLs {
 		dst := filepath.Join(recipesPath, name)
-		if _, err := os.Stat(dst); err == nil {
-			continue // already present
-		}
-		// Fetch raw content from template via gh api.
-		content, fetchErr := fetchFileFromRepo(templateRepo, ".goose/recipes/"+name)
+		// Always fetch and overwrite — recipe updates from the template must
+		// flow through to deployed repos (see issue #127).
+		content, fetchErr := fetchFileFn(templateRepo, ".goose/recipes/"+name)
 		if fetchErr != nil {
 			stillMissing = append(stillMissing, name)
 			continue
@@ -444,6 +442,10 @@ func RepairWorkflows(root string) CheckResult {
 		Status: Pass,
 	}
 }
+
+// fetchFileFn is the function used to fetch files from a GitHub repo.
+// It defaults to fetchFileFromRepo but can be overridden in tests.
+var fetchFileFn = fetchFileFromRepo
 
 // fetchFileFromRepo fetches the raw content of a file from a GitHub repo
 // using the gh API. Returns the decoded file bytes.
