@@ -281,9 +281,10 @@ func CheckWorkflows(root string) CheckResult {
 // GitHub remote checks
 // ──────────────────────────────────────────────────────────────────────────────
 
-// standardLabels are the 9 labels required in every agentic repo.
+// standardLabels are the 11 labels required in every agentic repo.
 var standardLabels = []string{
 	"requirement", "feature", "task", "backlog", "draft",
+	"scoping", "scheduled",
 	"in-design", "in-development", "in-review", "done",
 }
 
@@ -292,7 +293,7 @@ type labelEntry struct {
 	Name string `json:"name"`
 }
 
-// CheckLabels verifies that all 9 standard labels exist in the repo.
+// CheckLabels verifies that all 11 standard labels exist in the repo.
 // repoFullName is "owner/repo". run is injected for gh operations.
 func CheckLabels(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
 	out, err := run("gh", "label", "list", "--repo", repoFullName, "--json", "name", "--limit", "100")

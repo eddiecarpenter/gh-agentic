@@ -238,9 +238,10 @@ func extractInitCommands(content string) ([]string, error) {
 // Step 6 — ConfigureRepo
 // --------------------------------------------------------------------------------------
 
-// standardLabels are the 9 labels created in every agentic repo.
+// standardLabels are the 11 labels created in every agentic repo.
 var standardLabels = []string{
 	"requirement", "feature", "task", "backlog", "draft",
+	"scoping", "scheduled",
 	"in-design", "in-development", "in-review", "done",
 }
 

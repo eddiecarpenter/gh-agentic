@@ -379,9 +379,9 @@ func TestRepairLabels_CreatesMissingOnly(t *testing.T) {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	// Should have created 7 labels (9 standard - 2 existing).
-	if len(createdLabels) != 7 {
-		t.Errorf("expected 7 labels created, got %d: %v", len(createdLabels), createdLabels)
+	// Should have created 9 labels (11 standard - 2 existing).
+	if len(createdLabels) != 9 {
+		t.Errorf("expected 9 labels created, got %d: %v", len(createdLabels), createdLabels)
 	}
 
 	// Verify requirement and feature were NOT in the created list.
