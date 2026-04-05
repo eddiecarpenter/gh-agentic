@@ -604,6 +604,75 @@ func resolveProjectNodeIDViaRun(owner string, run bootstrap.RunCommandFunc) stri
 	return resp.Projects[0].ID
 }
 
+// checkProjectItemStatusesName is the check name used for project item status verification.
+const checkProjectItemStatusesName = "Project items have status assigned"
+
+// CheckProjectItemStatuses verifies that all project items have a status
+// field value assigned. Returns Warning if any items have no status, Pass
+// otherwise. Uses the same project resolution pattern as CheckProjectStatus.
+func CheckProjectItemStatuses(owner string, root string, run bootstrap.RunCommandFunc) CheckResult {
+	// Resolve project node ID.
+	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	if projectNodeID == "" {
+		return CheckResult{
+			Name:    checkProjectItemStatusesName,
+			Status:  Fail,
+			Message: "no GitHub Project found for owner " + owner,
+		}
+	}
+
+	// Fetch Status field ID.
+	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectItemStatusesName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to fetch Status field ID: %v", err),
+		}
+	}
+
+	fieldID := strings.TrimSpace(out)
+	if fieldID == "" || fieldID == "null" {
+		return CheckResult{
+			Name:    checkProjectItemStatusesName,
+			Status:  Fail,
+			Message: "Status field not found on project",
+		}
+	}
+
+	// Fetch all project items.
+	items, fetchErr := fetchAllProjectItems(projectNodeID, fieldID, run)
+	if fetchErr != nil {
+		return CheckResult{
+			Name:    checkProjectItemStatusesName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to fetch project items: %v", fetchErr),
+		}
+	}
+
+	// Count items with no status assigned.
+	noStatus := 0
+	for _, item := range items {
+		if item.CurrentStatus == "" {
+			noStatus++
+		}
+	}
+
+	if noStatus > 0 {
+		return CheckResult{
+			Name:    checkProjectItemStatusesName,
+			Status:  Warning,
+			Message: fmt.Sprintf("⚠ %d project items have no status — run --resync-statuses to fix", noStatus),
+		}
+	}
+
+	return CheckResult{
+		Name:   checkProjectItemStatusesName,
+		Status: Pass,
+	}
+}
+
 // checkProjectCollaboratorName is the check name used for project collaborator verification.
 const checkProjectCollaboratorName = "Agent user is a project collaborator"
 

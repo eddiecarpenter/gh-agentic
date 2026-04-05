@@ -82,7 +82,16 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	// CheckProjectStatus: fetch status options via GraphQL.
 	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, "--jq", ".data.node.field.options[].name"}, "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil)
 
-	// resolveProjectNodeIDViaRun (used by CheckProjectCollaborator): gh project list --limit 1 (second call)
+	// resolveProjectNodeIDViaRun (used by CheckProjectItemStatuses): gh project list --limit 1
+	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+
+	// CheckProjectItemStatuses: fetch Status field ID via GraphQL.
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, "--jq", ".data.node.field.id"}, "FIELD_STATUS_1", nil)
+
+	// CheckProjectItemStatuses: fetch all project items (empty — all have status).
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { items(first: 100) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`}, `{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[]}}}}`, nil)
+
+	// resolveProjectNodeIDViaRun (used by CheckProjectCollaborator): gh project list --limit 1
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
 
 	return m
