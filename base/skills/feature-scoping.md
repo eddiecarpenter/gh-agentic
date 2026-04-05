@@ -14,31 +14,53 @@ Run this before Feature Design — you cannot design what has not been scoped.
 
 Open Goose and select the **Feature Scoping (Stage 2)** recipe.
 
+## Requirement Label Transitions
+
+During a scoping session, the agent manages the parent requirement's lifecycle labels:
+
+1. **Session start** (after loading the requirement): removes `backlog`, applies `scoping`
+2. **Session end** (after all features created and `in-design` applied): removes `scoping`, applies `scheduled`
+
+The full requirement label lifecycle: **Backlog → Scoping → Scheduled → Done**
+
 ## What the Agent Does
 
 1. Lists available requirements in `backlog` state
 2. Waits for the human to select a requirement
-3. Works through seven artefacts to define the feature:
+3. Transitions the requirement from `backlog` to `scoping`
+4. Works through seven artefacts to define the feature:
    - Raw idea summary
    - Problem statement
-   - Feature definition (single capability)
+   - Feature definition — includes a user story statement in `As a [user], I want [goal], so that [benefit]` format
    - MVP scope
-   - Acceptance criteria
+   - **Parallel/serial checkpoint** — asks whether all parts can be built independently or must be sequenced. Independent work → multiple features (parallel). Sequential work → one feature with ordered tasks (same branch, same PR). Never creates multiple features with implied serial dependencies.
+   - Acceptance criteria (checkboxes, outcome-based)
    - UX design (if applicable)
    - Parking lot review
-4. Creates Feature issues in the domain repo with `feature` + `backlog` labels
-5. Wires sub-issue relationship: Feature → parent Requirement
-6. Applies `in-design` label to trigger the Feature Design workflow
+5. Verifies user story is present and complete before creating the issue
+6. Creates Feature issues in the domain repo with `feature` + `backlog` labels
+7. Wires sub-issue relationship: Feature → parent Requirement
+8. Applies `in-design` label to trigger the Feature Design workflow
+9. Transitions the requirement from `scoping` to `scheduled`
 
 ## Outputs
 
-- One or more Feature issues in the domain repo
-- UX design (ASCII mockups, flow, error states) included in the feature issue body where applicable
+- One or more Feature issues in the domain repo, each containing:
+  - `## User Story` section with `As a / I want / so that` structure
+  - `## Context` with background and motivation
+  - `## Scope` and `## Out of Scope` sections
+  - `## Acceptance Criteria` with checkboxes (`- [ ]` format)
+  - `## UX Design` (if applicable) with ASCII mockups, flow, error states
+  - `## Parent Requirement` linking back to the originating requirement
 - `in-design` label applied — triggers automatic Feature Design Session
+- Parent requirement transitioned from `scoping` to `scheduled`
 
 ## Rules
 
+- Serial vs parallel decomposition: independent capabilities → separate features; sequential capabilities → one feature with ordered tasks; never create multiple features with implied serial dependencies
 - Push toward MVP — smallest version that delivers real value
+- User story format is mandatory — every feature issue must include `As a / I want / so that`
+- Acceptance criteria must use checkbox format (`- [ ]`) and be outcome-based
 - UX design must be done now, not deferred to implementation
 - Never accept solution criteria — convert to outcome criteria
 - If an idea is out of scope, capture it in the parking lot

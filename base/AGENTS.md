@@ -29,6 +29,9 @@ At the start of every session, read these sources in order before doing anything
    `gh issue list --label feature --state open --json number,title,labels,body`
 5. Read the relevant standards file from `base/standards/` for the domain language
    (e.g. `base/standards/go.md` for Go domains)
+6. Load skills from `base/skills/` (template-managed, read-only) and `skills/`
+   (local, project-specific, if the directory exists). Local skills in `skills/`
+   take precedence over template skills in `base/skills/` of the same name.
 
 Do not skip any step. Do not begin work until all steps are complete.
 
@@ -108,11 +111,11 @@ gh api repos/<owner>/<repo>/branches/main/protection \
 ```
 
 **Standard labels** — create if not present:
-`requirement`, `feature`, `task`, `backlog`, `draft`, `in-design`,
-`in-development`, `in-review`, `done`
+`requirement`, `feature`, `task`, `backlog`, `draft`, `scoping`, `scheduled`,
+`in-design`, `in-development`, `in-review`, `done`
 
 ```bash
-for label in requirement feature task backlog draft in-design in-development in-review done; do
+for label in requirement feature task backlog draft scoping scheduled in-design in-development in-review done; do
   gh label create "$label" --repo <owner>/<repo> --force
 done
 ```
@@ -140,6 +143,9 @@ In the cloned repo:
 ```bash
 gh project create --owner <owner> --title "<project-name>"
 ```
+
+Configure the project board with the standard status columns:
+**Backlog**, **Scoping**, **Scheduled**, **In Design**, **In Development**, **In Review**, **Done**
 
 #### Step 9 — Hand Off
 
@@ -279,16 +285,20 @@ in the relevant domain repo(s). No branch, no commit, no PR.
 1. Read context (see Session Initialisation)
 2. Read the target Requirement issue in full
 3. Converse with the human to scope the Feature(s)
-4. Identify whether the Feature has UI/UX impact:
+4. Decide serial vs parallel decomposition:
+   - If capabilities can be built and merged independently → create separate features (run in parallel)
+   - If capabilities must be built in sequence → create one feature with ordered tasks (same branch, same PR)
+   - Never create multiple features with implied serial dependencies
+5. Identify whether the Feature has UI/UX impact:
    - Not every requirement has a UI impact
    - A single requirement may produce multiple features, some with UI impact and some without
    - For any feature with UI impact: design the UX now — ASCII mockups, flow descriptions,
      field layout, error states, colour/theming decisions — and include it in the feature issue
    - Do not leave UX decisions to the Feature Design Session or implementation
-5. Create Feature issue(s) in the domain repo with `feature` + `backlog` label
-6. Wire sub-issue relationship: Feature → parent Requirement
-7. Add Feature to org Project
-8. When human confirms ready: apply `in-design` label → triggers Feature Design Session
+6. Create Feature issue(s) in the domain repo with `feature` + `backlog` label
+7. Wire sub-issue relationship: Feature → parent Requirement
+8. Add Feature to org Project
+9. When human confirms ready: apply `in-design` label → triggers Feature Design Session
 
 ### Feature Design Session (Phase 3)
 
@@ -431,10 +441,15 @@ Goose recipes live in two places:
 |---|---|---|
 | `.goose/recipes/*.yaml` | ❌ Never (managed by template) | The complete recipe — instructions, parameters, model settings |
 | `base/skills/*.md` | ❌ Never | Human-readable reference docs for each session type (the skills) |
+| `skills/*.md` | ✅ Yes (local, project-specific) | Local skills that extend or override template skills |
 
 **`.goose/recipes/*.yaml` files are managed by the `agentic-development` template.**
 **`base/skills/*.md` files are read-only reference documentation.**
 Neither should ever be modified locally.
+
+**`skills/*.md` files are local, project-specific skills.** They are not synced
+by the template and can be freely created and edited. A local skill with the same
+filename as a template skill in `base/skills/` takes precedence.
 
 The six standard recipes are:
 

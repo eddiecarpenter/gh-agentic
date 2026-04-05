@@ -1,16 +1,15 @@
-name: Sync Label to Status
+name: Add Issue to Project
 
-# Synchronises issue labels to GitHub Project V2 status columns.
-# When a pipeline label is applied to an issue, this workflow finds the
-# corresponding ProjectV2 item and updates its status field to match.
+# Automatically adds newly opened issues to the GitHub Project board
+# and sets their initial status based on pipeline labels.
 
 on:
   issues:
-    types: [labeled]
+    types: [opened]
 
 jobs:
-  sync-label-to-status:
-    name: Sync label to project status
+  add-issue-to-project:
+    name: Add issue to project board
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,85 +31,82 @@ jobs:
           fi
 
       # -----------------------------------------------------------------------
-      # Step 2 — Map the applied label to a project status column name
-      # Only pipeline labels are mapped; all others are ignored silently
+      # Step 2 — Add issue to project
+      # Uses addProjectV2ItemById mutation to add the issue to the board
       # -----------------------------------------------------------------------
-      - name: Map label to status
+      - name: Add issue to project
         if: steps.config.outputs.skip != 'true'
-        id: map
-        run: |
-          LABEL="${{ github.event.label.name }}"
-          case "${LABEL}" in
-            backlog)          STATUS="Backlog" ;;
-            scoping)          STATUS="Scoping" ;;
-            scheduled)        STATUS="Scheduled" ;;
-            in-design)        STATUS="In Design" ;;
-            in-development)   STATUS="In Development" ;;
-            in-review)        STATUS="In Review" ;;
-            done)             STATUS="Done" ;;
-            *)
-              echo "Label '${LABEL}' is not a pipeline label — skipping"
-              echo "skip=true" >> $GITHUB_OUTPUT
-              exit 0
-              ;;
-          esac
-          echo "status=${STATUS}" >> $GITHUB_OUTPUT
-          echo "skip=false" >> $GITHUB_OUTPUT
-
-      # -----------------------------------------------------------------------
-      # Step 3 — Find the ProjectV2 item linked to this issue
-      # -----------------------------------------------------------------------
-      - name: Find project item
-        if: steps.config.outputs.skip != 'true' && steps.map.outputs.skip != 'true'
-        id: item
+        id: add
         env:
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
           ISSUE_NODE_ID="${{ github.event.issue.node_id }}"
           PROJECT_ID="${{ vars.AGENTIC_PROJECT_ID }}"
 
-          # Query the project item linked to this issue
           RESULT=$(gh api graphql -f query='
-            query($issueId: ID!) {
-              node(id: $issueId) {
-                ... on Issue {
-                  projectItems(first: 100) {
-                    nodes {
-                      id
-                      project {
-                        id
-                      }
-                    }
-                  }
+            mutation($projectId: ID!, $contentId: ID!) {
+              addProjectV2ItemById(input: {
+                projectId: $projectId
+                contentId: $contentId
+              }) {
+                item {
+                  id
                 }
               }
             }
-          ' -f issueId="${ISSUE_NODE_ID}")
+          ' \
+            -f projectId="${PROJECT_ID}" \
+            -f contentId="${ISSUE_NODE_ID}")
 
-          # Find the item that belongs to our project
-          ITEM_ID=$(echo "${RESULT}" | jq -r \
-            --arg pid "${PROJECT_ID}" \
-            '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+          ITEM_ID=$(echo "${RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
 
-          if [ -z "${ITEM_ID}" ]; then
-            echo "Issue not in project — adding now"
-            ADD_RESULT=$(gh api graphql -f query='
-              mutation($projectId: ID!, $contentId: ID!) {
-                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                  item { id }
-                }
-              }
-            ' -f projectId="${PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
-            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
+          if [ -z "${ITEM_ID}" ] || [ "${ITEM_ID}" = "null" ]; then
+            echo "::error::Failed to add issue to project"
+            exit 1
           fi
 
           echo "item_id=${ITEM_ID}" >> $GITHUB_OUTPUT
+          echo "Added issue to project — item ID: ${ITEM_ID}"
+
+      # -----------------------------------------------------------------------
+      # Step 3 — Map issue labels to a project status column name
+      # Only pipeline labels are mapped; if none present, skip status update
+      # -----------------------------------------------------------------------
+      - name: Map labels to status
+        if: steps.config.outputs.skip != 'true' && steps.add.outputs.item_id
+        id: map
+        run: |
+          # Read all labels from the issue event payload
+          LABELS='${{ toJson(github.event.issue.labels.*.name) }}'
+
+          STATUS=""
+          for LABEL in $(echo "${LABELS}" | jq -r '.[]'); do
+            case "${LABEL}" in
+              backlog)          STATUS="Backlog"; break ;;
+              scoping)          STATUS="Scoping"; break ;;
+              scheduled)        STATUS="Scheduled"; break ;;
+              in-design)        STATUS="In Design"; break ;;
+              in-development)   STATUS="In Development"; break ;;
+              in-review)        STATUS="In Review"; break ;;
+              done)             STATUS="Done"; break ;;
+            esac
+          done
+
+          if [ -z "${STATUS}" ]; then
+            echo "No pipeline label found — leaving status unset"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "status=${STATUS}" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "Mapped label to status: ${STATUS}"
 
       # -----------------------------------------------------------------------
       # Step 4 — Get the Status field ID and option ID for the target status
       # -----------------------------------------------------------------------
       - name: Get status field and option
-        if: steps.config.outputs.skip != 'true' && steps.map.outputs.skip != 'true' && steps.item.outputs.item_id
+        if: steps.config.outputs.skip != 'true' && steps.add.outputs.item_id && steps.map.outputs.skip != 'true'
         id: field
         env:
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
@@ -166,12 +162,12 @@ jobs:
       # Step 5 — Update the project item status
       # -----------------------------------------------------------------------
       - name: Update project status
-        if: steps.config.outputs.skip != 'true' && steps.map.outputs.skip != 'true' && steps.item.outputs.item_id && steps.field.outputs.field_id
+        if: steps.config.outputs.skip != 'true' && steps.add.outputs.item_id && steps.map.outputs.skip != 'true' && steps.field.outputs.field_id
         env:
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
           PROJECT_ID="${{ vars.AGENTIC_PROJECT_ID }}"
-          ITEM_ID="${{ steps.item.outputs.item_id }}"
+          ITEM_ID="${{ steps.add.outputs.item_id }}"
           FIELD_ID="${{ steps.field.outputs.field_id }}"
           OPTION_ID="${{ steps.field.outputs.option_id }}"
 
