@@ -238,9 +238,10 @@ func extractInitCommands(content string) ([]string, error) {
 // Step 6 — ConfigureRepo
 // --------------------------------------------------------------------------------------
 
-// standardLabels are the 9 labels created in every agentic repo.
+// standardLabels are the 11 labels created in every agentic repo.
 var standardLabels = []string{
 	"requirement", "feature", "task", "backlog", "draft",
+	"scoping", "scheduled",
 	"in-design", "in-development", "in-review", "done",
 }
 
@@ -292,10 +293,22 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 			"- **Description:** %s\n\n"+
 			"## Repo\n\n"+
 			"- **GitHub:** %s\n"+
-			"- **Owner:** %s\n",
+			"- **Owner:** %s\n\n"+
+			"## Skills\n\n"+
+			"The `skills/` directory is for local project-specific skills that extend\n"+
+			"or override template skills in `base/skills/`.\n",
 		cfg.ProjectName, cfg.Topology, cfg.Stack, cfg.Description, state.RepoURL, cfg.Owner)
 	if err := os.WriteFile(filepath.Join(state.ClonePath, "AGENTS.local.md"), []byte(agentsLocal), 0644); err != nil {
 		return fmt.Errorf("writing AGENTS.local.md: %w", err)
+	}
+
+	// Create skills/.gitkeep for local project-specific skills.
+	skillsDir := filepath.Join(state.ClonePath, "skills")
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		return fmt.Errorf("creating skills/: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, ".gitkeep"), []byte{}, 0644); err != nil {
+		return fmt.Errorf("writing skills/.gitkeep: %w", err)
 	}
 
 	// Write README.md.

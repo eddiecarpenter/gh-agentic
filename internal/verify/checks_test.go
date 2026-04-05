@@ -45,6 +45,25 @@ func TestCheckAGENTSLocalMD_Missing_ReturnsWarning(t *testing.T) {
 	}
 }
 
+func TestCheckSkillsDir_Present_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := CheckSkillsDir(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckSkillsDir_Absent_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	result := CheckSkillsDir(root)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
 func TestCheckTEMPLATESOURCE_Present_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("eddiecarpenter/agentic-development\n"), 0o644); err != nil {
@@ -361,7 +380,7 @@ func TestCheckBaseDir_GitFails_ReturnsWarning(t *testing.T) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 func TestCheckLabels_AllPresent_ReturnsPass(t *testing.T) {
-	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"scoping"},{"name":"scheduled"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
 	fakeRun := func(name string, args ...string) (string, error) {
 		return labelsJSON, nil
 	}
@@ -399,7 +418,7 @@ func TestCheckLabels_CommandFails_ReturnsFail(t *testing.T) {
 }
 
 func TestCheckLabels_WithExtraLabels_ReturnsPass(t *testing.T) {
-	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"},{"name":"bug"},{"name":"enhancement"}]`
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"scoping"},{"name":"scheduled"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"},{"name":"bug"},{"name":"enhancement"}]`
 	fakeRun := func(name string, args ...string) (string, error) {
 		return labelsJSON, nil
 	}
@@ -444,7 +463,7 @@ func TestCheckProject_CommandFails_ReturnsFail(t *testing.T) {
 }
 
 func TestMissingLabels_AllPresent_ReturnsEmpty(t *testing.T) {
-	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
+	labelsJSON := `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"scoping"},{"name":"scheduled"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
 	fakeRun := func(name string, args ...string) (string, error) {
 		return labelsJSON, nil
 	}
@@ -756,7 +775,7 @@ func TestMissingLabels_SomeMissing_ReturnsOnlyMissing(t *testing.T) {
 	}
 
 	missing := MissingLabels("owner/repo", fakeRun)
-	if len(missing) != 7 {
-		t.Errorf("expected 7 missing labels, got %d: %v", len(missing), missing)
+	if len(missing) != 9 {
+		t.Errorf("expected 9 missing labels, got %d: %v", len(missing), missing)
 	}
 }

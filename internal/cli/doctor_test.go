@@ -11,7 +11,7 @@ import (
 )
 
 // standardLabelsJSON is the JSON output that MockRunner returns for gh label list --json name.
-const standardLabelsJSON = `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
+const standardLabelsJSON = `[{"name":"requirement"},{"name":"feature"},{"name":"task"},{"name":"backlog"},{"name":"draft"},{"name":"scoping"},{"name":"scheduled"},{"name":"in-design"},{"name":"in-development"},{"name":"in-review"},{"name":"done"}]`
 
 // projectJSON is the JSON output that MockRunner returns for gh project list --format json.
 const projectJSON = `{"projects":[{"title":"test-project"}]}`

@@ -49,6 +49,25 @@ func CheckAGENTSLocalMD(root string) CheckResult {
 	}
 }
 
+// CheckSkillsDir verifies that the skills/ directory exists in the repo root.
+// Returns Warning (not Fail) if absent — it is optional but recommended for
+// local project-specific skills.
+func CheckSkillsDir(root string) CheckResult {
+	path := filepath.Join(root, "skills")
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) || (err == nil && !info.IsDir()) {
+		return CheckResult{
+			Name:    "skills/ directory exists",
+			Status:  Warning,
+			Message: "directory not found — recommended for local project-specific skills",
+		}
+	}
+	return CheckResult{
+		Name:   "skills/ directory exists",
+		Status: Pass,
+	}
+}
+
 // CheckTEMPLATESOURCE verifies that TEMPLATE_SOURCE exists in the repo root.
 // Returns Warning if the file is missing (requires user input to repair).
 func CheckTEMPLATESOURCE(root string) CheckResult {
@@ -281,9 +300,10 @@ func CheckWorkflows(root string) CheckResult {
 // GitHub remote checks
 // ──────────────────────────────────────────────────────────────────────────────
 
-// standardLabels are the 9 labels required in every agentic repo.
+// standardLabels are the 11 labels required in every agentic repo.
 var standardLabels = []string{
 	"requirement", "feature", "task", "backlog", "draft",
+	"scoping", "scheduled",
 	"in-design", "in-development", "in-review", "done",
 }
 
@@ -292,7 +312,7 @@ type labelEntry struct {
 	Name string `json:"name"`
 }
 
-// CheckLabels verifies that all 9 standard labels exist in the repo.
+// CheckLabels verifies that all 11 standard labels exist in the repo.
 // repoFullName is "owner/repo". run is injected for gh operations.
 func CheckLabels(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
 	out, err := run("gh", "label", "list", "--repo", repoFullName, "--json", "name", "--limit", "100")

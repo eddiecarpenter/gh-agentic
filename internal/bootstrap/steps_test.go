@@ -424,6 +424,54 @@ func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 			t.Errorf("%s is empty", f)
 		}
 	}
+
+	// Verify skills/.gitkeep is created.
+	if _, err := os.Stat(filepath.Join(dir, "skills", ".gitkeep")); err != nil {
+		t.Error("expected skills/.gitkeep to exist")
+	}
+}
+
+func TestPopulateRepo_CreatesSkillsGitkeep(t *testing.T) {
+	dir := t.TempDir()
+	cfg := BootstrapConfig{
+		Owner:       "alice",
+		ProjectName: "my-project",
+		Topology:    "Single",
+		Stack:       "Go",
+		Description: "A test project",
+		Antora:      false,
+	}
+	state := &StepState{
+		RepoName:  "my-project",
+		ClonePath: dir,
+		RepoURL:   "https://github.com/alice/my-project",
+	}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	gitkeepPath := filepath.Join(dir, "skills", ".gitkeep")
+	info, err := os.Stat(gitkeepPath)
+	if err != nil {
+		t.Fatalf("expected skills/.gitkeep to exist, got: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Errorf("expected skills/.gitkeep to be empty, got %d bytes", info.Size())
+	}
+
+	// Verify AGENTS.local.md mentions skills/ directory.
+	data, err := os.ReadFile(filepath.Join(dir, "AGENTS.local.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "## Skills") {
+		t.Error("AGENTS.local.md should contain a ## Skills section")
+	}
+	if !strings.Contains(string(data), "skills/") {
+		t.Error("AGENTS.local.md should mention skills/ directory")
+	}
 }
 
 func TestPopulateRepo_AntoraTrue_ScaffoldsExtraFiles(t *testing.T) {
