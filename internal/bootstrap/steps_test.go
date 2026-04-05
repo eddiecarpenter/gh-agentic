@@ -1066,6 +1066,47 @@ func TestPrintSummary_OutputContainsAllFields(t *testing.T) {
 	}
 }
 
+func TestPrintSummary_OrgAccount_ShowsPATGuidance(t *testing.T) {
+	cfg := BootstrapConfig{ProjectName: "my-project", OwnerType: OwnerTypeOrg}
+	state := &StepState{
+		RepoURL:    "https://github.com/acme-org/my-project",
+		ProjectURL: "https://github.com/orgs/acme-org/projects/1",
+		ClonePath:  "/home/alice/Development/my-project",
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if !strings.Contains(out, "GOOSE_AGENT_PAT") {
+		t.Errorf("expected PAT guidance for org account, got: %s", out)
+	}
+	if !strings.Contains(out, "github.com/settings/tokens") {
+		t.Errorf("expected token URL in PAT guidance, got: %s", out)
+	}
+}
+
+func TestPrintSummary_UserAccount_NoPATGuidance(t *testing.T) {
+	cfg := BootstrapConfig{ProjectName: "my-project", OwnerType: OwnerTypeUser}
+	state := &StepState{
+		RepoURL:    "https://github.com/alice/my-project",
+		ProjectURL: "https://github.com/users/alice/projects/1",
+		ClonePath:  "/home/alice/Development/my-project",
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if strings.Contains(out, "GOOSE_AGENT_PAT") {
+		t.Errorf("expected no PAT guidance for personal account, got: %s", out)
+	}
+}
+
 // --------------------------------------------------------------------------------------
 // Internal helpers
 // --------------------------------------------------------------------------------------

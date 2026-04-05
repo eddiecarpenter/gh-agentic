@@ -756,6 +756,14 @@ func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch Lau
 	fmt.Fprintln(w, box.Render(content))
 	fmt.Fprintln(w)
 
+	// --- PAT scope guidance for org accounts ---
+	if cfg.OwnerType == OwnerTypeOrg {
+		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorPrimary))
+		fmt.Fprintln(w, "  "+infoStyle.Render("ℹ")+"  GOOSE_AGENT_PAT requires 'repo' and 'project' scopes for kanban sync to work.")
+		fmt.Fprintln(w, "     Verify scopes at: "+ui.URL.Render("github.com/settings/tokens"))
+		fmt.Fprintln(w)
+	}
+
 	// --- Goose launch prompt ---
 	fmt.Fprintln(w, ui.SectionHeading.Render("  Start Requirements Session"))
 	fmt.Fprintln(w)
