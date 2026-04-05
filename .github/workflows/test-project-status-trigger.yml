@@ -1,7 +1,7 @@
 name: TEST — Project status trigger
 
 on:
-  projects_v2_item:
+  project_item:
     types: [edited]
 
 jobs:
