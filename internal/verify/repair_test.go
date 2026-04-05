@@ -230,7 +230,7 @@ func TestRepairBaseRecipes_UserDeclines_ReturnsWarning(t *testing.T) {
 	}
 }
 
-func TestRepairGooseRecipes_CreatesDir(t *testing.T) {
+func TestRepairGooseRecipes_AlwaysOverwrites(t *testing.T) {
 	root := t.TempDir()
 	// Write TEMPLATE_SOURCE so the repair doesn't fail early.
 	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("owner/template"), 0o644); err != nil {
@@ -238,19 +238,37 @@ func TestRepairGooseRecipes_CreatesDir(t *testing.T) {
 	}
 	recipesDir := filepath.Join(root, ".goose", "recipes")
 
-	// Create all expected files so no fetch is needed.
+	// Create all expected files with old content.
 	if err := os.MkdirAll(recipesDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range expectedRecipeYAMLs {
-		if err := os.WriteFile(filepath.Join(recipesDir, name), []byte("content"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(recipesDir, name), []byte("old-content"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
+	// Stub fetchFileFn to return updated content.
+	origFetch := fetchFileFn
+	defer func() { fetchFileFn = origFetch }()
+	fetchFileFn = func(repo, path string) ([]byte, error) {
+		return []byte("updated-content"), nil
+	}
+
 	result := RepairGooseRecipes(root)
 	if result.Status != Pass {
-		t.Errorf("expected Pass when all files present, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// Verify every recipe was overwritten with the new content.
+	for _, name := range expectedRecipeYAMLs {
+		data, err := os.ReadFile(filepath.Join(recipesDir, name))
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", name, err)
+		}
+		if string(data) != "updated-content" {
+			t.Errorf("%s: expected 'updated-content', got %q", name, string(data))
+		}
 	}
 }
 
