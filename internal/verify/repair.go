@@ -327,7 +327,7 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 	}
 
 	// Step 2: Fetch the Status field ID.
-	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	fieldQuery := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
 	if err != nil {
 		return CheckResult{
@@ -353,7 +353,7 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 	}
 	optionsStr := strings.Join(optionEntries, ", ")
 
-	mutation := fmt.Sprintf(`mutation { updateProjectV2Field(input: { fieldId: \"%s\", projectId: \"%s\", singleSelectOptions: [%s] }) { field { ... on ProjectV2SingleSelectField { id } } } }`,
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Field(input: { fieldId: "%s", projectId: "%s", singleSelectOptions: [%s] }) { field { ... on ProjectV2SingleSelectField { id } } } }`,
 		fieldID, projectNodeID, optionsStr)
 
 	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
@@ -475,7 +475,7 @@ func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap
 		}
 
 		// Update the item's status.
-		mutation := fmt.Sprintf(`mutation { updateProjectV2ItemFieldValue(input: { projectId: \"%s\", itemId: \"%s\", fieldId: \"%s\", value: { singleSelectOptionId: \"%s\" } }) { clientMutationId } }`,
+		mutation := fmt.Sprintf(`mutation { updateProjectV2ItemFieldValue(input: { projectId: "%s", itemId: "%s", fieldId: "%s", value: { singleSelectOptionId: "%s" } }) { clientMutationId } }`,
 			projectID, item.ID, fieldID, wantOptionID)
 		_, mutErr := run("gh", "api", "graphql", "-f", "query="+mutation)
 		if mutErr != nil {
@@ -490,7 +490,7 @@ func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap
 // fetchStatusOptionMap fetches the Status field options and returns a map of
 // option name → option ID.
 func fetchStatusOptionMap(projectID, fieldID string, run bootstrap.RunCommandFunc) (map[string]string, error) {
-	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, projectID)
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, projectID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.field.options[] | "\(.id)|\(.name)"`)
 	if err != nil {
 		return nil, fmt.Errorf("fetching status options: %w", err)
@@ -519,10 +519,10 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 	for {
 		afterClause := ""
 		if cursor != "" {
-			afterClause = fmt.Sprintf(`, after: \"%s\"`, cursor)
+			afterClause = fmt.Sprintf(`, after: "%s"`, cursor)
 		}
 
-		query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { items(first: 100%s) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`,
+		query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { items(first: 100%s) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`,
 			projectID, afterClause)
 
 		out, err := run("gh", "api", "graphql", "-f", "query="+query)
@@ -610,7 +610,7 @@ func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCo
 	}
 
 	// Fetch Status field ID.
-	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	fieldQuery := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
 	out, fErr := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
 	if fErr != nil {
 		return 0, 0, fmt.Errorf("fetching Status field ID: %w", fErr)
@@ -670,7 +670,7 @@ func RepairProjectCollaborator(owner, repoName, agentUser string, run bootstrap.
 	}
 
 	// Invite as project collaborator with WRITER role.
-	mutation := fmt.Sprintf(`mutation { updateProjectV2Collaborators(input: { projectId: \"%s\", collaborators: [{ userId: \"%s\", role: WRITER }] }) { clientMutationId } }`,
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Collaborators(input: { projectId: "%s", collaborators: [{ userId: "%s", role: WRITER }] }) { clientMutationId } }`,
 		projectNodeID, userID)
 	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
 	if err != nil {

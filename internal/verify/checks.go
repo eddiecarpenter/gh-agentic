@@ -521,7 +521,7 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 	}
 
 	// Step 2: Fetch the Status field and its options via GraphQL.
-	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, projectNodeID)
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, projectNodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.field.options[].name")
 	if err != nil {
 		return CheckResult{
@@ -632,7 +632,7 @@ func CheckProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCom
 	}
 
 	// Fetch Status field ID.
-	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	fieldQuery := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
 	if err != nil {
 		return CheckResult{
@@ -708,7 +708,7 @@ func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.R
 	}
 
 	// Query project collaborators.
-	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { collaborators(first: 100) { nodes { login } } } } }`, projectNodeID)
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { collaborators(first: 100) { nodes { login } } } } }`, projectNodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.collaborators.nodes[].login")
 	if err != nil {
 		return CheckResult{
