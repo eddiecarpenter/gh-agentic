@@ -63,6 +63,12 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	// CheckProject: gh project list --owner testowner --format json --limit 100
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
+	// CheckProjectStatus: resolve project node ID (user query).
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ user(login: \"testowner\") { projectsV2(first: 1) { nodes { id } } } }`, "--jq", ".data.user.projectsV2.nodes[0].id"}, "PVT_test123", nil)
+
+	// CheckProjectStatus: fetch status options.
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, "--jq", ".data.node.field.options[].name"}, "Scoping\nScheduled\nBacklog\nIn Design\nIn Implementation\nIn Review\nDone", nil)
+
 	return m
 }
 

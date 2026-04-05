@@ -85,6 +85,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckGhNotify(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
+		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, run) },
 	}
 
 	// Repair function — only active when --repair flag is set.
@@ -119,6 +120,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairLabels(cfg.repoFullName, run)
 			case "GitHub Project linked":
 				r = verify.RepairProject(cfg.owner, cfg.repoName, run)
+			case "GitHub Project status options are standard":
+				r = verify.RepairProjectStatus(cfg.owner, run)
 			default:
 				return nil
 			}
