@@ -14,7 +14,7 @@ Template: eddiecarpenter/agentic-development
 ## Project
 
 - **Name:** gh-agentic
-- **Topology:** embedded
+- **Topology:** single
 - **Stack:** Go
 - **Description:** GitHub CLI extension for the agentic development framework
 
