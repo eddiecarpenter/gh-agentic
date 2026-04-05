@@ -734,6 +734,46 @@ func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run
 }
 
 // --------------------------------------------------------------------------------------
+// Step 8d — AddProjectCollaborator
+// --------------------------------------------------------------------------------------
+
+// AddProjectCollaborator invites the configured agent user as a WRITER on the
+// GitHub Project. This is best-effort — failures are logged as warnings, not errors.
+func AddProjectCollaborator(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
+	if cfg.AgentUser == "" {
+		return nil
+	}
+	if state.ProjectNodeID == "" {
+		return nil
+	}
+
+	// Resolve the agent user's GitHub node ID.
+	userQuery := fmt.Sprintf(`{ user(login: "%s") { id } }`, cfg.AgentUser)
+	out, err := run("gh", "api", "graphql", "-f", "query="+userQuery, "--jq", ".data.user.id")
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not resolve agent user "+cfg.AgentUser+": "+strings.TrimSpace(out)))
+		return nil
+	}
+
+	userID := strings.TrimSpace(out)
+	if userID == "" || userID == "null" {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Agent user "+cfg.AgentUser+" not found on GitHub"))
+		return nil
+	}
+
+	// Invite as project collaborator with WRITER role.
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Collaborators(input: { projectId: "%s", collaborators: [{ userId: "%s", role: WRITER }] }) { clientMutationId } }`,
+		state.ProjectNodeID, userID)
+	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not add agent user as collaborator: "+strings.TrimSpace(out)))
+		return nil
+	}
+
+	return nil
+}
+
+// --------------------------------------------------------------------------------------
 // Step 9 — PrintSummary + Goose launch
 // --------------------------------------------------------------------------------------
 

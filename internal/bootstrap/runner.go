@@ -88,6 +88,10 @@ func RunSteps(
 			label: "Deploying sync workflows",
 			fn:    func() error { return DeploySyncWorkflows(w, cfg, state, run) },
 		},
+		{
+			label: "Adding agent user as project collaborator",
+			fn:    func() error { return AddProjectCollaborator(w, cfg, state, run) },
+		},
 	}
 
 	for _, s := range steps {

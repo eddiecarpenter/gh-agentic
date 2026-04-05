@@ -1146,6 +1146,106 @@ func TestCreateProject_VariableSetSuccess_CallsGhVariable(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------------------
+// Step 8d — AddProjectCollaborator
+// --------------------------------------------------------------------------------------
+
+func TestAddProjectCollaborator_Success(t *testing.T) {
+	cfg := BootstrapConfig{AgentUser: "goose-agent"}
+	state := &StepState{ProjectNodeID: "PVT_123"}
+
+	callCount := 0
+	run := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "USER_NODE_ID", nil // resolve user ID
+		}
+		return `{"data":{}}`, nil // mutation success
+	}
+
+	var buf bytes.Buffer
+	err := AddProjectCollaborator(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 calls (resolve + mutate), got %d", callCount)
+	}
+}
+
+func TestAddProjectCollaborator_EmptyAgentUser_Skips(t *testing.T) {
+	cfg := BootstrapConfig{AgentUser: ""}
+	state := &StepState{ProjectNodeID: "PVT_123"}
+
+	run := func(name string, args ...string) (string, error) {
+		t.Fatal("run should not be called when agent user is empty")
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := AddProjectCollaborator(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAddProjectCollaborator_EmptyProjectNodeID_Skips(t *testing.T) {
+	cfg := BootstrapConfig{AgentUser: "goose-agent"}
+	state := &StepState{ProjectNodeID: ""}
+
+	run := func(name string, args ...string) (string, error) {
+		t.Fatal("run should not be called when project node ID is empty")
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := AddProjectCollaborator(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAddProjectCollaborator_UserResolutionFails_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{AgentUser: "goose-agent"}
+	state := &StepState{ProjectNodeID: "PVT_123"}
+
+	run := func(name string, args ...string) (string, error) {
+		return "not found", errors.New("user not found")
+	}
+
+	var buf bytes.Buffer
+	err := AddProjectCollaborator(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Could not resolve agent user") {
+		t.Errorf("expected warning about user resolution, got: %s", buf.String())
+	}
+}
+
+func TestAddProjectCollaborator_MutationFails_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{AgentUser: "goose-agent"}
+	state := &StepState{ProjectNodeID: "PVT_123"}
+
+	callCount := 0
+	run := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "USER_NODE_ID", nil
+		}
+		return "mutation failed", errors.New("mutation error")
+	}
+
+	var buf bytes.Buffer
+	err := AddProjectCollaborator(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Could not add agent user") {
+		t.Errorf("expected warning about mutation failure, got: %s", buf.String())
+	}
+}
+
+// --------------------------------------------------------------------------------------
 // Step 9 — PrintSummary
 // --------------------------------------------------------------------------------------
 
