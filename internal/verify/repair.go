@@ -324,6 +324,69 @@ func RepairProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// GitHub Project collaborator repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RepairProjectCollaborator adds the configured agent user as a WRITER on the
+// GitHub Project. Uses run to shell out to gh api graphql.
+func RepairProjectCollaborator(owner string, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+	if agentUser == "" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Pass,
+			Message: "no agent user configured",
+		}
+	}
+
+	// Find the project node ID.
+	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	if projectNodeID == "" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: "no GitHub Project found for owner " + owner,
+		}
+	}
+
+	// Resolve the agent user's GitHub node ID.
+	userQuery := fmt.Sprintf(`{ user(login: \"%s\") { id } }`, agentUser)
+	out, err := run("gh", "api", "graphql", "-f", "query="+userQuery, "--jq", ".data.user.id")
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to resolve user %s: %v", agentUser, err),
+		}
+	}
+
+	userID := strings.TrimSpace(out)
+	if userID == "" || userID == "null" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: "user " + agentUser + " not found on GitHub",
+		}
+	}
+
+	// Invite as project collaborator with WRITER role.
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Collaborators(input: { projectId: \"%s\", collaborators: [{ userId: \"%s\", role: WRITER }] }) { clientMutationId } }`,
+		projectNodeID, userID)
+	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to add collaborator: %v — %s", err, strings.TrimSpace(out)),
+		}
+	}
+
+	return CheckResult{
+		Name:   checkProjectCollaboratorName,
+		Status: Pass,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Directory integrity repairs
 // ──────────────────────────────────────────────────────────────────────────────
 
