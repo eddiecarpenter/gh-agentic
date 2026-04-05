@@ -137,10 +137,10 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc) (BootstrapConfig, error) 
 	topologyForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("How is this project structured?").
+				Title("Select project topology").
 				Options(
-					huh.NewOption("Embedded   — single repo, all-in-one", "Embedded"),
-					huh.NewOption("Organisation — separate agentic control plane", "Organisation"),
+					huh.NewOption("Single      — one repo, control plane and project in one place", "Single"),
+					huh.NewOption("Federated   — separate control plane + domain/tool repos", "Federated"),
 				).
 				Value(&cfg.Topology),
 		),

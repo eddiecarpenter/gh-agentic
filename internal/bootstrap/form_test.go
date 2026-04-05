@@ -73,7 +73,7 @@ func TestValidateProjectName_SpecialChars_ReturnsError(t *testing.T) {
 
 func TestRenderSummaryBox_ContainsAllFields(t *testing.T) {
 	cfg := BootstrapConfig{
-		Topology:    "Embedded",
+		Topology:    "Single",
 		Owner:       "newopenbss",
 		ProjectName: "my-project",
 		Description: "A test bench for OCS diameter testing",
@@ -84,7 +84,7 @@ func TestRenderSummaryBox_ContainsAllFields(t *testing.T) {
 	rendered := RenderSummaryBox(cfg)
 
 	checks := []string{
-		"Embedded",
+		"Single",
 		"newopenbss",
 		"my-project",
 		"A test bench",

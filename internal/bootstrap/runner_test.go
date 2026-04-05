@@ -22,7 +22,7 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := BootstrapConfig{
-		Topology:    "Embedded",
+		Topology:    "Single",
 		Owner:       "alice",
 		ProjectName: "my-project",
 		Stack:       "Other", // "Other" skips ScaffoldStack so we don't need base/standards/
@@ -78,7 +78,7 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := BootstrapConfig{
-		Topology:    "Embedded",
+		Topology:    "Single",
 		Owner:       "alice",
 		ProjectName: "my-project",
 		Stack:       "Other",

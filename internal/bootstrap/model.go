@@ -4,7 +4,7 @@ package bootstrap
 // BootstrapConfig holds all values collected by the bootstrap form.
 // It is populated by RunForm and passed to the execution steps.
 type BootstrapConfig struct {
-	// Topology is the project structure: "Embedded" or "Organisation".
+	// Topology is the project structure: "Single" or "Federated".
 	Topology string
 
 	// Owner is the GitHub account or organisation login where the repo will be created.

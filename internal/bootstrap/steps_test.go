@@ -59,15 +59,15 @@ func makeTempClone(t *testing.T) string {
 // repoName
 // --------------------------------------------------------------------------------------
 
-func TestRepoName_Embedded_ReturnsProjectName(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Embedded", ProjectName: "my-project"}
+func TestRepoName_Single_ReturnsProjectName(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Single", ProjectName: "my-project"}
 	if got := repoName(cfg); got != "my-project" {
 		t.Errorf("repoName() = %q, want %q", got, "my-project")
 	}
 }
 
-func TestRepoName_Organisation_AppendsSuffix(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Organisation", ProjectName: "my-project"}
+func TestRepoName_Federated_AppendsSuffix(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Federated", ProjectName: "my-project"}
 	if got := repoName(cfg); got != "my-project-agentic" {
 		t.Errorf("repoName() = %q, want %q", got, "my-project-agentic")
 	}
@@ -78,7 +78,7 @@ func TestRepoName_Organisation_AppendsSuffix(t *testing.T) {
 // --------------------------------------------------------------------------------------
 
 func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Embedded", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
 	state := &StepState{}
 	run := fakeRunFail("repository already exists")
 
@@ -93,7 +93,7 @@ func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
 }
 
 func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Embedded", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
 	state := &StepState{}
 
 	callCount := 0
@@ -118,7 +118,7 @@ func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
 }
 
 func TestCreateRepo_PopulatesStateRepoName(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Embedded", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
 	state := &StepState{}
 
 	// Both gh and git succeed; API call will fail gracefully (no real gh auth in tests).
@@ -134,8 +134,8 @@ func TestCreateRepo_PopulatesStateRepoName(t *testing.T) {
 	}
 }
 
-func TestCreateRepo_Organisation_SetsAgenticSuffix(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Organisation", Owner: "acme", ProjectName: "myapp"}
+func TestCreateRepo_Federated_SetsAgenticSuffix(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Federated", Owner: "acme", ProjectName: "myapp"}
 	state := &StepState{}
 	run := fakeRunOK("")
 
@@ -398,7 +398,7 @@ func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 	cfg := BootstrapConfig{
 		Owner:       "alice",
 		ProjectName: "my-project",
-		Topology:    "Embedded",
+		Topology:    "Single",
 		Stack:       "Go",
 		Description: "A test project",
 		Antora:      false,
@@ -431,7 +431,7 @@ func TestPopulateRepo_AntoraTrue_ScaffoldsExtraFiles(t *testing.T) {
 	cfg := BootstrapConfig{
 		Owner:       "alice",
 		ProjectName: "my-project",
-		Topology:    "Embedded",
+		Topology:    "Single",
 		Stack:       "Go",
 		Description: "A test project",
 		Antora:      true,
