@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -356,6 +357,94 @@ func TestCheckWorkflows_SomeMissing_ReturnsFail(t *testing.T) {
 	result := CheckWorkflows(root)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for missing workflows, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckWorkflows_WithBase_ContentMatches_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseWfDir, "pipeline.yml"), []byte("same"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "pipeline.yml"), []byte("same"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckWorkflows(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass when content matches, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckWorkflows_WithBase_ContentDiffers_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseWfDir, "pipeline.yml"), []byte("new-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "pipeline.yml"), []byte("old-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckWorkflows(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail when content differs, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "content differs") {
+		t.Errorf("message should mention content differs: %s", result.Message)
+	}
+}
+
+func TestCheckWorkflows_WithBase_FileMissing_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseWfDir, "pipeline.yml"), []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// No .github/workflows/ directory at all.
+
+	result := CheckWorkflows(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail when file missing, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "missing") {
+		t.Errorf("message should mention missing: %s", result.Message)
+	}
+}
+
+func TestCheckWorkflows_NoBase_FallsBackToExistence(t *testing.T) {
+	root := t.TempDir()
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range expectedWorkflowYMLs {
+		if err := os.WriteFile(filepath.Join(wfDir, name), []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// No base/.github/workflows/ — should fall back to existence check.
+	result := CheckWorkflows(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass in fallback mode, got %v: %s", result.Status, result.Message)
 	}
 }
 

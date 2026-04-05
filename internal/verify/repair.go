@@ -572,19 +572,52 @@ func RepairGooseRecipes(root string) CheckResult {
 	}
 }
 
-// RepairWorkflows copies missing workflow files from base/.github/workflows/
-// if present (populated by sync), then falls back to fetching from the template.
-func RepairWorkflows(root string) CheckResult {
+// RepairWorkflows copies workflow files from base/.github/workflows/ to
+// .github/workflows/ (overwriting existing), then stages them with git add.
+// Falls back to fetching from the template repo when base/.github/workflows/
+// is absent. run is injected for git operations.
+func RepairWorkflows(root string, run bootstrap.RunCommandFunc) CheckResult {
+	const checkName = ".github/workflows/ exists and complete"
+
 	workflowsPath := filepath.Join(root, ".github", "workflows")
 	if err := os.MkdirAll(workflowsPath, 0o755); err != nil {
 		return CheckResult{
-			Name:    ".github/workflows/ exists and complete",
+			Name:    checkName,
 			Status:  Fail,
 			Message: fmt.Sprintf("could not create directory: %v", err),
 		}
 	}
 
-	// Read TEMPLATE_SOURCE for fallback fetching.
+	baseWorkflowsPath := filepath.Join(root, "base", ".github", "workflows")
+
+	// If base/.github/workflows/ exists, copy ALL files from it (overwriting).
+	if info, err := os.Stat(baseWorkflowsPath); err == nil && info.IsDir() {
+		if err := copyDir(baseWorkflowsPath, workflowsPath); err != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("copying from base: %v", err),
+			}
+		}
+
+		// Stage the changes.
+		quotedRoot := "'" + strings.ReplaceAll(root, "'", "'\\''") + "'"
+		_, err := run("bash", "-c", "cd "+quotedRoot+" && git add .github/workflows/")
+		if err != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("git add failed: %v", err),
+			}
+		}
+
+		return CheckResult{
+			Name:   checkName,
+			Status: Pass,
+		}
+	}
+
+	// Fallback: fetch missing files from template repo.
 	sourceData, _ := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
 	templateRepo := strings.TrimSpace(string(sourceData))
 
@@ -593,14 +626,6 @@ func RepairWorkflows(root string) CheckResult {
 		dst := filepath.Join(workflowsPath, name)
 		if _, err := os.Stat(dst); err == nil {
 			continue // already present
-		}
-
-		// Try base/.github/workflows/ first (populated by sync).
-		baseSrc := filepath.Join(root, "base", ".github", "workflows", name)
-		if data, readErr := os.ReadFile(baseSrc); readErr == nil {
-			if writeErr := os.WriteFile(dst, data, 0o644); writeErr == nil {
-				continue
-			}
 		}
 
 		// Fall back to fetching from the template repo.
@@ -617,13 +642,13 @@ func RepairWorkflows(root string) CheckResult {
 
 	if len(stillMissing) > 0 {
 		return CheckResult{
-			Name:    ".github/workflows/ exists and complete",
+			Name:    checkName,
 			Status:  Fail,
 			Message: fmt.Sprintf("could not restore: %s", strings.Join(stillMissing, ", ")),
 		}
 	}
 	return CheckResult{
-		Name:   ".github/workflows/ exists and complete",
+		Name:   checkName,
 		Status: Pass,
 	}
 }

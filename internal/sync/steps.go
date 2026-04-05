@@ -23,12 +23,25 @@ func CloneTemplate(repo, tmpDir string, run bootstrap.RunCommandFunc) error {
 	return nil
 }
 
-// BackupBase copies existing base/ to a temp backup location alongside the repo root.
-// Returns the backup directory path. The caller is responsible for cleanup.
+// BackupBase copies existing base/ and .github/workflows/ to a temp backup
+// location. Returns the backup directory path. The caller is responsible for
+// cleanup.
 func BackupBase(repoRoot string) (string, error) {
-	src := filepath.Join(repoRoot, "base")
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		// No base/ to back up — that's fine on first sync.
+	baseSrc := filepath.Join(repoRoot, "base")
+	workflowsSrc := filepath.Join(repoRoot, ".github", "workflows")
+
+	baseExists := false
+	if _, err := os.Stat(baseSrc); err == nil {
+		baseExists = true
+	}
+
+	workflowsExist := false
+	if _, err := os.Stat(workflowsSrc); err == nil {
+		workflowsExist = true
+	}
+
+	// Nothing to back up on first sync.
+	if !baseExists && !workflowsExist {
 		return "", nil
 	}
 
@@ -37,12 +50,42 @@ func BackupBase(repoRoot string) (string, error) {
 		return "", fmt.Errorf("creating backup directory: %w", err)
 	}
 
-	if err := fsutil.CopyDir(src, filepath.Join(backupDir, "base")); err != nil {
-		_ = os.RemoveAll(backupDir)
-		return "", fmt.Errorf("backing up base/: %w", err)
+	if baseExists {
+		if err := fsutil.CopyDir(baseSrc, filepath.Join(backupDir, "base")); err != nil {
+			_ = os.RemoveAll(backupDir)
+			return "", fmt.Errorf("backing up base/: %w", err)
+		}
+	}
+
+	if workflowsExist {
+		if err := fsutil.CopyDir(workflowsSrc, filepath.Join(backupDir, "workflows")); err != nil {
+			_ = os.RemoveAll(backupDir)
+			return "", fmt.Errorf("backing up .github/workflows/: %w", err)
+		}
 	}
 
 	return backupDir, nil
+}
+
+// DeployWorkflows copies workflow files from the cloned template's
+// base/.github/workflows/ into the local repo's .github/workflows/.
+// Returns nil if the source directory does not exist (template has no workflows).
+func DeployWorkflows(tmpDir, repoRoot string) error {
+	src := filepath.Join(tmpDir, "base", ".github", "workflows")
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return nil
+	}
+
+	dst := filepath.Join(repoRoot, ".github", "workflows")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return fmt.Errorf("creating .github/workflows/: %w", err)
+	}
+
+	if err := fsutil.CopyDir(src, dst); err != nil {
+		return fmt.Errorf("deploying workflows: %w", err)
+	}
+
+	return nil
 }
 
 // CopyBase copies base/ from the cloned template into the local repo,
@@ -67,7 +110,7 @@ func CopyBase(tmpDir, repoRoot string) error {
 	return nil
 }
 
-// ShowDiff runs git diff on base/ and returns the output.
+// ShowDiff runs git diff on base/ and .github/workflows/ and returns the output.
 func ShowDiff(repoRoot string, run bootstrap.RunCommandFunc) (string, error) {
 	out, err := runInDir(run, repoRoot, "git", "diff", "base/")
 	if err != nil {
@@ -78,6 +121,18 @@ func ShowDiff(repoRoot string, run bootstrap.RunCommandFunc) (string, error) {
 	untrackedOut, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", "base/")
 	if strings.TrimSpace(untrackedOut) != "" {
 		out += "\n--- New files ---\n" + untrackedOut
+	}
+
+	// Include .github/workflows/ diffs.
+	wfDiff, _ := runInDir(run, repoRoot, "git", "diff", ".github/workflows/")
+	if strings.TrimSpace(wfDiff) != "" {
+		out += "\n" + wfDiff
+	}
+
+	// Include untracked workflow files.
+	wfUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", ".github/workflows/")
+	if strings.TrimSpace(wfUntracked) != "" {
+		out += "\n--- New workflow files ---\n" + wfUntracked
 	}
 
 	return out, nil
@@ -92,11 +147,12 @@ func UpdateVersion(repoRoot, version string) error {
 	return nil
 }
 
-// CommitSync stages base/ and TEMPLATE_VERSION, then commits with a descriptive message.
-// If nothing changed after staging, the commit is skipped cleanly.
+// CommitSync stages base/, .github/workflows/, and TEMPLATE_VERSION, then
+// commits with a descriptive message. If nothing changed after staging, the
+// commit is skipped cleanly.
 func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) error {
 	// Stage changes.
-	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION"); err != nil {
+	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION", ".github/workflows/"); err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
 	}
 
@@ -106,7 +162,7 @@ func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) er
 	}
 
 	// Commit.
-	msg := fmt.Sprintf("chore: sync base/ from %s %s", repo, version)
+	msg := fmt.Sprintf("chore: sync base/ and workflows from %s %s", repo, version)
 	if out, err := runInDir(run, repoRoot, "git", "commit", "-m", msg); err != nil {
 		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
 	}
@@ -114,22 +170,35 @@ func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) er
 	return nil
 }
 
-// RestoreBase restores base/ from a backup created by BackupBase.
-// If backupDir is empty, there was nothing to restore.
+// RestoreBase restores base/ and .github/workflows/ from a backup created by
+// BackupBase. If backupDir is empty, there was nothing to restore.
 func RestoreBase(repoRoot, backupDir string) error {
 	if backupDir == "" {
 		return nil
 	}
 
-	dst := filepath.Join(repoRoot, "base")
-	src := filepath.Join(backupDir, "base")
-
-	if err := os.RemoveAll(dst); err != nil {
-		return fmt.Errorf("removing base/ for restore: %w", err)
+	// Restore base/ if it was backed up.
+	baseSrc := filepath.Join(backupDir, "base")
+	if _, err := os.Stat(baseSrc); err == nil {
+		baseDst := filepath.Join(repoRoot, "base")
+		if err := os.RemoveAll(baseDst); err != nil {
+			return fmt.Errorf("removing base/ for restore: %w", err)
+		}
+		if err := fsutil.CopyDir(baseSrc, baseDst); err != nil {
+			return fmt.Errorf("restoring base/: %w", err)
+		}
 	}
 
-	if err := fsutil.CopyDir(src, dst); err != nil {
-		return fmt.Errorf("restoring base/: %w", err)
+	// Restore .github/workflows/ if it was backed up.
+	workflowsSrc := filepath.Join(backupDir, "workflows")
+	if _, err := os.Stat(workflowsSrc); err == nil {
+		workflowsDst := filepath.Join(repoRoot, ".github", "workflows")
+		if err := os.RemoveAll(workflowsDst); err != nil {
+			return fmt.Errorf("removing .github/workflows/ for restore: %w", err)
+		}
+		if err := fsutil.CopyDir(workflowsSrc, workflowsDst); err != nil {
+			return fmt.Errorf("restoring .github/workflows/: %w", err)
+		}
 	}
 
 	return nil

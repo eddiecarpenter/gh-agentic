@@ -108,6 +108,200 @@ func TestBackupBase(t *testing.T) {
 	})
 }
 
+func TestBackupBase_WithWorkflows(t *testing.T) {
+	t.Run("backs up both base and workflows", func(t *testing.T) {
+		root := t.TempDir()
+		// Create base/.
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// Create .github/workflows/.
+		wfDir := filepath.Join(root, ".github", "workflows")
+		if err := os.MkdirAll(wfDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wfDir, "pipeline.yml"), []byte("pipeline"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		backupDir, err := BackupBase(root)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.RemoveAll(backupDir)
+
+		// Verify base backup.
+		data, err := os.ReadFile(filepath.Join(backupDir, "base", "AGENTS.md"))
+		if err != nil {
+			t.Fatalf("base backup missing: %v", err)
+		}
+		if string(data) != "agents" {
+			t.Errorf("base content mismatch: %s", data)
+		}
+
+		// Verify workflows backup.
+		data, err = os.ReadFile(filepath.Join(backupDir, "workflows", "pipeline.yml"))
+		if err != nil {
+			t.Fatalf("workflows backup missing: %v", err)
+		}
+		if string(data) != "pipeline" {
+			t.Errorf("workflow content mismatch: %s", data)
+		}
+	})
+
+	t.Run("no workflows directory is not an error", func(t *testing.T) {
+		root := t.TempDir()
+		// Create only base/.
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		backupDir, err := BackupBase(root)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.RemoveAll(backupDir)
+
+		if backupDir == "" {
+			t.Fatal("expected non-empty backup dir")
+		}
+
+		// Verify workflows backup dir does NOT exist.
+		if _, err := os.Stat(filepath.Join(backupDir, "workflows")); !os.IsNotExist(err) {
+			t.Error("expected no workflows backup when dir is absent")
+		}
+	})
+
+	t.Run("only workflows exist returns backup", func(t *testing.T) {
+		root := t.TempDir()
+		wfDir := filepath.Join(root, ".github", "workflows")
+		if err := os.MkdirAll(wfDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wfDir, "ci.yml"), []byte("ci"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		backupDir, err := BackupBase(root)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.RemoveAll(backupDir)
+
+		if backupDir == "" {
+			t.Fatal("expected non-empty backup dir when only workflows exist")
+		}
+
+		// Verify workflows backup.
+		data, err := os.ReadFile(filepath.Join(backupDir, "workflows", "ci.yml"))
+		if err != nil {
+			t.Fatalf("workflows backup missing: %v", err)
+		}
+		if string(data) != "ci" {
+			t.Errorf("workflow content mismatch: %s", data)
+		}
+	})
+}
+
+func TestRestoreBase_WithWorkflows(t *testing.T) {
+	t.Run("restores both base and workflows", func(t *testing.T) {
+		root := t.TempDir()
+		backupDir := t.TempDir()
+
+		// Create backup content.
+		if err := os.MkdirAll(filepath.Join(backupDir, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(backupDir, "base", "AGENTS.md"), []byte("original"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(backupDir, "workflows"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(backupDir, "workflows", "pipeline.yml"), []byte("original-wf"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create modified content in repo.
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		wfDir := filepath.Join(root, ".github", "workflows")
+		if err := os.MkdirAll(wfDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wfDir, "pipeline.yml"), []byte("modified-wf"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := RestoreBase(root, backupDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify base restored.
+		data, err := os.ReadFile(filepath.Join(root, "base", "AGENTS.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "original" {
+			t.Errorf("base not restored: %q", data)
+		}
+
+		// Verify workflows restored.
+		data, err = os.ReadFile(filepath.Join(root, ".github", "workflows", "pipeline.yml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "original-wf" {
+			t.Errorf("workflows not restored: %q", data)
+		}
+	})
+
+	t.Run("no workflows backup skips workflow restore", func(t *testing.T) {
+		root := t.TempDir()
+		backupDir := t.TempDir()
+
+		// Only base backup.
+		if err := os.MkdirAll(filepath.Join(backupDir, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(backupDir, "base", "AGENTS.md"), []byte("original"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create modified base in repo.
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := RestoreBase(root, backupDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, err := os.ReadFile(filepath.Join(root, "base", "AGENTS.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "original" {
+			t.Errorf("base not restored: %q", data)
+		}
+	})
+}
+
 func TestCopyBase(t *testing.T) {
 	t.Run("success with nested dirs", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -167,14 +361,93 @@ func TestCopyBase(t *testing.T) {
 	})
 }
 
+func TestDeployWorkflows(t *testing.T) {
+	t.Run("copies workflow files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Create source workflows in template.
+		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		if err := os.MkdirAll(srcWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "pipeline.yml"), []byte("pipeline-content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "ci.yml"), []byte("ci-content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployWorkflows(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify files were copied.
+		data, err := os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "pipeline.yml"))
+		if err != nil {
+			t.Fatalf("workflow file missing: %v", err)
+		}
+		if string(data) != "pipeline-content" {
+			t.Errorf("content mismatch: %s", data)
+		}
+
+		data, err = os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "ci.yml"))
+		if err != nil {
+			t.Fatalf("ci workflow file missing: %v", err)
+		}
+		if string(data) != "ci-content" {
+			t.Errorf("ci content mismatch: %s", data)
+		}
+	})
+
+	t.Run("returns nil when source absent", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		err := DeployWorkflows(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("expected nil for absent source, got: %v", err)
+		}
+	})
+
+	t.Run("creates destination directory", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		if err := os.MkdirAll(srcWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "test.yml"), []byte("test"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployWorkflows(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		info, err := os.Stat(filepath.Join(repoRoot, ".github", "workflows"))
+		if err != nil {
+			t.Fatalf("destination dir not created: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("expected directory")
+		}
+	})
+}
+
 func TestShowDiff(t *testing.T) {
 	t.Run("returns diff output", func(t *testing.T) {
 		responses := []struct {
 			output string
 			err    error
 		}{
-			{output: "diff --git a/base/AGENTS.md", err: nil},
-			{output: "", err: nil}, // ls-files for untracked
+			{output: "diff --git a/base/AGENTS.md", err: nil}, // git diff base/
+			{output: "", err: nil},                             // ls-files base/
+			{output: "", err: nil},                             // git diff .github/workflows/
+			{output: "", err: nil},                             // ls-files .github/workflows/
 		}
 		run := fakeRunMulti(responses)
 
@@ -192,8 +465,10 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},
-			{output: "base/new-file.md\n", err: nil},
+			{output: "", err: nil},                    // git diff base/
+			{output: "base/new-file.md\n", err: nil},  // ls-files base/
+			{output: "", err: nil},                    // git diff .github/workflows/
+			{output: "", err: nil},                    // ls-files .github/workflows/
 		}
 		run := fakeRunMulti(responses)
 
@@ -203,6 +478,48 @@ func TestShowDiff(t *testing.T) {
 		}
 		if !strings.Contains(diff, "New files") {
 			t.Errorf("expected new files section, got %q", diff)
+		}
+	})
+
+	t.Run("includes workflow diffs", func(t *testing.T) {
+		responses := []struct {
+			output string
+			err    error
+		}{
+			{output: "", err: nil},                                     // git diff base/
+			{output: "", err: nil},                                     // ls-files base/
+			{output: "diff --git a/.github/workflows/ci.yml", err: nil}, // git diff .github/workflows/
+			{output: "", err: nil},                                     // ls-files .github/workflows/
+		}
+		run := fakeRunMulti(responses)
+
+		diff, err := ShowDiff("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(diff, ".github/workflows/ci.yml") {
+			t.Errorf("expected workflow diff, got %q", diff)
+		}
+	})
+
+	t.Run("includes new workflow files", func(t *testing.T) {
+		responses := []struct {
+			output string
+			err    error
+		}{
+			{output: "", err: nil},                                                    // git diff base/
+			{output: "", err: nil},                                                    // ls-files base/
+			{output: "", err: nil},                                                    // git diff .github/workflows/
+			{output: ".github/workflows/new-pipeline.yml\n", err: nil},                // ls-files .github/workflows/
+		}
+		run := fakeRunMulti(responses)
+
+		diff, err := ShowDiff("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(diff, "New workflow files") {
+			t.Errorf("expected new workflow files section, got %q", diff)
 		}
 	})
 
@@ -266,8 +583,8 @@ func TestCommitSync(t *testing.T) {
 		}
 
 		// Verify git commit was called with correct message.
-		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync base/") {
-			t.Errorf("third call should be git commit: %s", calls[2])
+		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync base/ and workflows") {
+			t.Errorf("third call should be git commit with updated message: %s", calls[2])
 		}
 	})
 
