@@ -38,9 +38,9 @@ type StepState struct {
 }
 
 // repoName derives the repository name from the config.
-// Embedded: <project-name>, Organisation: <project-name>-agentic.
+// Single: <project-name>, Federated: <project-name>-agentic.
 func repoName(cfg BootstrapConfig) string {
-	if cfg.Topology == "Organisation" {
+	if cfg.Topology == "Federated" {
 		return cfg.ProjectName + "-agentic"
 	}
 	return cfg.ProjectName

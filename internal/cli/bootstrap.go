@@ -35,8 +35,8 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners)
-			if errors.Is(err, bootstrap.ErrAborted) {
+			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners, bootstrap.DefaultDetectOwnerType)
+			if errors.Is(err, bootstrap.ErrAborted) || errors.Is(err, bootstrap.ErrFederatedRequiresOrg) {
 				fmt.Fprintln(w, ui.Muted.Render("Aborted."))
 				return nil
 			}
