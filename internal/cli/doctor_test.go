@@ -77,13 +77,13 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
 	// resolveProjectNodeIDViaRun (used by CheckProjectStatus): gh project list --limit 1
-	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
 	// CheckProjectStatus: fetch status options via GraphQL.
 	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, "--jq", ".data.node.field.options[].name"}, "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil)
 
 	// resolveProjectNodeIDViaRun (used by CheckProjectItemStatuses): gh project list --limit 1
-	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
 	// CheckProjectItemStatuses: fetch Status field ID via GraphQL.
 	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, "--jq", ".data.node.field.id"}, "FIELD_STATUS_1", nil)
@@ -92,7 +92,7 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { items(first: 100) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`}, `{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[]}}}}`, nil)
 
 	// resolveProjectNodeIDViaRun (used by CheckProjectCollaborator): gh project list --limit 1
-	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
 	return m
 }
@@ -291,7 +291,7 @@ func TestRunDoctor_ResyncStatuses_CallsResync(t *testing.T) {
 
 	// ResyncProjectItemStatuses calls:
 	// 1. resolveProjectNodeIDViaRun
-	mock.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+	mock.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 	// 2. Fetch Status field ID
 	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, "--jq", ".data.node.field.id"}, "FIELD_1", nil)
 	// 3. fetchStatusOptionMap
@@ -331,7 +331,7 @@ func TestRunDoctor_ResyncStatuses_PrintsSummary(t *testing.T) {
 	mock := &testutil.MockRunner{}
 
 	// Same setup as above but with items to update.
-	mock.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+	mock.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, "--jq", ".data.node.field.id"}, "FIELD_1", nil)
 	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, "--jq", `.data.node.field.options[] | "\(.id)|\(.name)"`}, "OPT_1|Backlog\nOPT_7|Done", nil)
 	// Return one item that needs updating (OPEN with backlog → Backlog, currently has no status).

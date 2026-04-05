@@ -575,7 +575,7 @@ func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectStatus("owner", root, fakeRun)
+	result := RepairProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -591,7 +591,7 @@ func TestRepairProjectStatus_NoProject_ReturnsFail(t *testing.T) {
 		return "", fmt.Errorf("no project found")
 	}
 
-	result := RepairProjectStatus("owner", root, fakeRun)
+	result := RepairProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -614,7 +614,7 @@ func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectStatus("owner", root, fakeRun)
+	result := RepairProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -627,7 +627,7 @@ func TestRepairProjectStatus_MissingTemplate_ReturnsFail(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectStatus("owner", root, fakeRun)
+	result := RepairProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -655,7 +655,7 @@ func TestRepairProjectCollaborator_Success_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectCollaborator("owner", "goose-agent", fakeRun)
+	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -667,7 +667,7 @@ func TestRepairProjectCollaborator_EmptyAgentUser_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectCollaborator("owner", "", fakeRun)
+	result := RepairProjectCollaborator("owner", "my-repo", "", fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -683,7 +683,7 @@ func TestRepairProjectCollaborator_UserResolutionFails_ReturnsFail(t *testing.T)
 		return "", fmt.Errorf("user not found")
 	}
 
-	result := RepairProjectCollaborator("owner", "goose-agent", fakeRun)
+	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -704,7 +704,7 @@ func TestRepairProjectCollaborator_MutationFails_ReturnsFail(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectCollaborator("owner", "goose-agent", fakeRun)
+	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}

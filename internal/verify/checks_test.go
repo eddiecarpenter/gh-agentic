@@ -698,7 +698,7 @@ func TestCheckGhNotify_AllGood_ReturnsPass(t *testing.T) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 // projectListJSON is the JSON returned by `gh project list --format json`.
-const projectListJSON = `{"projects":[{"id":"PVT_123","number":1}]}`
+const projectListJSON = `{"projects":[{"id":"PVT_123","title":"my-repo","number":1}]}`
 
 // writeTestProjectTemplate creates a valid base/project-template.json fixture.
 func writeTestProjectTemplate(t *testing.T, root string) {
@@ -737,7 +737,7 @@ func TestCheckProjectStatus_AllMatch_ReturnsPass(t *testing.T) {
 		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil
 	}
 
-	result := CheckProjectStatus("owner", root, fakeRun)
+	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -756,7 +756,7 @@ func TestCheckProjectStatus_WrongOrder_ReturnsWarning(t *testing.T) {
 		return "Done\nBacklog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review", nil
 	}
 
-	result := CheckProjectStatus("owner", root, fakeRun)
+	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning for wrong order, got %v: %s", result.Status, result.Message)
 	}
@@ -775,7 +775,7 @@ func TestCheckProjectStatus_MissingOption_ReturnsWarning(t *testing.T) {
 		return "Backlog\nScoping\nScheduled\nIn Design\nDone", nil
 	}
 
-	result := CheckProjectStatus("owner", root, fakeRun)
+	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning for missing option, got %v: %s", result.Status, result.Message)
 	}
@@ -794,7 +794,7 @@ func TestCheckProjectStatus_ExtraOption_ReturnsWarning(t *testing.T) {
 		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone\nArchived", nil
 	}
 
-	result := CheckProjectStatus("owner", root, fakeRun)
+	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning for extra option, got %v: %s", result.Status, result.Message)
 	}
@@ -807,7 +807,7 @@ func TestCheckProjectStatus_NoProject_ReturnsFail(t *testing.T) {
 		return "", fmt.Errorf("no project found")
 	}
 
-	result := CheckProjectStatus("owner", root, fakeRun)
+	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for no project, got %v: %s", result.Status, result.Message)
 	}
@@ -825,7 +825,7 @@ func TestCheckProjectStatus_GraphQLError_ReturnsFail(t *testing.T) {
 		return "", fmt.Errorf("GraphQL error")
 	}
 
-	result := CheckProjectStatus("owner", root, fakeRun)
+	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for GraphQL error, got %v: %s", result.Status, result.Message)
 	}
@@ -841,7 +841,7 @@ func TestCheckProjectCollaborator_EmptyAgentUser_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectCollaborator("owner", "", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "", fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -857,7 +857,7 @@ func TestCheckProjectCollaborator_UserPresent_ReturnsPass(t *testing.T) {
 		return "alice\ngoose-agent\nbob", nil // collaborators
 	}
 
-	result := CheckProjectCollaborator("owner", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -873,7 +873,7 @@ func TestCheckProjectCollaborator_UserAbsent_ReturnsFail(t *testing.T) {
 		return "alice\nbob", nil // goose-agent not present
 	}
 
-	result := CheckProjectCollaborator("owner", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -889,7 +889,7 @@ func TestCheckProjectCollaborator_APIFailure_ReturnsFail(t *testing.T) {
 		return "", fmt.Errorf("API error")
 	}
 
-	result := CheckProjectCollaborator("owner", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -919,7 +919,7 @@ func TestCheckProjectItemStatuses_AllHaveStatus_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectItemStatuses("owner", root, fakeRun)
+	result := CheckProjectItemStatuses("owner", "my-repo", root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -943,7 +943,7 @@ func TestCheckProjectItemStatuses_SomeMissing_ReturnsWarning(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectItemStatuses("owner", root, fakeRun)
+	result := CheckProjectItemStatuses("owner", "my-repo", root, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -969,7 +969,7 @@ func TestCheckProjectItemStatuses_NoItems_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectItemStatuses("owner", root, fakeRun)
+	result := CheckProjectItemStatuses("owner", "my-repo", root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass for empty project, got %v: %s", result.Status, result.Message)
 	}
