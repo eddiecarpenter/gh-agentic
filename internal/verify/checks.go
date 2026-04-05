@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -263,12 +264,80 @@ func CheckGooseRecipes(root string) CheckResult {
 	}
 }
 
-// CheckWorkflows verifies that .github/workflows/ contains all expected pipeline files.
+// CheckWorkflows verifies that .github/workflows/ contains all expected pipeline
+// files. If base/.github/workflows/ exists, it verifies content matches
+// byte-for-byte. Otherwise falls back to existence-only checks using
+// expectedWorkflowYMLs.
 func CheckWorkflows(root string) CheckResult {
+	const checkName = ".github/workflows/ exists and complete"
+
 	workflowsPath := filepath.Join(root, ".github", "workflows")
+	baseWorkflowsPath := filepath.Join(root, "base", ".github", "workflows")
+
+	// If base/.github/workflows/ exists, use content comparison.
+	if info, err := os.Stat(baseWorkflowsPath); err == nil && info.IsDir() {
+		entries, err := os.ReadDir(baseWorkflowsPath)
+		if err != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("reading base workflows: %v", err),
+			}
+		}
+
+		var missing []string
+		var differs []string
+
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			basePath := filepath.Join(baseWorkflowsPath, name)
+			deployedPath := filepath.Join(workflowsPath, name)
+
+			baseContent, err := os.ReadFile(basePath)
+			if err != nil {
+				missing = append(missing, name)
+				continue
+			}
+
+			deployedContent, err := os.ReadFile(deployedPath)
+			if err != nil {
+				missing = append(missing, name)
+				continue
+			}
+
+			if !bytes.Equal(baseContent, deployedContent) {
+				differs = append(differs, name)
+			}
+		}
+
+		if len(missing) > 0 || len(differs) > 0 {
+			var parts []string
+			if len(missing) > 0 {
+				parts = append(parts, "missing: "+strings.Join(missing, ", "))
+			}
+			if len(differs) > 0 {
+				parts = append(parts, "content differs: "+strings.Join(differs, ", "))
+			}
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: strings.Join(parts, "; "),
+			}
+		}
+
+		return CheckResult{
+			Name:   checkName,
+			Status: Pass,
+		}
+	}
+
+	// Fallback: existence-only check using expectedWorkflowYMLs.
 	if _, err := os.Stat(workflowsPath); os.IsNotExist(err) {
 		return CheckResult{
-			Name:    ".github/workflows/ exists and complete",
+			Name:    checkName,
 			Status:  Fail,
 			Message: ".github/workflows/ directory not found",
 		}
@@ -284,14 +353,14 @@ func CheckWorkflows(root string) CheckResult {
 
 	if len(missing) > 0 {
 		return CheckResult{
-			Name:    ".github/workflows/ exists and complete",
+			Name:    checkName,
 			Status:  Fail,
 			Message: fmt.Sprintf("missing: %s", strings.Join(missing, ", ")),
 		}
 	}
 
 	return CheckResult{
-		Name:   ".github/workflows/ exists and complete",
+		Name:   checkName,
 		Status: Pass,
 	}
 }

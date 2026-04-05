@@ -368,10 +368,60 @@ func TestRepairGooseRecipes_MissingSource_ReturnsFail(t *testing.T) {
 	}
 }
 
-func TestRepairWorkflows_CreatesDir(t *testing.T) {
+func TestRepairWorkflows_FromBase_CopiesAndStages(t *testing.T) {
+	root := t.TempDir()
+
+	// Create base/.github/workflows/ with content.
+	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseWfDir, "pipeline.yml"), []byte("pipeline-v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create .github/workflows/ with outdated content.
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "pipeline.yml"), []byte("pipeline-v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var gitAddCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		if name == "bash" && len(args) > 0 && strings.Contains(args[len(args)-1], "git add .github/workflows/") {
+			gitAddCalled = true
+		}
+		return "", nil
+	}
+
+	result := RepairWorkflows(root, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// Verify content was overwritten.
+	data, err := os.ReadFile(filepath.Join(wfDir, "pipeline.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "pipeline-v2" {
+		t.Errorf("expected updated content, got %q", data)
+	}
+
+	// Verify git add was called.
+	if !gitAddCalled {
+		t.Error("expected git add .github/workflows/ to be called")
+	}
+}
+
+func TestRepairWorkflows_Fallback_AllPresent(t *testing.T) {
 	root := t.TempDir()
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 
+	// No base/.github/workflows/ — fallback mode.
 	// Create all expected files.
 	if err := os.MkdirAll(workflowsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -382,7 +432,11 @@ func TestRepairWorkflows_CreatesDir(t *testing.T) {
 		}
 	}
 
-	result := RepairWorkflows(root)
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := RepairWorkflows(root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass when all files present, got %v: %s", result.Status, result.Message)
 	}
@@ -390,7 +444,10 @@ func TestRepairWorkflows_CreatesDir(t *testing.T) {
 
 func TestRepairWorkflows_MissingFiles_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	result := RepairWorkflows(root)
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+	result := RepairWorkflows(root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for missing workflow files, got %v: %s", result.Status, result.Message)
 	}

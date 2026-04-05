@@ -120,7 +120,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case ".goose/recipes/ exists and complete":
 				r = verify.RepairGooseRecipes(cfg.root)
 			case ".github/workflows/ exists and complete":
-				r = verify.RepairWorkflows(cfg.root)
+				r = verify.RepairWorkflows(cfg.root, run)
 			case "gh-notify LaunchAgent installed":
 				r = verify.RepairGhNotify(cfg.root, run)
 			case "Standard labels present":
