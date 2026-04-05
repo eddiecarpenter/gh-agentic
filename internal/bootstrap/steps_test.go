@@ -605,6 +605,154 @@ func TestCreateProject_SuccessfulLink(t *testing.T) {
 	_ = linkCalled // Link may or may not be called depending on node ID resolution
 }
 
+func TestCreateProject_StoresProjectNodeID(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+	state := &StepState{
+		RepoName:   "my-project",
+		RepoNodeID: "REPO_ID",
+	}
+
+	run := fakeRunOK(`{"number":3,"url":"https://github.com/users/alice/projects/3"}`)
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		if strings.Contains(query, "user(login") {
+			if r, ok := response.(*struct {
+				User struct {
+					ProjectV2 struct {
+						ID string `json:"id"`
+					} `json:"projectV2"`
+				} `json:"user"`
+			}); ok {
+				r.User.ProjectV2.ID = "PVT_NODE_ID"
+			}
+			return nil
+		}
+		return nil // link mutation succeeds
+	}
+
+	var buf bytes.Buffer
+	if err := CreateProject(&buf, cfg, state, run, graphqlDo); err != nil {
+		t.Fatalf("CreateProject() unexpected error: %v", err)
+	}
+	if state.ProjectNodeID != "PVT_NODE_ID" {
+		t.Errorf("state.ProjectNodeID = %q, want %q", state.ProjectNodeID, "PVT_NODE_ID")
+	}
+}
+
+func TestCreateProject_MissingProjectNodeID_SkipsVariableSet(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+	state := &StepState{RepoName: "my-project"}
+
+	run := fakeRunOK(`{"number":5,"url":"https://github.com/users/alice/projects/5"}`)
+
+	var buf bytes.Buffer
+	_ = CreateProject(&buf, cfg, state, run, nil)
+
+	out := buf.String()
+	if !strings.Contains(out, "Skipping AGENTIC_PROJECT_ID") {
+		t.Errorf("expected skip message for AGENTIC_PROJECT_ID, got: %s", out)
+	}
+}
+
+func TestCreateProject_VariableSetFailure_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+	state := &StepState{
+		RepoName:   "my-project",
+		RepoNodeID: "REPO_ID",
+	}
+
+	callCount := 0
+	run := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			// gh project create
+			return `{"number":3,"url":"https://github.com/users/alice/projects/3"}`, nil
+		}
+		// gh variable set fails
+		return "could not set variable", errors.New("permission denied")
+	}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		if strings.Contains(query, "user(login") {
+			if r, ok := response.(*struct {
+				User struct {
+					ProjectV2 struct {
+						ID string `json:"id"`
+					} `json:"projectV2"`
+				} `json:"user"`
+			}); ok {
+				r.User.ProjectV2.ID = "PVT_NODE_ID"
+			}
+			return nil
+		}
+		return nil
+	}
+
+	var buf bytes.Buffer
+	err := CreateProject(&buf, cfg, state, run, graphqlDo)
+	if err != nil {
+		t.Fatalf("CreateProject() should not return error on variable set failure (best-effort), got: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Could not set AGENTIC_PROJECT_ID") {
+		t.Errorf("expected warning about variable set failure, got: %s", out)
+	}
+}
+
+func TestCreateProject_VariableSetSuccess_CallsGhVariable(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+	state := &StepState{
+		RepoName:   "my-project",
+		RepoNodeID: "REPO_ID",
+	}
+
+	var variableSetArgs []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) > 0 && args[0] == "variable" {
+			variableSetArgs = args
+			return "", nil
+		}
+		return `{"number":3,"url":"https://github.com/users/alice/projects/3"}`, nil
+	}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		if strings.Contains(query, "user(login") {
+			if r, ok := response.(*struct {
+				User struct {
+					ProjectV2 struct {
+						ID string `json:"id"`
+					} `json:"projectV2"`
+				} `json:"user"`
+			}); ok {
+				r.User.ProjectV2.ID = "PVT_NODE_ID"
+			}
+			return nil
+		}
+		return nil
+	}
+
+	var buf bytes.Buffer
+	if err := CreateProject(&buf, cfg, state, run, graphqlDo); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(variableSetArgs) == 0 {
+		t.Fatal("expected gh variable set to be called")
+	}
+	// Verify args: set AGENTIC_PROJECT_ID --body PVT_NODE_ID --repo alice/my-project
+	joined := strings.Join(variableSetArgs, " ")
+	if !strings.Contains(joined, "AGENTIC_PROJECT_ID") {
+		t.Errorf("expected AGENTIC_PROJECT_ID in args, got: %s", joined)
+	}
+	if !strings.Contains(joined, "PVT_NODE_ID") {
+		t.Errorf("expected project node ID in args, got: %s", joined)
+	}
+	if !strings.Contains(joined, "alice/my-project") {
+		t.Errorf("expected repo name in args, got: %s", joined)
+	}
+}
+
 // --------------------------------------------------------------------------------------
 // Step 9 — PrintSummary
 // --------------------------------------------------------------------------------------

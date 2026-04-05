@@ -35,6 +35,10 @@ type StepState struct {
 
 	// ProjectURL is the URL of the created GitHub Project.
 	ProjectURL string
+
+	// ProjectNodeID is the GitHub node ID (global relay ID) of the created project.
+	// Used for GraphQL mutations such as configuring status columns.
+	ProjectNodeID string
 }
 
 // repoName derives the repository name from the config.
@@ -434,6 +438,7 @@ func CreateProject(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCo
 
 	if graphqlDo == nil || projectResp.Number == 0 || state.RepoNodeID == "" {
 		fmt.Fprintln(w, "  "+ui.Muted.Render("· Skipping project–repo link (missing IDs)"))
+		setProjectVariable(w, cfg, state, run)
 		return nil
 	}
 
@@ -441,8 +446,10 @@ func CreateProject(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCo
 	projectNodeID := fetchProjectNodeID(graphqlDo, cfg.Owner, projectResp.Number)
 	if projectNodeID == "" {
 		fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not resolve project node ID — skipping link"))
+		setProjectVariable(w, cfg, state, run)
 		return nil
 	}
+	state.ProjectNodeID = projectNodeID
 
 	// Link the project to the repository.
 	linkMutation := `mutation($projectId: ID!, $repositoryId: ID!) {
@@ -458,7 +465,25 @@ func CreateProject(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCo
 		fmt.Fprintln(w, "  "+ui.Muted.Render("· Project–repo link failed (non-fatal): "+err.Error()))
 	}
 
+	setProjectVariable(w, cfg, state, run)
 	return nil
+}
+
+// setProjectVariable stores the project node ID as a repository variable via gh CLI.
+// This is best-effort — failure is logged as a warning, not returned as an error.
+func setProjectVariable(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) {
+	if state.ProjectNodeID == "" {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· Skipping AGENTIC_PROJECT_ID variable (no project node ID)"))
+		return
+	}
+
+	fullName := cfg.Owner + "/" + state.RepoName
+	out, err := run("gh", "variable", "set", "AGENTIC_PROJECT_ID",
+		"--body", state.ProjectNodeID, "--repo", fullName)
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not set AGENTIC_PROJECT_ID variable: "+strings.TrimSpace(out)))
+		return
+	}
 }
 
 // fetchProjectNodeID tries to resolve the GraphQL node ID for a project by number,
