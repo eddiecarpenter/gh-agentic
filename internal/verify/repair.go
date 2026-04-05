@@ -238,6 +238,29 @@ func RepairREADMEMD(root string) CheckResult {
 	}
 }
 
+// RepairGhNotify runs install-gh-notify.sh to install or repair the
+// gh-notify LaunchAgent. root is the repo root, run is injected for
+// command execution.
+func RepairGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
+	const checkName = "gh-notify LaunchAgent installed"
+
+	scriptPath := filepath.Join(root, "base", "scripts", "install-gh-notify.sh")
+	_, err := run("bash", scriptPath)
+	if err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("install script failed: %v", err),
+		}
+	}
+
+	return CheckResult{
+		Name:    checkName,
+		Status:  Pass,
+		Message: "gh-notify installed and running",
+	}
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Directory integrity repairs
 // ──────────────────────────────────────────────────────────────────────────────
