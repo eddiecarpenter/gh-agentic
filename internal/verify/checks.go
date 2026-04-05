@@ -657,20 +657,6 @@ func CheckProjectCollaborator(owner string, agentUser string, run bootstrap.RunC
 }
 
 
-// defaultCanonicalStatusOptions returns the canonical status options.
-// This is a temporary bridge — task 4 will replace it with LoadProjectTemplate.
-func defaultCanonicalStatusOptions() []bootstrap.StatusOption {
-	return []bootstrap.StatusOption{
-		{Name: "Backlog", Color: "GRAY", Description: "Prioritised, ready to start"},
-		{Name: "Scoping", Color: "PURPLE", Description: "Requirement or feature being scoped"},
-		{Name: "Scheduled", Color: "BLUE", Description: "Scoped and queued, waiting for design"},
-		{Name: "In Design", Color: "PINK", Description: "Feature Design session active"},
-		{Name: "In Development", Color: "YELLOW", Description: "Dev Session active"},
-		{Name: "In Review", Color: "ORANGE", Description: "PR open, awaiting review"},
-		{Name: "Done", Color: "GREEN", Description: "Merged and closed"},
-	}
-}
-
 // CheckProject verifies that a GitHub Project exists for the repo owner.
 // owner is the GitHub account/org. run is injected for gh operations.
 func CheckProject(owner string, run bootstrap.RunCommandFunc) CheckResult {

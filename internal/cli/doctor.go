@@ -128,7 +128,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "GitHub Project linked":
 				r = verify.RepairProject(cfg.owner, cfg.repoName, run)
 			case "GitHub Project status options are standard":
-				r = verify.RepairProjectStatus(cfg.owner, run)
+				r = verify.RepairProjectStatus(cfg.owner, cfg.root, run)
 			case "Agent user is a project collaborator":
 				r = verify.RepairProjectCollaborator(cfg.owner, agentUser, run)
 			default:

@@ -546,6 +546,8 @@ func TestRepairProject_Fails_ReturnsFail(t *testing.T) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	var mutationCalled bool
 	fakeRun := func(name string, args ...string) (string, error) {
@@ -571,7 +573,7 @@ func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectStatus("owner", fakeRun)
+	result := RepairProjectStatus("owner", root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -581,17 +583,21 @@ func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
 }
 
 func TestRepairProjectStatus_NoProject_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("no project found")
 	}
 
-	result := RepairProjectStatus("owner", fakeRun)
+	result := RepairProjectStatus("owner", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
 }
 
 func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
@@ -606,9 +612,25 @@ func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectStatus("owner", fakeRun)
+	result := RepairProjectStatus("owner", root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectStatus_MissingTemplate_ReturnsFail(t *testing.T) {
+	root := t.TempDir() // No base/project-template.json.
+	fakeRun := func(name string, args ...string) (string, error) {
+		t.Fatal("run should not be called when template is missing")
+		return "", nil
+	}
+
+	result := RepairProjectStatus("owner", root, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "project template") {
+		t.Errorf("expected message about project template, got: %s", result.Message)
 	}
 }
 
