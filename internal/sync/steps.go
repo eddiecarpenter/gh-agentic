@@ -23,12 +23,25 @@ func CloneTemplate(repo, tmpDir string, run bootstrap.RunCommandFunc) error {
 	return nil
 }
 
-// BackupBase copies existing base/ to a temp backup location alongside the repo root.
-// Returns the backup directory path. The caller is responsible for cleanup.
+// BackupBase copies existing base/ and .github/workflows/ to a temp backup
+// location. Returns the backup directory path. The caller is responsible for
+// cleanup.
 func BackupBase(repoRoot string) (string, error) {
-	src := filepath.Join(repoRoot, "base")
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		// No base/ to back up — that's fine on first sync.
+	baseSrc := filepath.Join(repoRoot, "base")
+	workflowsSrc := filepath.Join(repoRoot, ".github", "workflows")
+
+	baseExists := false
+	if _, err := os.Stat(baseSrc); err == nil {
+		baseExists = true
+	}
+
+	workflowsExist := false
+	if _, err := os.Stat(workflowsSrc); err == nil {
+		workflowsExist = true
+	}
+
+	// Nothing to back up on first sync.
+	if !baseExists && !workflowsExist {
 		return "", nil
 	}
 
@@ -37,9 +50,18 @@ func BackupBase(repoRoot string) (string, error) {
 		return "", fmt.Errorf("creating backup directory: %w", err)
 	}
 
-	if err := fsutil.CopyDir(src, filepath.Join(backupDir, "base")); err != nil {
-		_ = os.RemoveAll(backupDir)
-		return "", fmt.Errorf("backing up base/: %w", err)
+	if baseExists {
+		if err := fsutil.CopyDir(baseSrc, filepath.Join(backupDir, "base")); err != nil {
+			_ = os.RemoveAll(backupDir)
+			return "", fmt.Errorf("backing up base/: %w", err)
+		}
+	}
+
+	if workflowsExist {
+		if err := fsutil.CopyDir(workflowsSrc, filepath.Join(backupDir, "workflows")); err != nil {
+			_ = os.RemoveAll(backupDir)
+			return "", fmt.Errorf("backing up .github/workflows/: %w", err)
+		}
 	}
 
 	return backupDir, nil
@@ -114,22 +136,35 @@ func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) er
 	return nil
 }
 
-// RestoreBase restores base/ from a backup created by BackupBase.
-// If backupDir is empty, there was nothing to restore.
+// RestoreBase restores base/ and .github/workflows/ from a backup created by
+// BackupBase. If backupDir is empty, there was nothing to restore.
 func RestoreBase(repoRoot, backupDir string) error {
 	if backupDir == "" {
 		return nil
 	}
 
-	dst := filepath.Join(repoRoot, "base")
-	src := filepath.Join(backupDir, "base")
-
-	if err := os.RemoveAll(dst); err != nil {
-		return fmt.Errorf("removing base/ for restore: %w", err)
+	// Restore base/ if it was backed up.
+	baseSrc := filepath.Join(backupDir, "base")
+	if _, err := os.Stat(baseSrc); err == nil {
+		baseDst := filepath.Join(repoRoot, "base")
+		if err := os.RemoveAll(baseDst); err != nil {
+			return fmt.Errorf("removing base/ for restore: %w", err)
+		}
+		if err := fsutil.CopyDir(baseSrc, baseDst); err != nil {
+			return fmt.Errorf("restoring base/: %w", err)
+		}
 	}
 
-	if err := fsutil.CopyDir(src, dst); err != nil {
-		return fmt.Errorf("restoring base/: %w", err)
+	// Restore .github/workflows/ if it was backed up.
+	workflowsSrc := filepath.Join(backupDir, "workflows")
+	if _, err := os.Stat(workflowsSrc); err == nil {
+		workflowsDst := filepath.Join(repoRoot, ".github", "workflows")
+		if err := os.RemoveAll(workflowsDst); err != nil {
+			return fmt.Errorf("removing .github/workflows/ for restore: %w", err)
+		}
+		if err := fsutil.CopyDir(workflowsSrc, workflowsDst); err != nil {
+			return fmt.Errorf("restoring .github/workflows/: %w", err)
+		}
 	}
 
 	return nil
