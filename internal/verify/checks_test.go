@@ -575,6 +575,106 @@ func TestCheckGhNotify_AllGood_ReturnsPass(t *testing.T) {
 	}
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// CheckProjectStatus tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckProjectStatus_AllMatch_ReturnsPass(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		// First call: resolve project node ID (user query).
+		if callCount == 1 {
+			return "PVT_123", nil
+		}
+		// Second call: fetch status options (canonical 6-option order).
+		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nDone", nil
+	}
+
+	result := CheckProjectStatus("owner", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectStatus_WrongOrder_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "PVT_123", nil
+		}
+		// Wrong order: Done first.
+		return "Done\nBacklog\nScoping\nScheduled\nIn Design\nIn Development", nil
+	}
+
+	result := CheckProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for wrong order, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectStatus_MissingOption_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "PVT_123", nil
+		}
+		// Only 5 options.
+		return "Backlog\nScoping\nScheduled\nIn Design\nDone", nil
+	}
+
+	result := CheckProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for missing option, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectStatus_ExtraOption_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "PVT_123", nil
+		}
+		// 7 options (one extra).
+		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil
+	}
+
+	result := CheckProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for extra option, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectStatus_NoProject_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("no project found")
+	}
+
+	result := CheckProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for no project, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectStatus_GraphQLError_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "PVT_123", nil
+		}
+		return "", fmt.Errorf("GraphQL error")
+	}
+
+	result := CheckProjectStatus("owner", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for GraphQL error, got %v: %s", result.Status, result.Message)
+	}
+}
+
 func TestMissingLabels_SomeMissing_ReturnsOnlyMissing(t *testing.T) {
 	labelsJSON := `[{"name":"requirement"},{"name":"feature"}]`
 	fakeRun := func(name string, args ...string) (string, error) {

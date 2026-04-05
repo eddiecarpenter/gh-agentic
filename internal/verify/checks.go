@@ -414,6 +414,95 @@ func CheckGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
 	}
 }
 
+// checkProjectStatusName is the check name used for project status verification.
+const checkProjectStatusName = "GitHub Project status options are standard"
+
+// CheckProjectStatus verifies that the GitHub Project has the canonical status
+// options in the correct order. Uses run to shell out to gh api graphql.
+func CheckProjectStatus(owner string, run bootstrap.RunCommandFunc) CheckResult {
+	// Step 1: Find the project node ID.
+	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	if projectNodeID == "" {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: "no GitHub Project found for owner " + owner,
+		}
+	}
+
+	// Step 2: Fetch the Status field and its options via GraphQL.
+	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.field.options[].name")
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to fetch status options: %v", err),
+		}
+	}
+
+	// Parse the returned option names (one per line).
+	var gotNames []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			gotNames = append(gotNames, line)
+		}
+	}
+
+	// Step 3: Compare against canonical set.
+	canonical := bootstrap.StatusOptionNames()
+	if len(gotNames) != len(canonical) {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: fmt.Sprintf("expected %d options, got %d: %v", len(canonical), len(gotNames), gotNames),
+		}
+	}
+
+	for i, name := range canonical {
+		if gotNames[i] != name {
+			return CheckResult{
+				Name:    checkProjectStatusName,
+				Status:  Fail,
+				Message: fmt.Sprintf("option %d: expected %q, got %q", i+1, name, gotNames[i]),
+			}
+		}
+	}
+
+	return CheckResult{
+		Name:   checkProjectStatusName,
+		Status: Pass,
+	}
+}
+
+// resolveProjectNodeIDViaRun resolves the project node ID for an owner by
+// trying user first, then org. Uses run to shell out to gh api graphql.
+func resolveProjectNodeIDViaRun(owner string, run bootstrap.RunCommandFunc) string {
+	// Try user query.
+	userQuery := fmt.Sprintf(`{ user(login: \"%s\") { projectsV2(first: 1) { nodes { id } } } }`, owner)
+	out, err := run("gh", "api", "graphql", "-f", "query="+userQuery, "--jq", ".data.user.projectsV2.nodes[0].id")
+	if err == nil {
+		id := strings.TrimSpace(out)
+		if id != "" && id != "null" {
+			return id
+		}
+	}
+
+	// Try org query.
+	orgQuery := fmt.Sprintf(`{ organization(login: \"%s\") { projectsV2(first: 1) { nodes { id } } } }`, owner)
+	out, err = run("gh", "api", "graphql", "-f", "query="+orgQuery, "--jq", ".data.organization.projectsV2.nodes[0].id")
+	if err == nil {
+		id := strings.TrimSpace(out)
+		if id != "" && id != "null" {
+			return id
+		}
+	}
+
+	return ""
+}
+
+
 // CheckProject verifies that a GitHub Project exists for the repo owner.
 // owner is the GitHub account/org. run is injected for gh operations.
 func CheckProject(owner string, run bootstrap.RunCommandFunc) CheckResult {
