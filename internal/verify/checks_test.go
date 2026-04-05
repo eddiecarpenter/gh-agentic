@@ -694,6 +694,67 @@ func TestCheckGhNotify_AllGood_ReturnsPass(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// resolveProjectNodeIDViaRun tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestResolveProjectNodeIDViaRun_TitleMatch_ReturnsCorrectID(t *testing.T) {
+	tests := []struct {
+		name       string
+		repoName   string
+		jsonResp   string
+		runErr     error
+		expectedID string
+	}{
+		{
+			name:       "exact title match among multiple projects",
+			repoName:   "my-domain",
+			jsonResp:   `{"projects":[{"id":"PVT_AAA","title":"other-project","number":1},{"id":"PVT_BBB","title":"my-domain","number":2},{"id":"PVT_CCC","title":"yet-another","number":3}]}`,
+			expectedID: "PVT_BBB",
+		},
+		{
+			name:       "no title match falls back to first project",
+			repoName:   "nonexistent-repo",
+			jsonResp:   `{"projects":[{"id":"PVT_AAA","title":"alpha","number":1},{"id":"PVT_BBB","title":"beta","number":2}]}`,
+			expectedID: "PVT_AAA",
+		},
+		{
+			name:       "empty project list returns empty string",
+			repoName:   "my-repo",
+			jsonResp:   `{"projects":[]}`,
+			expectedID: "",
+		},
+		{
+			name:       "single project matching returns its ID",
+			repoName:   "solo-project",
+			jsonResp:   `{"projects":[{"id":"PVT_SOLO","title":"solo-project","number":1}]}`,
+			expectedID: "PVT_SOLO",
+		},
+		{
+			name:       "single project not matching still returns its ID as fallback",
+			repoName:   "different-name",
+			jsonResp:   `{"projects":[{"id":"PVT_SOLO","title":"solo-project","number":1}]}`,
+			expectedID: "PVT_SOLO",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				if tc.runErr != nil {
+					return "", tc.runErr
+				}
+				return tc.jsonResp, nil
+			}
+
+			got := resolveProjectNodeIDViaRun("owner", tc.repoName, fakeRun)
+			if got != tc.expectedID {
+				t.Errorf("expected %q, got %q", tc.expectedID, got)
+			}
+		})
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // CheckProjectStatus tests
 // ──────────────────────────────────────────────────────────────────────────────
 
