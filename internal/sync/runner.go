@@ -149,6 +149,14 @@ func RunSync(
 		return err
 	}
 
+	// Step 6b: Deploy workflows from template.
+	if err := spinner(w, "Deploying workflows", func() error {
+		return DeployWorkflows(tmpDir, repoRoot)
+	}); err != nil {
+		_ = RestoreBase(repoRoot, backupDir)
+		return err
+	}
+
 	// Step 7: Show diff.
 	fmt.Fprintln(w)
 	diff, err := ShowDiff(repoRoot, run)
@@ -182,8 +190,9 @@ func RunSync(
 			return err
 		}
 
-		// Also reset any git changes to base/.
+		// Also reset any git changes to base/ and .github/workflows/.
 		_, _ = runInDir(run, repoRoot, "git", "checkout", "--", "base/")
+		_, _ = runInDir(run, repoRoot, "git", "checkout", "--", ".github/workflows/")
 
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "  "+ui.Muted.Render("Sync cancelled — no changes committed"))

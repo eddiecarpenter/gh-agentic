@@ -361,14 +361,93 @@ func TestCopyBase(t *testing.T) {
 	})
 }
 
+func TestDeployWorkflows(t *testing.T) {
+	t.Run("copies workflow files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Create source workflows in template.
+		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		if err := os.MkdirAll(srcWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "pipeline.yml"), []byte("pipeline-content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "ci.yml"), []byte("ci-content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployWorkflows(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify files were copied.
+		data, err := os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "pipeline.yml"))
+		if err != nil {
+			t.Fatalf("workflow file missing: %v", err)
+		}
+		if string(data) != "pipeline-content" {
+			t.Errorf("content mismatch: %s", data)
+		}
+
+		data, err = os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "ci.yml"))
+		if err != nil {
+			t.Fatalf("ci workflow file missing: %v", err)
+		}
+		if string(data) != "ci-content" {
+			t.Errorf("ci content mismatch: %s", data)
+		}
+	})
+
+	t.Run("returns nil when source absent", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		err := DeployWorkflows(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("expected nil for absent source, got: %v", err)
+		}
+	})
+
+	t.Run("creates destination directory", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		if err := os.MkdirAll(srcWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "test.yml"), []byte("test"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployWorkflows(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		info, err := os.Stat(filepath.Join(repoRoot, ".github", "workflows"))
+		if err != nil {
+			t.Fatalf("destination dir not created: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("expected directory")
+		}
+	})
+}
+
 func TestShowDiff(t *testing.T) {
 	t.Run("returns diff output", func(t *testing.T) {
 		responses := []struct {
 			output string
 			err    error
 		}{
-			{output: "diff --git a/base/AGENTS.md", err: nil},
-			{output: "", err: nil}, // ls-files for untracked
+			{output: "diff --git a/base/AGENTS.md", err: nil}, // git diff base/
+			{output: "", err: nil},                             // ls-files base/
+			{output: "", err: nil},                             // git diff .github/workflows/
+			{output: "", err: nil},                             // ls-files .github/workflows/
 		}
 		run := fakeRunMulti(responses)
 
@@ -386,8 +465,10 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},
-			{output: "base/new-file.md\n", err: nil},
+			{output: "", err: nil},                    // git diff base/
+			{output: "base/new-file.md\n", err: nil},  // ls-files base/
+			{output: "", err: nil},                    // git diff .github/workflows/
+			{output: "", err: nil},                    // ls-files .github/workflows/
 		}
 		run := fakeRunMulti(responses)
 
@@ -397,6 +478,48 @@ func TestShowDiff(t *testing.T) {
 		}
 		if !strings.Contains(diff, "New files") {
 			t.Errorf("expected new files section, got %q", diff)
+		}
+	})
+
+	t.Run("includes workflow diffs", func(t *testing.T) {
+		responses := []struct {
+			output string
+			err    error
+		}{
+			{output: "", err: nil},                                     // git diff base/
+			{output: "", err: nil},                                     // ls-files base/
+			{output: "diff --git a/.github/workflows/ci.yml", err: nil}, // git diff .github/workflows/
+			{output: "", err: nil},                                     // ls-files .github/workflows/
+		}
+		run := fakeRunMulti(responses)
+
+		diff, err := ShowDiff("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(diff, ".github/workflows/ci.yml") {
+			t.Errorf("expected workflow diff, got %q", diff)
+		}
+	})
+
+	t.Run("includes new workflow files", func(t *testing.T) {
+		responses := []struct {
+			output string
+			err    error
+		}{
+			{output: "", err: nil},                                                    // git diff base/
+			{output: "", err: nil},                                                    // ls-files base/
+			{output: "", err: nil},                                                    // git diff .github/workflows/
+			{output: ".github/workflows/new-pipeline.yml\n", err: nil},                // ls-files .github/workflows/
+		}
+		run := fakeRunMulti(responses)
+
+		diff, err := ShowDiff("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(diff, "New workflow files") {
+			t.Errorf("expected new workflow files section, got %q", diff)
 		}
 	})
 
@@ -460,8 +583,8 @@ func TestCommitSync(t *testing.T) {
 		}
 
 		// Verify git commit was called with correct message.
-		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync base/") {
-			t.Errorf("third call should be git commit: %s", calls[2])
+		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync base/ and workflows") {
+			t.Errorf("third call should be git commit with updated message: %s", calls[2])
 		}
 	})
 
