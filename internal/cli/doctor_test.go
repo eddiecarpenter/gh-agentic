@@ -82,7 +82,16 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	// CheckProjectStatus: fetch status options via GraphQL.
 	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, "--jq", ".data.node.field.options[].name"}, "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil)
 
-	// resolveProjectNodeIDViaRun (used by CheckProjectCollaborator): gh project list --limit 1 (second call)
+	// resolveProjectNodeIDViaRun (used by CheckProjectItemStatuses): gh project list --limit 1
+	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+
+	// CheckProjectItemStatuses: fetch Status field ID via GraphQL.
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, "--jq", ".data.node.field.id"}, "FIELD_STATUS_1", nil)
+
+	// CheckProjectItemStatuses: fetch all project items (empty — all have status).
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { items(first: 100) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`}, `{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[]}}}}`, nil)
+
+	// resolveProjectNodeIDViaRun (used by CheckProjectCollaborator): gh project list --limit 1
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
 
 	return m
@@ -269,5 +278,87 @@ func TestRunDoctor_RepairYes_RestoreAGENTSLocalMD(t *testing.T) {
 
 	if err != nil {
 		t.Logf("runDoctor returned error after repair (may be due to other checks): %v", err)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// --resync-statuses flag tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRunDoctor_ResyncStatuses_CallsResync(t *testing.T) {
+	repo := setupDoctorFakeRepo(t)
+	mock := &testutil.MockRunner{}
+
+	// ResyncProjectItemStatuses calls:
+	// 1. resolveProjectNodeIDViaRun
+	mock.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+	// 2. Fetch Status field ID
+	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, "--jq", ".data.node.field.id"}, "FIELD_1", nil)
+	// 3. fetchStatusOptionMap
+	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, "--jq", `.data.node.field.options[] | "\(.id)|\(.name)"`}, "OPT_1|Backlog\nOPT_7|Done", nil)
+	// 4. fetchAllProjectItems — empty
+	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { items(first: 100) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`}, `{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[]}}}}`, nil)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		root:           repo.Root,
+		repoFullName:   "testowner/testrepo",
+		owner:          "testowner",
+		repoName:       "testrepo",
+		run:            mock.RunCommand,
+		resyncStatuses: true,
+		yes:            true,
+	}
+
+	err := runDoctor(&buf, strings.NewReader(""), cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", err, buf.String())
+	}
+
+	output := buf.String()
+	// Should NOT contain normal check output.
+	if strings.Contains(output, "CLAUDE.md exists") {
+		t.Error("normal checks should be skipped when --resync-statuses is set")
+	}
+	// Should contain summary.
+	if !strings.Contains(output, "items updated") {
+		t.Errorf("expected summary in output, got:\n%s", output)
+	}
+}
+
+func TestRunDoctor_ResyncStatuses_PrintsSummary(t *testing.T) {
+	repo := setupDoctorFakeRepo(t)
+	mock := &testutil.MockRunner{}
+
+	// Same setup as above but with items to update.
+	mock.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "1"}, projectJSON, nil)
+	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, "--jq", ".data.node.field.id"}, "FIELD_1", nil)
+	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, "--jq", `.data.node.field.options[] | "\(.id)|\(.name)"`}, "OPT_1|Backlog\nOPT_7|Done", nil)
+	// Return one item that needs updating (OPEN with backlog → Backlog, currently has no status).
+	mock.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: \"PVT_test123\") { ... on ProjectV2 { items(first: 100) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`},
+		`{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[{"id":"ITEM_1","content":{"state":"OPEN","labels":{"nodes":[{"name":"backlog"}]}},"fieldValues":{"nodes":[]}}]}}}}`, nil)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		root:           repo.Root,
+		repoFullName:   "testowner/testrepo",
+		owner:          "testowner",
+		repoName:       "testrepo",
+		run:            mock.RunCommand,
+		resyncStatuses: true,
+		yes:            true,
+	}
+
+	err := runDoctor(&buf, strings.NewReader(""), cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", err, buf.String())
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "1 items updated") {
+		t.Errorf("expected '1 items updated' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "0 already correct") {
+		t.Errorf("expected '0 already correct' in output, got:\n%s", output)
 	}
 }

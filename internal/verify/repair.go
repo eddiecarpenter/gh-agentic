@@ -2,6 +2,7 @@ package verify
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -364,10 +365,263 @@ func RepairProjectStatus(owner string, root string, run bootstrap.RunCommandFunc
 		}
 	}
 
-	return CheckResult{
-		Name:   checkProjectStatusName,
-		Status: Pass,
+	// Phase 2: resync individual item statuses.
+	resyncUpdated, _, resyncErr := resyncProjectItemStatuses(owner, projectNodeID, fieldID, tmpl, run)
+	if resyncErr != nil {
+		return CheckResult{
+			Name:    checkProjectStatusName,
+			Status:  Fail,
+			Message: fmt.Sprintf("status options updated but item resync failed: %v", resyncErr),
+		}
 	}
+
+	msg := ""
+	if resyncUpdated > 0 {
+		msg = fmt.Sprintf("%d item(s) resynced", resyncUpdated)
+	}
+	return CheckResult{
+		Name:    checkProjectStatusName,
+		Status:  Pass,
+		Message: msg,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Project item status resync
+// ──────────────────────────────────────────────────────────────────────────────
+
+// pipelineLabelPriority maps pipeline labels to their canonical status name.
+// The order defines priority: earlier entries win. CLOSED-before-backlog is
+// handled separately in resolveStatus.
+var pipelineLabelPriority = []struct {
+	label  string
+	status string
+}{
+	{"done", "Done"},
+	{"in-review", "In Review"},
+	{"in-development", "In Development"},
+	{"in-design", "In Design"},
+	{"scheduled", "Scheduled"},
+	{"scoping", "Scoping"},
+}
+
+// resolveStatus determines the canonical status name for a project item based
+// on its issue labels and state. Priority order (critical — CLOSED before backlog):
+//  1. done label → Done
+//  2. in-review → In Review
+//  3. in-development → In Development
+//  4. in-design → In Design
+//  5. scheduled → Scheduled
+//  6. scoping → Scoping
+//  7. issue state is CLOSED (no pipeline label matched) → Done
+//  8. backlog label or default → Backlog
+func resolveStatus(labels []string, issueState string) string {
+	labelSet := make(map[string]bool, len(labels))
+	for _, l := range labels {
+		labelSet[l] = true
+	}
+
+	for _, entry := range pipelineLabelPriority {
+		if labelSet[entry.label] {
+			return entry.status
+		}
+	}
+
+	// Rule 7: CLOSED issues with no pipeline label → Done.
+	if strings.EqualFold(issueState, "CLOSED") {
+		return "Done"
+	}
+
+	// Rule 8: backlog label or default → Backlog.
+	return "Backlog"
+}
+
+// projectItem represents a single item from a ProjectV2 items query.
+type projectItem struct {
+	ID           string
+	IssueState   string
+	Labels       []string
+	CurrentStatus string
+}
+
+// resyncProjectItemStatuses fetches all project items (paginated) and updates
+// each item's status field to match the canonical status derived from its issue
+// labels and state. Returns counts of updated and already-correct items.
+func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap.ProjectTemplate, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
+	// Build option name → ID map by fetching status field options.
+	optionMap, optErr := fetchStatusOptionMap(projectID, fieldID, run)
+	if optErr != nil {
+		return 0, 0, optErr
+	}
+
+	// Fetch all project items with pagination.
+	items, fetchErr := fetchAllProjectItems(projectID, fieldID, run)
+	if fetchErr != nil {
+		return 0, 0, fetchErr
+	}
+
+	for _, item := range items {
+		wantStatus := resolveStatus(item.Labels, item.IssueState)
+		wantOptionID, ok := optionMap[wantStatus]
+		if !ok {
+			// Status not found in options — skip.
+			continue
+		}
+
+		// Check if current status already matches.
+		if item.CurrentStatus == wantStatus {
+			correct++
+			continue
+		}
+
+		// Update the item's status.
+		mutation := fmt.Sprintf(`mutation { updateProjectV2ItemFieldValue(input: { projectId: \"%s\", itemId: \"%s\", fieldId: \"%s\", value: { singleSelectOptionId: \"%s\" } }) { clientMutationId } }`,
+			projectID, item.ID, fieldID, wantOptionID)
+		_, mutErr := run("gh", "api", "graphql", "-f", "query="+mutation)
+		if mutErr != nil {
+			return updated, correct, fmt.Errorf("updating item %s: %w", item.ID, mutErr)
+		}
+		updated++
+	}
+
+	return updated, correct, nil
+}
+
+// fetchStatusOptionMap fetches the Status field options and returns a map of
+// option name → option ID.
+func fetchStatusOptionMap(projectID, fieldID string, run bootstrap.RunCommandFunc) (map[string]string, error) {
+	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, projectID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.field.options[] | "\(.id)|\(.name)"`)
+	if err != nil {
+		return nil, fmt.Errorf("fetching status options: %w", err)
+	}
+
+	optionMap := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) == 2 {
+			optionMap[parts[1]] = parts[0]
+		}
+	}
+	return optionMap, nil
+}
+
+// fetchAllProjectItems fetches all items from a ProjectV2 via paginated GraphQL.
+// Each item includes its ID, content (issue state + labels), and current status.
+func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFunc) ([]projectItem, error) {
+	var items []projectItem
+	cursor := ""
+
+	for {
+		afterClause := ""
+		if cursor != "" {
+			afterClause = fmt.Sprintf(`, after: \"%s\"`, cursor)
+		}
+
+		query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { items(first: 100%s) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`,
+			projectID, afterClause)
+
+		out, err := run("gh", "api", "graphql", "-f", "query="+query)
+		if err != nil {
+			return nil, fmt.Errorf("fetching project items: %w", err)
+		}
+
+		// Parse the JSON response.
+		type gqlResponse struct {
+			Data struct {
+				Node struct {
+					Items struct {
+						PageInfo struct {
+							HasNextPage bool   `json:"hasNextPage"`
+							EndCursor   string `json:"endCursor"`
+						} `json:"pageInfo"`
+						Nodes []struct {
+							ID      string `json:"id"`
+							Content struct {
+								State  string `json:"state"`
+								Labels struct {
+									Nodes []struct {
+										Name string `json:"name"`
+									} `json:"nodes"`
+								} `json:"labels"`
+							} `json:"content"`
+							FieldValues struct {
+								Nodes []struct {
+									Field struct {
+										ID string `json:"id"`
+									} `json:"field"`
+									Name string `json:"name"`
+								} `json:"nodes"`
+							} `json:"fieldValues"`
+						} `json:"nodes"`
+					} `json:"items"`
+				} `json:"node"`
+			} `json:"data"`
+		}
+
+		var resp gqlResponse
+		if jsonErr := json.Unmarshal([]byte(out), &resp); jsonErr != nil {
+			return nil, fmt.Errorf("parsing project items response: %w", jsonErr)
+		}
+
+		for _, node := range resp.Data.Node.Items.Nodes {
+			item := projectItem{
+				ID:         node.ID,
+				IssueState: node.Content.State,
+			}
+			for _, label := range node.Content.Labels.Nodes {
+				item.Labels = append(item.Labels, label.Name)
+			}
+			// Find current status from field values.
+			for _, fv := range node.FieldValues.Nodes {
+				if fv.Field.ID == fieldID {
+					item.CurrentStatus = fv.Name
+					break
+				}
+			}
+			items = append(items, item)
+		}
+
+		if !resp.Data.Node.Items.PageInfo.HasNextPage {
+			break
+		}
+		cursor = resp.Data.Node.Items.PageInfo.EndCursor
+	}
+
+	return items, nil
+}
+
+// ResyncProjectItemStatuses is the exported entry point for resyncing all project
+// item statuses. It resolves the project node ID, fetches the status field ID and
+// options, and calls resyncProjectItemStatuses.
+func ResyncProjectItemStatuses(owner, root string, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
+	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
+	if loadErr != nil {
+		return 0, 0, fmt.Errorf("loading project template: %w", loadErr)
+	}
+
+	projectNodeID := resolveProjectNodeIDViaRun(owner, run)
+	if projectNodeID == "" {
+		return 0, 0, fmt.Errorf("no GitHub Project found for owner %s", owner)
+	}
+
+	// Fetch Status field ID.
+	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	out, fErr := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
+	if fErr != nil {
+		return 0, 0, fmt.Errorf("fetching Status field ID: %w", fErr)
+	}
+
+	fieldID := strings.TrimSpace(out)
+	if fieldID == "" || fieldID == "null" {
+		return 0, 0, fmt.Errorf("Status field not found on project")
+	}
+
+	return resyncProjectItemStatuses(owner, projectNodeID, fieldID, tmpl, run)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

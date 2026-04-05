@@ -895,6 +895,86 @@ func TestCheckProjectCollaborator_APIFailure_ReturnsFail(t *testing.T) {
 	}
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// CheckProjectItemStatuses tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckProjectItemStatuses_AllHaveStatus_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			// resolveProjectNodeIDViaRun
+			return projectListJSON, nil
+		case 2:
+			// Fetch Status field ID.
+			return "FIELD_1", nil
+		case 3:
+			// fetchAllProjectItems — all items have a status.
+			return `{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[{"id":"I1","content":{"state":"OPEN","labels":{"nodes":[]}},"fieldValues":{"nodes":[{"field":{"id":"FIELD_1"},"name":"Backlog"}]}},{"id":"I2","content":{"state":"CLOSED","labels":{"nodes":[]}},"fieldValues":{"nodes":[{"field":{"id":"FIELD_1"},"name":"Done"}]}}]}}}}`, nil
+		}
+		return "", nil
+	}
+
+	result := CheckProjectItemStatuses("owner", root, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectItemStatuses_SomeMissing_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return projectListJSON, nil
+		case 2:
+			return "FIELD_1", nil
+		case 3:
+			// Two items: one with status, one without.
+			return `{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[{"id":"I1","content":{"state":"OPEN","labels":{"nodes":[]}},"fieldValues":{"nodes":[{"field":{"id":"FIELD_1"},"name":"Backlog"}]}},{"id":"I2","content":{"state":"OPEN","labels":{"nodes":[]}},"fieldValues":{"nodes":[]}}]}}}}`, nil
+		}
+		return "", nil
+	}
+
+	result := CheckProjectItemStatuses("owner", root, fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "1 project items have no status") {
+		t.Errorf("expected count in message, got: %s", result.Message)
+	}
+}
+
+func TestCheckProjectItemStatuses_NoItems_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return projectListJSON, nil
+		case 2:
+			return "FIELD_1", nil
+		case 3:
+			return `{"data":{"node":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[]}}}}`, nil
+		}
+		return "", nil
+	}
+
+	result := CheckProjectItemStatuses("owner", root, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass for empty project, got %v: %s", result.Status, result.Message)
+	}
+}
+
 func TestMissingLabels_SomeMissing_ReturnsOnlyMissing(t *testing.T) {
 	labelsJSON := `[{"name":"requirement"},{"name":"feature"}]`
 	fakeRun := func(name string, args ...string) (string, error) {
