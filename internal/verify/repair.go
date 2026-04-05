@@ -106,6 +106,43 @@ func RepairAGENTSLocalMD(root string) CheckResult {
 	}
 }
 
+// RepairSkillsDir creates the skills/ directory with a .gitkeep file and stages it.
+// run is injected so tests can substitute a fake implementation.
+func RepairSkillsDir(root string, run bootstrap.RunCommandFunc) CheckResult {
+	skillsDir := filepath.Join(root, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return CheckResult{
+			Name:    "skills/ directory exists",
+			Status:  Fail,
+			Message: fmt.Sprintf("repair failed: %v", err),
+		}
+	}
+
+	gitkeepPath := filepath.Join(skillsDir, ".gitkeep")
+	if err := os.WriteFile(gitkeepPath, []byte{}, 0o644); err != nil {
+		return CheckResult{
+			Name:    "skills/ directory exists",
+			Status:  Fail,
+			Message: fmt.Sprintf("repair failed: %v", err),
+		}
+	}
+
+	// Stage the file via git add.
+	_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git add skills/.gitkeep", strings.ReplaceAll(root, "'", "'\\''")))
+	if err != nil {
+		return CheckResult{
+			Name:    "skills/ directory exists",
+			Status:  Fail,
+			Message: fmt.Sprintf("git add failed: %v", err),
+		}
+	}
+
+	return CheckResult{
+		Name:   "skills/ directory exists",
+		Status: Pass,
+	}
+}
+
 // RepairTEMPLATESOURCE prompts the user for the template source value and writes it.
 // confirmFn is injected so tests can substitute a fake implementation.
 func RepairTEMPLATESOURCE(root string, confirmFn ConfirmFunc) CheckResult {

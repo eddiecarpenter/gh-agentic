@@ -44,6 +44,7 @@ func NewFakeRepo(t *testing.T) *FakeRepo {
 		"REPOS.md":         "# REPOS.md\n",
 		"README.md":        "# README\n",
 		"base/AGENTS.md":   "# AGENTS.md\n",
+		"skills/.gitkeep":  "",
 	}
 
 	for path, content := range files {

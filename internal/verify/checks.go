@@ -49,6 +49,25 @@ func CheckAGENTSLocalMD(root string) CheckResult {
 	}
 }
 
+// CheckSkillsDir verifies that the skills/ directory exists in the repo root.
+// Returns Warning (not Fail) if absent — it is optional but recommended for
+// local project-specific skills.
+func CheckSkillsDir(root string) CheckResult {
+	path := filepath.Join(root, "skills")
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) || (err == nil && !info.IsDir()) {
+		return CheckResult{
+			Name:    "skills/ directory exists",
+			Status:  Warning,
+			Message: "directory not found — recommended for local project-specific skills",
+		}
+	}
+	return CheckResult{
+		Name:   "skills/ directory exists",
+		Status: Pass,
+	}
+}
+
 // CheckTEMPLATESOURCE verifies that TEMPLATE_SOURCE exists in the repo root.
 // Returns Warning if the file is missing (requires user input to repair).
 func CheckTEMPLATESOURCE(root string) CheckResult {

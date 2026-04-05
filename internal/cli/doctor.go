@@ -77,6 +77,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 	checks := []verify.CheckFunc{
 		func() verify.CheckResult { return verify.CheckCLAUDEMD(cfg.root) },
 		func() verify.CheckResult { return verify.CheckAGENTSLocalMD(cfg.root) },
+		func() verify.CheckResult { return verify.CheckSkillsDir(cfg.root) },
 		func() verify.CheckResult { return verify.CheckTEMPLATESOURCE(cfg.root) },
 		func() verify.CheckResult { return verify.CheckTEMPLATEVERSION(cfg.root) },
 		func() verify.CheckResult { return verify.CheckREPOSMD(cfg.root) },
@@ -102,6 +103,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairCLAUDEMD(cfg.root)
 			case "AGENTS.local.md exists":
 				r = verify.RepairAGENTSLocalMD(cfg.root)
+			case "skills/ directory exists":
+				r = verify.RepairSkillsDir(cfg.root, run)
 			case "TEMPLATE_SOURCE exists":
 				r = verify.RepairTEMPLATESOURCE(cfg.root, textConfirm)
 			case "TEMPLATE_VERSION exists":

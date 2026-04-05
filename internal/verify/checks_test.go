@@ -45,6 +45,25 @@ func TestCheckAGENTSLocalMD_Missing_ReturnsWarning(t *testing.T) {
 	}
 }
 
+func TestCheckSkillsDir_Present_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := CheckSkillsDir(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckSkillsDir_Absent_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	result := CheckSkillsDir(root)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
 func TestCheckTEMPLATESOURCE_Present_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("eddiecarpenter/agentic-development\n"), 0o644); err != nil {
