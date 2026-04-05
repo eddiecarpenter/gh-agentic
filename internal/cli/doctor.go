@@ -70,6 +70,9 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 
 	run := cfg.run
 
+	// Read agent user from AGENT_USER file (empty string if absent).
+	agentUser, _ := bootstrap.ReadAgentUser(cfg.root)
+
 	// All checks in pipeline order.
 	checks := []verify.CheckFunc{
 		func() verify.CheckResult { return verify.CheckCLAUDEMD(cfg.root) },
@@ -86,6 +89,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
 		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, run) },
+		func() verify.CheckResult { return verify.CheckProjectCollaborator(cfg.owner, agentUser, run) },
 	}
 
 	// Repair function — only active when --repair flag is set.
@@ -122,6 +126,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairProject(cfg.owner, cfg.repoName, run)
 			case "GitHub Project status options are standard":
 				r = verify.RepairProjectStatus(cfg.owner, run)
+			case "Agent user is a project collaborator":
+				r = verify.RepairProjectCollaborator(cfg.owner, agentUser, run)
 			default:
 				return nil
 			}
