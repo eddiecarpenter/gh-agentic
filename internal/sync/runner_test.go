@@ -176,3 +176,143 @@ func TestRunSync_FetchError(t *testing.T) {
 
 	mock.AssertExpectations(t)
 }
+
+func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+	// FakeRepo has TEMPLATE_VERSION=v1.0.0 and FakeRelease returns v1.0.0,
+	// so without --force this would be "up to date".
+
+	mock := &testutil.MockRunner{}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "re-synced content"),
+		testutil.FakeRelease("v1.0.0", nil),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil }, // confirm yes
+		true, // force
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	// Should mention --force or re-sync.
+	if !strings.Contains(output, "force") && !strings.Contains(output, "re-sync") {
+		t.Errorf("expected force/re-sync warning in output, got: %s", output)
+	}
+
+	// Verify base/ was updated despite same version.
+	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "re-synced content" {
+		t.Errorf("base/AGENTS.md = %q, want 're-synced content'", data)
+	}
+
+	// Verify TEMPLATE_VERSION was updated (to same version, but file was rewritten).
+	data, err = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "v1.0.0" {
+		t.Errorf("TEMPLATE_VERSION = %q, want v1.0.0", string(data))
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	// Delete base/ to simulate it being missing.
+	if err := os.RemoveAll(filepath.Join(repo.Root, "base")); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &testutil.MockRunner{}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "restored content"),
+		testutil.FakeRelease("v1.0.0", nil), // same version — base/ missing bypasses up-to-date
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil }, // confirm yes
+		false,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	// Should mention base/ missing.
+	if !strings.Contains(output, "missing") {
+		t.Errorf("expected 'missing' warning in output, got: %s", output)
+	}
+
+	// Verify base/ was restored.
+	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "restored content" {
+		t.Errorf("base/AGENTS.md = %q, want 'restored content'", data)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_YesAutoConfirms(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	confirmCalled := 0
+	confirmFn := func(_ string) (bool, error) {
+		confirmCalled++
+		return true, nil
+	}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "auto-confirmed content"),
+		testutil.FakeRelease("v2.0.0", nil),
+		testutil.NoopSpinner,
+		confirmFn,
+		false,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify confirm was called exactly once.
+	if confirmCalled != 1 {
+		t.Errorf("expected confirm called 1 time, got %d", confirmCalled)
+	}
+
+	// Verify sync completed successfully.
+	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "v2.0.0" {
+		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Synced") {
+		t.Errorf("expected success message, got: %s", output)
+	}
+
+	mock.AssertExpectations(t)
+}
