@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 )
 
 func TestRepairSkillsDir_CreatesDirectoryAndFile(t *testing.T) {
@@ -706,4 +708,257 @@ func TestRepairProjectCollaborator_MutationFails_ReturnsFail(t *testing.T) {
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// resyncProjectItemStatuses tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+// statusOptionsResponse is the mock response for fetchStatusOptionMap.
+const statusOptionsResponse = "OPT_1|Backlog\nOPT_2|Scoping\nOPT_3|Scheduled\nOPT_4|In Design\nOPT_5|In Development\nOPT_6|In Review\nOPT_7|Done"
+
+// makeItemsJSON builds a mock GraphQL response for fetchAllProjectItems.
+func makeItemsJSON(items []testItem, hasNextPage bool, endCursor string) string {
+	var nodes []string
+	for _, item := range items {
+		var labelNodes []string
+		for _, l := range item.labels {
+			labelNodes = append(labelNodes, fmt.Sprintf(`{"name":"%s"}`, l))
+		}
+		var fvNodes []string
+		if item.currentStatus != "" {
+			fvNodes = append(fvNodes, fmt.Sprintf(`{"field":{"id":"%s"},"name":"%s"}`, item.fieldID, item.currentStatus))
+		}
+		nodes = append(nodes, fmt.Sprintf(`{"id":"%s","content":{"state":"%s","labels":{"nodes":[%s]}},"fieldValues":{"nodes":[%s]}}`,
+			item.id, item.state, strings.Join(labelNodes, ","), strings.Join(fvNodes, ",")))
+	}
+	return fmt.Sprintf(`{"data":{"node":{"items":{"pageInfo":{"hasNextPage":%t,"endCursor":"%s"},"nodes":[%s]}}}}`,
+		hasNextPage, endCursor, strings.Join(nodes, ","))
+}
+
+type testItem struct {
+	id            string
+	state         string
+	labels        []string
+	currentStatus string
+	fieldID       string
+}
+
+func TestResyncProjectItemStatuses_Success(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
+	tmpl, _ := loadTestTemplate(t, root)
+
+	items := []testItem{
+		{id: "ITEM_1", state: "OPEN", labels: []string{"in-development"}, currentStatus: "Backlog", fieldID: "FIELD_1"},
+		{id: "ITEM_2", state: "CLOSED", labels: []string{"done"}, currentStatus: "Done", fieldID: "FIELD_1"},
+	}
+
+	callCount := 0
+	var mutationItemIDs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			// fetchStatusOptionMap
+			return statusOptionsResponse, nil
+		case 2:
+			// fetchAllProjectItems
+			return makeItemsJSON(items, false, ""), nil
+		default:
+			// Update mutations — record which item was updated.
+			for _, a := range args {
+				if strings.Contains(a, "updateProjectV2ItemFieldValue") {
+					for _, item := range items {
+						if strings.Contains(a, item.id) {
+							mutationItemIDs = append(mutationItemIDs, item.id)
+						}
+					}
+				}
+			}
+			return `{"data":{}}`, nil
+		}
+	}
+
+	updated, correct, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated != 1 {
+		t.Errorf("expected 1 updated, got %d", updated)
+	}
+	if correct != 1 {
+		t.Errorf("expected 1 correct, got %d", correct)
+	}
+	// ITEM_1 should have been updated (in-development → In Development, but current was Backlog).
+	if len(mutationItemIDs) != 1 || mutationItemIDs[0] != "ITEM_1" {
+		t.Errorf("expected mutation for ITEM_1, got %v", mutationItemIDs)
+	}
+}
+
+func TestResyncProjectItemStatuses_Pagination(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
+	tmpl, _ := loadTestTemplate(t, root)
+
+	page1Items := []testItem{
+		{id: "ITEM_1", state: "OPEN", labels: []string{"backlog"}, currentStatus: "Backlog", fieldID: "FIELD_1"},
+	}
+	page2Items := []testItem{
+		{id: "ITEM_2", state: "OPEN", labels: []string{"scoping"}, currentStatus: "Backlog", fieldID: "FIELD_1"},
+	}
+
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return statusOptionsResponse, nil
+		case 2:
+			// First page — hasNextPage=true.
+			return makeItemsJSON(page1Items, true, "CURSOR_1"), nil
+		case 3:
+			// Second page — hasNextPage=false.
+			return makeItemsJSON(page2Items, false, ""), nil
+		default:
+			// Update mutation for ITEM_2.
+			return `{"data":{}}`, nil
+		}
+	}
+
+	updated, correct, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// ITEM_1 is already correct (Backlog), ITEM_2 needs update (scoping → Scoping).
+	if updated != 1 {
+		t.Errorf("expected 1 updated, got %d", updated)
+	}
+	if correct != 1 {
+		t.Errorf("expected 1 correct, got %d", correct)
+	}
+	// Verify second page was fetched (callCount should be at least 4: options, page1, page2, mutation).
+	if callCount < 4 {
+		t.Errorf("expected at least 4 calls (pagination), got %d", callCount)
+	}
+}
+
+func TestResyncProjectItemStatuses_ClosedBeforeBacklog(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
+	tmpl, _ := loadTestTemplate(t, root)
+
+	// Critical edge case: item is CLOSED with backlog label but NO pipeline label.
+	// Rule 7 (CLOSED → Done) must take priority over rule 8 (backlog → Backlog).
+	items := []testItem{
+		{id: "ITEM_1", state: "CLOSED", labels: []string{"backlog"}, currentStatus: "Backlog", fieldID: "FIELD_1"},
+	}
+
+	callCount := 0
+	var updatedWithOptionID string
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return statusOptionsResponse, nil
+		case 2:
+			return makeItemsJSON(items, false, ""), nil
+		default:
+			// Capture the option ID used in the mutation.
+			for _, a := range args {
+				if strings.Contains(a, "updateProjectV2ItemFieldValue") && strings.Contains(a, "ITEM_1") {
+					// Extract option ID from the mutation.
+					if strings.Contains(a, "OPT_7") {
+						updatedWithOptionID = "OPT_7" // Done
+					} else if strings.Contains(a, "OPT_1") {
+						updatedWithOptionID = "OPT_1" // Backlog
+					}
+				}
+			}
+			return `{"data":{}}`, nil
+		}
+	}
+
+	updated, _, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated != 1 {
+		t.Errorf("expected 1 updated, got %d", updated)
+	}
+	if updatedWithOptionID != "OPT_7" {
+		t.Errorf("expected Done option (OPT_7), got %s — CLOSED-before-backlog priority violated", updatedWithOptionID)
+	}
+}
+
+func TestResyncProjectItemStatuses_AlreadyCorrect(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
+	tmpl, _ := loadTestTemplate(t, root)
+
+	items := []testItem{
+		{id: "ITEM_1", state: "OPEN", labels: []string{"in-development"}, currentStatus: "In Development", fieldID: "FIELD_1"},
+		{id: "ITEM_2", state: "OPEN", labels: []string{"backlog"}, currentStatus: "Backlog", fieldID: "FIELD_1"},
+		{id: "ITEM_3", state: "CLOSED", labels: []string{"done"}, currentStatus: "Done", fieldID: "FIELD_1"},
+	}
+
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return statusOptionsResponse, nil
+		case 2:
+			return makeItemsJSON(items, false, ""), nil
+		default:
+			t.Error("no update mutation should be called when all items are correct")
+			return `{"data":{}}`, nil
+		}
+	}
+
+	updated, correct, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated != 0 {
+		t.Errorf("expected 0 updated, got %d", updated)
+	}
+	if correct != 3 {
+		t.Errorf("expected 3 correct, got %d", correct)
+	}
+}
+
+func TestResyncProjectItemStatuses_NoItems(t *testing.T) {
+	root := t.TempDir()
+	writeTestProjectTemplate(t, root)
+	tmpl, _ := loadTestTemplate(t, root)
+
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return statusOptionsResponse, nil
+		case 2:
+			return makeItemsJSON(nil, false, ""), nil
+		}
+		return "", nil
+	}
+
+	updated, correct, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated != 0 {
+		t.Errorf("expected 0 updated, got %d", updated)
+	}
+	if correct != 0 {
+		t.Errorf("expected 0 correct, got %d", correct)
+	}
+}
+
+// loadTestTemplate is a test helper that loads the project template from root.
+func loadTestTemplate(t *testing.T, root string) (*bootstrap.ProjectTemplate, error) {
+	t.Helper()
+	return bootstrap.LoadProjectTemplate(root)
 }
