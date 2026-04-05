@@ -609,12 +609,29 @@ func TestCreateProject_SuccessfulLink(t *testing.T) {
 // Step 8b — ConfigureProjectStatus
 // --------------------------------------------------------------------------------------
 
-func TestConfigureProjectStatus_UserAccount_SkipsSilently(t *testing.T) {
+func TestConfigureProjectStatus_UserAccount_ProceedsNormally(t *testing.T) {
 	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
 	state := &StepState{ProjectNodeID: "PVT_123"}
 
+	var queries []string
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
-		t.Fatal("GraphQL should not be called for user accounts")
+		queries = append(queries, query)
+		if strings.Contains(query, "field(name: \"Status\")") {
+			if r, ok := response.(*struct {
+				Node struct {
+					Field struct {
+						ID      string `json:"id"`
+						Options []struct {
+							ID   string `json:"id"`
+							Name string `json:"name"`
+						} `json:"options"`
+					} `json:"field"`
+				} `json:"node"`
+			}); ok {
+				r.Node.Field.ID = "FIELD_ID"
+			}
+			return nil
+		}
 		return nil
 	}
 
@@ -622,8 +639,8 @@ func TestConfigureProjectStatus_UserAccount_SkipsSilently(t *testing.T) {
 	if err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(buf.String(), "personal account") {
-		t.Errorf("expected skip message for personal account, got: %s", buf.String())
+	if len(queries) < 2 {
+		t.Fatalf("expected at least 2 GraphQL calls for user account, got %d", len(queries))
 	}
 }
 
@@ -645,26 +662,15 @@ func TestConfigureProjectStatus_MissingProjectNodeID_SkipsWithWarning(t *testing
 	}
 }
 
-func TestConfigureProjectStatus_OrgSuccess_CallsUpdateMutation(t *testing.T) {
+func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *testing.T) {
 	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
 	state := &StepState{ProjectNodeID: "PVT_123"}
 
 	var queries []string
+	var updateVars map[string]interface{}
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
 		queries = append(queries, query)
 		if strings.Contains(query, "field(name: \"Status\")") {
-			// Return a fake Status field.
-			type fieldResp struct {
-				Node struct {
-					Field struct {
-						ID      string `json:"id"`
-						Options []struct {
-							ID   string `json:"id"`
-							Name string `json:"name"`
-						} `json:"options"`
-					} `json:"field"`
-				} `json:"node"`
-			}
 			if r, ok := response.(*struct {
 				Node struct {
 					Field struct {
@@ -688,6 +694,9 @@ func TestConfigureProjectStatus_OrgSuccess_CallsUpdateMutation(t *testing.T) {
 			}
 			return nil
 		}
+		if strings.Contains(query, "updateProjectV2Field") {
+			updateVars = variables
+		}
 		return nil // update mutation succeeds
 	}
 
@@ -701,6 +710,30 @@ func TestConfigureProjectStatus_OrgSuccess_CallsUpdateMutation(t *testing.T) {
 	}
 	if !strings.Contains(queries[1], "updateProjectV2Field") {
 		t.Errorf("expected second call to be updateProjectV2Field, got: %s", queries[1])
+	}
+
+	// Verify 7 options are passed.
+	options, ok := updateVars["options"].([]map[string]string)
+	if !ok {
+		t.Fatalf("expected options to be []map[string]string, got %T", updateVars["options"])
+	}
+	if len(options) != 7 {
+		t.Errorf("expected 7 options, got %d", len(options))
+	}
+
+	// Verify descriptions are included.
+	for _, opt := range options {
+		if opt["description"] == "" {
+			t.Errorf("expected description for option %q, got empty", opt["name"])
+		}
+	}
+
+	// Verify first and last option names.
+	if options[0]["name"] != "Scoping" {
+		t.Errorf("expected first option to be Scoping, got %q", options[0]["name"])
+	}
+	if options[6]["name"] != "Done" {
+		t.Errorf("expected last option to be Done, got %q", options[6]["name"])
 	}
 }
 
@@ -757,6 +790,40 @@ func TestConfigureProjectStatus_UpdateFails_LogsWarning(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "Could not update Status columns") {
 		t.Errorf("expected warning about update failure, got: %s", buf.String())
+	}
+}
+
+// --------------------------------------------------------------------------------------
+// AgenticStatusOptions and StatusOptionNames
+// --------------------------------------------------------------------------------------
+
+func TestAgenticStatusOptions_Has7Entries(t *testing.T) {
+	if len(AgenticStatusOptions) != 7 {
+		t.Errorf("expected 7 status options, got %d", len(AgenticStatusOptions))
+	}
+}
+
+func TestAgenticStatusOptions_AllHaveDescriptions(t *testing.T) {
+	for _, opt := range AgenticStatusOptions {
+		if opt.Description == "" {
+			t.Errorf("option %q has empty description", opt.Name)
+		}
+	}
+}
+
+func TestStatusOptionNames_ReturnsCorrectOrder(t *testing.T) {
+	names := StatusOptionNames()
+	expected := []string{
+		"Scoping", "Scheduled", "Backlog", "In Design",
+		"In Implementation", "In Review", "Done",
+	}
+	if len(names) != len(expected) {
+		t.Fatalf("expected %d names, got %d", len(expected), len(names))
+	}
+	for i, name := range names {
+		if name != expected[i] {
+			t.Errorf("name[%d] = %q, want %q", i, name, expected[i])
+		}
 	}
 }
 
