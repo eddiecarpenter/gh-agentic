@@ -89,7 +89,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckGhNotify(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
-		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, run) },
+		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectCollaborator(cfg.owner, agentUser, run) },
 	}
 

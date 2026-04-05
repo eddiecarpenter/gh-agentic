@@ -552,8 +552,8 @@ func TestRepairProjectStatus_Success_ReturnsPass(t *testing.T) {
 		callCount++
 		switch callCount {
 		case 1:
-			// Resolve project node ID (user query).
-			return "PVT_123", nil
+			// Resolve project node ID via gh project list.
+			return projectListJSON, nil
 		case 2:
 			// Fetch Status field ID.
 			return "FIELD_456", nil
@@ -597,7 +597,7 @@ func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
 		callCount++
 		switch callCount {
 		case 1:
-			return "PVT_123", nil
+			return projectListJSON, nil
 		case 2:
 			return "FIELD_456", nil
 		case 3:
@@ -622,7 +622,7 @@ func TestRepairProjectCollaborator_Success_ReturnsPass(t *testing.T) {
 		callCount++
 		switch callCount {
 		case 1:
-			return "PVT_123", nil // resolve project node ID
+			return projectListJSON, nil // resolve project node ID via gh project list
 		case 2:
 			return "USER_NODE_456", nil // resolve user node ID
 		case 3:
@@ -654,7 +654,7 @@ func TestRepairProjectCollaborator_UserResolutionFails_ReturnsFail(t *testing.T)
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		if callCount == 1 {
-			return "PVT_123", nil
+			return projectListJSON, nil
 		}
 		return "", fmt.Errorf("user not found")
 	}
@@ -671,7 +671,7 @@ func TestRepairProjectCollaborator_MutationFails_ReturnsFail(t *testing.T) {
 		callCount++
 		switch callCount {
 		case 1:
-			return "PVT_123", nil
+			return projectListJSON, nil
 		case 2:
 			return "USER_NODE_456", nil
 		case 3:
