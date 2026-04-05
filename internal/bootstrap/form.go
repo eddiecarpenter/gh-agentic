@@ -246,10 +246,20 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 			huh.NewConfirm().
 				Title("Antora documentation site?").
 				Value(&cfg.Antora),
+			huh.NewInput().
+				Title("Agent user (GitHub username for pipeline automation)").
+				Value(&cfg.AgentUser).
+				Placeholder("goose-agent"),
 		),
 	)
+
 	if err := detailsForm.Run(); err != nil {
 		return BootstrapConfig{}, fmt.Errorf("project details form: %w", err)
+	}
+
+	// Default agent user if not provided.
+	if cfg.AgentUser == "" {
+		cfg.AgentUser = "goose-agent"
 	}
 
 	// --- Summary box ---

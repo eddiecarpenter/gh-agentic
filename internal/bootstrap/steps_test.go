@@ -508,6 +508,52 @@ func TestPopulateRepo_ReposMDContainsDescription(t *testing.T) {
 	}
 }
 
+func TestPopulateRepo_WritesAGENTUSER_WhenSet(t *testing.T) {
+	dir := t.TempDir()
+	cfg := BootstrapConfig{
+		Owner:       "alice",
+		ProjectName: "my-project",
+		Stack:       "Go",
+		Description: "test project",
+		AgentUser:   "goose-agent",
+	}
+	state := &StepState{RepoName: "my-project", ClonePath: dir}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "AGENT_USER"))
+	if err != nil {
+		t.Fatalf("expected AGENT_USER file, got error: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != "goose-agent" {
+		t.Errorf("expected AGENT_USER to contain 'goose-agent', got: %q", string(data))
+	}
+}
+
+func TestPopulateRepo_SkipsAGENTUSER_WhenEmpty(t *testing.T) {
+	dir := t.TempDir()
+	cfg := BootstrapConfig{
+		Owner:       "alice",
+		ProjectName: "my-project",
+		Stack:       "Go",
+		Description: "test project",
+		AgentUser:   "",
+	}
+	state := &StepState{RepoName: "my-project", ClonePath: dir}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "AGENT_USER")); !os.IsNotExist(err) {
+		t.Error("expected AGENT_USER file to not exist when AgentUser is empty")
+	}
+}
+
 // --------------------------------------------------------------------------------------
 // Step 8 — CreateProject
 // --------------------------------------------------------------------------------------

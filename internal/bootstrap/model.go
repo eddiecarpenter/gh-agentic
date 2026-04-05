@@ -27,4 +27,8 @@ type BootstrapConfig struct {
 	// OwnerType is the detected GitHub owner type: OwnerTypeUser or OwnerTypeOrg.
 	// Set after form completion and before RunSteps is called.
 	OwnerType string
+
+	// AgentUser is the GitHub username of the agent account used for pipeline
+	// automation. Defaults to "goose-agent" when set via the bootstrap form.
+	AgentUser string
 }

@@ -310,6 +310,13 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 		return fmt.Errorf("writing README.md: %w", err)
 	}
 
+	// Write AGENT_USER if configured.
+	if cfg.AgentUser != "" {
+		if err := os.WriteFile(filepath.Join(state.ClonePath, "AGENT_USER"), []byte(cfg.AgentUser+"\n"), 0644); err != nil {
+			return fmt.Errorf("writing AGENT_USER: %w", err)
+		}
+	}
+
 	// Scaffold Antora if requested.
 	if cfg.Antora {
 		if err := scaffoldAntora(state.ClonePath, cfg.ProjectName); err != nil {
