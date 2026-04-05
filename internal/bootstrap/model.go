@@ -23,4 +23,8 @@ type BootstrapConfig struct {
 
 	// Antora indicates whether an Antora documentation site should be scaffolded.
 	Antora bool
+
+	// OwnerType is the detected GitHub owner type: OwnerTypeUser or OwnerTypeOrg.
+	// Set after form completion and before RunSteps is called.
+	OwnerType string
 }

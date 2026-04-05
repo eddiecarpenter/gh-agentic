@@ -606,6 +606,433 @@ func TestCreateProject_SuccessfulLink(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------------------
+// Step 8b — ConfigureProjectStatus
+// --------------------------------------------------------------------------------------
+
+func TestConfigureProjectStatus_UserAccount_SkipsSilently(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{ProjectNodeID: "PVT_123"}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		t.Fatal("GraphQL should not be called for user accounts")
+		return nil
+	}
+
+	var buf bytes.Buffer
+	if err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "personal account") {
+		t.Errorf("expected skip message for personal account, got: %s", buf.String())
+	}
+}
+
+func TestConfigureProjectStatus_MissingProjectNodeID_SkipsWithWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{ProjectNodeID: ""}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		t.Fatal("GraphQL should not be called when project node ID is missing")
+		return nil
+	}
+
+	var buf bytes.Buffer
+	if err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "no project node ID") {
+		t.Errorf("expected warning about missing node ID, got: %s", buf.String())
+	}
+}
+
+func TestConfigureProjectStatus_OrgSuccess_CallsUpdateMutation(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{ProjectNodeID: "PVT_123"}
+
+	var queries []string
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		queries = append(queries, query)
+		if strings.Contains(query, "field(name: \"Status\")") {
+			// Return a fake Status field.
+			type fieldResp struct {
+				Node struct {
+					Field struct {
+						ID      string `json:"id"`
+						Options []struct {
+							ID   string `json:"id"`
+							Name string `json:"name"`
+						} `json:"options"`
+					} `json:"field"`
+				} `json:"node"`
+			}
+			if r, ok := response.(*struct {
+				Node struct {
+					Field struct {
+						ID      string `json:"id"`
+						Options []struct {
+							ID   string `json:"id"`
+							Name string `json:"name"`
+						} `json:"options"`
+					} `json:"field"`
+				} `json:"node"`
+			}); ok {
+				r.Node.Field.ID = "FIELD_ID"
+				r.Node.Field.Options = []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				}{
+					{ID: "opt1", Name: "Todo"},
+					{ID: "opt2", Name: "In Progress"},
+					{ID: "opt3", Name: "Done"},
+				}
+			}
+			return nil
+		}
+		return nil // update mutation succeeds
+	}
+
+	var buf bytes.Buffer
+	if err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(queries) < 2 {
+		t.Fatalf("expected at least 2 GraphQL calls (fetch + update), got %d", len(queries))
+	}
+	if !strings.Contains(queries[1], "updateProjectV2Field") {
+		t.Errorf("expected second call to be updateProjectV2Field, got: %s", queries[1])
+	}
+}
+
+func TestConfigureProjectStatus_GraphQLFetchFails_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{ProjectNodeID: "PVT_123"}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		return errors.New("network error")
+	}
+
+	var buf bytes.Buffer
+	err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo)
+	if err != nil {
+		t.Fatalf("expected nil error (best-effort), got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Could not fetch Status field") {
+		t.Errorf("expected warning about fetch failure, got: %s", buf.String())
+	}
+}
+
+func TestConfigureProjectStatus_UpdateFails_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{ProjectNodeID: "PVT_123"}
+
+	callCount := 0
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		callCount++
+		if callCount == 1 {
+			// Fetch succeeds.
+			if r, ok := response.(*struct {
+				Node struct {
+					Field struct {
+						ID      string `json:"id"`
+						Options []struct {
+							ID   string `json:"id"`
+							Name string `json:"name"`
+						} `json:"options"`
+					} `json:"field"`
+				} `json:"node"`
+			}); ok {
+				r.Node.Field.ID = "FIELD_ID"
+			}
+			return nil
+		}
+		// Update fails.
+		return errors.New("mutation failed")
+	}
+
+	var buf bytes.Buffer
+	err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo)
+	if err != nil {
+		t.Fatalf("expected nil error (best-effort), got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Could not update Status columns") {
+		t.Errorf("expected warning about update failure, got: %s", buf.String())
+	}
+}
+
+// --------------------------------------------------------------------------------------
+// Step 8c — DeploySyncWorkflows
+// --------------------------------------------------------------------------------------
+
+func TestDeploySyncWorkflows_UserAccount_SkipsSilently(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{ClonePath: t.TempDir()}
+	run := fakeRunFail("should not be called")
+
+	var buf bytes.Buffer
+	if err := DeploySyncWorkflows(&buf, cfg, state, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "personal account") {
+		t.Errorf("expected skip message for personal account, got: %s", buf.String())
+	}
+}
+
+func TestDeploySyncWorkflows_MissingSourceFiles_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	dir := t.TempDir()
+	state := &StepState{ClonePath: dir}
+	run := fakeRunOK("")
+
+	var buf bytes.Buffer
+	if err := DeploySyncWorkflows(&buf, cfg, state, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "not found in base/") {
+		t.Errorf("expected warning about missing source files, got: %s", out)
+	}
+	if !strings.Contains(out, "No sync workflows to deploy") {
+		t.Errorf("expected 'No sync workflows' message, got: %s", out)
+	}
+}
+
+func TestDeploySyncWorkflows_OrgSuccess_CopiesAndCommits(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	dir := t.TempDir()
+	state := &StepState{ClonePath: dir}
+
+	// Create source workflow files.
+	sourceDir := filepath.Join(dir, "base", ".github", "workflows")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"sync-label-to-status.yml", "sync-status-to-label.yml"} {
+		if err := os.WriteFile(filepath.Join(sourceDir, f), []byte("name: "+f), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var commands []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" {
+			commands = append(commands, strings.Join(args, " "))
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	if err := DeploySyncWorkflows(&buf, cfg, state, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify files were copied to destination.
+	destDir := filepath.Join(dir, ".github", "workflows")
+	for _, f := range []string{"sync-label-to-status.yml", "sync-status-to-label.yml"} {
+		data, err := os.ReadFile(filepath.Join(destDir, f))
+		if err != nil {
+			t.Errorf("expected %s in dest dir, got: %v", f, err)
+			continue
+		}
+		if !strings.Contains(string(data), f) {
+			t.Errorf("expected file content to contain %q, got: %s", f, string(data))
+		}
+	}
+
+	// Verify git add, commit, and push were called.
+	allCmds := strings.Join(commands, "\n")
+	if !strings.Contains(allCmds, "'git' 'add'") {
+		t.Error("expected git add to be called")
+	}
+	if !strings.Contains(allCmds, "'git' 'commit'") {
+		t.Error("expected git commit to be called")
+	}
+	if !strings.Contains(allCmds, "'git' 'push'") {
+		t.Error("expected git push to be called")
+	}
+}
+
+func TestDeploySyncWorkflows_GitAddFails_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	dir := t.TempDir()
+	state := &StepState{ClonePath: dir}
+
+	// Create source workflow files.
+	sourceDir := filepath.Join(dir, "base", ".github", "workflows")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"sync-label-to-status.yml", "sync-status-to-label.yml"} {
+		if err := os.WriteFile(filepath.Join(sourceDir, f), []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	run := fakeRunFail("git add failed")
+
+	var buf bytes.Buffer
+	err := DeploySyncWorkflows(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("expected nil error (best-effort), got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Could not stage sync workflows") {
+		t.Errorf("expected warning about staging failure, got: %s", buf.String())
+	}
+}
+
+// --------------------------------------------------------------------------------------
+// Step 8 — CreateProject (continued)
+// --------------------------------------------------------------------------------------
+
+func TestCreateProject_StoresProjectNodeID(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+	state := &StepState{
+		RepoName:   "my-project",
+		RepoNodeID: "REPO_ID",
+	}
+
+	run := fakeRunOK(`{"number":3,"url":"https://github.com/users/alice/projects/3"}`)
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		if strings.Contains(query, "user(login") {
+			if r, ok := response.(*struct {
+				User struct {
+					ProjectV2 struct {
+						ID string `json:"id"`
+					} `json:"projectV2"`
+				} `json:"user"`
+			}); ok {
+				r.User.ProjectV2.ID = "PVT_NODE_ID"
+			}
+			return nil
+		}
+		return nil // link mutation succeeds
+	}
+
+	var buf bytes.Buffer
+	if err := CreateProject(&buf, cfg, state, run, graphqlDo); err != nil {
+		t.Fatalf("CreateProject() unexpected error: %v", err)
+	}
+	if state.ProjectNodeID != "PVT_NODE_ID" {
+		t.Errorf("state.ProjectNodeID = %q, want %q", state.ProjectNodeID, "PVT_NODE_ID")
+	}
+}
+
+func TestCreateProject_MissingProjectNodeID_SkipsVariableSet(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+	state := &StepState{RepoName: "my-project"}
+
+	run := fakeRunOK(`{"number":5,"url":"https://github.com/users/alice/projects/5"}`)
+
+	var buf bytes.Buffer
+	_ = CreateProject(&buf, cfg, state, run, nil)
+
+	out := buf.String()
+	if !strings.Contains(out, "Skipping AGENTIC_PROJECT_ID") {
+		t.Errorf("expected skip message for AGENTIC_PROJECT_ID, got: %s", out)
+	}
+}
+
+func TestCreateProject_VariableSetFailure_LogsWarning(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+	state := &StepState{
+		RepoName:   "my-project",
+		RepoNodeID: "REPO_ID",
+	}
+
+	callCount := 0
+	run := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			// gh project create
+			return `{"number":3,"url":"https://github.com/users/alice/projects/3"}`, nil
+		}
+		// gh variable set fails
+		return "could not set variable", errors.New("permission denied")
+	}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		if strings.Contains(query, "user(login") {
+			if r, ok := response.(*struct {
+				User struct {
+					ProjectV2 struct {
+						ID string `json:"id"`
+					} `json:"projectV2"`
+				} `json:"user"`
+			}); ok {
+				r.User.ProjectV2.ID = "PVT_NODE_ID"
+			}
+			return nil
+		}
+		return nil
+	}
+
+	var buf bytes.Buffer
+	err := CreateProject(&buf, cfg, state, run, graphqlDo)
+	if err != nil {
+		t.Fatalf("CreateProject() should not return error on variable set failure (best-effort), got: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Could not set AGENTIC_PROJECT_ID") {
+		t.Errorf("expected warning about variable set failure, got: %s", out)
+	}
+}
+
+func TestCreateProject_VariableSetSuccess_CallsGhVariable(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+	state := &StepState{
+		RepoName:   "my-project",
+		RepoNodeID: "REPO_ID",
+	}
+
+	var variableSetArgs []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) > 0 && args[0] == "variable" {
+			variableSetArgs = args
+			return "", nil
+		}
+		return `{"number":3,"url":"https://github.com/users/alice/projects/3"}`, nil
+	}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		if strings.Contains(query, "user(login") {
+			if r, ok := response.(*struct {
+				User struct {
+					ProjectV2 struct {
+						ID string `json:"id"`
+					} `json:"projectV2"`
+				} `json:"user"`
+			}); ok {
+				r.User.ProjectV2.ID = "PVT_NODE_ID"
+			}
+			return nil
+		}
+		return nil
+	}
+
+	var buf bytes.Buffer
+	if err := CreateProject(&buf, cfg, state, run, graphqlDo); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(variableSetArgs) == 0 {
+		t.Fatal("expected gh variable set to be called")
+	}
+	// Verify args: set AGENTIC_PROJECT_ID --body PVT_NODE_ID --repo alice/my-project
+	joined := strings.Join(variableSetArgs, " ")
+	if !strings.Contains(joined, "AGENTIC_PROJECT_ID") {
+		t.Errorf("expected AGENTIC_PROJECT_ID in args, got: %s", joined)
+	}
+	if !strings.Contains(joined, "PVT_NODE_ID") {
+		t.Errorf("expected project node ID in args, got: %s", joined)
+	}
+	if !strings.Contains(joined, "alice/my-project") {
+		t.Errorf("expected repo name in args, got: %s", joined)
+	}
+}
+
+// --------------------------------------------------------------------------------------
 // Step 9 — PrintSummary
 // --------------------------------------------------------------------------------------
 
@@ -636,6 +1063,47 @@ func TestPrintSummary_OutputContainsAllFields(t *testing.T) {
 	}
 	if !strings.Contains(out, state.ClonePath) {
 		t.Errorf("expected clone path %q in output, got: %s", state.ClonePath, out)
+	}
+}
+
+func TestPrintSummary_OrgAccount_ShowsPATGuidance(t *testing.T) {
+	cfg := BootstrapConfig{ProjectName: "my-project", OwnerType: OwnerTypeOrg}
+	state := &StepState{
+		RepoURL:    "https://github.com/acme-org/my-project",
+		ProjectURL: "https://github.com/orgs/acme-org/projects/1",
+		ClonePath:  "/home/alice/Development/my-project",
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if !strings.Contains(out, "GOOSE_AGENT_PAT") {
+		t.Errorf("expected PAT guidance for org account, got: %s", out)
+	}
+	if !strings.Contains(out, "github.com/settings/tokens") {
+		t.Errorf("expected token URL in PAT guidance, got: %s", out)
+	}
+}
+
+func TestPrintSummary_UserAccount_NoPATGuidance(t *testing.T) {
+	cfg := BootstrapConfig{ProjectName: "my-project", OwnerType: OwnerTypeUser}
+	state := &StepState{
+		RepoURL:    "https://github.com/alice/my-project",
+		ProjectURL: "https://github.com/users/alice/projects/1",
+		ClonePath:  "/home/alice/Development/my-project",
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if strings.Contains(out, "GOOSE_AGENT_PAT") {
+		t.Errorf("expected no PAT guidance for personal account, got: %s", out)
 	}
 }
 

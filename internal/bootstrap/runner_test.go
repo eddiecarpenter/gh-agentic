@@ -28,6 +28,7 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 		Stack:       "Other", // "Other" skips ScaffoldStack so we don't need base/standards/
 		Description: "Test project",
 		Antora:      false,
+		OwnerType:   OwnerTypeUser,
 	}
 
 	// Stub: all external commands succeed.
@@ -83,6 +84,7 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 		ProjectName: "my-project",
 		Stack:       "Other",
 		Description: "Test project",
+		OwnerType:   OwnerTypeUser,
 	}
 
 	// Stub: gh repo create fails on the first call.

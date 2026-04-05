@@ -44,6 +44,16 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
+			// Detect owner type and capture it in the config for step functions.
+			ownerType, detectErr := bootstrap.DefaultDetectOwnerType(cfg.Owner)
+			if detectErr != nil {
+				fmt.Fprintln(w, "  "+ui.RenderWarning("Could not detect owner type: "+detectErr.Error()))
+				fmt.Fprintln(w, "  "+ui.Muted.Render("Defaulting to personal account — org-only features will be skipped."))
+				cfg.OwnerType = bootstrap.OwnerTypeUser
+			} else {
+				cfg.OwnerType = ownerType
+			}
+
 			workDir := bootstrap.DefaultWorkDirOrHome()
 
 			graphqlDo, err := bootstrap.DefaultGraphQLDo()
