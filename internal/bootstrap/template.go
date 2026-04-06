@@ -11,6 +11,7 @@ import (
 type RequiredView struct {
 	Name   string `json:"name"`
 	Layout string `json:"layout"` // TABLE_LAYOUT or BOARD_LAYOUT
+	Filter string `json:"filter"` // GitHub Projects filter string (empty = no filter)
 }
 
 // ProjectTemplate represents the structure of base/project-template.json.

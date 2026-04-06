@@ -1181,8 +1181,10 @@ func layoutToREST(layout string) string {
 }
 
 // RepairProjectViews creates any required views that are missing from the GitHub
-// Project using the Projects V2 REST API. Existing views (including user-added
-// ones) are never deleted.
+// Project using the Projects V2 REST API. For views that exist but have the
+// wrong filter (GitHub provides no API to update view filters), a ManualAction
+// result is returned with the exact filter strings to apply in the UI.
+// Existing views (including user-added ones) are never deleted.
 func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
 	proj := resolveProjectEntry(owner, repoName, run)
 	if proj == nil {
@@ -1201,10 +1203,10 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("failed to fetch views: %v", err)}
 	}
 
-	existing := make(map[string]bool)
+	liveViews := make(map[string]bool)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if t := strings.TrimSpace(line); t != "" {
-			existing[t] = true
+			liveViews[t] = true
 		}
 	}
 
@@ -1220,13 +1222,18 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 
 	var created []string
 	for _, req := range tmpl.RequiredViews {
-		if existing[req.Name] {
-			continue
+		if _, exists := liveViews[req.Name]; exists {
+			continue // view already present — never modify existing views
 		}
-		if _, createErr := run("gh", "api", "-X", "POST", restEndpoint,
-			"-f", "name="+req.Name,
-			"-f", "layout="+layoutToREST(req.Layout),
-		); createErr != nil {
+		// View is missing — create it with layout and filter.
+		args := []string{"api", "-X", "POST", restEndpoint,
+			"-f", "name=" + req.Name,
+			"-f", "layout=" + layoutToREST(req.Layout),
+		}
+		if req.Filter != "" {
+			args = append(args, "-f", "filter="+req.Filter)
+		}
+		if _, createErr := run("gh", args...); createErr != nil {
 			return CheckResult{Name: checkProjectViewsName, Status: Fail,
 				Message: fmt.Sprintf("failed to create view %q: %v", req.Name, createErr)}
 		}
