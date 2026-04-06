@@ -18,6 +18,7 @@ import (
 func newBootstrapCmd() *cobra.Command {
 	var agentUser string
 	var agentUserScope string
+	var templateRepo string
 
 	cmd := &cobra.Command{
 		Use:   "bootstrap",
@@ -40,7 +41,7 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners, bootstrap.DefaultDetectOwnerType)
+			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners, bootstrap.DefaultDetectOwnerType, templateRepo)
 			if errors.Is(err, bootstrap.ErrAborted) || errors.Is(err, bootstrap.ErrFederatedRequiresOrg) {
 				fmt.Fprintln(w, ui.Muted.Render("Aborted."))
 				return nil
@@ -102,5 +103,6 @@ func newBootstrapCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&agentUser, "agent-user", "", "agent GitHub username (optional — prompted if not provided)")
 	cmd.Flags().StringVar(&agentUserScope, "agent-user-scope", "", "AGENT_USER variable scope: org or repo (optional — prompted if not provided)")
+	cmd.Flags().StringVar(&templateRepo, "template", "", "template repo owner/name (default: "+bootstrap.DefaultTemplateRepo+")")
 	return cmd
 }

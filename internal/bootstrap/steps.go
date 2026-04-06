@@ -69,7 +69,7 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 
 	// Create the repo from the template.
 	out, err := run("gh", "repo", "create", fullName,
-		"--template", "eddiecarpenter/agentic-development",
+		"--template", cfg.TemplateRepo,
 		"--private")
 	if err != nil {
 		return fmt.Errorf("gh repo create: %w\n%s", err, strings.TrimSpace(out))
@@ -285,7 +285,7 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 			"This file contains project-specific rules and overrides that extend or\n"+
 			"supersede the global protocol defined in `base/AGENTS.md`.\n\n"+
 			"This file is never overwritten by a template sync.\n\n---\n\n"+
-			"## Template Source\n\nTemplate: eddiecarpenter/agentic-development\n\n"+
+			"## Template Source\n\nTemplate: %s\n\n"+
 			"## Project\n\n"+
 			"- **Name:** %s\n"+
 			"- **Topology:** %s\n"+
@@ -297,9 +297,14 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 			"## Skills\n\n"+
 			"The `skills/` directory is for local project-specific skills that extend\n"+
 			"or override template skills in `base/skills/`.\n",
-		cfg.ProjectName, cfg.Topology, cfg.Stack, cfg.Description, state.RepoURL, cfg.Owner)
+		cfg.TemplateRepo, cfg.ProjectName, cfg.Topology, cfg.Stack, cfg.Description, state.RepoURL, cfg.Owner)
 	if err := os.WriteFile(filepath.Join(state.ClonePath, "AGENTS.local.md"), []byte(agentsLocal), 0644); err != nil {
 		return fmt.Errorf("writing AGENTS.local.md: %w", err)
+	}
+
+	// Write TEMPLATE_SOURCE with the configured template repo.
+	if err := os.WriteFile(filepath.Join(state.ClonePath, "TEMPLATE_SOURCE"), []byte(cfg.TemplateRepo+"\n"), 0644); err != nil {
+		return fmt.Errorf("writing TEMPLATE_SOURCE: %w", err)
 	}
 
 	// Create skills/.gitkeep for local project-specific skills.
@@ -316,9 +321,9 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 		"# %s\n\n%s\n\n## Setup\n\n"+
 			"See [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) for project context.\n\n"+
 			"## Agent sessions\n\n"+
-			"This repo uses the [agentic development framework](https://github.com/eddiecarpenter/agentic-development).\n"+
+			"This repo uses the [agentic development framework](https://github.com/%s).\n"+
 			"See `base/AGENTS.md` and `AGENTS.local.md` for session protocols.\n",
-		cfg.ProjectName, cfg.Description)
+		cfg.ProjectName, cfg.Description, cfg.TemplateRepo)
 	if err := os.WriteFile(filepath.Join(state.ClonePath, "README.md"), []byte(readmeMD), 0644); err != nil {
 		return fmt.Errorf("writing README.md: %w", err)
 	}

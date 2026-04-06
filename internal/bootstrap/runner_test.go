@@ -22,13 +22,14 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := BootstrapConfig{
-		Topology:    "Single",
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Stack:       "Other", // "Other" skips ScaffoldStack so we don't need base/standards/
-		Description: "Test project",
-		Antora:      false,
-		OwnerType:   OwnerTypeUser,
+		Topology:     "Single",
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stack:        "Other", // "Other" skips ScaffoldStack so we don't need base/standards/
+		Description:  "Test project",
+		Antora:       false,
+		OwnerType:    OwnerTypeUser,
+		TemplateRepo: DefaultTemplateRepo,
 	}
 
 	// Stub: all external commands succeed.
@@ -79,12 +80,13 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := BootstrapConfig{
-		Topology:    "Single",
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Stack:       "Other",
-		Description: "Test project",
-		OwnerType:   OwnerTypeUser,
+		Topology:     "Single",
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stack:        "Other",
+		Description:  "Test project",
+		OwnerType:    OwnerTypeUser,
+		TemplateRepo: DefaultTemplateRepo,
 	}
 
 	// Stub: gh repo create fails on the first call.

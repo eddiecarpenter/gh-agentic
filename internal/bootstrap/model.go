@@ -1,9 +1,18 @@
 // Package bootstrap implements the business logic for gh agentic bootstrap.
 package bootstrap
 
+// DefaultTemplateRepo is the default template repository used when bootstrapping
+// a new agentic environment. Users can override this via the --template flag or
+// the interactive form.
+const DefaultTemplateRepo = "eddiecarpenter/ai-native-delivery"
+
 // BootstrapConfig holds all values collected by the bootstrap form.
 // It is populated by RunForm and passed to the execution steps.
 type BootstrapConfig struct {
+	// TemplateRepo is the GitHub owner/repo of the template to create the new
+	// repo from. Defaults to DefaultTemplateRepo if not overridden.
+	TemplateRepo string
+
 	// Topology is the project structure: "Single" or "Federated".
 	Topology string
 

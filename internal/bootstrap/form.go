@@ -149,8 +149,29 @@ func isPersonalSingleTopology(topology, ownerType string) bool {
 // RunForm runs the three-group huh form, renders the summary box, and asks
 // for final confirmation. Returns a populated BootstrapConfig, or ErrAborted
 // if the user declines the final "Create project?" confirm.
-func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc) (BootstrapConfig, error) {
+//
+// templateFlag is the value of --template from the CLI. If non-empty, it is
+// used directly and the interactive prompt is skipped. If empty, an interactive
+// input pre-filled with DefaultTemplateRepo is shown.
+func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc, templateFlag string) (BootstrapConfig, error) {
 	var cfg BootstrapConfig
+
+	// Resolve template repo: flag value or interactive prompt.
+	if templateFlag != "" {
+		cfg.TemplateRepo = templateFlag
+	} else {
+		cfg.TemplateRepo = DefaultTemplateRepo
+		templateForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Template repo").
+					Value(&cfg.TemplateRepo),
+			),
+		)
+		if err := templateForm.Run(); err != nil {
+			return BootstrapConfig{}, fmt.Errorf("template repo form: %w", err)
+		}
+	}
 
 	// --- Group 1: Topology ---
 	topologyForm := huh.NewForm(
