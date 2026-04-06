@@ -364,7 +364,7 @@ jobs:
           BODY=$(gh issue view ${ISSUE} --repo ${{ github.repository }} --json body --jq '.body')
 
           # Extract parent requirement number from "Closes #N" or "Parent Requirement: #N"
-          PARENT=$(echo "${BODY}" | grep -oP '(?:Closes\s+#|Parent Requirement:\s*#)(\d+)' | head -1 | grep -oP '\d+$')
+          PARENT=$(echo "${BODY}" | grep -oP '(?:Closes\s+#|Parent Requirement:\s*#)(\d+)' | head -1 | grep -oP '\d+$' || true)
 
           if [ -z "${PARENT}" ]; then
             echo "No parent requirement reference found in feature issue body — skipping"
