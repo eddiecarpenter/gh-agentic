@@ -7,5 +7,10 @@
     {"name": "In Development", "color": "YELLOW", "description": "Dev Session active"},
     {"name": "In Review",      "color": "ORANGE", "description": "PR open, awaiting review"},
     {"name": "Done",           "color": "GREEN",  "description": "Merged and closed"}
+  ],
+  "requiredViews": [
+    {"name": "Requirements",        "layout": "TABLE_LAYOUT"},
+    {"name": "Requirements Kanban", "layout": "BOARD_LAYOUT"},
+    {"name": "Features Kanban",     "layout": "BOARD_LAYOUT"}
   ]
 }

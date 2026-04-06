@@ -7,9 +7,16 @@ import (
 	"path/filepath"
 )
 
+// RequiredView defines a view that must exist on the GitHub Project.
+type RequiredView struct {
+	Name   string `json:"name"`
+	Layout string `json:"layout"` // TABLE_LAYOUT or BOARD_LAYOUT
+}
+
 // ProjectTemplate represents the structure of base/project-template.json.
 type ProjectTemplate struct {
 	StatusOptions []StatusOption `json:"statusOptions"`
+	RequiredViews []RequiredView `json:"requiredViews"`
 }
 
 // LoadProjectTemplate reads and parses base/project-template.json from the given root directory.

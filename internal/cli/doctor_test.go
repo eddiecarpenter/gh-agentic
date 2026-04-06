@@ -79,10 +79,16 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	// resolveProjectNodeIDViaRun (used by CheckProjectStatus): gh project list --limit 1
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
-	// CheckProjectStatus: fetch status options via GraphQL.
-	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: "PVT_test123") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, "--jq", ".data.node.field.options[].name"}, "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil)
+	// CheckProjectStatus: fetch status options (name + color) via GraphQL.
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: "PVT_test123") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id options { name color } } } } } }`, "--jq", `.data.node.field.options[] | "\(.name)|\(.color)"`}, "Backlog|GRAY\nScoping|PURPLE\nScheduled|BLUE\nIn Design|PINK\nIn Development|YELLOW\nIn Review|ORANGE\nDone|GREEN", nil)
 
-	// resolveProjectNodeIDViaRun (used by CheckProjectItemStatuses): gh project list --limit 1
+	// resolveProjectNodeIDViaRun (used by CheckProjectViews): gh project list
+	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
+
+	// CheckProjectViews: fetch views via GraphQL.
+	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: "PVT_test123") { ... on ProjectV2 { views(first: 20) { nodes { name layout } } } } }`, "--jq", `.data.node.views.nodes[] | "\(.name)|\(.layout)"`}, "Requirements|TABLE_LAYOUT\nRequirements Kanban|BOARD_LAYOUT\nFeatures Kanban|BOARD_LAYOUT", nil)
+
+	// resolveProjectNodeIDViaRun (used by CheckProjectItemStatuses): gh project list
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
 	// CheckProjectItemStatuses: fetch Status field ID via GraphQL.

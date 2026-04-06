@@ -1143,3 +1143,55 @@ func RepairStaleOpenRequirements(repoFullName string, run bootstrap.RunCommandFu
 func RepairStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
 	return closeStaleIssues(repoFullName, "feature", run)
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Project views repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RepairProjectViews creates any required views that are missing from the GitHub
+// Project. Existing views (including user-added ones) are never deleted.
+func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
+	if projectNodeID == "" {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: "no GitHub Project found for owner " + owner}
+	}
+
+	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
+	if loadErr != nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("could not load project template: %v", loadErr)}
+	}
+
+	// Fetch existing view names.
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { views(first: 20) { nodes { name } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.views.nodes[].name")
+	if err != nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("failed to fetch views: %v", err)}
+	}
+
+	existing := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			existing[t] = true
+		}
+	}
+
+	var created []string
+	for _, req := range tmpl.RequiredViews {
+		if existing[req.Name] {
+			continue
+		}
+		mutation := fmt.Sprintf(`mutation { createProjectV2View(input: { projectId: "%s", name: "%s", layout: %s }) { projectV2View { name } } }`,
+			projectNodeID, req.Name, req.Layout)
+		if _, mutErr := run("gh", "api", "graphql", "-f", "query="+mutation); mutErr != nil {
+			return CheckResult{Name: checkProjectViewsName, Status: Fail,
+				Message: fmt.Sprintf("failed to create view %q: %v", req.Name, mutErr)}
+		}
+		created = append(created, fmt.Sprintf("%q", req.Name))
+	}
+
+	if len(created) == 0 {
+		return CheckResult{Name: checkProjectViewsName, Status: Pass, Message: "all required views present"}
+	}
+	return CheckResult{Name: checkProjectViewsName, Status: Pass,
+		Message: fmt.Sprintf("created views: %s", strings.Join(created, ", "))}
+}

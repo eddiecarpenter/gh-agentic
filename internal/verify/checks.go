@@ -520,9 +520,9 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 		}
 	}
 
-	// Step 2: Fetch the Status field and its options via GraphQL.
-	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, projectNodeID)
-	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.field.options[].name")
+	// Step 2: Fetch the Status field options (name + color) via GraphQL.
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id options { name color } } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.field.options[] | "\(.name)|\(.color)"`)
 	if err != nil {
 		return CheckResult{
 			Name:    checkProjectStatusName,
@@ -531,12 +531,17 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 		}
 	}
 
-	// Parse the returned option names (one per line).
-	var gotNames []string
+	// Parse "name|color" lines from response.
+	type liveOption struct{ name, color string }
+	var got []liveOption
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" {
-			gotNames = append(gotNames, line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) == 2 {
+			got = append(got, liveOption{parts[0], parts[1]})
 		}
 	}
 
@@ -549,22 +554,21 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 			Message: fmt.Sprintf("could not load project template: %v", loadErr),
 		}
 	}
-	canonical := bootstrap.StatusOptionNames(tmpl.StatusOptions)
 
-	if len(gotNames) != len(canonical) {
+	if len(got) != len(tmpl.StatusOptions) {
 		return CheckResult{
 			Name:    checkProjectStatusName,
 			Status:  Warning,
-			Message: fmt.Sprintf("expected %d options, got %d: %v", len(canonical), len(gotNames), gotNames),
+			Message: fmt.Sprintf("expected %d options, got %d", len(tmpl.StatusOptions), len(got)),
 		}
 	}
 
-	for i, name := range canonical {
-		if gotNames[i] != name {
+	for i, want := range tmpl.StatusOptions {
+		if got[i].name != want.Name || got[i].color != want.Color {
 			return CheckResult{
 				Name:    checkProjectStatusName,
 				Status:  Warning,
-				Message: fmt.Sprintf("option %d: expected %q, got %q", i+1, name, gotNames[i]),
+				Message: fmt.Sprintf("option %d: expected %q (%s), got %q (%s)", i+1, want.Name, want.Color, got[i].name, got[i].color),
 			}
 		}
 	}
@@ -573,6 +577,68 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 		Name:   checkProjectStatusName,
 		Status: Pass,
 	}
+}
+
+// checkProjectViewsName is the check name for required project views.
+const checkProjectViewsName = "GitHub Project has required views"
+
+// CheckProjectViews verifies that the GitHub Project contains all required views
+// defined in base/project-template.json. Additional views added by the user are
+// ignored — only missing required views are flagged.
+func CheckProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
+	if projectNodeID == "" {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: "no GitHub Project found for owner " + owner}
+	}
+
+	// Fetch all view names from the live project.
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { views(first: 20) { nodes { name layout } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.views.nodes[] | "\(.name)|\(.layout)"`)
+	if err != nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("failed to fetch views: %v", err)}
+	}
+
+	liveViews := make(map[string]string) // name → layout
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) == 2 {
+			liveViews[parts[0]] = parts[1]
+		}
+	}
+
+	// Load required views from template.
+	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
+	if loadErr != nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("could not load project template: %v", loadErr)}
+	}
+
+	var missing []string
+	var wrongLayout []string
+	for _, req := range tmpl.RequiredViews {
+		layout, exists := liveViews[req.Name]
+		if !exists {
+			missing = append(missing, fmt.Sprintf("%q", req.Name))
+		} else if layout != req.Layout {
+			wrongLayout = append(wrongLayout, fmt.Sprintf("%q (want %s, got %s)", req.Name, req.Layout, layout))
+		}
+	}
+
+	if len(missing) > 0 || len(wrongLayout) > 0 {
+		var parts []string
+		if len(missing) > 0 {
+			parts = append(parts, "missing: "+strings.Join(missing, ", "))
+		}
+		if len(wrongLayout) > 0 {
+			parts = append(parts, "wrong layout: "+strings.Join(wrongLayout, ", "))
+		}
+		return CheckResult{Name: checkProjectViewsName, Status: Warning, Message: strings.Join(parts, "; ")}
+	}
+
+	return CheckResult{Name: checkProjectViewsName, Status: Pass}
 }
 
 // projectListResponse represents the JSON output from `gh project list --format json`.
