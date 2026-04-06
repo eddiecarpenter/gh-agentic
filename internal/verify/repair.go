@@ -1215,7 +1215,7 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 	}
 	return CheckResult{
 		Name:    checkProjectViewsName,
-		Status:  Warning,
+		Status:  ManualAction,
 		Message: fmt.Sprintf("create missing views manually at %s — %s", locationHint, strings.Join(missing, ", ")),
 	}
 }

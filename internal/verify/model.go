@@ -13,6 +13,10 @@ const (
 	Warning
 	// Fail indicates a critical issue was found.
 	Fail
+	// ManualAction indicates the repair cannot be automated and requires
+	// human intervention. The check is not counted as a failure — the message
+	// contains the action the user must take.
+	ManualAction
 )
 
 // String returns a human-readable label for the check status.
@@ -24,6 +28,8 @@ func (s CheckStatus) String() string {
 		return "warning"
 	case Fail:
 		return "fail"
+	case ManualAction:
+		return "manual"
 	default:
 		return "unknown"
 	}
