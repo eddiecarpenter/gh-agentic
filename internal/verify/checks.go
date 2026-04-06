@@ -1009,7 +1009,7 @@ type variableEntry struct {
 // level, or Fail if not found at either level.
 func CheckAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
 	// Try org-level first.
-	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name", "--limit", "100")
+	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name")
 	if err == nil {
 		var vars []variableEntry
 		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
@@ -1027,7 +1027,7 @@ func CheckAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) Che
 
 	// Try repo-level.
 	repoFullName := owner + "/" + repoName
-	out, err = run("gh", "variable", "list", "--repo", repoFullName, "--json", "name", "--limit", "100")
+	out, err = run("gh", "variable", "list", "--repo", repoFullName, "--json", "name")
 	if err == nil {
 		var vars []variableEntry
 		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
@@ -1056,7 +1056,7 @@ func CheckAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) Che
 // downstream checks like CheckProjectCollaborator.
 func ReadAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) string {
 	// Try org-level first.
-	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name,value", "--limit", "100")
+	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name,value")
 	if err == nil {
 		var vars []variableEntry
 		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
@@ -1070,7 +1070,7 @@ func ReadAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) stri
 
 	// Try repo-level.
 	repoFullName := owner + "/" + repoName
-	out, err = run("gh", "variable", "list", "--repo", repoFullName, "--json", "name,value", "--limit", "100")
+	out, err = run("gh", "variable", "list", "--repo", repoFullName, "--json", "name,value")
 	if err == nil {
 		var vars []variableEntry
 		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
