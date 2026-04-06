@@ -64,7 +64,7 @@ Collected interactively using the `huh` TUI library:
 
 | Step | Action |
 |---|---|
-| 3 | `gh repo create <owner>/<repo> --template eddiecarpenter/agentic-development` + clone |
+| 3 | `gh repo create <owner>/<repo> --template eddiecarpenter/ai-native-delivery` + clone |
 | 4 | Remove `bootstrap.sh` and `bootstrap.sh.md5` from the cloned repo |
 | 5 | Scaffold project structure per stack (see `base/standards/<stack>.md`) |
 | 6 | Apply branch protection + create standard labels |

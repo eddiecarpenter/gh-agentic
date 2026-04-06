@@ -9,7 +9,7 @@ This file is never overwritten by a template sync.
 
 ## Template Source
 
-Template: eddiecarpenter/agentic-development
+Template: eddiecarpenter/ai-native-delivery
 
 ## Project
 
@@ -54,7 +54,7 @@ Do not reinvent what already exists in charging-domain. Adapt it.
 ## Notes
 
 - This repo was created manually (before the bootstrap tool existed) — bootstrap.sh was not used
-- `base/` was copied from `eddiecarpenter/agentic-development` at initial setup
+- `base/` was copied from `eddiecarpenter/ai-native-delivery` at initial setup
 - GitHub Actions workflows were adapted from `NewOpenBSS/charging-domain` (known working)
 - **Self-hosted runner must be registered per repo for personal-space repos** — organisation
   runners are shared across all org repos, but personal repos each need their own registration.
