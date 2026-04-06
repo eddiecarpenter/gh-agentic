@@ -63,6 +63,19 @@ func newBootstrapCmd() *cobra.Command {
 			cfg.AgentUser = agentUser
 			cfg.AgentUserScope = agentUserScope
 
+			// Resolve agent user interactively if flags not fully provided.
+			textPrompt := func(prompt string) (string, error) {
+				fmt.Fprintf(w, "  %s: ", prompt)
+				scanner := bufio.NewScanner(cmd.InOrStdin())
+				if scanner.Scan() {
+					return strings.TrimSpace(scanner.Text()), nil
+				}
+				return "", scanner.Err()
+			}
+			if err := bootstrap.ResolveAgentUser(w, &cfg, bootstrap.DefaultRunCommand, textPrompt); err != nil {
+				return fmt.Errorf("resolving agent user: %w", err)
+			}
+
 			workDir := bootstrap.DefaultWorkDirOrHome()
 
 			graphqlDo, err := bootstrap.DefaultGraphQLDo()
