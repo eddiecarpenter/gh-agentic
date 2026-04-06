@@ -19,13 +19,15 @@ import (
 // Tests can construct this directly with fake values; the production path
 // resolves real values in newDoctorCmd.
 type doctorConfig struct {
-	root         string
-	repoFullName string
-	owner        string
-	repoName     string
-	run          bootstrap.RunCommandFunc
-	repair       bool
-	yes          bool
+	root           string
+	repoFullName   string
+	owner          string
+	repoName       string
+	run            bootstrap.RunCommandFunc
+	repair         bool
+	yes            bool
+	agentUser      string
+	agentUserScope string
 }
 
 // runDoctor executes the doctor check/repair pipeline. It accepts an io.Writer
@@ -70,8 +72,11 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 
 	run := cfg.run
 
-	// Read agent user from AGENT_USER file (empty string if absent).
-	agentUser, _ := bootstrap.ReadAgentUser(cfg.root)
+	// Read agent user from GitHub variable (flag value takes precedence).
+	agentUser := cfg.agentUser
+	if agentUser == "" {
+		agentUser = verify.ReadAgentUserVar(cfg.owner, cfg.repoName, run)
+	}
 
 	// All checks in pipeline order.
 	checks := []verify.CheckFunc{
@@ -92,6 +97,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectViews(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run) },
+		func() verify.CheckResult { return verify.CheckAgentUserVar(cfg.owner, cfg.repoName, run) },
 		func() verify.CheckResult { return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run) },
 		func() verify.CheckResult { return verify.CheckStaleOpenRequirements(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckStaleOpenFeatures(cfg.repoFullName, run) },
@@ -137,6 +143,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairProjectViews(cfg.owner, cfg.repoName, cfg.root, run)
 			case "Project items have status assigned":
 				r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
+			case "AGENT_USER variable configured":
+				r = verify.RepairAgentUserVar(cfg.owner, cfg.repoName, cfg.agentUser, cfg.agentUserScope, run, textConfirm)
 			case "Agent user is a project collaborator":
 				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
 			case "No stale open requirements":
@@ -161,6 +169,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 func newDoctorCmd() *cobra.Command {
 	var repair bool
 	var yes bool
+	var agentUser string
+	var agentUserScope string
 
 	cmd := &cobra.Command{
 		Use:          "doctor",
@@ -194,18 +204,22 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			return runDoctor(w, cmd.InOrStdin(), doctorConfig{
-				root:         root,
-				repoFullName: currentRepo.Owner + "/" + currentRepo.Name,
-				owner:        currentRepo.Owner,
-				repoName:     currentRepo.Name,
-				run:          bootstrap.DefaultRunCommand,
-				repair:       repair,
-				yes:          yes,
+				root:           root,
+				repoFullName:   currentRepo.Owner + "/" + currentRepo.Name,
+				owner:          currentRepo.Owner,
+				repoName:       currentRepo.Name,
+				run:            bootstrap.DefaultRunCommand,
+				repair:         repair,
+				yes:            yes,
+				agentUser:      agentUser,
+				agentUserScope: agentUserScope,
 			})
 		},
 	}
 
 	cmd.Flags().BoolVar(&repair, "repair", false, "attempt automatic repair of all warnings and failures")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all repair prompts")
+	cmd.Flags().StringVar(&agentUser, "agent-user", "", "agent username for repair (skips prompt)")
+	cmd.Flags().StringVar(&agentUserScope, "agent-user-scope", "", "variable scope: org or repo (skips prompt)")
 	return cmd
 }
