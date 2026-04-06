@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
 // EnvContext holds context extracted from the agentic environment.
@@ -21,6 +22,9 @@ type EnvContext struct {
 
 	// Module is the Go module path if a go.mod exists, otherwise empty.
 	Module string
+
+	// TemplateRepo is the GitHub owner/repo of the template, read from TEMPLATE_SOURCE.
+	TemplateRepo string
 }
 
 // ValidateEnvironment checks that the current directory is an agentic environment
@@ -58,6 +62,15 @@ func ValidateEnvironment(run bootstrap.RunCommandFunc) (*EnvContext, error) {
 
 	// Try to extract Go module path.
 	ctx.Module = extractGoModule(wd)
+
+	// Read template repo from TEMPLATE_SOURCE.
+	templateRepo, err := sync.ReadTemplateSource(wd)
+	if err != nil {
+		// Fall back to the default if TEMPLATE_SOURCE is missing or unreadable.
+		ctx.TemplateRepo = bootstrap.DefaultTemplateRepo
+	} else {
+		ctx.TemplateRepo = templateRepo
+	}
 
 	return ctx, nil
 }

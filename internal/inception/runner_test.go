@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 )
 
 // plainSpinnerFunc is a test double for SpinnerFunc that runs the function
@@ -34,6 +36,7 @@ func TestRunSteps_AllStepsSucceed_PrintsSummary(t *testing.T) {
 	env := &EnvContext{
 		AgenticRepoRoot: agenticDir,
 		Owner:           "acme-org",
+		TemplateRepo:    bootstrap.DefaultTemplateRepo,
 	}
 
 	// When git clone is called, create the clone directory so PopulateRepo can write files.
@@ -74,7 +77,7 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 		Stack:    "Other",
 		Owner:    "acme-org",
 	}
-	env := &EnvContext{AgenticRepoRoot: agenticDir, Owner: "acme-org"}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, Owner: "acme-org", TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	// First call (gh repo create) fails.
 	callCount := 0
@@ -105,7 +108,7 @@ func TestRunSteps_StepSequence_CorrectOrder(t *testing.T) {
 		Stack:    "Other",
 		Owner:    "acme-org",
 	}
-	env := &EnvContext{AgenticRepoRoot: agenticDir, Owner: "acme-org"}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, Owner: "acme-org", TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	// Track the order of spinner labels.
 	var labels []string
