@@ -108,16 +108,16 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	m.Expect([]string{"gh", "api", "graphql", "-f", `query={ node(id: "PVT_test123") { ... on ProjectV2 { collaborators(first: 100) { nodes { login } } } } }`, "--jq", ".data.node.collaborators.nodes[].login"}, "goose-agent", nil)
 
 	// ReadAgentUserVar: gh variable list --org (fail for personal account).
-	m.Expect([]string{"gh", "variable", "list", "--org", "testowner", "--json", "name,value", "--limit", "100"}, "", fmt.Errorf("not an org"))
+	m.Expect([]string{"gh", "variable", "list", "--org", "testowner", "--json", "name,value"}, "", fmt.Errorf("not an org"))
 
 	// ReadAgentUserVar: gh variable list --repo (return AGENT_USER).
-	m.Expect([]string{"gh", "variable", "list", "--repo", "testowner/testrepo", "--json", "name,value", "--limit", "100"}, `[{"name":"AGENT_USER","value":"goose-agent"}]`, nil)
+	m.Expect([]string{"gh", "variable", "list", "--repo", "testowner/testrepo", "--json", "name,value"}, `[{"name":"AGENT_USER","value":"goose-agent"}]`, nil)
 
 	// CheckAgentUserVar: gh variable list --org (fail for personal account).
-	m.Expect([]string{"gh", "variable", "list", "--org", "testowner", "--json", "name", "--limit", "100"}, "", fmt.Errorf("not an org"))
+	m.Expect([]string{"gh", "variable", "list", "--org", "testowner", "--json", "name"}, "", fmt.Errorf("not an org"))
 
 	// CheckAgentUserVar: gh variable list --repo (return AGENT_USER).
-	m.Expect([]string{"gh", "variable", "list", "--repo", "testowner/testrepo", "--json", "name", "--limit", "100"}, `[{"name":"AGENT_USER"}]`, nil)
+	m.Expect([]string{"gh", "variable", "list", "--repo", "testowner/testrepo", "--json", "name"}, `[{"name":"AGENT_USER"}]`, nil)
 
 	// CheckStaleOpenRequirements: gh issue list --label requirement --state open
 	m.Expect([]string{"gh", "issue", "list", "--repo", "testowner/testrepo", "--label", "requirement", "--state", "open", "--json", "number,title", "--limit", "200"}, "[]", nil)
