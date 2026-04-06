@@ -1166,13 +1166,26 @@ func RepairStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) 
 // Project views repair
 // ──────────────────────────────────────────────────────────────────────────────
 
-// RepairProjectViews reports which required views are missing and provides a
-// direct link to the GitHub Project where they can be created manually.
-// GitHub's Projects V2 GraphQL API does not support view creation, so this
-// repair cannot be automated — it guides the user instead.
+// layoutToREST converts GraphQL layout enum values to REST API layout strings.
+func layoutToREST(layout string) string {
+	switch layout {
+	case "BOARD_LAYOUT":
+		return "board"
+	case "TABLE_LAYOUT":
+		return "table"
+	case "ROADMAP_LAYOUT":
+		return "roadmap"
+	default:
+		return strings.ToLower(strings.TrimSuffix(layout, "_LAYOUT"))
+	}
+}
+
+// RepairProjectViews creates any required views that are missing from the GitHub
+// Project using the Projects V2 REST API. Existing views (including user-added
+// ones) are never deleted.
 func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
-	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
-	if projectNodeID == "" {
+	proj := resolveProjectEntry(owner, repoName, run)
+	if proj == nil {
 		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: "no GitHub Project found for owner " + owner}
 	}
 
@@ -1181,8 +1194,8 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("could not load project template: %v", loadErr)}
 	}
 
-	// Fetch existing view names.
-	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { views(first: 20) { nodes { name } } } } }`, projectNodeID)
+	// Fetch existing view names via GraphQL.
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { views(first: 20) { nodes { name } } } } }`, proj.NodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.views.nodes[].name")
 	if err != nil {
 		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("failed to fetch views: %v", err)}
@@ -1195,27 +1208,34 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 		}
 	}
 
-	var missing []string
-	for _, req := range tmpl.RequiredViews {
-		if !existing[req.Name] {
-			missing = append(missing, fmt.Sprintf("%q (%s)", req.Name, req.Layout))
-		}
+	// Build the REST endpoint for view creation.
+	// Projects V2 REST API: POST /users/{login}/projectsV2/{number}/views
+	//                    or POST /orgs/{org}/projectsV2/{number}/views
+	var restEndpoint string
+	if strings.EqualFold(proj.OwnerType, "Organization") {
+		restEndpoint = fmt.Sprintf("/orgs/%s/projectsV2/%d/views", owner, proj.Number)
+	} else {
+		restEndpoint = fmt.Sprintf("/users/%s/projectsV2/%d/views", owner, proj.Number)
 	}
 
-	if len(missing) == 0 {
+	var created []string
+	for _, req := range tmpl.RequiredViews {
+		if existing[req.Name] {
+			continue
+		}
+		if _, createErr := run("gh", "api", "-X", "POST", restEndpoint,
+			"-f", "name="+req.Name,
+			"-f", "layout="+layoutToREST(req.Layout),
+		); createErr != nil {
+			return CheckResult{Name: checkProjectViewsName, Status: Fail,
+				Message: fmt.Sprintf("failed to create view %q: %v", req.Name, createErr)}
+		}
+		created = append(created, fmt.Sprintf("%q", req.Name))
+	}
+
+	if len(created) == 0 {
 		return CheckResult{Name: checkProjectViewsName, Status: Pass, Message: "all required views present"}
 	}
-
-	// GitHub's Projects V2 GraphQL API does not support view creation.
-	// Guide the user to create the missing views manually.
-	projectURL := resolveProjectURL(owner, repoName, run)
-	locationHint := "the GitHub Project settings"
-	if projectURL != "" {
-		locationHint = projectURL
-	}
-	return CheckResult{
-		Name:    checkProjectViewsName,
-		Status:  ManualAction,
-		Message: fmt.Sprintf("create missing views manually at %s — %s", locationHint, strings.Join(missing, ", ")),
-	}
+	return CheckResult{Name: checkProjectViewsName, Status: Pass,
+		Message: fmt.Sprintf("created views: %s", strings.Join(created, ", "))}
 }

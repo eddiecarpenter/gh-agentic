@@ -648,7 +648,46 @@ type projectListResponse struct {
 		Title  string `json:"title"`
 		Number int    `json:"number"`
 		URL    string `json:"url"`
+		Owner  struct {
+			Login string `json:"login"`
+			Type  string `json:"type"` // "User" or "Organization"
+		} `json:"owner"`
 	} `json:"projects"`
+}
+
+// projectEntry holds the resolved project details needed for both GraphQL and REST API calls.
+type projectEntry struct {
+	NodeID    string // GraphQL node ID (PVT_...)
+	Number    int    // REST API project number
+	OwnerType string // "User" or "Organization"
+	URL       string // web URL for display
+}
+
+// resolveProjectEntry resolves the project matching repoName for the given owner
+// and returns full details needed for both GraphQL and REST operations.
+// Falls back to the first project if no title match. Returns nil if no projects exist.
+func resolveProjectEntry(owner, repoName string, run bootstrap.RunCommandFunc) *projectEntry {
+	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "100")
+	if err != nil {
+		return nil
+	}
+	var resp projectListResponse
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &resp); jsonErr != nil || len(resp.Projects) == 0 {
+		return nil
+	}
+	p := resp.Projects[0]
+	for _, proj := range resp.Projects {
+		if proj.Title == repoName {
+			p = proj
+			break
+		}
+	}
+	return &projectEntry{
+		NodeID:    p.ID,
+		Number:    p.Number,
+		OwnerType: p.Owner.Type,
+		URL:       p.URL,
+	}
 }
 
 // resolveProjectNodeIDViaRun resolves the project node ID for an owner using
