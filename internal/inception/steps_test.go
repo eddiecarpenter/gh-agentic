@@ -384,6 +384,7 @@ func TestPopulateRepo_CopiesWorkflows_ExcludesCIYml(t *testing.T) {
 	workflowFiles := []string{
 		"ci.yml", "dev-session.yml", "feature-complete.yml",
 		"feature-design.yml", "issue-session.yml", "pr-review-session.yml",
+		"sync-status-to-label.yml",
 	}
 	for _, name := range workflowFiles {
 		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("workflow: "+name), 0644); err != nil {
@@ -393,15 +394,59 @@ func TestPopulateRepo_CopiesWorkflows_ExcludesCIYml(t *testing.T) {
 
 	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
-	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo, OwnerType: bootstrap.OwnerTypeOrg}
 
 	var buf bytes.Buffer
 	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
-	// Verify pipeline workflows were copied (5 files, NOT ci.yml).
-	expectedFiles := []string{"dev-session.yml", "feature-complete.yml", "feature-design.yml", "issue-session.yml", "pr-review-session.yml"}
+	// Verify pipeline workflows were copied (6 files including sync-status-to-label.yml, NOT ci.yml).
+	expectedFiles := []string{"dev-session.yml", "feature-complete.yml", "feature-design.yml", "issue-session.yml", "pr-review-session.yml", "sync-status-to-label.yml"}
+	for _, name := range expectedFiles {
+		path := filepath.Join(cloneDir, ".github", "workflows", name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected workflow %s to be copied for org owner", name)
+		}
+	}
+
+	// Verify ci.yml was NOT copied.
+	ciPath := filepath.Join(cloneDir, ".github", "workflows", "ci.yml")
+	if _, err := os.Stat(ciPath); err == nil {
+		t.Error("ci.yml should NOT be copied to the domain repo")
+	}
+}
+
+func TestPopulateRepo_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
+	cloneDir := t.TempDir()
+	agenticDir := t.TempDir()
+
+	// Create .github/workflows/ with workflow files including sync-status-to-label.yml.
+	workflowsDir := filepath.Join(agenticDir, ".github", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	workflowFiles := []string{
+		"ci.yml", "dev-session.yml", "feature-complete.yml",
+		"feature-design.yml", "sync-status-to-label.yml",
+	}
+	for _, name := range workflowFiles {
+		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("workflow: "+name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &InceptionConfig{Owner: "alice", RepoType: "domain", RepoName: "charging"}
+	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo, OwnerType: bootstrap.OwnerTypeUser}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Verify pipeline workflows were copied (3 files, NOT ci.yml or sync-status-to-label.yml).
+	expectedFiles := []string{"dev-session.yml", "feature-complete.yml", "feature-design.yml"}
 	for _, name := range expectedFiles {
 		path := filepath.Join(cloneDir, ".github", "workflows", name)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -413,6 +458,46 @@ func TestPopulateRepo_CopiesWorkflows_ExcludesCIYml(t *testing.T) {
 	ciPath := filepath.Join(cloneDir, ".github", "workflows", "ci.yml")
 	if _, err := os.Stat(ciPath); err == nil {
 		t.Error("ci.yml should NOT be copied to the domain repo")
+	}
+
+	// Verify sync-status-to-label.yml was NOT copied for user owner.
+	syncPath := filepath.Join(cloneDir, ".github", "workflows", "sync-status-to-label.yml")
+	if _, err := os.Stat(syncPath); err == nil {
+		t.Error("sync-status-to-label.yml should NOT be copied for personal (user) repos")
+	}
+}
+
+func TestPopulateRepo_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
+	cloneDir := t.TempDir()
+	agenticDir := t.TempDir()
+
+	// Create .github/workflows/ with sync-status-to-label.yml.
+	workflowsDir := filepath.Join(agenticDir, ".github", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	workflowFiles := []string{
+		"dev-session.yml", "sync-status-to-label.yml",
+	}
+	for _, name := range workflowFiles {
+		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("workflow: "+name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
+	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo, OwnerType: bootstrap.OwnerTypeOrg}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Verify sync-status-to-label.yml WAS copied for org owner.
+	syncPath := filepath.Join(cloneDir, ".github", "workflows", "sync-status-to-label.yml")
+	if _, err := os.Stat(syncPath); os.IsNotExist(err) {
+		t.Error("sync-status-to-label.yml should be copied for org repos")
 	}
 }
 
