@@ -28,4 +28,18 @@ type BootstrapConfig struct {
 	// Set after form completion and before RunSteps is called.
 	OwnerType string
 
+	// AgentUser is the GitHub username for the agent (e.g. "goose-agent").
+	// Optional — if empty, it will be collected interactively during bootstrap.
+	AgentUser string
+
+	// AgentUserScope is the scope for the AGENT_USER variable: "org" or "repo".
+	// Optional — if empty, it will be collected interactively during bootstrap.
+	AgentUserScope string
 }
+
+const (
+	// AgentUserScopeOrg indicates the AGENT_USER variable is set at org level.
+	AgentUserScopeOrg = "org"
+	// AgentUserScopeRepo indicates the AGENT_USER variable is set at repo level.
+	AgentUserScopeRepo = "repo"
+)

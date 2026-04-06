@@ -16,7 +16,10 @@ import (
 
 // newBootstrapCmd constructs the `gh agentic bootstrap` subcommand.
 func newBootstrapCmd() *cobra.Command {
-	return &cobra.Command{
+	var agentUser string
+	var agentUserScope string
+
+	cmd := &cobra.Command{
 		Use:   "bootstrap",
 		Short: "Bootstrap a new agentic environment (Phase 0a)",
 		Long:  "Creates and configures a new agentic development environment from scratch.",
@@ -56,6 +59,10 @@ func newBootstrapCmd() *cobra.Command {
 				cfg.OwnerType = ownerType
 			}
 
+			// Populate agent user fields from CLI flags.
+			cfg.AgentUser = agentUser
+			cfg.AgentUserScope = agentUserScope
+
 			workDir := bootstrap.DefaultWorkDirOrHome()
 
 			graphqlDo, err := bootstrap.DefaultGraphQLDo()
@@ -79,4 +86,8 @@ func newBootstrapCmd() *cobra.Command {
 			return PromptGhNotify(w, runtime.GOOS, clonePath, bootstrap.DefaultRunCommand, confirm)
 		},
 	}
+
+	cmd.Flags().StringVar(&agentUser, "agent-user", "", "agent GitHub username (optional — prompted if not provided)")
+	cmd.Flags().StringVar(&agentUserScope, "agent-user-scope", "", "AGENT_USER variable scope: org or repo (optional — prompted if not provided)")
+	return cmd
 }
