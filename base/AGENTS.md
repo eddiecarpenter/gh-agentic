@@ -3,7 +3,7 @@
 This file governs how AI agents behave in this repository and all domain repos.
 It is language-agnostic and reusable across projects.
 
-**This file is managed by the `agentic-development` template. Do not edit manually.
+**This file is managed by the `ai-native-delivery` template. Do not edit manually.
 Local overrides belong in `AGENTS.local.md`.**
 
 ---
@@ -23,6 +23,9 @@ At the start of every session, read these sources in order before doing anything
    Check whether each `<type>s/<name>` directory exists locally. If any repos are
    missing, list them and ask the user whether to clone them before proceeding.
    Clone command: `git clone <repo> <type>s/<name>`
+   If the user declines to clone missing repos, continue the session but limit all
+   work to repos that are present locally. Do not reference, modify, or make
+   assumptions about the content of repos that were not cloned.
 3. Query open Requirement issues in the agentic repo:
    `gh issue list --repo <agentic-repo> --label requirement --state open --json number,title,labels`
 4. For domain sessions — query open Feature issues in the domain repo:
@@ -58,7 +61,7 @@ that has already been provided — proceed directly to repo creation.
 
 ```bash
 gh repo create <owner>/<repo-name> \
-  --template eddiecarpenter/agentic-development \
+  --template eddiecarpenter/ai-native-delivery \
   --private
 ```
 
@@ -133,7 +136,7 @@ In the cloned repo:
 2. Update `AGENTS.local.md` with the template source and any project-specific notes:
    ```
    ## Template Source
-   Template: eddiecarpenter/agentic-development
+   Template: eddiecarpenter/ai-native-delivery
    ```
 3. Update `README.md` with the project name and description
 4. If Antora — scaffold `docs/` AsciiDoc module structure and `antora-playbook.yml`
@@ -266,6 +269,10 @@ The human reviews the diff and confirms before anything is committed.
 
 **Never sync without human confirmation of the diff.**
 **Never modify any local files** (`AGENTS.local.md`, `REPOS.md`, etc.) during a sync.
+**The sync intentionally overwrites all files under `base/`.** If `gh agentic verify`
+reports drift in `base/`, it means files have been accidentally modified. The sync will
+discard those changes — this is correct behaviour. Local customisations belong in
+`AGENTS.local.md` and `skills/`, not in `base/`.
 
 ---
 
@@ -291,13 +298,19 @@ in the relevant domain repo(s). No branch, no commit, no PR.
    - If capabilities can be built and merged independently → create separate features (run in parallel)
    - If capabilities must be built in sequence → create one feature with ordered tasks (same branch, same PR)
    - Never create multiple features with implied serial dependencies
+   - **Cross-repo sequencing (federated topology):** if Feature B in repo-B depends on
+     Feature A in repo-A being merged first (e.g. Feature A introduces an API that
+     Feature B consumes), document the dependency explicitly in both feature issues and
+     agree the order with the human before applying `in-design` to either. Never trigger
+     Feature B's design session until Feature A's PR is merged.
 5. Identify whether the Feature has UI/UX impact:
    - Not every requirement has a UI impact
    - A single requirement may produce multiple features, some with UI impact and some without
    - For any feature with UI impact: design the UX now — ASCII mockups, flow descriptions,
      field layout, error states, colour/theming decisions — and include it in the feature issue
    - Do not leave UX decisions to the Feature Design Session or implementation
-6. Create Feature issue(s) in the domain repo with `feature` + `backlog` label
+6. Create Feature issue(s) in the domain repo with `feature` + `backlog` label.
+   Apply the `capture-feature` skill for the issue body structure.
 7. Wire sub-issue relationship: Feature → parent Requirement
 8. Add Feature to org Project
 9. When human confirms ready: apply `in-design` label → triggers Feature Design Session
@@ -342,8 +355,14 @@ or for exploration and manual work outside the automated pipeline.
 
 ### Foreground Recovery
 
-When the GitHub Actions workflow fails (build red, tests failing, conflict), the human
-will open an Interactive Session to diagnose and fix. The following rules apply:
+The **Foreground Recovery** session is the emergency escape hatch for anything the
+automated pipeline cannot handle on its own. It is the correct response to any failure
+or unexpected situation — not just build failures. The protocol evolves as new failure
+modes are discovered through it.
+
+When the GitHub Actions workflow fails (build red, tests failing, conflict, or any other
+unrecoverable state), the human opens a Foreground Recovery session to diagnose and fix.
+The following rules apply:
 
 - Query open Task sub-issues on the Feature issue before touching any code
 - Diagnose the root cause from the exact error output — do not guess
@@ -404,20 +423,28 @@ One branch per Feature. Tasks are commits on that branch, not separate branches.
 - Correctness and maintainability take precedence over cleverness
 - Do not make changes outside the scope of the current task
 - Propose large refactors before implementing them — never execute without approval
+- **To cancel a requirement or feature, delete the GitHub Issue.** The agent will detect
+  its absence during the next session and will not attempt work against it. Clean up any
+  associated feature branch manually if one was already created.
 - **SDLC phase sequence — never skip a phase without human approval.**
   The pipeline must follow phases in order: Requirements → Scoping → Design → Implementation.
   If the agent believes a phase can be skipped, it must stop and ask the human before proceeding.
   The human decides whether to skip; the agent never skips a phase unilaterally.
+  - When a phase is skipped (with human approval):
+    - Labels and status must still transition through the skipped phase — the board
+      must reflect the correct state for the phase the work is actually in
+    - If scoping is skipped: the requirement transitions `backlog` → `scoping` →
+      `scheduled`, and any features created start at `backlog` (not `in-design`)
 
 ---
 
 ## Base Directory — Read Only
 
-The `base/` directory is managed exclusively by the `agentic-development` template.
+The `base/` directory is managed exclusively by the `ai-native-delivery` template.
 **Never modify any file under `base/` directly** — not even minor edits.
 
 If a change to the global protocol or standards is needed:
-1. Clone `eddiecarpenter/agentic-development` locally
+1. Clone `eddiecarpenter/ai-native-delivery` locally
 2. Make and test the changes there
 3. Push and raise a PR for human review
 4. Once merged and tagged, sync `base/` into this repo using the sync process
@@ -449,7 +476,7 @@ Goose recipes live in two places:
 | `base/skills/*.md` | ❌ Never | Human-readable reference docs for each session type (the skills) |
 | `skills/*.md` | ✅ Yes (local, project-specific) | Local skills that extend or override template skills |
 
-**`.goose/recipes/*.yaml` files are managed by the `agentic-development` template.**
+**`.goose/recipes/*.yaml` files are managed by the `ai-native-delivery` template.**
 **`base/skills/*.md` files are read-only reference documentation.**
 Neither should ever be modified locally.
 
@@ -470,7 +497,7 @@ The six standard recipes are:
 | `foreground-recovery.yaml` | Recovery | Human (interactive) — workflow failure |
 
 - Customisation of agent behaviour belongs in `AGENTS.local.md`
-- If a recipe needs to change, raise it against `eddiecarpenter/agentic-development`
+- If a recipe needs to change, raise it against `eddiecarpenter/ai-native-delivery`
   and let it flow in via `gh agentic sync`
 - `gh agentic verify` detects and flags any local modifications to recipe files
 
@@ -513,8 +540,9 @@ the GraphQL API. External clients depend on these names and shapes.
 
 4. **When in doubt, ask.** Stop and raise it with the human before making any change.
 
-5. **Document the reason** for any approved contract change in `DECISIONS.md`
-   with an ADR, including which consumers were checked and what the migration plan is.
+5. **Document the reason** for any approved contract change in a GitHub Issue labelled
+   `decision`, including which consumers were checked and what the migration plan is.
+   Link the decision issue to the feature that triggered the change.
 
 ---
 
@@ -531,20 +559,9 @@ the GraphQL API. External clients depend on these names and shapes.
 ## Task Lifecycle
 
 **After each task completes (before moving to the next):**
-1. Append significant decisions to `DECISIONS.md` in ADR format (if applicable)
-2. Close the Task issue: `gh issue close <task-number> --repo <domain-repo>`
-3. Commit: `feat: [task description] — task N of N (#feature-issue)`
+1. Close the Task issue: `gh issue close <task-number> --repo <domain-repo>`
+2. Commit: `feat: [task description] — task N of N (#feature-issue)`
 
 **When all tasks are complete:**
 1. Exit cleanly — do not push, do not open a PR
 2. The workflow pushes and opens the PR automatically
-
-**ADR format for DECISIONS.md:**
-```
-## ADR-NNN — Title
-**Status:** Accepted
-**Area:** Which part of the system
-**Decision:** What was decided
-**Rationale:** Why
-**Consequences:** What this means going forward
-```
