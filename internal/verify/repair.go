@@ -1246,3 +1246,64 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 	return CheckResult{Name: checkProjectViewsName, Status: Pass,
 		Message: fmt.Sprintf("created views: %s", strings.Join(created, ", "))}
 }
+
+// RepairAgentUserVar sets the AGENT_USER GitHub Actions variable at the
+// specified scope (org or repo). Prompts for missing values via textConfirm.
+// Returns Fail if scope is "org" but the owner is a personal account.
+func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run bootstrap.RunCommandFunc, textConfirm func(string) (string, error)) CheckResult {
+	// Prompt for agent user if not provided.
+	if agentUser == "" {
+		val, err := textConfirm("Enter agent username")
+		if err != nil {
+			return CheckResult{Name: checkAgentUserVarName, Status: Fail, Message: fmt.Sprintf("prompt failed: %v", err)}
+		}
+		agentUser = strings.TrimSpace(val)
+		if agentUser == "" {
+			return CheckResult{Name: checkAgentUserVarName, Status: Fail, Message: "agent username is required"}
+		}
+	}
+
+	// Prompt for scope if not provided.
+	if agentUserScope == "" {
+		val, err := textConfirm("Enter scope (org or repo)")
+		if err != nil {
+			return CheckResult{Name: checkAgentUserVarName, Status: Fail, Message: fmt.Sprintf("prompt failed: %v", err)}
+		}
+		agentUserScope = strings.TrimSpace(val)
+	}
+
+	// Validate scope.
+	if agentUserScope != "org" && agentUserScope != "repo" {
+		return CheckResult{Name: checkAgentUserVarName, Status: Fail,
+			Message: fmt.Sprintf("invalid scope %q — must be \"org\" or \"repo\"", agentUserScope)}
+	}
+
+	// Check owner type for org scope.
+	if agentUserScope == "org" {
+		ownerType, err := bootstrap.DefaultDetectOwnerType(owner)
+		if err != nil {
+			return CheckResult{Name: checkAgentUserVarName, Status: Fail,
+				Message: fmt.Sprintf("failed to detect owner type: %v", err)}
+		}
+		if ownerType != bootstrap.OwnerTypeOrg {
+			return CheckResult{Name: checkAgentUserVarName, Status: Fail,
+				Message: fmt.Sprintf("cannot set org-level variable — %s is a personal account, not an organisation", owner)}
+		}
+	}
+
+	// Set the variable.
+	var setErr error
+	if agentUserScope == "org" {
+		_, setErr = run("gh", "variable", "set", "AGENT_USER", "--body", agentUser, "--org", owner)
+	} else {
+		_, setErr = run("gh", "variable", "set", "AGENT_USER", "--body", agentUser, "--repo", owner+"/"+repoName)
+	}
+
+	if setErr != nil {
+		return CheckResult{Name: checkAgentUserVarName, Status: Fail,
+			Message: fmt.Sprintf("failed to set variable: %v", setErr)}
+	}
+
+	return CheckResult{Name: checkAgentUserVarName, Status: Pass,
+		Message: fmt.Sprintf("set AGENT_USER=%s at %s level", agentUser, agentUserScope)}
+}

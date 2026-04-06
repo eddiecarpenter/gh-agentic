@@ -970,6 +970,100 @@ func CheckStaleOpenRequirements(repoFullName string, run bootstrap.RunCommandFun
 	}
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub Actions variable checks
+// ──────────────────────────────────────────────────────────────────────────────
+
+// checkAgentUserVarName is the check name used for AGENT_USER variable verification.
+const checkAgentUserVarName = "AGENT_USER variable configured"
+
+// variableEntry is used to unmarshal JSON output from `gh variable list`.
+type variableEntry struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// CheckAgentUserVar verifies that AGENT_USER is configured as a GitHub Actions
+// variable at the org or repo level. Returns Pass with a message indicating the
+// level, or Fail if not found at either level.
+func CheckAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	// Try org-level first.
+	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name", "--limit", "100")
+	if err == nil {
+		var vars []variableEntry
+		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
+			for _, v := range vars {
+				if v.Name == "AGENT_USER" {
+					return CheckResult{
+						Name:    checkAgentUserVarName,
+						Status:  Pass,
+						Message: "configured at org level",
+					}
+				}
+			}
+		}
+	}
+
+	// Try repo-level.
+	repoFullName := owner + "/" + repoName
+	out, err = run("gh", "variable", "list", "--repo", repoFullName, "--json", "name", "--limit", "100")
+	if err == nil {
+		var vars []variableEntry
+		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
+			for _, v := range vars {
+				if v.Name == "AGENT_USER" {
+					return CheckResult{
+						Name:    checkAgentUserVarName,
+						Status:  Pass,
+						Message: "configured at repo level",
+					}
+				}
+			}
+		}
+	}
+
+	return CheckResult{
+		Name:    checkAgentUserVarName,
+		Status:  Fail,
+		Message: "AGENT_USER variable not set at org or repo level",
+	}
+}
+
+// ReadAgentUserVar reads the current AGENT_USER value from GitHub Actions
+// variables, checking org level first then repo level. Returns the value or
+// empty string if not found. Used by runDoctor to pass agent user to
+// downstream checks like CheckProjectCollaborator.
+func ReadAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) string {
+	// Try org-level first.
+	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name,value", "--limit", "100")
+	if err == nil {
+		var vars []variableEntry
+		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
+			for _, v := range vars {
+				if v.Name == "AGENT_USER" {
+					return v.Value
+				}
+			}
+		}
+	}
+
+	// Try repo-level.
+	repoFullName := owner + "/" + repoName
+	out, err = run("gh", "variable", "list", "--repo", repoFullName, "--json", "name,value", "--limit", "100")
+	if err == nil {
+		var vars []variableEntry
+		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
+			for _, v := range vars {
+				if v.Name == "AGENT_USER" {
+					return v.Value
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
 // CheckStaleOpenFeatures warns when open feature issues have all their task
 // sub-issues closed.
 func CheckStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {

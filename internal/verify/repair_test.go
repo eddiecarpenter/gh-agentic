@@ -962,3 +962,123 @@ func loadTestTemplate(t *testing.T, root string) (*bootstrap.ProjectTemplate, er
 	t.Helper()
 	return bootstrap.LoadProjectTemplate(root)
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RepairAgentUserVar tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairAgentUserVar_RepoScope_SetsVariable(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set AGENT_USER") && strings.Contains(joined, "--repo") {
+			setCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairAgentUserVar("alice", "my-repo", "goose-agent", "repo", fakeRun, nil)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh variable set to be called with --repo")
+	}
+}
+
+func TestRepairAgentUserVar_InvalidScope_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := RepairAgentUserVar("alice", "my-repo", "goose-agent", "invalid", fakeRun, nil)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "invalid scope") {
+		t.Errorf("expected message about invalid scope, got %q", result.Message)
+	}
+}
+
+func TestRepairAgentUserVar_EmptyUser_PromptsAndSets(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set AGENT_USER") {
+			setCalled = true
+		}
+		return "", nil
+	}
+	fakeConfirm := func(prompt string) (string, error) {
+		if strings.Contains(prompt, "username") {
+			return "my-agent", nil
+		}
+		return "", nil
+	}
+
+	result := RepairAgentUserVar("alice", "my-repo", "", "repo", fakeRun, fakeConfirm)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh variable set to be called")
+	}
+}
+
+func TestRepairAgentUserVar_EmptyScope_PromptsAndSets(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set AGENT_USER") {
+			setCalled = true
+		}
+		return "", nil
+	}
+	fakeConfirm := func(prompt string) (string, error) {
+		if strings.Contains(prompt, "scope") {
+			return "repo", nil
+		}
+		return "", nil
+	}
+
+	result := RepairAgentUserVar("alice", "my-repo", "goose-agent", "", fakeRun, fakeConfirm)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh variable set to be called")
+	}
+}
+
+func TestRepairAgentUserVar_EmptyUserAfterPrompt_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+	fakeConfirm := func(prompt string) (string, error) {
+		return "", nil // empty response
+	}
+
+	result := RepairAgentUserVar("alice", "my-repo", "", "repo", fakeRun, fakeConfirm)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "required") {
+		t.Errorf("expected message about required, got %q", result.Message)
+	}
+}
+
+func TestRepairAgentUserVar_SetFails_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			return "", fmt.Errorf("permission denied")
+		}
+		return "", nil
+	}
+
+	result := RepairAgentUserVar("alice", "my-repo", "goose-agent", "repo", fakeRun, nil)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
