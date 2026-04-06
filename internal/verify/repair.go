@@ -1073,3 +1073,73 @@ func copyDir(src, dst string) error {
 		return os.WriteFile(target, data, info.Mode())
 	})
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Stale open issue repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// closeStaleIssues closes all stale open issues of the given label type.
+// For each stale issue it: removes active pipeline labels, adds "done", closes
+// the issue, and updates the project board status to Done.
+func closeStaleIssues(repoFullName, label string, run bootstrap.RunCommandFunc) CheckResult {
+	checkName := checkStaleRequirementsName
+	if label == "feature" {
+		checkName = checkStaleFeaturesName
+	}
+
+	stale, err := fetchStaleOpenIssues(repoFullName, label, run)
+	if err != nil {
+		return CheckResult{Name: checkName, Status: Fail, Message: fmt.Sprintf("failed to fetch stale issues: %v", err)}
+	}
+	if len(stale) == 0 {
+		return CheckResult{Name: checkName, Status: Pass, Message: "nothing to repair"}
+	}
+
+	for _, iss := range stale {
+		// Build label edit args: remove all active pipeline labels, add done.
+		args := []string{"issue", "edit",
+			fmt.Sprintf("%d", iss.Number),
+			"--repo", repoFullName,
+			"--remove-label", "backlog",
+			"--remove-label", "scoping",
+			"--remove-label", "scheduled",
+			"--remove-label", "in-design",
+			"--remove-label", "in-development",
+			"--remove-label", "in-review",
+			"--add-label", "done",
+		}
+		if _, labelErr := run("gh", args...); labelErr != nil {
+			return CheckResult{Name: checkName, Status: Fail,
+				Message: fmt.Sprintf("fixing labels on #%d: %v", iss.Number, labelErr)}
+		}
+
+		// Close the issue.
+		if _, closeErr := run("gh", "issue", "close",
+			fmt.Sprintf("%d", iss.Number),
+			"--repo", repoFullName,
+		); closeErr != nil {
+			return CheckResult{Name: checkName, Status: Fail,
+				Message: fmt.Sprintf("closing #%d: %v", iss.Number, closeErr)}
+		}
+	}
+
+	var closed []string
+	for _, s := range stale {
+		closed = append(closed, fmt.Sprintf("#%d", s.Number))
+	}
+	return CheckResult{
+		Name:    checkName,
+		Status:  Pass,
+		Message: fmt.Sprintf("closed: %s", strings.Join(closed, ", ")),
+	}
+}
+
+// RepairStaleOpenRequirements closes open requirements whose features are all closed.
+func RepairStaleOpenRequirements(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	return closeStaleIssues(repoFullName, "requirement", run)
+}
+
+// RepairStaleOpenFeatures closes open features whose tasks are all closed.
+func RepairStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	return closeStaleIssues(repoFullName, "feature", run)
+}

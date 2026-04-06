@@ -761,3 +761,121 @@ func CheckProject(owner string, run bootstrap.RunCommandFunc) CheckResult {
 		Status: Pass,
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Stale open issue checks
+// ──────────────────────────────────────────────────────────────────────────────
+
+const checkStaleRequirementsName = "No stale open requirements"
+const checkStaleFeaturesName = "No stale open features"
+
+type staleIssue struct {
+	Number int
+	Title  string
+}
+
+// fetchStaleOpenIssues returns open issues with the given label whose every
+// sub-issue is closed. repoFullName is "owner/repo".
+func fetchStaleOpenIssues(repoFullName, label string, run bootstrap.RunCommandFunc) ([]staleIssue, error) {
+	// Fetch open issues with the given label.
+	out, err := run("gh", "issue", "list",
+		"--repo", repoFullName,
+		"--label", label,
+		"--state", "open",
+		"--json", "number,title",
+		"--limit", "200",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing open %s issues: %w", label, err)
+	}
+
+	var issues []struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &issues); err != nil {
+		return nil, fmt.Errorf("parsing issue list: %w", err)
+	}
+
+	var stale []staleIssue
+	for _, iss := range issues {
+		// Fetch sub-issues for this issue.
+		subOut, subErr := run("gh", "issue", "view",
+			fmt.Sprintf("%d", iss.Number),
+			"--repo", repoFullName,
+			"--json", "subIssues",
+		)
+		if subErr != nil {
+			continue // skip if we can't fetch
+		}
+
+		var resp struct {
+			SubIssues []struct {
+				State string `json:"state"`
+			} `json:"subIssues"`
+		}
+		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(subOut)), &resp); jsonErr != nil {
+			continue
+		}
+
+		// Skip issues with no sub-issues.
+		if len(resp.SubIssues) == 0 {
+			continue
+		}
+
+		// Check if all sub-issues are closed.
+		allClosed := true
+		for _, sub := range resp.SubIssues {
+			if !strings.EqualFold(sub.State, "CLOSED") {
+				allClosed = false
+				break
+			}
+		}
+		if allClosed {
+			stale = append(stale, staleIssue{Number: iss.Number, Title: iss.Title})
+		}
+	}
+	return stale, nil
+}
+
+// CheckStaleOpenRequirements warns when open requirement issues have all their
+// feature sub-issues closed.
+func CheckStaleOpenRequirements(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	stale, err := fetchStaleOpenIssues(repoFullName, "requirement", run)
+	if err != nil {
+		return CheckResult{Name: checkStaleRequirementsName, Status: Fail, Message: err.Error()}
+	}
+	if len(stale) == 0 {
+		return CheckResult{Name: checkStaleRequirementsName, Status: Pass}
+	}
+	var msgs []string
+	for _, s := range stale {
+		msgs = append(msgs, fmt.Sprintf("#%d \"%s\"", s.Number, s.Title))
+	}
+	return CheckResult{
+		Name:    checkStaleRequirementsName,
+		Status:  Warning,
+		Message: fmt.Sprintf("open requirements with all features closed: %s", strings.Join(msgs, ", ")),
+	}
+}
+
+// CheckStaleOpenFeatures warns when open feature issues have all their task
+// sub-issues closed.
+func CheckStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	stale, err := fetchStaleOpenIssues(repoFullName, "feature", run)
+	if err != nil {
+		return CheckResult{Name: checkStaleFeaturesName, Status: Fail, Message: err.Error()}
+	}
+	if len(stale) == 0 {
+		return CheckResult{Name: checkStaleFeaturesName, Status: Pass}
+	}
+	var msgs []string
+	for _, s := range stale {
+		msgs = append(msgs, fmt.Sprintf("#%d \"%s\"", s.Number, s.Title))
+	}
+	return CheckResult{
+		Name:    checkStaleFeaturesName,
+		Status:  Warning,
+		Message: fmt.Sprintf("open features with all tasks closed: %s", strings.Join(msgs, ", ")),
+	}
+}

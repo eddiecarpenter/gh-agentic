@@ -98,6 +98,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run) },
+		func() verify.CheckResult { return verify.CheckStaleOpenRequirements(cfg.repoFullName, run) },
+		func() verify.CheckResult { return verify.CheckStaleOpenFeatures(cfg.repoFullName, run) },
 	}
 
 	// Repair function — only active when --repair flag is set.
@@ -138,6 +140,10 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairProjectStatus(cfg.owner, cfg.repoName, cfg.root, run)
 			case "Agent user is a project collaborator":
 				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
+			case "No stale open requirements":
+				r = verify.RepairStaleOpenRequirements(cfg.repoFullName, run)
+			case "No stale open features":
+				r = verify.RepairStaleOpenFeatures(cfg.repoFullName, run)
 			default:
 				return nil
 			}

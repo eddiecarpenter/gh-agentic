@@ -94,6 +94,12 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	// resolveProjectNodeIDViaRun (used by CheckProjectCollaborator): gh project list --limit 1
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
+	// CheckStaleOpenRequirements: gh issue list --label requirement --state open
+	m.Expect([]string{"gh", "issue", "list", "--repo", "testowner/testrepo", "--label", "requirement", "--state", "open", "--json", "number,title", "--limit", "200"}, "[]", nil)
+
+	// CheckStaleOpenFeatures: gh issue list --label feature --state open
+	m.Expect([]string{"gh", "issue", "list", "--repo", "testowner/testrepo", "--label", "feature", "--state", "open", "--json", "number,title", "--limit", "200"}, "[]", nil)
+
 	return m
 }
 
