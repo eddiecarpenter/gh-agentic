@@ -390,9 +390,13 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 // Project item status resync
 // ──────────────────────────────────────────────────────────────────────────────
 
+// stalePipelineLabels are labels that must be removed from a CLOSED issue
+// and replaced with "done".
+var stalePipelineLabels = []string{"backlog", "scoping", "scheduled", "in-design", "in-development", "in-review"}
+
 // pipelineLabelPriority maps pipeline labels to their canonical status name.
-// The order defines priority: earlier entries win. CLOSED-before-backlog is
-// handled separately in resolveStatus.
+// The order defines priority: earlier entries win. CLOSED state is handled
+// first in resolveStatus and always returns Done.
 var pipelineLabelPriority = []struct {
 	label  string
 	status string
@@ -406,16 +410,21 @@ var pipelineLabelPriority = []struct {
 }
 
 // resolveStatus determines the canonical status name for a project item based
-// on its issue labels and state. Priority order (critical — CLOSED before backlog):
-//  1. done label → Done
-//  2. in-review → In Review
-//  3. in-development → In Development
-//  4. in-design → In Design
-//  5. scheduled → Scheduled
-//  6. scoping → Scoping
-//  7. issue state is CLOSED (no pipeline label matched) → Done
+// on its issue labels and state. Priority order:
+//  1. CLOSED issue state → Done (always; overrides all labels)
+//  2. done label → Done
+//  3. in-review → In Review
+//  4. in-development → In Development
+//  5. in-design → In Design
+//  6. scheduled → Scheduled
+//  7. scoping → Scoping
 //  8. backlog label or default → Backlog
 func resolveStatus(labels []string, issueState string) string {
+	// Rule 1: CLOSED state is always Done, regardless of labels.
+	if strings.EqualFold(issueState, "CLOSED") {
+		return "Done"
+	}
+
 	labelSet := make(map[string]bool, len(labels))
 	for _, l := range labels {
 		labelSet[l] = true
@@ -427,20 +436,17 @@ func resolveStatus(labels []string, issueState string) string {
 		}
 	}
 
-	// Rule 7: CLOSED issues with no pipeline label → Done.
-	if strings.EqualFold(issueState, "CLOSED") {
-		return "Done"
-	}
-
 	// Rule 8: backlog label or default → Backlog.
 	return "Backlog"
 }
 
 // projectItem represents a single item from a ProjectV2 items query.
 type projectItem struct {
-	ID           string
-	IssueState   string
-	Labels       []string
+	ID            string
+	IssueNumber   int
+	RepoFullName  string
+	IssueState    string
+	Labels        []string
 	CurrentStatus string
 }
 
@@ -466,6 +472,37 @@ func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap
 		if !ok {
 			// Status not found in options — skip.
 			continue
+		}
+
+		// For CLOSED issues: repair stale pipeline labels.
+		// Remove any active pipeline labels and ensure "done" is present.
+		if strings.EqualFold(item.IssueState, "CLOSED") && item.IssueNumber > 0 && item.RepoFullName != "" {
+			labelSet := make(map[string]bool, len(item.Labels))
+			for _, l := range item.Labels {
+				labelSet[l] = true
+			}
+			var toRemove []string
+			for _, l := range stalePipelineLabels {
+				if labelSet[l] {
+					toRemove = append(toRemove, l)
+				}
+			}
+			needsDone := !labelSet["done"]
+			if len(toRemove) > 0 || needsDone {
+				args := []string{"issue", "edit",
+					fmt.Sprintf("%d", item.IssueNumber),
+					"--repo", item.RepoFullName,
+				}
+				for _, l := range toRemove {
+					args = append(args, "--remove-label", l)
+				}
+				if needsDone {
+					args = append(args, "--add-label", "done")
+				}
+				if _, labelErr := run("gh", args...); labelErr != nil {
+					return updated, correct, fmt.Errorf("fixing labels on issue %d: %w", item.IssueNumber, labelErr)
+				}
+			}
 		}
 
 		// Check if current status already matches.
@@ -522,7 +559,7 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 			afterClause = fmt.Sprintf(`, after: "%s"`, cursor)
 		}
 
-		query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { items(first: 100%s) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`,
+		query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { items(first: 100%s) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { number repository { nameWithOwner } state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`,
 			projectID, afterClause)
 
 		out, err := run("gh", "api", "graphql", "-f", "query="+query)
@@ -542,6 +579,10 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 						Nodes []struct {
 							ID      string `json:"id"`
 							Content struct {
+								Number     int    `json:"number"`
+								Repository struct {
+									NameWithOwner string `json:"nameWithOwner"`
+								} `json:"repository"`
 								State  string `json:"state"`
 								Labels struct {
 									Nodes []struct {
@@ -570,8 +611,10 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 
 		for _, node := range resp.Data.Node.Items.Nodes {
 			item := projectItem{
-				ID:         node.ID,
-				IssueState: node.Content.State,
+				ID:           node.ID,
+				IssueNumber:  node.Content.Number,
+				RepoFullName: node.Content.Repository.NameWithOwner,
+				IssueState:   node.Content.State,
 			}
 			for _, label := range node.Content.Labels.Nodes {
 				item.Labels = append(item.Labels, label.Name)
