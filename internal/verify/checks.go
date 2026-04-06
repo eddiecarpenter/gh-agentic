@@ -784,7 +784,7 @@ func CheckProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCom
 		return CheckResult{
 			Name:    checkProjectItemStatusesName,
 			Status:  Warning,
-			Message: fmt.Sprintf("⚠ %d project items have no status — run --resync-statuses to fix", noStatus),
+			Message: fmt.Sprintf("%d project items have no status — run --repair to fix", noStatus),
 		}
 	}
 
