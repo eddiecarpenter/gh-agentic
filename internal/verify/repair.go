@@ -1166,8 +1166,10 @@ func RepairStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) 
 // Project views repair
 // ──────────────────────────────────────────────────────────────────────────────
 
-// RepairProjectViews creates any required views that are missing from the GitHub
-// Project. Existing views (including user-added ones) are never deleted.
+// RepairProjectViews reports which required views are missing and provides a
+// direct link to the GitHub Project where they can be created manually.
+// GitHub's Projects V2 GraphQL API does not support view creation, so this
+// repair cannot be automated — it guides the user instead.
 func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
 	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
@@ -1193,23 +1195,27 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 		}
 	}
 
-	var created []string
+	var missing []string
 	for _, req := range tmpl.RequiredViews {
-		if existing[req.Name] {
-			continue
+		if !existing[req.Name] {
+			missing = append(missing, fmt.Sprintf("%q (%s)", req.Name, req.Layout))
 		}
-		mutation := fmt.Sprintf(`mutation { createProjectV2View(input: { projectId: "%s", name: "%s", layout: %s }) { projectV2View { name } } }`,
-			projectNodeID, req.Name, req.Layout)
-		if _, mutErr := run("gh", "api", "graphql", "-f", "query="+mutation); mutErr != nil {
-			return CheckResult{Name: checkProjectViewsName, Status: Fail,
-				Message: fmt.Sprintf("failed to create view %q: %v", req.Name, mutErr)}
-		}
-		created = append(created, fmt.Sprintf("%q", req.Name))
 	}
 
-	if len(created) == 0 {
+	if len(missing) == 0 {
 		return CheckResult{Name: checkProjectViewsName, Status: Pass, Message: "all required views present"}
 	}
-	return CheckResult{Name: checkProjectViewsName, Status: Pass,
-		Message: fmt.Sprintf("created views: %s", strings.Join(created, ", "))}
+
+	// GitHub's Projects V2 GraphQL API does not support view creation.
+	// Guide the user to create the missing views manually.
+	projectURL := resolveProjectURL(owner, repoName, run)
+	locationHint := "the GitHub Project settings"
+	if projectURL != "" {
+		locationHint = projectURL
+	}
+	return CheckResult{
+		Name:    checkProjectViewsName,
+		Status:  Warning,
+		Message: fmt.Sprintf("create missing views manually at %s — %s", locationHint, strings.Join(missing, ", ")),
+	}
 }

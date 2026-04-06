@@ -647,6 +647,7 @@ type projectListResponse struct {
 		ID     string `json:"id"`
 		Title  string `json:"title"`
 		Number int    `json:"number"`
+		URL    string `json:"url"`
 	} `json:"projects"`
 }
 
@@ -678,6 +679,25 @@ func resolveProjectNodeIDViaRun(owner, repoName string, run bootstrap.RunCommand
 
 	// Fallback: return the first project's ID.
 	return resp.Projects[0].ID
+}
+
+// resolveProjectURL resolves the URL of the GitHub Project matching repoName.
+// Falls back to the first project's URL. Returns "" if no projects exist.
+func resolveProjectURL(owner, repoName string, run bootstrap.RunCommandFunc) string {
+	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "100")
+	if err != nil {
+		return ""
+	}
+	var resp projectListResponse
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &resp); jsonErr != nil || len(resp.Projects) == 0 {
+		return ""
+	}
+	for _, p := range resp.Projects {
+		if p.Title == repoName {
+			return p.URL
+		}
+	}
+	return resp.Projects[0].URL
 }
 
 // checkProjectItemStatusesName is the check name used for project item status verification.

@@ -19,14 +19,13 @@ import (
 // Tests can construct this directly with fake values; the production path
 // resolves real values in newDoctorCmd.
 type doctorConfig struct {
-	root            string
-	repoFullName    string
-	owner           string
-	repoName        string
-	run             bootstrap.RunCommandFunc
-	repair          bool
-	yes             bool
-	resyncStatuses  bool
+	root         string
+	repoFullName string
+	owner        string
+	repoName     string
+	run          bootstrap.RunCommandFunc
+	repair       bool
+	yes          bool
 }
 
 // runDoctor executes the doctor check/repair pipeline. It accepts an io.Writer
@@ -36,11 +35,6 @@ type doctorConfig struct {
 func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 	fmt.Fprintln(w, ui.SectionHeading.Render("  Doctor — check agentic environment"))
 	fmt.Fprintln(w)
-
-	// --resync-statuses: run the resync and exit without running normal checks.
-	if cfg.resyncStatuses {
-		return runResyncStatuses(w, in, cfg)
-	}
 
 	// Single scanner shared across all confirm functions — creating
 	// multiple scanners on the same stdin causes buffering issues
@@ -163,38 +157,10 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 	return nil
 }
 
-// runResyncStatuses handles the --resync-statuses flag: resolves the project,
-// prompts for confirmation (unless --yes), resyncs all item statuses, and
-// prints a summary.
-func runResyncStatuses(w io.Writer, in io.Reader, cfg doctorConfig) error {
-	if !cfg.yes {
-		scanner := bufio.NewScanner(in)
-		fmt.Fprintf(w, "  Resync all project item statuses from issue labels? [y/N]: ")
-		if scanner.Scan() {
-			answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
-			if answer != "y" && answer != "yes" {
-				fmt.Fprintln(w, "  Cancelled.")
-				return nil
-			}
-		} else {
-			return scanner.Err()
-		}
-	}
-
-	updated, correct, err := verify.ResyncProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, cfg.run)
-	if err != nil {
-		return fmt.Errorf("resync failed: %w", err)
-	}
-
-	fmt.Fprintf(w, "  ✔ %d items updated, %d already correct\n", updated, correct)
-	return nil
-}
-
 // newDoctorCmd constructs the `gh agentic doctor` subcommand.
 func newDoctorCmd() *cobra.Command {
 	var repair bool
 	var yes bool
-	var resyncStatuses bool
 
 	cmd := &cobra.Command{
 		Use:          "doctor",
@@ -202,9 +168,8 @@ func newDoctorCmd() *cobra.Command {
 		SilenceUsage: true,
 		Long: "Checks an existing agentic environment for correctness and repairs\n" +
 			"what it can automatically. Each check shows ✔ pass, ⚠ warning, or ✖ fail.\n" +
-			"Pass --repair to attempt automatic fixes for failed checks.\n" +
-			"Pass --yes to automatically confirm all repair prompts.\n" +
-			"Pass --resync-statuses to resync all project item statuses from issue labels.",
+			"Pass --repair to attempt automatic fixes for all warnings and failures.\n" +
+			"Pass --yes to automatically confirm all repair prompts.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
@@ -229,20 +194,18 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			return runDoctor(w, cmd.InOrStdin(), doctorConfig{
-				root:            root,
-				repoFullName:    currentRepo.Owner + "/" + currentRepo.Name,
-				owner:           currentRepo.Owner,
-				repoName:        currentRepo.Name,
-				run:             bootstrap.DefaultRunCommand,
-				repair:          repair,
-				yes:             yes,
-				resyncStatuses:  resyncStatuses,
+				root:         root,
+				repoFullName: currentRepo.Owner + "/" + currentRepo.Name,
+				owner:        currentRepo.Owner,
+				repoName:     currentRepo.Name,
+				run:          bootstrap.DefaultRunCommand,
+				repair:       repair,
+				yes:          yes,
 			})
 		},
 	}
 
-	cmd.Flags().BoolVar(&repair, "repair", false, "attempt automatic repair of failed checks")
+	cmd.Flags().BoolVar(&repair, "repair", false, "attempt automatic repair of all warnings and failures")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all repair prompts")
-	cmd.Flags().BoolVar(&resyncStatuses, "resync-statuses", false, "resync all project item statuses from issue labels")
 	return cmd
 }
