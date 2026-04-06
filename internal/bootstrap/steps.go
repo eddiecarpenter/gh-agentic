@@ -851,3 +851,31 @@ func shellJoin(name string, args ...string) string {
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
+
+// SetAgentUserVariable sets the AGENT_USER GitHub Actions variable at the
+// resolved scope (org or repo level). If AgentUser is empty, the step is
+// skipped silently. Failure is logged as a warning (non-fatal), matching the
+// best-effort pattern used by setProjectVariable.
+func SetAgentUserVariable(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
+	if cfg.AgentUser == "" {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· Skipping AGENT_USER variable (no agent user configured)"))
+		return nil
+	}
+
+	var out string
+	var err error
+	if cfg.AgentUserScope == AgentUserScopeOrg {
+		out, err = run("gh", "variable", "set", "AGENT_USER", "--body", cfg.AgentUser, "--org", cfg.Owner)
+	} else {
+		fullName := cfg.Owner + "/" + state.RepoName
+		out, err = run("gh", "variable", "set", "AGENT_USER", "--body", cfg.AgentUser, "--repo", fullName)
+	}
+
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not set AGENT_USER variable: "+strings.TrimSpace(out)))
+		return nil // non-fatal
+	}
+
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· AGENT_USER=%s set at %s level", cfg.AgentUser, cfg.AgentUserScope)))
+	return nil
+}
