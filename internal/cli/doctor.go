@@ -94,6 +94,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckGhNotify(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
+		func() verify.CheckResult { return verify.CheckAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, run) },
 		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectViews(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run) },
@@ -137,6 +138,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairLabels(cfg.repoFullName, run)
 			case "GitHub Project linked":
 				r = verify.RepairProject(cfg.owner, cfg.repoName, run)
+			case "AGENTIC_PROJECT_ID is configured":
+				r = verify.RepairAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, run)
 			case "GitHub Project status options are standard":
 				r = verify.RepairProjectStatus(cfg.owner, cfg.repoName, cfg.root, run)
 			case "GitHub Project has required views":
