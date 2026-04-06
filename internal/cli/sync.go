@@ -14,17 +14,19 @@ import (
 // syncDeps holds injectable dependencies for the sync command. Tests can
 // supply fakes; the production path uses newSyncCmd which fills in real defaults.
 type syncDeps struct {
-	run          bootstrap.RunCommandFunc
-	fetchRelease sync.FetchReleaseFunc
-	spinner      sync.SpinnerFunc
+	run             bootstrap.RunCommandFunc
+	fetchRelease    sync.FetchReleaseFunc
+	spinner         sync.SpinnerFunc
+	detectOwnerType bootstrap.DetectOwnerTypeFunc
 }
 
 // newSyncCmd constructs the `gh agentic sync` subcommand with production defaults.
 func newSyncCmd() *cobra.Command {
 	return newSyncCmdWithDeps(syncDeps{
-		run:          bootstrap.DefaultRunCommand,
-		fetchRelease: sync.DefaultFetchRelease,
-		spinner:      sync.DefaultSpinner,
+		run:             bootstrap.DefaultRunCommand,
+		fetchRelease:    sync.DefaultFetchRelease,
+		spinner:         sync.DefaultSpinner,
+		detectOwnerType: bootstrap.DefaultDetectOwnerType,
 	})
 }
 
@@ -75,6 +77,7 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 				confirmFn,
 				force,
 				commit,
+				deps.detectOwnerType,
 			)
 		},
 	}

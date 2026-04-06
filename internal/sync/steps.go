@@ -69,8 +69,10 @@ func BackupBase(repoRoot string) (string, error) {
 
 // DeployWorkflows copies workflow files from the cloned template's
 // base/.github/workflows/ into the local repo's .github/workflows/.
+// Files in excludeFiles are skipped during copy and removed from the
+// destination if they already exist (retroactive cleanup).
 // Returns nil if the source directory does not exist (template has no workflows).
-func DeployWorkflows(tmpDir, repoRoot string) error {
+func DeployWorkflows(tmpDir, repoRoot string, excludeFiles []string) error {
 	src := filepath.Join(tmpDir, "base", ".github", "workflows")
 	if _, err := os.Stat(src); os.IsNotExist(err) {
 		return nil
@@ -81,11 +83,87 @@ func DeployWorkflows(tmpDir, repoRoot string) error {
 		return fmt.Errorf("creating .github/workflows/: %w", err)
 	}
 
-	if err := fsutil.CopyDir(src, dst); err != nil {
-		return fmt.Errorf("deploying workflows: %w", err)
+	// Build exclude set for O(1) lookups.
+	excludeSet := make(map[string]bool, len(excludeFiles))
+	for _, name := range excludeFiles {
+		excludeSet[name] = true
+	}
+
+	// Copy files selectively, skipping excluded ones.
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("reading template workflows: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if excludeSet[entry.Name()] {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(src, entry.Name()))
+		if readErr != nil {
+			return fmt.Errorf("reading workflow %s: %w", entry.Name(), readErr)
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return fmt.Errorf("getting info for %s: %w", entry.Name(), infoErr)
+		}
+		if writeErr := os.WriteFile(filepath.Join(dst, entry.Name()), data, info.Mode()); writeErr != nil {
+			return fmt.Errorf("writing workflow %s: %w", entry.Name(), writeErr)
+		}
+	}
+
+	// Retroactive cleanup: remove excluded files if they already exist in the destination.
+	for _, name := range excludeFiles {
+		path := filepath.Join(dst, name)
+		if _, statErr := os.Stat(path); statErr == nil {
+			if removeErr := os.Remove(path); removeErr != nil {
+				return fmt.Errorf("removing excluded workflow %s: %w", name, removeErr)
+			}
+		}
 	}
 
 	return nil
+}
+
+// extractOwnerFromAgentsLocal parses AGENTS.local.md looking for the GitHub owner.
+// It looks for lines like "- **GitHub:** https://github.com/<owner>/<repo>" or
+// "- **Owner:** <owner>".
+func extractOwnerFromAgentsLocal(root string) string {
+	path := filepath.Join(root, "AGENTS.local.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		// Try "- **GitHub:** https://github.com/<owner>/<repo>"
+		if strings.Contains(line, "**GitHub:**") && strings.Contains(line, "github.com") {
+			parts := strings.Split(line, "github.com/")
+			if len(parts) >= 2 {
+				rest := strings.TrimSpace(parts[1])
+				ownerRepo := strings.SplitN(rest, "/", 2)
+				if len(ownerRepo) >= 1 && ownerRepo[0] != "" {
+					return ownerRepo[0]
+				}
+			}
+		}
+
+		// Try "- **Owner:** <owner>"
+		if strings.Contains(line, "**Owner:**") {
+			parts := strings.SplitN(line, "**Owner:**", 2)
+			if len(parts) == 2 {
+				owner := strings.TrimSpace(parts[1])
+				if owner != "" {
+					return owner
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // CopyBase copies base/ from the cloned template into the local repo,

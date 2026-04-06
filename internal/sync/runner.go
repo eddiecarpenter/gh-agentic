@@ -69,6 +69,7 @@ func RunSync(
 	confirm ConfirmFunc,
 	force bool,
 	commit bool,
+	detectOwnerType bootstrap.DetectOwnerTypeFunc,
 ) error {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, ui.SectionHeading.Render("  Sync — update base/ from upstream template"))
@@ -154,9 +155,22 @@ func RunSync(
 		return err
 	}
 
-	// Step 6b: Deploy workflows from template.
+	// Step 6b: Resolve owner type to determine workflow excludes.
+	var workflowExcludes []string
+	if detectOwnerType != nil {
+		owner := extractOwnerFromAgentsLocal(repoRoot)
+		if owner != "" {
+			ownerType, detectErr := detectOwnerType(owner)
+			if detectErr == nil && ownerType == bootstrap.OwnerTypeUser {
+				workflowExcludes = []string{"sync-status-to-label.yml"}
+			}
+			// If detection fails, default to deploying all workflows (safe fallback).
+		}
+	}
+
+	// Step 6c: Deploy workflows from template.
 	if err := spinner(w, "Deploying workflows", func() error {
-		return DeployWorkflows(tmpDir, repoRoot)
+		return DeployWorkflows(tmpDir, repoRoot, workflowExcludes)
 	}); err != nil {
 		_ = RestoreBase(repoRoot, backupDir)
 		return err

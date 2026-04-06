@@ -378,7 +378,7 @@ func TestDeployWorkflows(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		err := DeployWorkflows(tmpDir, repoRoot)
+		err := DeployWorkflows(tmpDir, repoRoot, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -405,7 +405,7 @@ func TestDeployWorkflows(t *testing.T) {
 		tmpDir := t.TempDir()
 		repoRoot := t.TempDir()
 
-		err := DeployWorkflows(tmpDir, repoRoot)
+		err := DeployWorkflows(tmpDir, repoRoot, nil)
 		if err != nil {
 			t.Fatalf("expected nil for absent source, got: %v", err)
 		}
@@ -423,7 +423,7 @@ func TestDeployWorkflows(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		err := DeployWorkflows(tmpDir, repoRoot)
+		err := DeployWorkflows(tmpDir, repoRoot, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -434,6 +434,108 @@ func TestDeployWorkflows(t *testing.T) {
 		}
 		if !info.IsDir() {
 			t.Error("expected directory")
+		}
+	})
+
+	t.Run("excludes specified files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		if err := os.MkdirAll(srcWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "pipeline.yml"), []byte("pipeline"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "sync-status-to-label.yml"), []byte("sync"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployWorkflows(tmpDir, repoRoot, []string{"sync-status-to-label.yml"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify pipeline was copied.
+		if _, err := os.Stat(filepath.Join(repoRoot, ".github", "workflows", "pipeline.yml")); os.IsNotExist(err) {
+			t.Error("pipeline.yml should be copied")
+		}
+
+		// Verify excluded file was NOT copied.
+		if _, err := os.Stat(filepath.Join(repoRoot, ".github", "workflows", "sync-status-to-label.yml")); err == nil {
+			t.Error("sync-status-to-label.yml should NOT be copied when excluded")
+		}
+	})
+
+	t.Run("removes pre-existing excluded files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		if err := os.MkdirAll(srcWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "pipeline.yml"), []byte("pipeline"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Pre-create the excluded file in the destination.
+		dstWf := filepath.Join(repoRoot, ".github", "workflows")
+		if err := os.MkdirAll(dstWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dstWf, "sync-status-to-label.yml"), []byte("old"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployWorkflows(tmpDir, repoRoot, []string{"sync-status-to-label.yml"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify pre-existing excluded file was removed.
+		if _, err := os.Stat(filepath.Join(dstWf, "sync-status-to-label.yml")); err == nil {
+			t.Error("pre-existing sync-status-to-label.yml should be removed when excluded")
+		}
+
+		// Verify pipeline was still copied.
+		if _, err := os.Stat(filepath.Join(dstWf, "pipeline.yml")); os.IsNotExist(err) {
+			t.Error("pipeline.yml should be copied")
+		}
+	})
+}
+
+func TestExtractOwnerFromAgentsLocal_Sync(t *testing.T) {
+	t.Run("extracts from GitHub URL", func(t *testing.T) {
+		dir := t.TempDir()
+		content := "## Repo\n\n- **GitHub:** https://github.com/myorg/my-project\n"
+		if err := os.WriteFile(filepath.Join(dir, "AGENTS.local.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := extractOwnerFromAgentsLocal(dir)
+		if got != "myorg" {
+			t.Errorf("got %q, want %q", got, "myorg")
+		}
+	})
+
+	t.Run("extracts from Owner field", func(t *testing.T) {
+		dir := t.TempDir()
+		content := "## Repo\n\n- **Owner:** alice\n"
+		if err := os.WriteFile(filepath.Join(dir, "AGENTS.local.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := extractOwnerFromAgentsLocal(dir)
+		if got != "alice" {
+			t.Errorf("got %q, want %q", got, "alice")
+		}
+	})
+
+	t.Run("returns empty when no file", func(t *testing.T) {
+		dir := t.TempDir()
+		got := extractOwnerFromAgentsLocal(dir)
+		if got != "" {
+			t.Errorf("got %q, want empty string", got)
 		}
 	})
 }

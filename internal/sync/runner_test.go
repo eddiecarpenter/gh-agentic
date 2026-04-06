@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
@@ -28,9 +29,41 @@ func cloneRunner(mock *testutil.MockRunner, baseContent string) func(string, ...
 	}
 }
 
+// cloneRunnerWithWorkflows is like cloneRunner but also creates workflow files
+// in the cloned template's base/.github/workflows/.
+func cloneRunnerWithWorkflows(mock *testutil.MockRunner, baseContent string, workflows []string) func(string, ...string) (string, error) {
+	return func(name string, args ...string) (string, error) {
+		if name == "git" && len(args) >= 1 && args[0] == "clone" {
+			targetDir := args[len(args)-1]
+			_ = os.MkdirAll(filepath.Join(targetDir, "base"), 0o755)
+			_ = os.WriteFile(filepath.Join(targetDir, "base", "AGENTS.md"), []byte(baseContent), 0o644)
+			wfDir := filepath.Join(targetDir, "base", ".github", "workflows")
+			_ = os.MkdirAll(wfDir, 0o755)
+			for _, wf := range workflows {
+				_ = os.WriteFile(filepath.Join(wfDir, wf), []byte("workflow: "+wf), 0o644)
+			}
+			return "", nil
+		}
+		return mock.RunCommand(name, args...)
+	}
+}
+
+// fakeDetectOwnerType returns a DetectOwnerTypeFunc that always returns the given type.
+func fakeDetectOwnerType(ownerType string) bootstrap.DetectOwnerTypeFunc {
+	return func(owner string) (string, error) {
+		return ownerType, nil
+	}
+}
+
+// fakeDetectOwnerTypeError returns a DetectOwnerTypeFunc that always returns an error.
+func fakeDetectOwnerTypeError() bootstrap.DetectOwnerTypeFunc {
+	return func(owner string) (string, error) {
+		return "", fmt.Errorf("API error")
+	}
+}
+
 func TestRunSync_UpToDate(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
-	// FakeRepo already has TEMPLATE_SOURCE and TEMPLATE_VERSION=v1.0.0.
 
 	mock := &testutil.MockRunner{}
 
@@ -44,6 +77,7 @@ func TestRunSync_UpToDate(t *testing.T) {
 		func(_ string) (bool, error) { return false, nil },
 		false,
 		false,
+		nil,
 	)
 
 	if err != nil {
@@ -70,16 +104,16 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		cloneRunner(mock, "updated content"),
 		testutil.FakeRelease("v2.0.0", nil),
 		testutil.NoopSpinner,
-		func(_ string) (bool, error) { return true, nil }, // confirm yes
+		func(_ string) (bool, error) { return true, nil },
 		false,
-		false, // stage-only (default)
+		false,
+		nil,
 	)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify TEMPLATE_VERSION was updated.
 	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +122,6 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
 	}
 
-	// Verify base/ was updated.
 	data, err = os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -120,16 +153,16 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		cloneRunner(mock, "updated content"),
 		testutil.FakeRelease("v2.0.0", nil),
 		testutil.NoopSpinner,
-		func(_ string) (bool, error) { return true, nil }, // confirm yes
+		func(_ string) (bool, error) { return true, nil },
 		false,
-		true, // commit
+		true,
+		nil,
 	)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify TEMPLATE_VERSION was updated.
 	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +171,6 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
 	}
 
-	// Verify base/ was updated.
 	data, err = os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -170,16 +202,16 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		cloneRunner(mock, "new content"),
 		testutil.FakeRelease("v2.0.0", nil),
 		testutil.NoopSpinner,
-		func(_ string) (bool, error) { return false, nil }, // decline
+		func(_ string) (bool, error) { return false, nil },
 		false,
 		false,
+		nil,
 	)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify base/ was restored to original.
 	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -188,7 +220,6 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		t.Errorf("base/AGENTS.md = %q, want '# AGENTS.md\\n'", data)
 	}
 
-	// Verify TEMPLATE_VERSION was NOT updated.
 	data, err = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
 	if err != nil {
 		t.Fatal(err)
@@ -220,6 +251,7 @@ func TestRunSync_FetchError(t *testing.T) {
 		func(_ string) (bool, error) { return false, nil },
 		false,
 		false,
+		nil,
 	)
 
 	if err == nil {
@@ -234,8 +266,6 @@ func TestRunSync_FetchError(t *testing.T) {
 
 func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
-	// FakeRepo has TEMPLATE_VERSION=v1.0.0 and FakeRelease returns v1.0.0,
-	// so without --force this would be "up to date".
 
 	mock := &testutil.MockRunner{}
 
@@ -246,9 +276,10 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		cloneRunner(mock, "re-synced content"),
 		testutil.FakeRelease("v1.0.0", nil),
 		testutil.NoopSpinner,
-		func(_ string) (bool, error) { return true, nil }, // confirm yes
-		true,  // force
-		false, // stage-only
+		func(_ string) (bool, error) { return true, nil },
+		true,
+		false,
+		nil,
 	)
 
 	if err != nil {
@@ -256,12 +287,10 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 	}
 
 	output := buf.String()
-	// Should mention --force or re-sync.
 	if !strings.Contains(output, "force") && !strings.Contains(output, "re-sync") {
 		t.Errorf("expected force/re-sync warning in output, got: %s", output)
 	}
 
-	// Verify base/ was updated despite same version.
 	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +299,6 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		t.Errorf("base/AGENTS.md = %q, want 're-synced content'", data)
 	}
 
-	// Verify TEMPLATE_VERSION was updated (to same version, but file was rewritten).
 	data, err = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
 	if err != nil {
 		t.Fatal(err)
@@ -285,7 +313,6 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 
-	// Delete base/ to simulate it being missing.
 	if err := os.RemoveAll(filepath.Join(repo.Root, "base")); err != nil {
 		t.Fatal(err)
 	}
@@ -297,11 +324,12 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunner(mock, "restored content"),
-		testutil.FakeRelease("v1.0.0", nil), // same version — base/ missing bypasses up-to-date
+		testutil.FakeRelease("v1.0.0", nil),
 		testutil.NoopSpinner,
-		func(_ string) (bool, error) { return true, nil }, // confirm yes
+		func(_ string) (bool, error) { return true, nil },
 		false,
 		false,
+		nil,
 	)
 
 	if err != nil {
@@ -309,12 +337,10 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 	}
 
 	output := buf.String()
-	// Should mention base/ missing.
 	if !strings.Contains(output, "missing") {
 		t.Errorf("expected 'missing' warning in output, got: %s", output)
 	}
 
-	// Verify base/ was restored.
 	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -347,18 +373,17 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 		confirmFn,
 		false,
 		false,
+		nil,
 	)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify confirm was called exactly once.
 	if confirmCalled != 1 {
 		t.Errorf("expected confirm called 1 time, got %d", confirmCalled)
 	}
 
-	// Verify sync completed successfully.
 	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
 	if err != nil {
 		t.Fatal(err)
@@ -370,6 +395,173 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "Sync applied") {
 		t.Errorf("expected 'Sync applied' message, got: %s", output)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	// Write AGENTS.local.md with owner info.
+	agentsLocal := "## Repo\n\n- **Owner:** alice\n"
+	if err := os.WriteFile(filepath.Join(repo.Root, "AGENTS.local.md"), []byte(agentsLocal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a pre-existing sync-status-to-label.yml to test retroactive removal.
+	wfDir := filepath.Join(repo.Root, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "sync-status-to-label.yml"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &testutil.MockRunner{}
+	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunnerWithWorkflows(mock, "updated", workflows),
+		testutil.FakeRelease("v2.0.0", nil),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		false,
+		false,
+		fakeDetectOwnerType(bootstrap.OwnerTypeUser),
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify sync-status-to-label.yml was NOT deployed and pre-existing one was removed.
+	syncPath := filepath.Join(repo.Root, ".github", "workflows", "sync-status-to-label.yml")
+	if _, err := os.Stat(syncPath); err == nil {
+		t.Error("sync-status-to-label.yml should NOT exist for personal repos")
+	}
+
+	// Verify dev-session.yml WAS deployed.
+	devPath := filepath.Join(repo.Root, ".github", "workflows", "dev-session.yml")
+	if _, err := os.Stat(devPath); os.IsNotExist(err) {
+		t.Error("dev-session.yml should be deployed")
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	// Write AGENTS.local.md with org owner info.
+	agentsLocal := "## Repo\n\n- **Owner:** acme-org\n"
+	if err := os.WriteFile(filepath.Join(repo.Root, "AGENTS.local.md"), []byte(agentsLocal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &testutil.MockRunner{}
+	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunnerWithWorkflows(mock, "updated", workflows),
+		testutil.FakeRelease("v2.0.0", nil),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		false,
+		false,
+		fakeDetectOwnerType(bootstrap.OwnerTypeOrg),
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify sync-status-to-label.yml WAS deployed for org repos.
+	syncPath := filepath.Join(repo.Root, ".github", "workflows", "sync-status-to-label.yml")
+	if _, err := os.Stat(syncPath); os.IsNotExist(err) {
+		t.Error("sync-status-to-label.yml should be deployed for org repos")
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	// Write AGENTS.local.md with owner info.
+	agentsLocal := "## Repo\n\n- **Owner:** alice\n"
+	if err := os.WriteFile(filepath.Join(repo.Root, "AGENTS.local.md"), []byte(agentsLocal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &testutil.MockRunner{}
+	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunnerWithWorkflows(mock, "updated", workflows),
+		testutil.FakeRelease("v2.0.0", nil),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		false,
+		false,
+		fakeDetectOwnerTypeError(), // detection fails
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify sync-status-to-label.yml WAS deployed (safe fallback).
+	syncPath := filepath.Join(repo.Root, ".github", "workflows", "sync-status-to-label.yml")
+	if _, err := os.Stat(syncPath); os.IsNotExist(err) {
+		t.Error("sync-status-to-label.yml should be deployed when detection fails (safe fallback)")
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	// Write AGENTS.local.md with owner info.
+	agentsLocal := "## Repo\n\n- **Owner:** alice\n"
+	if err := os.WriteFile(filepath.Join(repo.Root, "AGENTS.local.md"), []byte(agentsLocal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &testutil.MockRunner{}
+	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunnerWithWorkflows(mock, "updated", workflows),
+		testutil.FakeRelease("v2.0.0", nil),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		false,
+		false,
+		nil, // no detect function
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify sync-status-to-label.yml WAS deployed when detectOwnerType is nil.
+	syncPath := filepath.Join(repo.Root, ".github", "workflows", "sync-status-to-label.yml")
+	if _, err := os.Stat(syncPath); os.IsNotExist(err) {
+		t.Error("sync-status-to-label.yml should be deployed when detectOwnerType is nil")
 	}
 
 	mock.AssertExpectations(t)
