@@ -583,8 +583,9 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 const checkProjectViewsName = "GitHub Project has required views"
 
 // CheckProjectViews verifies that the GitHub Project contains all required views
-// defined in base/project-template.json. Additional views added by the user are
-// ignored — only missing required views are flagged.
+// defined in base/project-template.json. Only checks for presence — existing
+// views are never flagged for layout or filter differences (user customisation
+// is intentional).
 func CheckProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
 	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
@@ -592,21 +593,16 @@ func CheckProjectViews(owner, repoName, root string, run bootstrap.RunCommandFun
 	}
 
 	// Fetch all view names from the live project.
-	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { views(first: 20) { nodes { name layout } } } } }`, projectNodeID)
-	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.views.nodes[] | "\(.name)|\(.layout)"`)
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { views(first: 20) { nodes { name } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.views.nodes[].name`)
 	if err != nil {
 		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("failed to fetch views: %v", err)}
 	}
 
-	liveViews := make(map[string]string) // name → layout
+	live := make(map[string]bool)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "|", 2)
-		if len(parts) == 2 {
-			liveViews[parts[0]] = parts[1]
+		if t := strings.TrimSpace(line); t != "" {
+			live[t] = true
 		}
 	}
 
@@ -617,25 +613,15 @@ func CheckProjectViews(owner, repoName, root string, run bootstrap.RunCommandFun
 	}
 
 	var missing []string
-	var wrongLayout []string
 	for _, req := range tmpl.RequiredViews {
-		layout, exists := liveViews[req.Name]
-		if !exists {
+		if !live[req.Name] {
 			missing = append(missing, fmt.Sprintf("%q", req.Name))
-		} else if layout != req.Layout {
-			wrongLayout = append(wrongLayout, fmt.Sprintf("%q (want %s, got %s)", req.Name, req.Layout, layout))
 		}
 	}
 
-	if len(missing) > 0 || len(wrongLayout) > 0 {
-		var parts []string
-		if len(missing) > 0 {
-			parts = append(parts, "missing: "+strings.Join(missing, ", "))
-		}
-		if len(wrongLayout) > 0 {
-			parts = append(parts, "wrong layout: "+strings.Join(wrongLayout, ", "))
-		}
-		return CheckResult{Name: checkProjectViewsName, Status: Warning, Message: strings.Join(parts, "; ")}
+	if len(missing) > 0 {
+		return CheckResult{Name: checkProjectViewsName, Status: Warning,
+			Message: "missing: " + strings.Join(missing, ", ")}
 	}
 
 	return CheckResult{Name: checkProjectViewsName, Status: Pass}

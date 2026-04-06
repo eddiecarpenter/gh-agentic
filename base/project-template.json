@@ -9,8 +9,8 @@
     {"name": "Done",           "color": "GREEN",  "description": "Merged and closed"}
   ],
   "requiredViews": [
-    {"name": "Requirements",        "layout": "TABLE_LAYOUT"},
-    {"name": "Requirements Kanban", "layout": "BOARD_LAYOUT"},
-    {"name": "Features Kanban",     "layout": "BOARD_LAYOUT"}
+    {"name": "Requirements",        "layout": "TABLE_LAYOUT", "filter": "-status:Done"},
+    {"name": "Requirements Kanban", "layout": "BOARD_LAYOUT", "filter": "label:requirement -status:\"In Design\",\"In Development\",Done"},
+    {"name": "Features Kanban",     "layout": "BOARD_LAYOUT", "filter": "label:feature -status:Scoping,Scheduled,Done"}
   ]
 }
