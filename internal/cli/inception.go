@@ -24,7 +24,7 @@ func newInceptionCmd() *cobra.Command {
 			fmt.Fprintln(w, ui.SectionHeading.Render("  Inception — register a new repo"))
 			fmt.Fprintln(w)
 
-			envCtx, err := inception.ValidateEnvironment(bootstrap.DefaultRunCommand)
+			envCtx, err := inception.ValidateEnvironment(bootstrap.DefaultRunCommand, bootstrap.DefaultDetectOwnerType)
 			if err != nil {
 				fmt.Fprintln(w, "  "+ui.RenderError(err.Error()))
 				return err

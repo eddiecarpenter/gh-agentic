@@ -5,7 +5,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 )
+
+// fakeDetectOwnerType returns a DetectOwnerTypeFunc that always returns the given type.
+func fakeDetectOwnerType(ownerType string) bootstrap.DetectOwnerTypeFunc {
+	return func(owner string) (string, error) {
+		return ownerType, nil
+	}
+}
 
 // --- ValidateEnvironment tests ---
 
@@ -22,7 +31,7 @@ func TestValidateEnvironment_NoReposMD_ReturnsError(t *testing.T) {
 		return "", nil
 	}
 
-	_, err := ValidateEnvironment(run)
+	_, err := ValidateEnvironment(run, fakeDetectOwnerType(bootstrap.OwnerTypeOrg))
 	if err == nil {
 		t.Fatal("ValidateEnvironment() expected error when REPOS.md missing, got nil")
 	}
@@ -55,12 +64,15 @@ func TestValidateEnvironment_WithReposMD_ReturnsEnvContext(t *testing.T) {
 		return "", nil
 	}
 
-	ctx, err := ValidateEnvironment(run)
+	ctx, err := ValidateEnvironment(run, fakeDetectOwnerType(bootstrap.OwnerTypeOrg))
 	if err != nil {
 		t.Fatalf("ValidateEnvironment() unexpected error: %v", err)
 	}
 	if ctx.Owner != "acme-org" {
 		t.Errorf("ctx.Owner = %q, want %q", ctx.Owner, "acme-org")
+	}
+	if ctx.OwnerType != bootstrap.OwnerTypeOrg {
+		t.Errorf("ctx.OwnerType = %q, want %q", ctx.OwnerType, bootstrap.OwnerTypeOrg)
 	}
 	// Resolve symlinks on both sides — macOS resolves /var -> /private/var after Chdir.
 	wantRoot, _ := filepath.EvalSymlinks(dir)
@@ -92,7 +104,7 @@ func TestValidateEnvironment_OwnerFromGitRemote(t *testing.T) {
 		return "", nil
 	}
 
-	ctx, err := ValidateEnvironment(run)
+	ctx, err := ValidateEnvironment(run, fakeDetectOwnerType(bootstrap.OwnerTypeOrg))
 	if err != nil {
 		t.Fatalf("ValidateEnvironment() unexpected error: %v", err)
 	}
@@ -119,7 +131,7 @@ func TestValidateEnvironment_NoOwnerFound_ReturnsError(t *testing.T) {
 		return "", nil // empty output — no owner extractable
 	}
 
-	_, err := ValidateEnvironment(run)
+	_, err := ValidateEnvironment(run, fakeDetectOwnerType(bootstrap.OwnerTypeUser))
 	if err == nil {
 		t.Fatal("ValidateEnvironment() expected error when owner cannot be determined, got nil")
 	}
@@ -153,12 +165,75 @@ func TestValidateEnvironment_GoModule_Extracted(t *testing.T) {
 		return "", nil
 	}
 
-	ctx, err := ValidateEnvironment(run)
+	ctx, err := ValidateEnvironment(run, fakeDetectOwnerType(bootstrap.OwnerTypeUser))
 	if err != nil {
 		t.Fatalf("ValidateEnvironment() unexpected error: %v", err)
 	}
 	if ctx.Module != "github.com/alice/my-project" {
 		t.Errorf("ctx.Module = %q, want %q", ctx.Module, "github.com/alice/my-project")
+	}
+	if ctx.OwnerType != bootstrap.OwnerTypeUser {
+		t.Errorf("ctx.OwnerType = %q, want %q", ctx.OwnerType, bootstrap.OwnerTypeUser)
+	}
+}
+
+func TestValidateEnvironment_OwnerType_User(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "REPOS.md"), []byte("# REPOS.md"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	agentsLocal := "## Repo\n\n- **Owner:** alice\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.local.md"), []byte(agentsLocal), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	run := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	ctx, err := ValidateEnvironment(run, fakeDetectOwnerType(bootstrap.OwnerTypeUser))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.OwnerType != bootstrap.OwnerTypeUser {
+		t.Errorf("ctx.OwnerType = %q, want %q", ctx.OwnerType, bootstrap.OwnerTypeUser)
+	}
+}
+
+func TestValidateEnvironment_OwnerType_Org(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "REPOS.md"), []byte("# REPOS.md"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	agentsLocal := "## Repo\n\n- **Owner:** acme-org\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.local.md"), []byte(agentsLocal), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	run := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	ctx, err := ValidateEnvironment(run, fakeDetectOwnerType(bootstrap.OwnerTypeOrg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.OwnerType != bootstrap.OwnerTypeOrg {
+		t.Errorf("ctx.OwnerType = %q, want %q", ctx.OwnerType, bootstrap.OwnerTypeOrg)
 	}
 }
 

@@ -17,6 +17,9 @@ type EnvContext struct {
 	// Owner is the GitHub account or organisation that owns this agentic environment.
 	Owner string
 
+	// OwnerType is the detected GitHub owner type: bootstrap.OwnerTypeUser or bootstrap.OwnerTypeOrg.
+	OwnerType string
+
 	// AgenticRepoRoot is the absolute path to the agentic repo root directory.
 	AgenticRepoRoot string
 
@@ -25,14 +28,18 @@ type EnvContext struct {
 
 	// TemplateRepo is the GitHub owner/repo of the template, read from TEMPLATE_SOURCE.
 	TemplateRepo string
+
+	// DetectOwnerType is the function used to resolve owner type. Injectable for testing.
+	DetectOwnerType bootstrap.DetectOwnerTypeFunc
 }
 
 // ValidateEnvironment checks that the current directory is an agentic environment
 // by verifying REPOS.md exists. It extracts the owner from AGENTS.local.md or
-// the git remote, and returns an EnvContext for use by subsequent steps.
+// the git remote, detects the owner type, and returns an EnvContext for use by
+// subsequent steps.
 //
-// run is injected so tests can substitute a fake implementation.
-func ValidateEnvironment(run bootstrap.RunCommandFunc) (*EnvContext, error) {
+// run and detectOwnerType are injected so tests can substitute fake implementations.
+func ValidateEnvironment(run bootstrap.RunCommandFunc, detectOwnerType bootstrap.DetectOwnerTypeFunc) (*EnvContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getting working directory: %w", err)
@@ -59,6 +66,14 @@ func ValidateEnvironment(run bootstrap.RunCommandFunc) (*EnvContext, error) {
 	if ctx.Owner == "" {
 		return nil, fmt.Errorf("could not determine GitHub owner — set it in AGENTS.local.md (## Repo → **Owner:**)")
 	}
+
+	// Detect owner type (personal account vs organisation).
+	ctx.DetectOwnerType = detectOwnerType
+	ownerType, err := detectOwnerType(ctx.Owner)
+	if err != nil {
+		return nil, fmt.Errorf("detecting owner type for %q: %w", ctx.Owner, err)
+	}
+	ctx.OwnerType = ownerType
 
 	// Try to extract Go module path.
 	ctx.Module = extractGoModule(wd)

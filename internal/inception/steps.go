@@ -270,14 +270,19 @@ func PopulateRepo(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvC
 		}
 	}
 
-	// Copy .github/workflows/*.yml from the agentic repo, excluding ci.yml.
+	// Copy .github/workflows/*.yml from the agentic repo, excluding ci.yml
+	// and sync-status-to-label.yml for personal (non-org) repos.
 	workflowsSrc := filepath.Join(env.AgenticRepoRoot, ".github", "workflows")
 	workflowsDst := filepath.Join(state.ClonePath, ".github", "workflows")
 	if _, err := os.Stat(workflowsSrc); err == nil {
 		if err := os.MkdirAll(workflowsDst, 0755); err != nil {
 			return fmt.Errorf("creating .github/workflows/: %w", err)
 		}
-		if err := copyGlobFilesExcluding(workflowsSrc, workflowsDst, "*.yml", []string{"ci.yml"}); err != nil {
+		excludeWorkflows := []string{"ci.yml"}
+		if env.OwnerType == bootstrap.OwnerTypeUser {
+			excludeWorkflows = append(excludeWorkflows, "sync-status-to-label.yml")
+		}
+		if err := copyGlobFilesExcluding(workflowsSrc, workflowsDst, "*.yml", excludeWorkflows); err != nil {
 			return fmt.Errorf("copying .github/workflows/: %w", err)
 		}
 	}
