@@ -53,7 +53,11 @@ func DefaultConfirm(prompt string) (bool, error) {
 }
 
 // RunSync orchestrates the full sync flow: read config → check version →
-// clone → copy → show diff → confirm → commit or restore.
+// clone → copy → show diff → confirm → stage (and optionally commit) or restore.
+//
+// When commit is false (the default), changes are staged but not committed,
+// leaving the human to review, commit, and raise a PR. When commit is true,
+// the changes are committed automatically with the standard message.
 //
 // All dependencies are injectable for testing.
 func RunSync(
@@ -64,6 +68,7 @@ func RunSync(
 	spinner SpinnerFunc,
 	confirm ConfirmFunc,
 	force bool,
+	commit bool,
 ) error {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, ui.SectionHeading.Render("  Sync — update base/ from upstream template"))
@@ -199,23 +204,40 @@ func RunSync(
 		return nil
 	}
 
-	// Step 9: Confirmed — update version and commit.
+	// Step 9: Confirmed — update version and stage (optionally commit).
 	if err := spinner(w, "Updating TEMPLATE_VERSION", func() error {
 		return UpdateVersion(repoRoot, cfg.LatestVersion)
 	}); err != nil {
 		return err
 	}
 
-	if err := spinner(w, "Committing changes", func() error {
-		return CommitSync(repoRoot, cfg.TemplateRepo, cfg.LatestVersion, run)
-	}); err != nil {
-		return err
-	}
+	commitMsg := fmt.Sprintf("chore: sync base/ and workflows from %s %s", cfg.TemplateRepo, cfg.LatestVersion)
 
-	// Print success.
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "  "+ui.RenderOK("Synced base/ from "+cfg.TemplateRepo+" "+cfg.LatestVersion))
-	fmt.Fprintln(w, "  "+ui.Muted.Render("Remember to push and raise a PR for review"))
+	if commit {
+		if err := spinner(w, "Committing changes", func() error {
+			return CommitSync(repoRoot, cfg.TemplateRepo, cfg.LatestVersion, run)
+		}); err != nil {
+			return err
+		}
+
+		// Print success with commit.
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  "+ui.RenderOK("Sync committed — "+commitMsg))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Remember to push and raise a PR for review"))
+	} else {
+		if err := spinner(w, "Staging changes", func() error {
+			return StageSync(repoRoot, run)
+		}); err != nil {
+			return err
+		}
+
+		// Print success with stage-only.
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  "+ui.RenderOK("Sync applied — changes staged"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Review: git diff --cached"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Then:   git commit -m \""+commitMsg+"\""))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("        git push origin <branch> && gh pr create"))
+	}
 
 	return nil
 }

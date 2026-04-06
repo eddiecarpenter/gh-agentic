@@ -34,13 +34,16 @@ func newSyncCmd() *cobra.Command {
 func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 	var force bool
 	var yes bool
+	var commit bool
 
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync base/ from the upstream template",
 		Long: "Syncs the base/ directory from the upstream agentic-development template.\n" +
 			"Reads TEMPLATE_SOURCE and TEMPLATE_VERSION to determine what to sync.\n" +
-			"Shows a diff and asks for confirmation before committing.\n" +
+			"Shows a diff and asks for confirmation before staging.\n" +
+			"By default, changes are staged but not committed.\n" +
+			"Pass --commit to automatically commit after staging.\n" +
 			"Pass --force to re-sync even when already at the latest version.\n" +
 			"Pass --yes to automatically confirm all prompts.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -71,12 +74,14 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 				deps.spinner,
 				confirmFn,
 				force,
+				commit,
 			)
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "re-sync even if already at the latest version")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all prompts")
+	cmd.Flags().BoolVar(&commit, "commit", false, "commit changes after staging (default is stage-only)")
 	return cmd
 }
 

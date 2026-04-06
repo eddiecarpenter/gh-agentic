@@ -147,13 +147,21 @@ func UpdateVersion(repoRoot, version string) error {
 	return nil
 }
 
+// StageSync stages base/, .github/workflows/, and TEMPLATE_VERSION for commit.
+func StageSync(repoRoot string, run bootstrap.RunCommandFunc) error {
+	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION", ".github/workflows/"); err != nil {
+		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
 // CommitSync stages base/, .github/workflows/, and TEMPLATE_VERSION, then
 // commits with a descriptive message. If nothing changed after staging, the
 // commit is skipped cleanly.
 func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) error {
 	// Stage changes.
-	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION", ".github/workflows/"); err != nil {
-		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
+	if err := StageSync(repoRoot, run); err != nil {
+		return err
 	}
 
 	// Check if anything is actually staged — exit 0 means no diff (nothing to commit).

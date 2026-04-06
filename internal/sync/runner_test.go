@@ -43,6 +43,7 @@ func TestRunSync_UpToDate(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		false,
+		false,
 	)
 
 	if err != nil {
@@ -57,12 +58,10 @@ func TestRunSync_UpToDate(t *testing.T) {
 	mock.AssertExpectations(t)
 }
 
-func TestRunSync_ConfirmAndCommit(t *testing.T) {
+func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 
 	mock := &testutil.MockRunner{}
-	// git diff, git add, and git commit are called but not specifically matched —
-	// MockRunner returns ("", nil) for unmatched calls.
 
 	var buf bytes.Buffer
 	err := RunSync(
@@ -73,6 +72,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil }, // confirm yes
 		false,
+		false, // stage-only (default)
 	)
 
 	if err != nil {
@@ -98,8 +98,61 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Synced") {
-		t.Errorf("expected success message, got: %s", output)
+	if !strings.Contains(output, "Sync applied") {
+		t.Errorf("expected 'Sync applied' message, got: %s", output)
+	}
+	if !strings.Contains(output, "git diff --cached") {
+		t.Errorf("expected review instructions, got: %s", output)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_ConfirmAndCommit(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "updated content"),
+		testutil.FakeRelease("v2.0.0", nil),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil }, // confirm yes
+		false,
+		true, // commit
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify TEMPLATE_VERSION was updated.
+	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "v2.0.0" {
+		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
+	}
+
+	// Verify base/ was updated.
+	data, err = os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "updated content" {
+		t.Errorf("base/AGENTS.md = %q, want 'updated content'", data)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Sync committed") {
+		t.Errorf("expected 'Sync committed' message, got: %s", output)
+	}
+	if !strings.Contains(output, "Remember to push") {
+		t.Errorf("expected push reminder, got: %s", output)
 	}
 
 	mock.AssertExpectations(t)
@@ -118,6 +171,7 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		testutil.FakeRelease("v2.0.0", nil),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil }, // decline
+		false,
 		false,
 	)
 
@@ -165,6 +219,7 @@ func TestRunSync_FetchError(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		false,
+		false,
 	)
 
 	if err == nil {
@@ -192,7 +247,8 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		testutil.FakeRelease("v1.0.0", nil),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil }, // confirm yes
-		true, // force
+		true,  // force
+		false, // stage-only
 	)
 
 	if err != nil {
@@ -245,6 +301,7 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil }, // confirm yes
 		false,
+		false,
 	)
 
 	if err != nil {
@@ -289,6 +346,7 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 		testutil.NoopSpinner,
 		confirmFn,
 		false,
+		false,
 	)
 
 	if err != nil {
@@ -310,8 +368,8 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Synced") {
-		t.Errorf("expected success message, got: %s", output)
+	if !strings.Contains(output, "Sync applied") {
+		t.Errorf("expected 'Sync applied' message, got: %s", output)
 	}
 
 	mock.AssertExpectations(t)

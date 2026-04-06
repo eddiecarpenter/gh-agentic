@@ -550,6 +550,51 @@ func TestUpdateVersion(t *testing.T) {
 	})
 }
 
+func TestStageSync(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		var calls []string
+		run := func(name string, args ...string) (string, error) {
+			joined := name + " " + strings.Join(args, " ")
+			calls = append(calls, joined)
+			return "", nil
+		}
+
+		err := StageSync("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(calls) != 1 {
+			t.Fatalf("expected 1 call, got %d: %v", len(calls), calls)
+		}
+
+		// Verify git add was called with the right paths.
+		if !strings.Contains(calls[0], "git") || !strings.Contains(calls[0], "add") {
+			t.Errorf("expected git add call: %s", calls[0])
+		}
+		if !strings.Contains(calls[0], "base/") {
+			t.Errorf("expected base/ in git add: %s", calls[0])
+		}
+		if !strings.Contains(calls[0], "TEMPLATE_VERSION") {
+			t.Errorf("expected TEMPLATE_VERSION in git add: %s", calls[0])
+		}
+		if !strings.Contains(calls[0], ".github/workflows/") {
+			t.Errorf("expected .github/workflows/ in git add: %s", calls[0])
+		}
+	})
+
+	t.Run("add error", func(t *testing.T) {
+		run := fakeRun("error", fmt.Errorf("exit 1"))
+		err := StageSync("/repo", run)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "git add") {
+			t.Errorf("error should mention git add: %v", err)
+		}
+	})
+}
+
 func TestCommitSync(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		var calls []string

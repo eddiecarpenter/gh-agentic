@@ -110,14 +110,80 @@ func TestSyncCmd_YesFlagAutoConfirms(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Synced") {
-		t.Errorf("expected sync success message, got:\n%s", output)
+	if !strings.Contains(output, "Sync applied") {
+		t.Errorf("expected 'Sync applied' stage-only message, got:\n%s", output)
 	}
 
 	// The --yes flag should auto-confirm — verify the output contains the
 	// auto-confirm line.
 	if !strings.Contains(output, "[y/N]: y") {
 		t.Errorf("expected auto-confirm line '[y/N]: y', got:\n%s", output)
+	}
+}
+
+func TestSyncCmd_CommitFlagCommits(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo.Root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	mock := &testutil.MockRunner{}
+	deps := syncDeps{
+		run:          syncCloneRunner(mock, "committed content"),
+		fetchRelease: testutil.FakeRelease("v2.0.0", nil),
+		spinner:      testutil.NoopSpinner,
+	}
+
+	syncCmd := newSyncCmdWithDeps(deps)
+	root := newTestSyncRoot(syncCmd)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"sync", "--yes", "--commit"})
+	execErr := root.Execute()
+
+	if execErr != nil {
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", execErr, buf.String())
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Sync committed") {
+		t.Errorf("expected 'Sync committed' message with --commit flag, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Remember to push") {
+		t.Errorf("expected push reminder, got:\n%s", output)
+	}
+}
+
+func TestSyncCmd_CommitFlagRegistration(t *testing.T) {
+	root := newRootCmd("dev", "")
+
+	// Find sync subcommand.
+	var syncCmd *cobra.Command
+	for _, cmd := range root.Commands() {
+		if cmd.Use == "sync" {
+			syncCmd = cmd
+			break
+		}
+	}
+	if syncCmd == nil {
+		t.Fatal("sync subcommand not found")
+	}
+
+	// Verify --commit flag exists and defaults to false.
+	f := syncCmd.Flags().Lookup("commit")
+	if f == nil {
+		t.Fatal("--commit flag not registered")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--commit default should be false, got %q", f.DefValue)
 	}
 }
 
