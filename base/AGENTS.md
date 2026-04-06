@@ -32,6 +32,8 @@ At the start of every session, read these sources in order before doing anything
 6. Load skills from `base/skills/` (template-managed, read-only) and `skills/`
    (local, project-specific, if the directory exists). Local skills in `skills/`
    take precedence over template skills in `base/skills/` of the same name.
+   Template-managed skills include `update-project-template` (extract live
+   project config into `base/project-template.json`).
 
 Do not skip any step. Do not begin work until all steps are complete.
 
@@ -402,6 +404,10 @@ One branch per Feature. Tasks are commits on that branch, not separate branches.
 - Correctness and maintainability take precedence over cleverness
 - Do not make changes outside the scope of the current task
 - Propose large refactors before implementing them — never execute without approval
+- **SDLC phase sequence — never skip a phase without human approval.**
+  The pipeline must follow phases in order: Requirements → Scoping → Design → Implementation.
+  If the agent believes a phase can be skipped, it must stop and ask the human before proceeding.
+  The human decides whether to skip; the agent never skips a phase unilaterally.
 
 ---
 

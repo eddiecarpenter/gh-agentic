@@ -795,7 +795,7 @@ func TestCheckProjectStatus_AllMatch_ReturnsPass(t *testing.T) {
 			return projectListJSON, nil
 		}
 		// Second call: fetch status options (canonical 7-option order).
-		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone", nil
+		return "Backlog|GRAY\nScoping|PURPLE\nScheduled|BLUE\nIn Design|PINK\nIn Development|YELLOW\nIn Review|ORANGE\nDone|GREEN", nil
 	}
 
 	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
@@ -814,7 +814,7 @@ func TestCheckProjectStatus_WrongOrder_ReturnsWarning(t *testing.T) {
 			return projectListJSON, nil
 		}
 		// Wrong order: Done first.
-		return "Done\nBacklog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review", nil
+		return "Done|GREEN\nBacklog|GRAY\nScoping|PURPLE\nScheduled|BLUE\nIn Design|PINK\nIn Development|YELLOW\nIn Review|ORANGE", nil
 	}
 
 	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
@@ -833,7 +833,7 @@ func TestCheckProjectStatus_MissingOption_ReturnsWarning(t *testing.T) {
 			return projectListJSON, nil
 		}
 		// Only 5 options.
-		return "Backlog\nScoping\nScheduled\nIn Design\nDone", nil
+		return "Backlog|GRAY\nScoping|PURPLE\nScheduled|BLUE\nIn Design|PINK\nDone|GREEN", nil
 	}
 
 	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)
@@ -852,7 +852,7 @@ func TestCheckProjectStatus_ExtraOption_ReturnsWarning(t *testing.T) {
 			return projectListJSON, nil
 		}
 		// 8 options (one extra).
-		return "Backlog\nScoping\nScheduled\nIn Design\nIn Development\nIn Review\nDone\nArchived", nil
+		return "Backlog|GRAY\nScoping|PURPLE\nScheduled|BLUE\nIn Design|PINK\nIn Development|YELLOW\nIn Review|ORANGE\nDone|GREEN\nArchived|RED", nil
 	}
 
 	result := CheckProjectStatus("owner", "my-repo", root, fakeRun)

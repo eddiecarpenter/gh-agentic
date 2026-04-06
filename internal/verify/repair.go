@@ -327,7 +327,7 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 	}
 
 	// Step 2: Fetch the Status field ID.
-	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	fieldQuery := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
 	if err != nil {
 		return CheckResult{
@@ -349,11 +349,11 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 	// Step 3: Build the mutation with options from project template.
 	var optionEntries []string
 	for _, opt := range tmpl.StatusOptions {
-		optionEntries = append(optionEntries, fmt.Sprintf(`{name: \"%s\", color: %s, description: \"%s\"}`, opt.Name, opt.Color, opt.Description))
+		optionEntries = append(optionEntries, fmt.Sprintf(`{name: "%s", color: %s, description: "%s"}`, opt.Name, opt.Color, opt.Description))
 	}
 	optionsStr := strings.Join(optionEntries, ", ")
 
-	mutation := fmt.Sprintf(`mutation { updateProjectV2Field(input: { fieldId: \"%s\", projectId: \"%s\", singleSelectOptions: [%s] }) { field { ... on ProjectV2SingleSelectField { id } } } }`,
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Field(input: { fieldId: "%s", projectId: "%s", singleSelectOptions: [%s] }) { field { ... on ProjectV2SingleSelectField { id } } } }`,
 		fieldID, projectNodeID, optionsStr)
 
 	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
@@ -390,9 +390,13 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 // Project item status resync
 // ──────────────────────────────────────────────────────────────────────────────
 
+// stalePipelineLabels are labels that must be removed from a CLOSED issue
+// and replaced with "done".
+var stalePipelineLabels = []string{"backlog", "scoping", "scheduled", "in-design", "in-development", "in-review"}
+
 // pipelineLabelPriority maps pipeline labels to their canonical status name.
-// The order defines priority: earlier entries win. CLOSED-before-backlog is
-// handled separately in resolveStatus.
+// The order defines priority: earlier entries win. CLOSED state is handled
+// first in resolveStatus and always returns Done.
 var pipelineLabelPriority = []struct {
 	label  string
 	status string
@@ -406,16 +410,21 @@ var pipelineLabelPriority = []struct {
 }
 
 // resolveStatus determines the canonical status name for a project item based
-// on its issue labels and state. Priority order (critical — CLOSED before backlog):
-//  1. done label → Done
-//  2. in-review → In Review
-//  3. in-development → In Development
-//  4. in-design → In Design
-//  5. scheduled → Scheduled
-//  6. scoping → Scoping
-//  7. issue state is CLOSED (no pipeline label matched) → Done
+// on its issue labels and state. Priority order:
+//  1. CLOSED issue state → Done (always; overrides all labels)
+//  2. done label → Done
+//  3. in-review → In Review
+//  4. in-development → In Development
+//  5. in-design → In Design
+//  6. scheduled → Scheduled
+//  7. scoping → Scoping
 //  8. backlog label or default → Backlog
 func resolveStatus(labels []string, issueState string) string {
+	// Rule 1: CLOSED state is always Done, regardless of labels.
+	if strings.EqualFold(issueState, "CLOSED") {
+		return "Done"
+	}
+
 	labelSet := make(map[string]bool, len(labels))
 	for _, l := range labels {
 		labelSet[l] = true
@@ -427,20 +436,17 @@ func resolveStatus(labels []string, issueState string) string {
 		}
 	}
 
-	// Rule 7: CLOSED issues with no pipeline label → Done.
-	if strings.EqualFold(issueState, "CLOSED") {
-		return "Done"
-	}
-
 	// Rule 8: backlog label or default → Backlog.
 	return "Backlog"
 }
 
 // projectItem represents a single item from a ProjectV2 items query.
 type projectItem struct {
-	ID           string
-	IssueState   string
-	Labels       []string
+	ID            string
+	IssueNumber   int
+	RepoFullName  string
+	IssueState    string
+	Labels        []string
 	CurrentStatus string
 }
 
@@ -468,6 +474,37 @@ func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap
 			continue
 		}
 
+		// For CLOSED issues: repair stale pipeline labels.
+		// Remove any active pipeline labels and ensure "done" is present.
+		if strings.EqualFold(item.IssueState, "CLOSED") && item.IssueNumber > 0 && item.RepoFullName != "" {
+			labelSet := make(map[string]bool, len(item.Labels))
+			for _, l := range item.Labels {
+				labelSet[l] = true
+			}
+			var toRemove []string
+			for _, l := range stalePipelineLabels {
+				if labelSet[l] {
+					toRemove = append(toRemove, l)
+				}
+			}
+			needsDone := !labelSet["done"]
+			if len(toRemove) > 0 || needsDone {
+				args := []string{"issue", "edit",
+					fmt.Sprintf("%d", item.IssueNumber),
+					"--repo", item.RepoFullName,
+				}
+				for _, l := range toRemove {
+					args = append(args, "--remove-label", l)
+				}
+				if needsDone {
+					args = append(args, "--add-label", "done")
+				}
+				if _, labelErr := run("gh", args...); labelErr != nil {
+					return updated, correct, fmt.Errorf("fixing labels on issue %d: %w", item.IssueNumber, labelErr)
+				}
+			}
+		}
+
 		// Check if current status already matches.
 		if item.CurrentStatus == wantStatus {
 			correct++
@@ -475,7 +512,7 @@ func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap
 		}
 
 		// Update the item's status.
-		mutation := fmt.Sprintf(`mutation { updateProjectV2ItemFieldValue(input: { projectId: \"%s\", itemId: \"%s\", fieldId: \"%s\", value: { singleSelectOptionId: \"%s\" } }) { clientMutationId } }`,
+		mutation := fmt.Sprintf(`mutation { updateProjectV2ItemFieldValue(input: { projectId: "%s", itemId: "%s", fieldId: "%s", value: { singleSelectOptionId: "%s" } }) { clientMutationId } }`,
 			projectID, item.ID, fieldID, wantOptionID)
 		_, mutErr := run("gh", "api", "graphql", "-f", "query="+mutation)
 		if mutErr != nil {
@@ -490,7 +527,7 @@ func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap
 // fetchStatusOptionMap fetches the Status field options and returns a map of
 // option name → option ID.
 func fetchStatusOptionMap(projectID, fieldID string, run bootstrap.RunCommandFunc) (map[string]string, error) {
-	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, projectID)
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, projectID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.field.options[] | "\(.id)|\(.name)"`)
 	if err != nil {
 		return nil, fmt.Errorf("fetching status options: %w", err)
@@ -519,10 +556,10 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 	for {
 		afterClause := ""
 		if cursor != "" {
-			afterClause = fmt.Sprintf(`, after: \"%s\"`, cursor)
+			afterClause = fmt.Sprintf(`, after: "%s"`, cursor)
 		}
 
-		query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { items(first: 100%s) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`,
+		query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { items(first: 100%s) { pageInfo { hasNextPage endCursor } nodes { id content { ... on Issue { number repository { nameWithOwner } state labels(first: 20) { nodes { name } } } } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2SingleSelectField { id } } name } } } } } } } }`,
 			projectID, afterClause)
 
 		out, err := run("gh", "api", "graphql", "-f", "query="+query)
@@ -542,6 +579,10 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 						Nodes []struct {
 							ID      string `json:"id"`
 							Content struct {
+								Number     int    `json:"number"`
+								Repository struct {
+									NameWithOwner string `json:"nameWithOwner"`
+								} `json:"repository"`
 								State  string `json:"state"`
 								Labels struct {
 									Nodes []struct {
@@ -570,8 +611,10 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 
 		for _, node := range resp.Data.Node.Items.Nodes {
 			item := projectItem{
-				ID:         node.ID,
-				IssueState: node.Content.State,
+				ID:           node.ID,
+				IssueNumber:  node.Content.Number,
+				RepoFullName: node.Content.Repository.NameWithOwner,
+				IssueState:   node.Content.State,
 			}
 			for _, label := range node.Content.Labels.Nodes {
 				item.Labels = append(item.Labels, label.Name)
@@ -610,7 +653,7 @@ func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCo
 	}
 
 	// Fetch Status field ID.
-	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	fieldQuery := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
 	out, fErr := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
 	if fErr != nil {
 		return 0, 0, fmt.Errorf("fetching Status field ID: %w", fErr)
@@ -622,6 +665,24 @@ func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCo
 	}
 
 	return resyncProjectItemStatuses(owner, projectNodeID, fieldID, tmpl, run)
+}
+
+// RepairProjectItemStatuses resyncs all project item statuses from issue labels
+// and state. It wraps ResyncProjectItemStatuses as a repair action.
+func RepairProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
+	updated, correct, err := ResyncProjectItemStatuses(owner, repoName, root, run)
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectItemStatusesName,
+			Status:  Fail,
+			Message: fmt.Sprintf("resync failed: %v", err),
+		}
+	}
+	return CheckResult{
+		Name:    checkProjectItemStatusesName,
+		Status:  Pass,
+		Message: fmt.Sprintf("%d item(s) updated, %d already correct", updated, correct),
+	}
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -650,7 +711,7 @@ func RepairProjectCollaborator(owner, repoName, agentUser string, run bootstrap.
 	}
 
 	// Resolve the agent user's GitHub node ID.
-	userQuery := fmt.Sprintf(`{ user(login: \"%s\") { id } }`, agentUser)
+	userQuery := fmt.Sprintf(`{ user(login: "%s") { id } }`, agentUser)
 	out, err := run("gh", "api", "graphql", "-f", "query="+userQuery, "--jq", ".data.user.id")
 	if err != nil {
 		return CheckResult{
@@ -670,7 +731,7 @@ func RepairProjectCollaborator(owner, repoName, agentUser string, run bootstrap.
 	}
 
 	// Invite as project collaborator with WRITER role.
-	mutation := fmt.Sprintf(`mutation { updateProjectV2Collaborators(input: { projectId: \"%s\", collaborators: [{ userId: \"%s\", role: WRITER }] }) { clientMutationId } }`,
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Collaborators(input: { projectId: "%s", collaborators: [{ userId: "%s", role: WRITER }] }) { clientMutationId } }`,
 		projectNodeID, userID)
 	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
 	if err != nil {
@@ -1029,4 +1090,152 @@ func copyDir(src, dst string) error {
 
 		return os.WriteFile(target, data, info.Mode())
 	})
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Stale open issue repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// closeStaleIssues closes all stale open issues of the given label type.
+// For each stale issue it: removes active pipeline labels, adds "done", closes
+// the issue, and updates the project board status to Done.
+func closeStaleIssues(repoFullName, label string, run bootstrap.RunCommandFunc) CheckResult {
+	checkName := checkStaleRequirementsName
+	if label == "feature" {
+		checkName = checkStaleFeaturesName
+	}
+
+	stale, err := fetchStaleOpenIssues(repoFullName, label, run)
+	if err != nil {
+		return CheckResult{Name: checkName, Status: Fail, Message: fmt.Sprintf("failed to fetch stale issues: %v", err)}
+	}
+	if len(stale) == 0 {
+		return CheckResult{Name: checkName, Status: Pass, Message: "nothing to repair"}
+	}
+
+	for _, iss := range stale {
+		// Build label edit args: remove all active pipeline labels, add done.
+		args := []string{"issue", "edit",
+			fmt.Sprintf("%d", iss.Number),
+			"--repo", repoFullName,
+			"--remove-label", "backlog",
+			"--remove-label", "scoping",
+			"--remove-label", "scheduled",
+			"--remove-label", "in-design",
+			"--remove-label", "in-development",
+			"--remove-label", "in-review",
+			"--add-label", "done",
+		}
+		if _, labelErr := run("gh", args...); labelErr != nil {
+			return CheckResult{Name: checkName, Status: Fail,
+				Message: fmt.Sprintf("fixing labels on #%d: %v", iss.Number, labelErr)}
+		}
+
+		// Close the issue.
+		if _, closeErr := run("gh", "issue", "close",
+			fmt.Sprintf("%d", iss.Number),
+			"--repo", repoFullName,
+		); closeErr != nil {
+			return CheckResult{Name: checkName, Status: Fail,
+				Message: fmt.Sprintf("closing #%d: %v", iss.Number, closeErr)}
+		}
+	}
+
+	var closed []string
+	for _, s := range stale {
+		closed = append(closed, fmt.Sprintf("#%d", s.Number))
+	}
+	return CheckResult{
+		Name:    checkName,
+		Status:  Pass,
+		Message: fmt.Sprintf("closed: %s", strings.Join(closed, ", ")),
+	}
+}
+
+// RepairStaleOpenRequirements closes open requirements whose features are all closed.
+func RepairStaleOpenRequirements(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	return closeStaleIssues(repoFullName, "requirement", run)
+}
+
+// RepairStaleOpenFeatures closes open features whose tasks are all closed.
+func RepairStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	return closeStaleIssues(repoFullName, "feature", run)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Project views repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// layoutToREST converts GraphQL layout enum values to REST API layout strings.
+func layoutToREST(layout string) string {
+	switch layout {
+	case "BOARD_LAYOUT":
+		return "board"
+	case "TABLE_LAYOUT":
+		return "table"
+	case "ROADMAP_LAYOUT":
+		return "roadmap"
+	default:
+		return strings.ToLower(strings.TrimSuffix(layout, "_LAYOUT"))
+	}
+}
+
+// RepairProjectViews creates any required views that are missing from the GitHub
+// Project using the Projects V2 REST API. Existing views (including user-added
+// ones) are never deleted.
+func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
+	proj := resolveProjectEntry(owner, repoName, run)
+	if proj == nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: "no GitHub Project found for owner " + owner}
+	}
+
+	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
+	if loadErr != nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("could not load project template: %v", loadErr)}
+	}
+
+	// Fetch existing view names via GraphQL.
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { views(first: 20) { nodes { name } } } } }`, proj.NodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.views.nodes[].name")
+	if err != nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("failed to fetch views: %v", err)}
+	}
+
+	existing := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			existing[t] = true
+		}
+	}
+
+	// Build the REST endpoint for view creation.
+	// Projects V2 REST API: POST /users/{login}/projectsV2/{number}/views
+	//                    or POST /orgs/{org}/projectsV2/{number}/views
+	var restEndpoint string
+	if strings.EqualFold(proj.OwnerType, "Organization") {
+		restEndpoint = fmt.Sprintf("/orgs/%s/projectsV2/%d/views", owner, proj.Number)
+	} else {
+		restEndpoint = fmt.Sprintf("/users/%s/projectsV2/%d/views", owner, proj.Number)
+	}
+
+	var created []string
+	for _, req := range tmpl.RequiredViews {
+		if existing[req.Name] {
+			continue
+		}
+		if _, createErr := run("gh", "api", "-X", "POST", restEndpoint,
+			"-f", "name="+req.Name,
+			"-f", "layout="+layoutToREST(req.Layout),
+		); createErr != nil {
+			return CheckResult{Name: checkProjectViewsName, Status: Fail,
+				Message: fmt.Sprintf("failed to create view %q: %v", req.Name, createErr)}
+		}
+		created = append(created, fmt.Sprintf("%q", req.Name))
+	}
+
+	if len(created) == 0 {
+		return CheckResult{Name: checkProjectViewsName, Status: Pass, Message: "all required views present"}
+	}
+	return CheckResult{Name: checkProjectViewsName, Status: Pass,
+		Message: fmt.Sprintf("created views: %s", strings.Join(created, ", "))}
 }

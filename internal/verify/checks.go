@@ -520,9 +520,9 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 		}
 	}
 
-	// Step 2: Fetch the Status field and its options via GraphQL.
-	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id options { name } } } } } }`, projectNodeID)
-	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.field.options[].name")
+	// Step 2: Fetch the Status field options (name + color) via GraphQL.
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id options { name color } } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.field.options[] | "\(.name)|\(.color)"`)
 	if err != nil {
 		return CheckResult{
 			Name:    checkProjectStatusName,
@@ -531,12 +531,17 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 		}
 	}
 
-	// Parse the returned option names (one per line).
-	var gotNames []string
+	// Parse "name|color" lines from response.
+	type liveOption struct{ name, color string }
+	var got []liveOption
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" {
-			gotNames = append(gotNames, line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) == 2 {
+			got = append(got, liveOption{parts[0], parts[1]})
 		}
 	}
 
@@ -549,22 +554,21 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 			Message: fmt.Sprintf("could not load project template: %v", loadErr),
 		}
 	}
-	canonical := bootstrap.StatusOptionNames(tmpl.StatusOptions)
 
-	if len(gotNames) != len(canonical) {
+	if len(got) != len(tmpl.StatusOptions) {
 		return CheckResult{
 			Name:    checkProjectStatusName,
 			Status:  Warning,
-			Message: fmt.Sprintf("expected %d options, got %d: %v", len(canonical), len(gotNames), gotNames),
+			Message: fmt.Sprintf("expected %d options, got %d", len(tmpl.StatusOptions), len(got)),
 		}
 	}
 
-	for i, name := range canonical {
-		if gotNames[i] != name {
+	for i, want := range tmpl.StatusOptions {
+		if got[i].name != want.Name || got[i].color != want.Color {
 			return CheckResult{
 				Name:    checkProjectStatusName,
 				Status:  Warning,
-				Message: fmt.Sprintf("option %d: expected %q, got %q", i+1, name, gotNames[i]),
+				Message: fmt.Sprintf("option %d: expected %q (%s), got %q (%s)", i+1, want.Name, want.Color, got[i].name, got[i].color),
 			}
 		}
 	}
@@ -575,13 +579,115 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 	}
 }
 
+// checkProjectViewsName is the check name for required project views.
+const checkProjectViewsName = "GitHub Project has required views"
+
+// CheckProjectViews verifies that the GitHub Project contains all required views
+// defined in base/project-template.json. Additional views added by the user are
+// ignored — only missing required views are flagged.
+func CheckProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
+	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
+	if projectNodeID == "" {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: "no GitHub Project found for owner " + owner}
+	}
+
+	// Fetch all view names from the live project.
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { views(first: 20) { nodes { name layout } } } } }`, projectNodeID)
+	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.views.nodes[] | "\(.name)|\(.layout)"`)
+	if err != nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("failed to fetch views: %v", err)}
+	}
+
+	liveViews := make(map[string]string) // name → layout
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) == 2 {
+			liveViews[parts[0]] = parts[1]
+		}
+	}
+
+	// Load required views from template.
+	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
+	if loadErr != nil {
+		return CheckResult{Name: checkProjectViewsName, Status: Fail, Message: fmt.Sprintf("could not load project template: %v", loadErr)}
+	}
+
+	var missing []string
+	var wrongLayout []string
+	for _, req := range tmpl.RequiredViews {
+		layout, exists := liveViews[req.Name]
+		if !exists {
+			missing = append(missing, fmt.Sprintf("%q", req.Name))
+		} else if layout != req.Layout {
+			wrongLayout = append(wrongLayout, fmt.Sprintf("%q (want %s, got %s)", req.Name, req.Layout, layout))
+		}
+	}
+
+	if len(missing) > 0 || len(wrongLayout) > 0 {
+		var parts []string
+		if len(missing) > 0 {
+			parts = append(parts, "missing: "+strings.Join(missing, ", "))
+		}
+		if len(wrongLayout) > 0 {
+			parts = append(parts, "wrong layout: "+strings.Join(wrongLayout, ", "))
+		}
+		return CheckResult{Name: checkProjectViewsName, Status: Warning, Message: strings.Join(parts, "; ")}
+	}
+
+	return CheckResult{Name: checkProjectViewsName, Status: Pass}
+}
+
 // projectListResponse represents the JSON output from `gh project list --format json`.
 type projectListResponse struct {
 	Projects []struct {
 		ID     string `json:"id"`
 		Title  string `json:"title"`
 		Number int    `json:"number"`
+		URL    string `json:"url"`
+		Owner  struct {
+			Login string `json:"login"`
+			Type  string `json:"type"` // "User" or "Organization"
+		} `json:"owner"`
 	} `json:"projects"`
+}
+
+// projectEntry holds the resolved project details needed for both GraphQL and REST API calls.
+type projectEntry struct {
+	NodeID    string // GraphQL node ID (PVT_...)
+	Number    int    // REST API project number
+	OwnerType string // "User" or "Organization"
+	URL       string // web URL for display
+}
+
+// resolveProjectEntry resolves the project matching repoName for the given owner
+// and returns full details needed for both GraphQL and REST operations.
+// Falls back to the first project if no title match. Returns nil if no projects exist.
+func resolveProjectEntry(owner, repoName string, run bootstrap.RunCommandFunc) *projectEntry {
+	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "100")
+	if err != nil {
+		return nil
+	}
+	var resp projectListResponse
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &resp); jsonErr != nil || len(resp.Projects) == 0 {
+		return nil
+	}
+	p := resp.Projects[0]
+	for _, proj := range resp.Projects {
+		if proj.Title == repoName {
+			p = proj
+			break
+		}
+	}
+	return &projectEntry{
+		NodeID:    p.ID,
+		Number:    p.Number,
+		OwnerType: p.Owner.Type,
+		URL:       p.URL,
+	}
 }
 
 // resolveProjectNodeIDViaRun resolves the project node ID for an owner using
@@ -614,6 +720,25 @@ func resolveProjectNodeIDViaRun(owner, repoName string, run bootstrap.RunCommand
 	return resp.Projects[0].ID
 }
 
+// resolveProjectURL resolves the URL of the GitHub Project matching repoName.
+// Falls back to the first project's URL. Returns "" if no projects exist.
+func resolveProjectURL(owner, repoName string, run bootstrap.RunCommandFunc) string {
+	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "100")
+	if err != nil {
+		return ""
+	}
+	var resp projectListResponse
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &resp); jsonErr != nil || len(resp.Projects) == 0 {
+		return ""
+	}
+	for _, p := range resp.Projects {
+		if p.Title == repoName {
+			return p.URL
+		}
+	}
+	return resp.Projects[0].URL
+}
+
 // checkProjectItemStatusesName is the check name used for project item status verification.
 const checkProjectItemStatusesName = "Project items have status assigned"
 
@@ -632,7 +757,7 @@ func CheckProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCom
 	}
 
 	// Fetch Status field ID.
-	fieldQuery := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { field(name: \"Status\") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
+	fieldQuery := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { id } } } } }`, projectNodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+fieldQuery, "--jq", ".data.node.field.id")
 	if err != nil {
 		return CheckResult{
@@ -708,7 +833,7 @@ func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.R
 	}
 
 	// Query project collaborators.
-	query := fmt.Sprintf(`{ node(id: \"%s\") { ... on ProjectV2 { collaborators(first: 100) { nodes { login } } } } }`, projectNodeID)
+	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { collaborators(first: 100) { nodes { login } } } } }`, projectNodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.collaborators.nodes[].login")
 	if err != nil {
 		return CheckResult{
@@ -759,5 +884,123 @@ func CheckProject(owner string, run bootstrap.RunCommandFunc) CheckResult {
 	return CheckResult{
 		Name:   "GitHub Project linked",
 		Status: Pass,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Stale open issue checks
+// ──────────────────────────────────────────────────────────────────────────────
+
+const checkStaleRequirementsName = "No stale open requirements"
+const checkStaleFeaturesName = "No stale open features"
+
+type staleIssue struct {
+	Number int
+	Title  string
+}
+
+// fetchStaleOpenIssues returns open issues with the given label whose every
+// sub-issue is closed. repoFullName is "owner/repo".
+func fetchStaleOpenIssues(repoFullName, label string, run bootstrap.RunCommandFunc) ([]staleIssue, error) {
+	// Fetch open issues with the given label.
+	out, err := run("gh", "issue", "list",
+		"--repo", repoFullName,
+		"--label", label,
+		"--state", "open",
+		"--json", "number,title",
+		"--limit", "200",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing open %s issues: %w", label, err)
+	}
+
+	var issues []struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &issues); err != nil {
+		return nil, fmt.Errorf("parsing issue list: %w", err)
+	}
+
+	var stale []staleIssue
+	for _, iss := range issues {
+		// Fetch sub-issues for this issue.
+		subOut, subErr := run("gh", "issue", "view",
+			fmt.Sprintf("%d", iss.Number),
+			"--repo", repoFullName,
+			"--json", "subIssues",
+		)
+		if subErr != nil {
+			continue // skip if we can't fetch
+		}
+
+		var resp struct {
+			SubIssues []struct {
+				State string `json:"state"`
+			} `json:"subIssues"`
+		}
+		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(subOut)), &resp); jsonErr != nil {
+			continue
+		}
+
+		// Skip issues with no sub-issues.
+		if len(resp.SubIssues) == 0 {
+			continue
+		}
+
+		// Check if all sub-issues are closed.
+		allClosed := true
+		for _, sub := range resp.SubIssues {
+			if !strings.EqualFold(sub.State, "CLOSED") {
+				allClosed = false
+				break
+			}
+		}
+		if allClosed {
+			stale = append(stale, staleIssue{Number: iss.Number, Title: iss.Title})
+		}
+	}
+	return stale, nil
+}
+
+// CheckStaleOpenRequirements warns when open requirement issues have all their
+// feature sub-issues closed.
+func CheckStaleOpenRequirements(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	stale, err := fetchStaleOpenIssues(repoFullName, "requirement", run)
+	if err != nil {
+		return CheckResult{Name: checkStaleRequirementsName, Status: Fail, Message: err.Error()}
+	}
+	if len(stale) == 0 {
+		return CheckResult{Name: checkStaleRequirementsName, Status: Pass}
+	}
+	var msgs []string
+	for _, s := range stale {
+		msgs = append(msgs, fmt.Sprintf("#%d \"%s\"", s.Number, s.Title))
+	}
+	return CheckResult{
+		Name:    checkStaleRequirementsName,
+		Status:  Warning,
+		Message: fmt.Sprintf("open requirements with all features closed: %s", strings.Join(msgs, ", ")),
+	}
+}
+
+// CheckStaleOpenFeatures warns when open feature issues have all their task
+// sub-issues closed.
+func CheckStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) CheckResult {
+	stale, err := fetchStaleOpenIssues(repoFullName, "feature", run)
+	if err != nil {
+		return CheckResult{Name: checkStaleFeaturesName, Status: Fail, Message: err.Error()}
+	}
+	if len(stale) == 0 {
+		return CheckResult{Name: checkStaleFeaturesName, Status: Pass}
+	}
+	var msgs []string
+	for _, s := range stale {
+		msgs = append(msgs, fmt.Sprintf("#%d \"%s\"", s.Number, s.Title))
+	}
+	return CheckResult{
+		Name:    checkStaleFeaturesName,
+		Status:  Warning,
+		Message: fmt.Sprintf("open features with all tasks closed: %s", strings.Join(msgs, ", ")),
 	}
 }

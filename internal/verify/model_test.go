@@ -11,6 +11,7 @@ func TestCheckStatus_String(t *testing.T) {
 		{name: "Pass returns pass", status: Pass, expected: "pass"},
 		{name: "Warning returns warning", status: Warning, expected: "warning"},
 		{name: "Fail returns fail", status: Fail, expected: "fail"},
+		{name: "ManualAction returns manual", status: ManualAction, expected: "manual"},
 		{name: "Unknown returns unknown", status: CheckStatus(99), expected: "unknown"},
 	}
 	for _, tc := range tests {

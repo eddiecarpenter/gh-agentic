@@ -9,7 +9,8 @@ import (
 
 // RunVerify runs all checks, prints the full result list, then (if repairFn is
 // set) runs repairs with clear before/after output and reprints the final state.
-// Returns an error if any unresolved warnings or failures remain.
+// Returns an error if any unresolved warnings or failures remain after repair.
+// ManualAction results are displayed with instructions but do not cause failure.
 func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 	// ── Phase 1: run all checks and collect results ───────────────────────────
 	results := make([]CheckResult, len(checks))
@@ -20,7 +21,7 @@ func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 	// Print the full check list.
 	printResults(w, results)
 
-	// Count issues.
+	// Count actionable issues (not ManualAction — those need human steps, not repair).
 	var warnings, failures int
 	for _, r := range results {
 		switch r.Status {
@@ -60,6 +61,9 @@ func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 			fmt.Fprintln(w, "  "+ui.RenderOK("fixed"))
 			results[i] = *updated
 			repaired++
+		} else if updated != nil && updated.Status == ManualAction {
+			fmt.Fprintln(w, "  "+ui.RenderInfo("action needed: "+updated.Message))
+			results[i] = *updated
 		} else {
 			msg := r.Message
 			if updated != nil && updated.Message != "" {
@@ -76,7 +80,7 @@ func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 	printResults(w, results)
 	fmt.Fprintln(w)
 
-	// Recount after repairs.
+	// Recount after repairs — ManualAction is not a failure.
 	warnings, failures = 0, 0
 	for _, r := range results {
 		switch r.Status {
@@ -96,7 +100,7 @@ func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 	return fmt.Errorf("%d warnings, %d failures remain", warnings, failures)
 }
 
-// printResults renders the ✔/⚠/✖ line for each result.
+// printResults renders the ✔/⚠/✖/ℹ line for each result.
 func printResults(w io.Writer, results []CheckResult) {
 	for _, r := range results {
 		switch r.Status {
@@ -106,13 +110,15 @@ func printResults(w io.Writer, results []CheckResult) {
 			fmt.Fprintln(w, "  "+ui.RenderWarning(r.Name+": "+r.Message))
 		case Fail:
 			fmt.Fprintln(w, "  "+ui.RenderError(r.Name+": "+r.Message))
+		case ManualAction:
+			fmt.Fprintln(w, "  "+ui.RenderInfo(r.Name+": "+r.Message))
 		}
 	}
 }
 
 // printSummary prints the count line.
 func printSummary(w io.Writer, results []CheckResult, repaired int) {
-	var passed, warnings, failures int
+	var passed, warnings, failures, manual int
 	for _, r := range results {
 		switch r.Status {
 		case Pass:
@@ -121,6 +127,8 @@ func printSummary(w io.Writer, results []CheckResult, repaired int) {
 			warnings++
 		case Fail:
 			failures++
+		case ManualAction:
+			manual++
 		}
 	}
 
@@ -130,6 +138,9 @@ func printSummary(w io.Writer, results []CheckResult, repaired int) {
 	}
 	if repaired > 0 {
 		summary += fmt.Sprintf(", %d repaired", repaired)
+	}
+	if manual > 0 {
+		summary += fmt.Sprintf(", %d action(s) needed", manual)
 	}
 	if failures > 0 {
 		summary += fmt.Sprintf(", %d failed", failures)

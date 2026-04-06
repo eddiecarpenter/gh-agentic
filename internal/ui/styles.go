@@ -19,6 +19,7 @@ const (
 	SymbolOK      = "✔"
 	SymbolWarning = "⚠"
 	SymbolError   = "✖"
+	SymbolInfo    = "ℹ"
 )
 
 // Styles — pre-built lipgloss renderers for common UI elements.
@@ -76,4 +77,10 @@ func RenderWarning(msg string) string {
 // RenderError returns a formatted "✖ <msg>" line in Danger red.
 func RenderError(msg string) string {
 	return StatusDanger.Render(SymbolError) + " " + msg
+}
+
+// RenderInfo returns a formatted "ℹ <msg>" line in Primary blue.
+// Used for manual-action items that are not failures.
+func RenderInfo(msg string) string {
+	return URL.Render(SymbolInfo) + " " + msg
 }
