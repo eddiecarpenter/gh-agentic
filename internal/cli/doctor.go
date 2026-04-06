@@ -141,6 +141,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairProjectStatus(cfg.owner, cfg.repoName, cfg.root, run)
 			case "GitHub Project has required views":
 				r = verify.RepairProjectViews(cfg.owner, cfg.repoName, cfg.root, run)
+			case "Project items have status assigned":
+				r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
 			case "Agent user is a project collaborator":
 				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
 			case "No stale open requirements":

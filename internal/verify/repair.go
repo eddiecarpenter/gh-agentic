@@ -349,7 +349,7 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 	// Step 3: Build the mutation with options from project template.
 	var optionEntries []string
 	for _, opt := range tmpl.StatusOptions {
-		optionEntries = append(optionEntries, fmt.Sprintf(`{name: \"%s\", color: %s, description: \"%s\"}`, opt.Name, opt.Color, opt.Description))
+		optionEntries = append(optionEntries, fmt.Sprintf(`{name: "%s", color: %s, description: "%s"}`, opt.Name, opt.Color, opt.Description))
 	}
 	optionsStr := strings.Join(optionEntries, ", ")
 
@@ -667,6 +667,24 @@ func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCo
 	return resyncProjectItemStatuses(owner, projectNodeID, fieldID, tmpl, run)
 }
 
+// RepairProjectItemStatuses resyncs all project item statuses from issue labels
+// and state. It wraps ResyncProjectItemStatuses as a repair action.
+func RepairProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
+	updated, correct, err := ResyncProjectItemStatuses(owner, repoName, root, run)
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectItemStatusesName,
+			Status:  Fail,
+			Message: fmt.Sprintf("resync failed: %v", err),
+		}
+	}
+	return CheckResult{
+		Name:    checkProjectItemStatusesName,
+		Status:  Pass,
+		Message: fmt.Sprintf("%d item(s) updated, %d already correct", updated, correct),
+	}
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // GitHub Project collaborator repair
 // ──────────────────────────────────────────────────────────────────────────────
@@ -693,7 +711,7 @@ func RepairProjectCollaborator(owner, repoName, agentUser string, run bootstrap.
 	}
 
 	// Resolve the agent user's GitHub node ID.
-	userQuery := fmt.Sprintf(`{ user(login: \"%s\") { id } }`, agentUser)
+	userQuery := fmt.Sprintf(`{ user(login: "%s") { id } }`, agentUser)
 	out, err := run("gh", "api", "graphql", "-f", "query="+userQuery, "--jq", ".data.user.id")
 	if err != nil {
 		return CheckResult{
