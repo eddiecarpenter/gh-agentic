@@ -162,7 +162,8 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 	}
 
 	if err := verify.RunVerify(w, checks, repairFn); err != nil {
-		fmt.Fprintln(w, "  Run 'gh agentic doctor --repair --yes' to attempt automatic fixes.")
+		fmt.Fprintln(w, "  Run 'gh agentic doctor --repair' to attempt automatic fixes.")
+		fmt.Fprintln(w, "  For AGENT_USER repair, add: --agent-user <username> --agent-user-scope org|repo")
 		return ErrSilent
 	}
 	return nil
