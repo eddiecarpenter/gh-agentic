@@ -67,7 +67,7 @@ func TestCheckSkillsDir_Absent_ReturnsWarning(t *testing.T) {
 
 func TestCheckTEMPLATESOURCE_Present_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("eddiecarpenter/agentic-development\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("eddiecarpenter/ai-native-delivery\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	result := CheckTEMPLATESOURCE(root)

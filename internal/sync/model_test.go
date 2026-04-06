@@ -15,13 +15,13 @@ func TestReadTemplateSource(t *testing.T) {
 	}{
 		{
 			name:    "valid content",
-			content: strPtr("eddiecarpenter/agentic-development"),
-			want:    "eddiecarpenter/agentic-development",
+			content: strPtr("eddiecarpenter/ai-native-delivery"),
+			want:    "eddiecarpenter/ai-native-delivery",
 		},
 		{
 			name:    "content with whitespace",
-			content: strPtr("  eddiecarpenter/agentic-development  \n"),
-			want:    "eddiecarpenter/agentic-development",
+			content: strPtr("  eddiecarpenter/ai-native-delivery  \n"),
+			want:    "eddiecarpenter/ai-native-delivery",
 		},
 		{
 			name:      "missing file",

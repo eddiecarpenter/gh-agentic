@@ -96,7 +96,7 @@ func TestRepairAGENTSLocalMD_CreatesFile(t *testing.T) {
 func TestRepairTEMPLATESOURCE_WithConfirm_CreatesFile(t *testing.T) {
 	root := t.TempDir()
 	confirmFn := func(prompt string) (string, error) {
-		return "eddiecarpenter/agentic-development", nil
+		return "eddiecarpenter/ai-native-delivery", nil
 	}
 	result := RepairTEMPLATESOURCE(root, confirmFn)
 	if result.Status != Pass {
@@ -107,7 +107,7 @@ func TestRepairTEMPLATESOURCE_WithConfirm_CreatesFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(data)) != "eddiecarpenter/agentic-development" {
+	if strings.TrimSpace(string(data)) != "eddiecarpenter/ai-native-delivery" {
 		t.Errorf("unexpected content: %s", string(data))
 	}
 }

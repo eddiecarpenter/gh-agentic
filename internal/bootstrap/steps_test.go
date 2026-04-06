@@ -397,12 +397,13 @@ func TestConfigureRepo_OutputContainsAllLabels(t *testing.T) {
 func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 	dir := t.TempDir()
 	cfg := BootstrapConfig{
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Topology:    "Single",
-		Stack:       "Go",
-		Description: "A test project",
-		Antora:      false,
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Topology:     "Single",
+		Stack:        "Go",
+		Description:  "A test project",
+		Antora:       false,
+		TemplateRepo: DefaultTemplateRepo,
 	}
 	state := &StepState{
 		RepoName:  "my-project",
@@ -435,12 +436,13 @@ func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 func TestPopulateRepo_CreatesSkillsGitkeep(t *testing.T) {
 	dir := t.TempDir()
 	cfg := BootstrapConfig{
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Topology:    "Single",
-		Stack:       "Go",
-		Description: "A test project",
-		Antora:      false,
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Topology:     "Single",
+		Stack:        "Go",
+		Description:  "A test project",
+		Antora:       false,
+		TemplateRepo: DefaultTemplateRepo,
 	}
 	state := &StepState{
 		RepoName:  "my-project",
@@ -478,12 +480,13 @@ func TestPopulateRepo_CreatesSkillsGitkeep(t *testing.T) {
 func TestPopulateRepo_AntoraTrue_ScaffoldsExtraFiles(t *testing.T) {
 	dir := t.TempDir()
 	cfg := BootstrapConfig{
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Topology:    "Single",
-		Stack:       "Go",
-		Description: "A test project",
-		Antora:      true,
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Topology:     "Single",
+		Stack:        "Go",
+		Description:  "A test project",
+		Antora:       true,
+		TemplateRepo: DefaultTemplateRepo,
 	}
 	state := &StepState{
 		RepoName:  "my-project",
@@ -507,10 +510,11 @@ func TestPopulateRepo_AntoraTrue_ScaffoldsExtraFiles(t *testing.T) {
 func TestPopulateRepo_PushFails_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	cfg := BootstrapConfig{
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Stack:       "Go",
-		Description: "A test project",
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stack:        "Go",
+		Description:  "A test project",
+		TemplateRepo: DefaultTemplateRepo,
 	}
 	state := &StepState{RepoName: "my-project", ClonePath: dir}
 
@@ -539,10 +543,11 @@ func TestPopulateRepo_PushFails_ReturnsError(t *testing.T) {
 func TestPopulateRepo_ReposMDContainsDescription(t *testing.T) {
 	dir := t.TempDir()
 	cfg := BootstrapConfig{
-		Owner:       "alice",
-		ProjectName: "my-project",
-		Stack:       "Go",
-		Description: "unique-description-12345",
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stack:        "Go",
+		Description:  "unique-description-12345",
+		TemplateRepo: DefaultTemplateRepo,
 	}
 	state := &StepState{RepoName: "my-project", ClonePath: dir}
 

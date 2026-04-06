@@ -214,13 +214,14 @@ func TestIntegrationRunSteps_HappyPath_GoEmbedded(t *testing.T) {
 	setupCloneDir(t, workDir, projectName)
 
 	cfg := BootstrapConfig{
-		Topology:    "Single",
-		Owner:       "testowner",
-		ProjectName: projectName,
-		Description: "Test project",
-		Stack:       "Go",
-		Antora:      false,
-		OwnerType:   "User",
+		Topology:     "Single",
+		Owner:        "testowner",
+		ProjectName:  projectName,
+		Description:  "Test project",
+		Stack:        "Go",
+		Antora:       false,
+		OwnerType:    "User",
+		TemplateRepo: DefaultTemplateRepo,
 	}
 
 	mock := &testutil.MockRunner{}
@@ -292,20 +293,21 @@ func TestIntegrationRunSteps_Failure_Step3_RepoCreate(t *testing.T) {
 	projectName := "test-project"
 
 	cfg := BootstrapConfig{
-		Topology:    "Single",
-		Owner:       "testowner",
-		ProjectName: projectName,
-		Description: "Test project",
-		Stack:       "Go",
-		Antora:      false,
-		OwnerType:   "User",
+		Topology:     "Single",
+		Owner:        "testowner",
+		ProjectName:  projectName,
+		Description:  "Test project",
+		Stack:        "Go",
+		Antora:       false,
+		OwnerType:    "User",
+		TemplateRepo: DefaultTemplateRepo,
 	}
 
 	mock := &testutil.MockRunner{}
 
 	// gh repo create fails.
 	mock.Expect(
-		[]string{"gh", "repo", "create", "testowner/test-project", "--template", "eddiecarpenter/agentic-development", "--private"},
+		[]string{"gh", "repo", "create", "testowner/test-project", "--template", DefaultTemplateRepo, "--private"},
 		"",
 		fmt.Errorf("repository creation failed: quota exceeded"),
 	)
@@ -342,13 +344,14 @@ func TestIntegrationRunSteps_Failure_Step6_LabelCreate(t *testing.T) {
 	setupCloneDir(t, workDir, projectName)
 
 	cfg := BootstrapConfig{
-		Topology:    "Single",
-		Owner:       "testowner",
-		ProjectName: projectName,
-		Description: "Test project",
-		Stack:       "Go",
-		Antora:      false,
-		OwnerType:   "User",
+		Topology:     "Single",
+		Owner:        "testowner",
+		ProjectName:  projectName,
+		Description:  "Test project",
+		Stack:        "Go",
+		Antora:       false,
+		OwnerType:    "User",
+		TemplateRepo: DefaultTemplateRepo,
 	}
 
 	// ConfigureRepo (step 6) calls gh label create for each label.
@@ -410,13 +413,14 @@ func TestIntegrationRunSteps_Failure_RepoCreateFails(t *testing.T) {
 	workDir := t.TempDir()
 
 	cfg := BootstrapConfig{
-		Topology:    "Single",
-		Owner:       "testowner",
-		ProjectName: "test-project",
-		Description: "Test",
-		Stack:       "Go",
-		Antora:      false,
-		OwnerType:   OwnerTypeUser,
+		Topology:     "Single",
+		Owner:        "testowner",
+		ProjectName:  "test-project",
+		Description:  "Test",
+		Stack:        "Go",
+		Antora:       false,
+		OwnerType:    OwnerTypeUser,
+		TemplateRepo: DefaultTemplateRepo,
 	}
 
 	runner := &testutil.MockRunner{}
@@ -424,7 +428,7 @@ func TestIntegrationRunSteps_Failure_RepoCreateFails(t *testing.T) {
 	// Step 3 — CreateRepo: gh repo create fails immediately.
 	runner.Expect(
 		[]string{"gh", "repo", "create", "testowner/test-project",
-			"--template", "eddiecarpenter/agentic-development", "--private"},
+			"--template", DefaultTemplateRepo, "--private"},
 		"repository creation failed", fmt.Errorf("gh repo create failed"),
 	)
 
@@ -474,13 +478,14 @@ func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T)
 	}
 
 	cfg := BootstrapConfig{
-		Topology:    "Single",
-		Owner:       "testowner",
-		ProjectName: "test-project",
-		Description: "Test",
-		Stack:       "Go",
-		Antora:      false,
-		OwnerType:   OwnerTypeUser,
+		Topology:     "Single",
+		Owner:        "testowner",
+		ProjectName:  "test-project",
+		Description:  "Test",
+		Stack:        "Go",
+		Antora:       false,
+		OwnerType:    OwnerTypeUser,
+		TemplateRepo: DefaultTemplateRepo,
 	}
 
 	runner := &testutil.MockRunner{}
@@ -488,7 +493,7 @@ func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T)
 	// Step 3 — CreateRepo: succeeds.
 	runner.Expect(
 		[]string{"gh", "repo", "create", "testowner/test-project",
-			"--template", "eddiecarpenter/agentic-development", "--private"},
+			"--template", DefaultTemplateRepo, "--private"},
 		"https://github.com/testowner/test-project", nil,
 	)
 	runner.Expect(

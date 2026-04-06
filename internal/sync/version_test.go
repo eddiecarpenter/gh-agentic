@@ -39,9 +39,9 @@ func TestFetchLatestRelease(t *testing.T) {
 		},
 		{
 			name: "passes repo to fetch function",
-			repo: "eddiecarpenter/agentic-development",
+			repo: "eddiecarpenter/ai-native-delivery",
 			fetchFunc: func(repo string) (string, error) {
-				if repo != "eddiecarpenter/agentic-development" {
+				if repo != "eddiecarpenter/ai-native-delivery" {
 					return "", fmt.Errorf("unexpected repo: %s", repo)
 				}
 				return "v0.3.0", nil

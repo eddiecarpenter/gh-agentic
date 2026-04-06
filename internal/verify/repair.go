@@ -71,7 +71,7 @@ See ` + "`docs/PROJECT_BRIEF.md`" + ` for project context.
 
 ## Agent sessions
 
-This repo uses the [agentic development framework](https://github.com/eddiecarpenter/agentic-development).
+This repo uses the [agentic development framework](https://github.com/eddiecarpenter/ai-native-delivery).
 See ` + "`base/AGENTS.md`" + ` and ` + "`AGENTS.local.md`" + ` for session protocols.
 `
 
@@ -155,7 +155,7 @@ func RepairTEMPLATESOURCE(root string, confirmFn ConfirmFunc) CheckResult {
 		}
 	}
 
-	value, err := confirmFn("Enter template source repo (e.g. eddiecarpenter/agentic-development)")
+	value, err := confirmFn("Enter template source repo (e.g. eddiecarpenter/ai-native-delivery)")
 	if err != nil {
 		return CheckResult{
 			Name:    "TEMPLATE_SOURCE exists",

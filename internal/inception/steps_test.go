@@ -41,7 +41,7 @@ func TestCreateRepo_Success_PopulatesState(t *testing.T) {
 		Owner:    "acme-org",
 	}
 	state := &StepState{}
-	env := &EnvContext{AgenticRepoRoot: dir, Owner: "acme-org"}
+	env := &EnvContext{AgenticRepoRoot: dir, Owner: "acme-org", TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	run := fakeRunOK("")
 
@@ -66,7 +66,7 @@ func TestCreateRepo_Success_PopulatesState(t *testing.T) {
 func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
 	cfg := &InceptionConfig{RepoType: "domain", RepoName: "charging", Owner: "acme"}
 	state := &StepState{}
-	env := &EnvContext{AgenticRepoRoot: t.TempDir()}
+	env := &EnvContext{AgenticRepoRoot: t.TempDir(), TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	run := fakeRunFail("already exists")
 
@@ -83,7 +83,7 @@ func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
 func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
 	cfg := &InceptionConfig{RepoType: "tool", RepoName: "bench", Owner: "acme"}
 	state := &StepState{}
-	env := &EnvContext{AgenticRepoRoot: t.TempDir()}
+	env := &EnvContext{AgenticRepoRoot: t.TempDir(), TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	callCount := 0
 	run := func(name string, args ...string) (string, error) {
@@ -108,7 +108,7 @@ func TestCreateRepo_OtherType_UsesOthersDir(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &InceptionConfig{RepoType: "other", RepoName: "my-service", Owner: "alice"}
 	state := &StepState{}
-	env := &EnvContext{AgenticRepoRoot: dir}
+	env := &EnvContext{AgenticRepoRoot: dir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	_ = CreateRepo(&buf, cfg, state, env, fakeRunOK(""))
@@ -170,7 +170,7 @@ func TestConfigureLabels_OneLabelFails_StillReturnsNil(t *testing.T) {
 func TestScaffoldStack_OtherStack_SkipsWithWarning(t *testing.T) {
 	cfg := &InceptionConfig{Stack: "Other"}
 	state := &StepState{ClonePath: t.TempDir()}
-	env := &EnvContext{AgenticRepoRoot: t.TempDir()}
+	env := &EnvContext{AgenticRepoRoot: t.TempDir(), TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	if err := ScaffoldStack(&buf, cfg, state, env, fakeRunFail("should not be called")); err != nil {
@@ -184,7 +184,7 @@ func TestScaffoldStack_OtherStack_SkipsWithWarning(t *testing.T) {
 func TestScaffoldStack_MissingStandardsFile_ReturnsError(t *testing.T) {
 	cfg := &InceptionConfig{Stack: "Go"}
 	state := &StepState{ClonePath: t.TempDir()}
-	env := &EnvContext{AgenticRepoRoot: t.TempDir()} // No base/standards/go.md
+	env := &EnvContext{AgenticRepoRoot: t.TempDir(), TemplateRepo: bootstrap.DefaultTemplateRepo} // No base/standards/go.md
 
 	var buf bytes.Buffer
 	if err := ScaffoldStack(&buf, cfg, state, env, fakeRunOK("")); err == nil {
@@ -205,7 +205,7 @@ func TestScaffoldStack_ExecutesCommandsFromFile(t *testing.T) {
 
 	cfg := &InceptionConfig{Stack: "Go"}
 	state := &StepState{ClonePath: t.TempDir()}
-	env := &EnvContext{AgenticRepoRoot: agenticDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var executed []string
 	run := func(name string, args ...string) (string, error) {
@@ -242,7 +242,7 @@ func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 		ClonePath: dir,
 		RepoURL:   "https://github.com/acme-org/charging-domain",
 	}
-	env := &EnvContext{AgenticRepoRoot: t.TempDir(), Owner: "acme-org"}
+	env := &EnvContext{AgenticRepoRoot: t.TempDir(), Owner: "acme-org", TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
@@ -265,7 +265,7 @@ func TestPopulateRepo_CLAUDEMDReferencesAGENTSMD(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
 	state := &StepState{RepoName: "charging-domain", ClonePath: dir}
-	env := &EnvContext{AgenticRepoRoot: t.TempDir()}
+	env := &EnvContext{AgenticRepoRoot: t.TempDir(), TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	_ = PopulateRepo(&buf, cfg, state, env, fakeRunOK(""))
@@ -280,7 +280,7 @@ func TestPopulateRepo_PushFails_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
 	state := &StepState{RepoName: "charging-domain", ClonePath: dir}
-	env := &EnvContext{AgenticRepoRoot: t.TempDir()}
+	env := &EnvContext{AgenticRepoRoot: t.TempDir(), TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	run := func(name string, args ...string) (string, error) {
 		if name == "bash" {
@@ -317,7 +317,7 @@ func TestPopulateRepo_CopiesBase(t *testing.T) {
 
 	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
-	env := &EnvContext{AgenticRepoRoot: agenticDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
@@ -356,7 +356,7 @@ func TestPopulateRepo_CopiesGooseRecipes(t *testing.T) {
 
 	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
-	env := &EnvContext{AgenticRepoRoot: agenticDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
@@ -393,7 +393,7 @@ func TestPopulateRepo_CopiesWorkflows_ExcludesCIYml(t *testing.T) {
 
 	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
-	env := &EnvContext{AgenticRepoRoot: agenticDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
@@ -422,7 +422,7 @@ func TestPopulateRepo_UpdatesGitignore(t *testing.T) {
 
 	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
-	env := &EnvContext{AgenticRepoRoot: agenticDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
@@ -453,7 +453,7 @@ func TestPopulateRepo_GitignoreIdempotent(t *testing.T) {
 
 	cfg := &InceptionConfig{Owner: "acme-org", RepoType: "domain", RepoName: "charging"}
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
-	env := &EnvContext{AgenticRepoRoot: agenticDir}
+	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
@@ -487,7 +487,7 @@ func TestRegisterInREPOS_AppendsEntry(t *testing.T) {
 		Owner:       "acme-org",
 	}
 	state := &StepState{RepoName: "charging-domain"}
-	env := &EnvContext{AgenticRepoRoot: dir}
+	env := &EnvContext{AgenticRepoRoot: dir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	if err := RegisterInREPOS(&buf, cfg, state, env, fakeRunOK("")); err != nil {
@@ -518,7 +518,7 @@ func TestRegisterInREPOS_AppendsEntry(t *testing.T) {
 func TestRegisterInREPOS_ReadFails_ReturnsError(t *testing.T) {
 	cfg := &InceptionConfig{Owner: "acme"}
 	state := &StepState{RepoName: "charging-domain"}
-	env := &EnvContext{AgenticRepoRoot: "/nonexistent"}
+	env := &EnvContext{AgenticRepoRoot: "/nonexistent", TemplateRepo: bootstrap.DefaultTemplateRepo}
 
 	var buf bytes.Buffer
 	err := RegisterInREPOS(&buf, cfg, state, env, fakeRunOK(""))
