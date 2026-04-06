@@ -77,6 +77,9 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	// CheckProject: gh project list --owner testowner --format json --limit 100
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
+	// CheckAgenticProjectID: gh variable get AGENTIC_PROJECT_ID --repo testowner/testrepo
+	m.Expect([]string{"gh", "variable", "get", "AGENTIC_PROJECT_ID", "--repo", "testowner/testrepo"}, "PVT_test123", nil)
+
 	// resolveProjectNodeIDViaRun (used by CheckProjectStatus): gh project list --limit 1
 	m.Expect([]string{"gh", "project", "list", "--owner", "testowner", "--format", "json", "--limit", "100"}, projectJSON, nil)
 
@@ -306,6 +309,29 @@ func TestRunDoctor_RepairYes_RestoreAGENTSLocalMD(t *testing.T) {
 
 	if err != nil {
 		t.Logf("runDoctor returned error after repair (may be due to other checks): %v", err)
+	}
+}
+
+func TestRunDoctor_AgenticProjectIDCheckAppearsInOutput(t *testing.T) {
+	repo := setupDoctorFakeRepo(t)
+	mock := newMockRunner(t)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		root:         repo.Root,
+		repoFullName: "testowner/testrepo",
+		owner:        "testowner",
+		repoName:     "testrepo",
+		run:          mock.RunCommand,
+		repair:       false,
+		yes:          false,
+	}
+
+	_ = runDoctor(&buf, strings.NewReader(""), cfg)
+
+	output := buf.String()
+	if !strings.Contains(output, "AGENTIC_PROJECT_ID is configured") {
+		t.Errorf("expected 'AGENTIC_PROJECT_ID is configured' in output, got:\n%s", output)
 	}
 }
 

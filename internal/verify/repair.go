@@ -300,6 +300,37 @@ func RepairGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// AGENTIC_PROJECT_ID repair
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RepairAgenticProjectID resolves the project node ID via resolveProjectEntry
+// and sets it as the AGENTIC_PROJECT_ID repository variable.
+func RepairAgenticProjectID(repoFullName, owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	entry := resolveProjectEntry(owner, repoName, run)
+	if entry == nil {
+		return CheckResult{
+			Name:    checkAgenticProjectIDName,
+			Status:  Fail,
+			Message: "cannot resolve project — ensure a GitHub Project exists first",
+		}
+	}
+
+	_, err := run("gh", "variable", "set", "AGENTIC_PROJECT_ID", "--body", entry.NodeID, "--repo", repoFullName)
+	if err != nil {
+		return CheckResult{
+			Name:    checkAgenticProjectIDName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to set variable: %v", err),
+		}
+	}
+
+	return CheckResult{
+		Name:   checkAgenticProjectIDName,
+		Status: Pass,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // GitHub Project status repair
 // ──────────────────────────────────────────────────────────────────────────────
 
