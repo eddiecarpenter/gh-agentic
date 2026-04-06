@@ -63,7 +63,7 @@ func TestNewFakeRepo_TemplateSourceContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read TEMPLATE_SOURCE: %v", err)
 	}
-	if string(content) != "eddiecarpenter/agentic-development" {
+	if string(content) != "eddiecarpenter/ai-native-delivery" {
 		t.Fatalf("unexpected TEMPLATE_SOURCE: %q", string(content))
 	}
 }

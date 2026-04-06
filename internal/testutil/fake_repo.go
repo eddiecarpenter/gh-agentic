@@ -37,7 +37,7 @@ func NewFakeRepo(t *testing.T) *FakeRepo {
 
 	// Write standard agentic repo files.
 	files := map[string]string{
-		"TEMPLATE_SOURCE": "eddiecarpenter/agentic-development",
+		"TEMPLATE_SOURCE": "eddiecarpenter/ai-native-delivery",
 		"TEMPLATE_VERSION": "v1.0.0",
 		"CLAUDE.md":        "# CLAUDE.md\n",
 		"AGENTS.local.md":  "# AGENTS.local.md\n",

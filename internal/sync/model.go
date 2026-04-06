@@ -11,7 +11,7 @@ import (
 
 // SyncConfig holds all state needed to execute a template sync.
 type SyncConfig struct {
-	// TemplateRepo is the GitHub repo slug (e.g. "eddiecarpenter/agentic-development").
+	// TemplateRepo is the GitHub repo slug (e.g. "eddiecarpenter/ai-native-delivery").
 	TemplateRepo string
 
 	// CurrentVersion is the semver tag last synced (e.g. "v0.1.0").
@@ -25,7 +25,7 @@ type SyncConfig struct {
 }
 
 // ReadTemplateSource reads and trims the TEMPLATE_SOURCE file from the given repo root.
-// Returns the GitHub repo slug (e.g. "eddiecarpenter/agentic-development").
+// Returns the GitHub repo slug (e.g. "eddiecarpenter/ai-native-delivery").
 func ReadTemplateSource(root string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
 	if err != nil {
