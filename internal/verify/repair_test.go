@@ -1082,3 +1082,71 @@ func TestRepairAgentUserVar_SetFails_ReturnsFail(t *testing.T) {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RepairAgenticProjectID tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairAgenticProjectID(t *testing.T) {
+	projectListJSON := `{"projects":[{"id":"PVT_kwDOBtest","title":"repo","number":1,"url":"https://github.com/users/owner/projects/1","owner":{"login":"owner","type":"User"}}]}`
+
+	tests := []struct {
+		name       string
+		fakeRun    func(name string, args ...string) (string, error)
+		wantStatus CheckStatus
+		wantMsg    string
+	}{
+		{
+			name: "project found and variable set succeeds returns Pass",
+			fakeRun: func(name string, args ...string) (string, error) {
+				cmd := strings.Join(append([]string{name}, args...), " ")
+				if strings.Contains(cmd, "project list") {
+					return projectListJSON, nil
+				}
+				if strings.Contains(cmd, "variable set") {
+					return "", nil
+				}
+				return "", nil
+			},
+			wantStatus: Pass,
+		},
+		{
+			name: "project not found returns Fail",
+			fakeRun: func(name string, args ...string) (string, error) {
+				return `{"projects":[]}`, nil
+			},
+			wantStatus: Fail,
+			wantMsg:    "cannot resolve project",
+		},
+		{
+			name: "project found but variable set fails returns Fail",
+			fakeRun: func(name string, args ...string) (string, error) {
+				cmd := strings.Join(append([]string{name}, args...), " ")
+				if strings.Contains(cmd, "project list") {
+					return projectListJSON, nil
+				}
+				if strings.Contains(cmd, "variable set") {
+					return "", fmt.Errorf("permission denied")
+				}
+				return "", nil
+			},
+			wantStatus: Fail,
+			wantMsg:    "failed to set variable",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := RepairAgenticProjectID("owner/repo", "owner", "repo", tc.fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+			if tc.wantMsg != "" && !strings.Contains(result.Message, tc.wantMsg) {
+				t.Errorf("expected message containing %q, got %q", tc.wantMsg, result.Message)
+			}
+			if result.Name != "AGENTIC_PROJECT_ID is configured" {
+				t.Errorf("unexpected check name: %s", result.Name)
+			}
+		})
+	}
+}

@@ -847,6 +847,27 @@ func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.R
 }
 
 
+// checkAgenticProjectIDName is the check name for the AGENTIC_PROJECT_ID variable.
+const checkAgenticProjectIDName = "AGENTIC_PROJECT_ID is configured"
+
+// CheckAgenticProjectID verifies that the AGENTIC_PROJECT_ID GitHub Actions
+// repository variable is set. This variable is required by the
+// sync-label-to-status workflow to update the GitHub Project board status.
+func CheckAgenticProjectID(repoFullName, owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	out, err := run("gh", "variable", "get", "AGENTIC_PROJECT_ID", "--repo", repoFullName)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return CheckResult{
+			Name:    checkAgenticProjectIDName,
+			Status:  Fail,
+			Message: "AGENTIC_PROJECT_ID variable is not set",
+		}
+	}
+	return CheckResult{
+		Name:   checkAgenticProjectIDName,
+		Status: Pass,
+	}
+}
+
 // CheckProject verifies that a GitHub Project exists for the repo owner.
 // owner is the GitHub account/org. run is injected for gh operations.
 func CheckProject(owner string, run bootstrap.RunCommandFunc) CheckResult {

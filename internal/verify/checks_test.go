@@ -1184,3 +1184,50 @@ func TestReadAgentUserVar_NotFound_ReturnsEmpty(t *testing.T) {
 		t.Errorf("expected empty, got %q", val)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CheckAgenticProjectID tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckAgenticProjectID(t *testing.T) {
+	tests := []struct {
+		name       string
+		runOut     string
+		runErr     error
+		wantStatus CheckStatus
+	}{
+		{
+			name:       "variable is set returns Pass",
+			runOut:     "PVT_kwDOBtest",
+			runErr:     nil,
+			wantStatus: Pass,
+		},
+		{
+			name:       "variable command fails returns Fail",
+			runOut:     "",
+			runErr:     fmt.Errorf("exit status 1"),
+			wantStatus: Fail,
+		},
+		{
+			name:       "variable returns empty returns Fail",
+			runOut:     "",
+			runErr:     nil,
+			wantStatus: Fail,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				return tc.runOut, tc.runErr
+			}
+			result := CheckAgenticProjectID("owner/repo", "owner", "repo", fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+			if result.Name != "AGENTIC_PROJECT_ID is configured" {
+				t.Errorf("unexpected check name: %s", result.Name)
+			}
+		})
+	}
+}
