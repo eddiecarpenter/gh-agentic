@@ -1047,3 +1047,140 @@ func TestMissingLabels_SomeMissing_ReturnsOnlyMissing(t *testing.T) {
 		t.Errorf("expected 9 missing labels, got %d: %v", len(missing), missing)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CheckAgentUserVar tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckAgentUserVar_PresentAtOrgLevel_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--org") {
+			return `[{"name":"AGENT_USER"},{"name":"OTHER_VAR"}]`, nil
+		}
+		return `[]`, nil
+	}
+
+	result := CheckAgentUserVar("acme-org", "my-repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "org level") {
+		t.Errorf("expected message about org level, got %q", result.Message)
+	}
+}
+
+func TestCheckAgentUserVar_PresentAtRepoLevel_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--org") {
+			return "", fmt.Errorf("not an org")
+		}
+		if strings.Contains(joined, "--repo") {
+			return `[{"name":"AGENT_USER"}]`, nil
+		}
+		return `[]`, nil
+	}
+
+	result := CheckAgentUserVar("alice", "my-repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "repo level") {
+		t.Errorf("expected message about repo level, got %q", result.Message)
+	}
+}
+
+func TestCheckAgentUserVar_MissingAtBothLevels_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--org") {
+			return "", fmt.Errorf("not an org")
+		}
+		if strings.Contains(joined, "--repo") {
+			return `[{"name":"OTHER_VAR"}]`, nil
+		}
+		return `[]`, nil
+	}
+
+	result := CheckAgentUserVar("alice", "my-repo", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "not set") {
+		t.Errorf("expected message about not set, got %q", result.Message)
+	}
+}
+
+func TestCheckAgentUserVar_OrgSucceedsButNoAgentUser_FallsToRepo(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--org") {
+			return `[{"name":"OTHER_VAR"}]`, nil
+		}
+		if strings.Contains(joined, "--repo") {
+			return `[{"name":"AGENT_USER"}]`, nil
+		}
+		return `[]`, nil
+	}
+
+	result := CheckAgentUserVar("acme-org", "my-repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "repo level") {
+		t.Errorf("expected message about repo level, got %q", result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ReadAgentUserVar tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestReadAgentUserVar_FoundAtOrgLevel_ReturnsValue(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--org") {
+			return `[{"name":"AGENT_USER","value":"goose-agent"}]`, nil
+		}
+		return `[]`, nil
+	}
+
+	val := ReadAgentUserVar("acme-org", "my-repo", fakeRun)
+	if val != "goose-agent" {
+		t.Errorf("expected %q, got %q", "goose-agent", val)
+	}
+}
+
+func TestReadAgentUserVar_FoundAtRepoLevel_ReturnsValue(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--org") {
+			return "", fmt.Errorf("not an org")
+		}
+		if strings.Contains(joined, "--repo") {
+			return `[{"name":"AGENT_USER","value":"repo-agent"}]`, nil
+		}
+		return `[]`, nil
+	}
+
+	val := ReadAgentUserVar("alice", "my-repo", fakeRun)
+	if val != "repo-agent" {
+		t.Errorf("expected %q, got %q", "repo-agent", val)
+	}
+}
+
+func TestReadAgentUserVar_NotFound_ReturnsEmpty(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--org") {
+			return "", fmt.Errorf("not an org")
+		}
+		return `[]`, nil
+	}
+
+	val := ReadAgentUserVar("alice", "my-repo", fakeRun)
+	if val != "" {
+		t.Errorf("expected empty, got %q", val)
+	}
+}

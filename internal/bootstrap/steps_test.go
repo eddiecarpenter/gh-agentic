@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1243,5 +1244,104 @@ func TestShellJoin_CombinesTokens(t *testing.T) {
 	}
 	if !strings.Contains(got, "'a message'") {
 		t.Errorf("shellJoin: expected quoted 'a message', got: %s", got)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SetAgentUserVariable tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestSetAgentUserVariable_RepoScope_SetsVariable(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{
+		Owner:          "alice",
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeRepo,
+	}
+	state := &StepState{RepoName: "my-project"}
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set AGENT_USER") && strings.Contains(joined, "--repo alice/my-project") {
+			setCalled = true
+		}
+		return "", nil
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !setCalled {
+		t.Error("expected gh variable set to be called with --repo")
+	}
+}
+
+func TestSetAgentUserVariable_OrgScope_SetsVariable(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{
+		Owner:          "acme-org",
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeOrg,
+	}
+	state := &StepState{RepoName: "my-project"}
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set AGENT_USER") && strings.Contains(joined, "--org acme-org") {
+			setCalled = true
+		}
+		return "", nil
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !setCalled {
+		t.Error("expected gh variable set to be called with --org")
+	}
+}
+
+func TestSetAgentUserVariable_EmptyUser_Skips(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{Owner: "alice"}
+	state := &StepState{RepoName: "my-project"}
+	runCalled := false
+	fakeRun := func(name string, args ...string) (string, error) {
+		runCalled = true
+		return "", nil
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if runCalled {
+		t.Error("expected no gh CLI call when agent user is empty")
+	}
+	if !strings.Contains(buf.String(), "Skipping") {
+		t.Errorf("expected skip message, got: %s", buf.String())
+	}
+}
+
+func TestSetAgentUserVariable_FailureIsNonFatal(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{
+		Owner:          "alice",
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeRepo,
+	}
+	state := &StepState{RepoName: "my-project"}
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "permission denied", fmt.Errorf("exit 1")
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("expected nil error (non-fatal), got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Could not set AGENT_USER") {
+		t.Errorf("expected warning message, got: %s", buf.String())
 	}
 }
