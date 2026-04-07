@@ -39,6 +39,14 @@ type StepState struct {
 	// ProjectNodeID is the GitHub node ID (global relay ID) of the created project.
 	// Used for GraphQL mutations such as configuring status columns.
 	ProjectNodeID string
+
+	// CredentialsSet is true when CLAUDE_CREDENTIALS_JSON was successfully set
+	// as a repo secret by SetClaudeCredentials.
+	CredentialsSet bool
+
+	// AgentPATFound is true when GOOSE_AGENT_PAT was found in the repo secrets
+	// by ValidateAgentPAT.
+	AgentPATFound bool
 }
 
 // repoName derives the repository name from the config.
