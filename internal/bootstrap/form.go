@@ -274,6 +274,28 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		return BootstrapConfig{}, fmt.Errorf("project details form: %w", err)
 	}
 
+	// --- Group 4: Pipeline configuration ---
+	cfg.RunnerLabel = DefaultRunnerLabel
+	cfg.GooseProvider = DefaultGooseProvider
+	cfg.GooseModel = DefaultGooseModel
+
+	pipelineForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Runner label").
+				Value(&cfg.RunnerLabel),
+			huh.NewInput().
+				Title("Goose provider").
+				Value(&cfg.GooseProvider),
+			huh.NewInput().
+				Title("Goose model").
+				Value(&cfg.GooseModel),
+		),
+	)
+	if err := pipelineForm.Run(); err != nil {
+		return BootstrapConfig{}, fmt.Errorf("pipeline config form: %w", err)
+	}
+
 	// --- Summary box ---
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, ui.SectionHeading.Render("  Summary"))
@@ -313,13 +335,16 @@ func RenderSummaryBox(cfg BootstrapConfig) string {
 	}
 
 	content := fmt.Sprintf(
-		"  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s",
+		"  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s",
 		label("Topology   "), value(cfg.Topology),
 		label("Owner      "), value(cfg.Owner),
 		label("Name       "), value(cfg.ProjectName),
 		label("Description"), value(cfg.Description),
 		label("Stack      "), value(cfg.Stack),
 		label("Antora     "), value(antoraVal),
+		label("Runner     "), value(cfg.RunnerLabel),
+		label("Provider   "), value(cfg.GooseProvider),
+		label("Model      "), value(cfg.GooseModel),
 	)
 
 	box := lipgloss.NewStyle().
