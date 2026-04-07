@@ -610,7 +610,7 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 						Nodes []struct {
 							ID      string `json:"id"`
 							Content struct {
-								Number     int    `json:"number"`
+								Number     int `json:"number"`
 								Repository struct {
 									NameWithOwner string `json:"nameWithOwner"`
 								} `json:"repository"`
@@ -932,7 +932,10 @@ func RepairGooseRecipes(root string) CheckResult {
 // .github/workflows/ (overwriting existing), then stages them with git add.
 // Falls back to fetching from the template repo when base/.github/workflows/
 // is absent. run is injected for git operations.
-func RepairWorkflows(root string, run bootstrap.RunCommandFunc) CheckResult {
+//
+// ownerType is bootstrap.OwnerTypeUser or bootstrap.OwnerTypeOrg. Org-only
+// workflows are skipped for personal accounts.
+func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
 	const checkName = ".github/workflows/ exists and complete"
 
 	workflowsPath := filepath.Join(root, ".github", "workflows")
@@ -946,19 +949,45 @@ func RepairWorkflows(root string, run bootstrap.RunCommandFunc) CheckResult {
 
 	baseWorkflowsPath := filepath.Join(root, "base", ".github", "workflows")
 
-	// If base/.github/workflows/ exists, copy ALL files from it (overwriting).
+	// If base/.github/workflows/ exists, copy files selectively (skipping
+	// org-only workflows for personal accounts).
 	if info, err := os.Stat(baseWorkflowsPath); err == nil && info.IsDir() {
-		if err := copyDir(baseWorkflowsPath, workflowsPath); err != nil {
+		entries, err := os.ReadDir(baseWorkflowsPath)
+		if err != nil {
 			return CheckResult{
 				Name:    checkName,
 				Status:  Fail,
-				Message: fmt.Sprintf("copying from base: %v", err),
+				Message: fmt.Sprintf("reading base workflows: %v", err),
+			}
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if orgOnlyWorkflows[name] && ownerType == bootstrap.OwnerTypeUser {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(baseWorkflowsPath, name))
+			if err != nil {
+				return CheckResult{
+					Name:    checkName,
+					Status:  Fail,
+					Message: fmt.Sprintf("reading %s from base: %v", name, err),
+				}
+			}
+			if err := os.WriteFile(filepath.Join(workflowsPath, name), data, 0o644); err != nil {
+				return CheckResult{
+					Name:    checkName,
+					Status:  Fail,
+					Message: fmt.Sprintf("writing %s: %v", name, err),
+				}
 			}
 		}
 
 		// Stage the changes.
 		quotedRoot := "'" + strings.ReplaceAll(root, "'", "'\\''") + "'"
-		_, err := run("bash", "-c", "cd "+quotedRoot+" && git add .github/workflows/")
+		_, err = run("bash", "-c", "cd "+quotedRoot+" && git add .github/workflows/")
 		if err != nil {
 			return CheckResult{
 				Name:    checkName,
@@ -1405,7 +1434,13 @@ func RepairClaudeCredentialsSecret(owner, repoName string, run bootstrap.RunComm
 	credPath := filepath.Join(home, credentialsFilePath)
 	data, err := os.ReadFile(credPath)
 	if err != nil {
-		return repairClaudeCredentialsManualAction(owner, repoName)
+		// Fall back to macOS Keychain.
+		out, keychainErr := run("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
+		out = strings.TrimSpace(out)
+		if keychainErr != nil || out == "" {
+			return repairClaudeCredentialsManualAction(owner, repoName)
+		}
+		data = []byte(out)
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(data)
@@ -1422,7 +1457,7 @@ func RepairClaudeCredentialsSecret(owner, repoName string, run bootstrap.RunComm
 	return CheckResult{
 		Name:    checkClaudeCredentialsSecretName,
 		Status:  Pass,
-		Message: "CLAUDE_CREDENTIALS_JSON secret set from ~/.claude/.credentials.json",
+		Message: "CLAUDE_CREDENTIALS_JSON secret set from Claude credentials",
 	}
 }
 
@@ -1434,9 +1469,10 @@ func repairClaudeCredentialsManualAction(owner, repoName string) CheckResult {
 		Name:   checkClaudeCredentialsSecretName,
 		Status: ManualAction,
 		Message: fmt.Sprintf(
-			"~/.claude/.credentials.json not found. Run manually:\n"+
-				"  base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s",
-			repoFullName,
+			"Claude credentials not found (tried ~/.claude/.credentials.json and macOS Keychain). Run manually:\n"+
+				"  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s\n"+
+				`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`,
+			repoFullName, repoFullName,
 		),
 	}
 }
@@ -1453,7 +1489,13 @@ func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run boots
 	credPath := filepath.Join(home, credentialsFilePath)
 	data, err := readFile(credPath)
 	if err != nil {
-		return repairClaudeCredentialsManualAction(owner, repoName)
+		// Fall back to macOS Keychain.
+		out, keychainErr := run("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
+		out = strings.TrimSpace(out)
+		if keychainErr != nil || out == "" {
+			return repairClaudeCredentialsManualAction(owner, repoName)
+		}
+		data = []byte(out)
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(data)
@@ -1470,6 +1512,6 @@ func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run boots
 	return CheckResult{
 		Name:    checkClaudeCredentialsSecretName,
 		Status:  Pass,
-		Message: "CLAUDE_CREDENTIALS_JSON secret set from ~/.claude/.credentials.json",
+		Message: "CLAUDE_CREDENTIALS_JSON secret set from Claude credentials",
 	}
 }

@@ -72,9 +72,15 @@ func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 	credPath := filepath.Join(home, credentialsRelPath)
 	data, err := readFile(credPath)
 	if err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Claude credentials file not found: "+credPath))
-		printCredentialInstructions(w, fullName)
-		return nil
+		// File not found — try macOS Keychain as fallback.
+		out, keychainErr := run("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
+		out = strings.TrimSpace(out)
+		if keychainErr != nil || out == "" {
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Claude credentials not found (tried "+credPath+" and macOS Keychain)"))
+			printCredentialInstructions(w, fullName)
+			return nil
+		}
+		data = []byte(out)
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(data)
@@ -89,16 +95,18 @@ func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 	state.CredentialsSet = true
 	fmt.Fprintln(w, "  "+ui.Muted.Render("· CLAUDE_CREDENTIALS_JSON secret set"))
 	fmt.Fprintln(w, "  "+ui.Muted.Render("  To renew manually:"))
-	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s", fullName)))
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s", fullName)))
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`, fullName)))
 
 	return nil
 }
 
 // printCredentialInstructions prints manual instructions for setting the
-// CLAUDE_CREDENTIALS_JSON secret.
+// CLAUDE_CREDENTIALS_JSON secret for both Linux/Windows and macOS.
 func printCredentialInstructions(w io.Writer, fullName string) {
 	fmt.Fprintln(w, "  "+ui.Muted.Render("  To set manually:"))
-	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s", fullName)))
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s", fullName)))
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`, fullName)))
 }
 
 // ValidateAgentPAT checks whether the GOOSE_AGENT_PAT secret exists on the repo.

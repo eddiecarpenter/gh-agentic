@@ -399,7 +399,7 @@ func TestRepairWorkflows_FromBase_CopiesAndStages(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairWorkflows(root, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -438,7 +438,7 @@ func TestRepairWorkflows_Fallback_AllPresent(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairWorkflows(root, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass when all files present, got %v: %s", result.Status, result.Message)
 	}
@@ -449,9 +449,56 @@ func TestRepairWorkflows_MissingFiles_ReturnsFail(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
-	result := RepairWorkflows(root, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for missing workflow files, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairWorkflows_PersonalAccount_SkipsOrgOnlyWorkflow(t *testing.T) {
+	root := t.TempDir()
+
+	// Base has both a regular and an org-only workflow.
+	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseWfDir, "agentic-pipeline.yml"), []byte("pipeline-v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseWfDir, "sync-status-to-label.yml"), []byte("org-only"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "agentic-pipeline.yml"), []byte("pipeline-v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := RepairWorkflows(root, bootstrap.OwnerTypeUser, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass for personal account repair, got %v: %s", result.Status, result.Message)
+	}
+
+	// org-only file must NOT have been copied into .github/workflows/.
+	if _, err := os.Stat(filepath.Join(wfDir, "sync-status-to-label.yml")); err == nil {
+		t.Error("org-only workflow should not be copied for personal account")
+	}
+
+	// Regular file should have been updated.
+	data, err := os.ReadFile(filepath.Join(wfDir, "agentic-pipeline.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "pipeline-v2" {
+		t.Errorf("expected updated pipeline content, got %q", data)
 	}
 }
 
@@ -1290,6 +1337,7 @@ func TestRepairClaudeCredentialsSecret_FileExists_SetsSecret(t *testing.T) {
 
 func TestRepairClaudeCredentialsSecret_FileMissing_ReturnsManualAction(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
+		// Keychain lookup returns empty — triggers ManualAction.
 		return "", nil
 	}
 	fakeReadFile := func(path string) ([]byte, error) {
@@ -1305,6 +1353,34 @@ func TestRepairClaudeCredentialsSecret_FileMissing_ReturnsManualAction(t *testin
 	}
 	if !strings.Contains(result.Message, "gh secret set") {
 		t.Errorf("expected manual instructions in message, got %q", result.Message)
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_FileMissing_KeychainPresent_SetsSecret(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		// Simulate macOS Keychain returning credentials.
+		if name == "security" {
+			return `{"token":"keychain-value"}`, nil
+		}
+		if strings.Contains(strings.Join(args, " "), "secret set CLAUDE_CREDENTIALS_JSON") {
+			setCalled = true
+		}
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return nil, fmt.Errorf("file not found")
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != Pass {
+		t.Errorf("expected Pass when keychain has credentials, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh secret set to be called with keychain credentials")
 	}
 }
 

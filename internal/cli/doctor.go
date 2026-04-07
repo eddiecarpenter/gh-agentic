@@ -23,6 +23,7 @@ type doctorConfig struct {
 	repoFullName   string
 	owner          string
 	repoName       string
+	ownerType      string
 	run            bootstrap.RunCommandFunc
 	repair         bool
 	yes            bool
@@ -90,21 +91,27 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckBaseDir(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckBaseRecipes(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckGooseRecipes(cfg.root) },
-		func() verify.CheckResult { return verify.CheckWorkflows(cfg.root) },
+		func() verify.CheckResult { return verify.CheckWorkflows(cfg.root, cfg.ownerType) },
 		func() verify.CheckResult { return verify.CheckGhNotify(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
-		func() verify.CheckResult { return verify.CheckAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, run) },
+		func() verify.CheckResult {
+			return verify.CheckAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, run)
+		},
 		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectViews(cfg.owner, cfg.repoName, cfg.root, run) },
-		func() verify.CheckResult { return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run) },
+		func() verify.CheckResult {
+			return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
+		},
 		func() verify.CheckResult { return verify.CheckAgentUserVar(cfg.owner, cfg.repoName, run) },
 		func() verify.CheckResult { return verify.CheckRunnerLabelVar(cfg.owner, cfg.repoName, run) },
 		func() verify.CheckResult { return verify.CheckGooseProviderVar(cfg.owner, cfg.repoName, run) },
 		func() verify.CheckResult { return verify.CheckGooseModelVar(cfg.owner, cfg.repoName, run) },
 		func() verify.CheckResult { return verify.CheckGooseAgentPATSecret(cfg.owner, cfg.repoName, run) },
 		func() verify.CheckResult { return verify.CheckClaudeCredentialsSecret(cfg.owner, cfg.repoName, run) },
-		func() verify.CheckResult { return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run) },
+		func() verify.CheckResult {
+			return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
+		},
 		func() verify.CheckResult { return verify.CheckStaleOpenRequirements(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckStaleOpenFeatures(cfg.repoFullName, run) },
 	}
@@ -136,7 +143,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case ".goose/recipes/ exists and complete":
 				r = verify.RepairGooseRecipes(cfg.root)
 			case ".github/workflows/ exists and complete":
-				r = verify.RepairWorkflows(cfg.root, run)
+				r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run)
 			case "gh-notify LaunchAgent installed":
 				r = verify.RepairGhNotify(cfg.root, run)
 			case "Standard labels present":
@@ -222,11 +229,20 @@ func newDoctorCmd() *cobra.Command {
 				return fmt.Errorf("resolving repo name: %w", err)
 			}
 
+			// Detect owner type to know which workflows apply.
+			// Default to org (stricter) on error so personal-only workflows
+			// are not silently skipped on genuine org repos.
+			ownerType, err := bootstrap.DefaultDetectOwnerType(currentRepo.Owner)
+			if err != nil {
+				ownerType = bootstrap.OwnerTypeOrg
+			}
+
 			return runDoctor(w, cmd.InOrStdin(), doctorConfig{
 				root:           root,
 				repoFullName:   currentRepo.Owner + "/" + currentRepo.Name,
 				owner:          currentRepo.Owner,
 				repoName:       currentRepo.Name,
+				ownerType:      ownerType,
 				run:            bootstrap.DefaultRunCommand,
 				repair:         repair,
 				yes:            yes,

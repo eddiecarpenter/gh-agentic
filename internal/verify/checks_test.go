@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 )
 
 func TestCheckCLAUDEMD_Present_ReturnsPass(t *testing.T) {
@@ -331,7 +333,7 @@ func TestCheckWorkflows_AllPresent_ReturnsPass(t *testing.T) {
 		}
 	}
 
-	result := CheckWorkflows(root)
+	result := CheckWorkflows(root, bootstrap.OwnerTypeOrg)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -339,7 +341,7 @@ func TestCheckWorkflows_AllPresent_ReturnsPass(t *testing.T) {
 
 func TestCheckWorkflows_DirMissing_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	result := CheckWorkflows(root)
+	result := CheckWorkflows(root, bootstrap.OwnerTypeOrg)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -354,7 +356,7 @@ func TestCheckWorkflows_SomeMissing_ReturnsFail(t *testing.T) {
 
 	// Create no files — directory exists but all expected files are missing.
 
-	result := CheckWorkflows(root)
+	result := CheckWorkflows(root, bootstrap.OwnerTypeOrg)
 	if result.Status != Fail {
 		t.Errorf("expected Fail for missing workflows, got %v: %s", result.Status, result.Message)
 	}
@@ -377,7 +379,7 @@ func TestCheckWorkflows_WithBase_ContentMatches_ReturnsPass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := CheckWorkflows(root)
+	result := CheckWorkflows(root, bootstrap.OwnerTypeOrg)
 	if result.Status != Pass {
 		t.Errorf("expected Pass when content matches, got %v: %s", result.Status, result.Message)
 	}
@@ -400,7 +402,7 @@ func TestCheckWorkflows_WithBase_ContentDiffers_ReturnsFail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := CheckWorkflows(root)
+	result := CheckWorkflows(root, bootstrap.OwnerTypeOrg)
 	if result.Status != Fail {
 		t.Errorf("expected Fail when content differs, got %v: %s", result.Status, result.Message)
 	}
@@ -420,7 +422,7 @@ func TestCheckWorkflows_WithBase_FileMissing_ReturnsFail(t *testing.T) {
 	}
 	// No .github/workflows/ directory at all.
 
-	result := CheckWorkflows(root)
+	result := CheckWorkflows(root, bootstrap.OwnerTypeOrg)
 	if result.Status != Fail {
 		t.Errorf("expected Fail when file missing, got %v: %s", result.Status, result.Message)
 	}
@@ -442,9 +444,40 @@ func TestCheckWorkflows_NoBase_FallsBackToExistence(t *testing.T) {
 	}
 
 	// No base/.github/workflows/ — should fall back to existence check.
-	result := CheckWorkflows(root)
+	result := CheckWorkflows(root, bootstrap.OwnerTypeOrg)
 	if result.Status != Pass {
 		t.Errorf("expected Pass in fallback mode, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckWorkflows_PersonalAccount_SkipsOrgOnlyWorkflows(t *testing.T) {
+	root := t.TempDir()
+	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Base contains both a regular workflow and an org-only one.
+	if err := os.WriteFile(filepath.Join(baseWfDir, "agentic-pipeline.yml"), []byte("pipeline"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseWfDir, "sync-status-to-label.yml"), []byte("org-only"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Repo has only the regular workflow — no org-only file.
+	if err := os.WriteFile(filepath.Join(wfDir, "agentic-pipeline.yml"), []byte("pipeline"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Personal account: org-only workflow should be skipped → Pass.
+	result := CheckWorkflows(root, bootstrap.OwnerTypeUser)
+	if result.Status != Pass {
+		t.Errorf("expected Pass for personal account skipping org-only workflow, got %v: %s", result.Status, result.Message)
 	}
 }
 

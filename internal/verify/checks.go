@@ -158,6 +158,13 @@ var expectedWorkflowYMLs = []string{
 	"agentic-pipeline.yml",
 }
 
+// orgOnlyWorkflows is the set of workflow files that are only applicable to
+// GitHub organisation accounts. They are excluded from checks and repairs
+// when the repo owner is a personal account.
+var orgOnlyWorkflows = map[string]bool{
+	"sync-status-to-label.yml": true,
+}
+
 // CheckBaseDir verifies that the base/ directory exists and has no uncommitted
 // modifications. Uses RunCommandFunc for git operations.
 func CheckBaseDir(root string, run bootstrap.RunCommandFunc) CheckResult {
@@ -268,7 +275,10 @@ func CheckGooseRecipes(root string) CheckResult {
 // files. If base/.github/workflows/ exists, it verifies content matches
 // byte-for-byte. Otherwise falls back to existence-only checks using
 // expectedWorkflowYMLs.
-func CheckWorkflows(root string) CheckResult {
+//
+// ownerType is bootstrap.OwnerTypeUser or bootstrap.OwnerTypeOrg. Org-only
+// workflows (e.g. sync-status-to-label.yml) are skipped for personal accounts.
+func CheckWorkflows(root, ownerType string) CheckResult {
 	const checkName = ".github/workflows/ exists and complete"
 
 	workflowsPath := filepath.Join(root, ".github", "workflows")
@@ -293,6 +303,10 @@ func CheckWorkflows(root string) CheckResult {
 				continue
 			}
 			name := entry.Name()
+			// Skip org-only workflows for personal accounts.
+			if orgOnlyWorkflows[name] && ownerType == bootstrap.OwnerTypeUser {
+				continue
+			}
 			basePath := filepath.Join(baseWorkflowsPath, name)
 			deployedPath := filepath.Join(workflowsPath, name)
 
@@ -846,7 +860,6 @@ func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.R
 	}
 }
 
-
 // checkAgenticProjectIDName is the check name for the AGENTIC_PROJECT_ID variable.
 const checkAgenticProjectIDName = "AGENTIC_PROJECT_ID is configured"
 
@@ -1000,10 +1013,10 @@ const checkAgentUserVarName = "AGENT_USER variable configured"
 
 // Check name constants for pipeline variable and secret checks.
 const (
-	checkRunnerLabelVarName        = "RUNNER_LABEL variable configured"
-	checkGooseProviderVarName      = "GOOSE_PROVIDER variable configured"
-	checkGooseModelVarName         = "GOOSE_MODEL variable configured"
-	checkGooseAgentPATSecretName   = "GOOSE_AGENT_PAT secret configured"
+	checkRunnerLabelVarName          = "RUNNER_LABEL variable configured"
+	checkGooseProviderVarName        = "GOOSE_PROVIDER variable configured"
+	checkGooseModelVarName           = "GOOSE_MODEL variable configured"
+	checkGooseAgentPATSecretName     = "GOOSE_AGENT_PAT secret configured"
 	checkClaudeCredentialsSecretName = "CLAUDE_CREDENTIALS_JSON secret configured"
 )
 

@@ -180,6 +180,7 @@ func TestSetClaudeCredentials_FileMissing_WarnsAndContinues(t *testing.T) {
 		return nil, errors.New("file not found")
 	}
 	homeDir := func() (string, error) { return "/home/test", nil }
+	// Keychain returns empty — triggers warning path.
 	run := fakeRunOK("")
 
 	var buf bytes.Buffer
@@ -198,6 +199,45 @@ func TestSetClaudeCredentials_FileMissing_WarnsAndContinues(t *testing.T) {
 	}
 	if !strings.Contains(out, "gh secret set") {
 		t.Errorf("expected manual instructions in output, got: %s", out)
+	}
+}
+
+func TestSetClaudeCredentials_FileMissing_KeychainPresent_SetsSecret(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice"}
+	state := &StepState{RepoName: "my-project"}
+
+	readFile := func(path string) ([]byte, error) {
+		return nil, errors.New("file not found")
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+
+	credContent := `{"token":"keychain-value"}`
+	var secretBody string
+	run := func(name string, args ...string) (string, error) {
+		if name == "security" {
+			return credContent, nil
+		}
+		for i, a := range args {
+			if a == "--body" && i+1 < len(args) {
+				secretBody = args[i+1]
+			}
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !state.CredentialsSet {
+		t.Error("expected state.CredentialsSet to be true when keychain has credentials")
+	}
+
+	expectedEncoded := base64.StdEncoding.EncodeToString([]byte(credContent))
+	if secretBody != expectedEncoded {
+		t.Errorf("expected base64-encoded keychain content, got %q", secretBody)
 	}
 }
 
