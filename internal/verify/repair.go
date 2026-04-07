@@ -1338,3 +1338,138 @@ func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run b
 	return CheckResult{Name: checkAgentUserVarName, Status: Pass,
 		Message: fmt.Sprintf("set AGENT_USER=%s at %s level", agentUser, agentUserScope)}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pipeline variable and secret repair functions
+// ──────────────────────────────────────────────────────────────────────────────
+
+// repairRepoVariable sets a repo variable to a given value using gh variable set.
+func repairRepoVariable(owner, repoName, varName, value, checkName string, run bootstrap.RunCommandFunc) CheckResult {
+	repoFullName := owner + "/" + repoName
+	_, err := run("gh", "variable", "set", varName, "--body", value, "--repo", repoFullName)
+	if err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to set %s: %v", varName, err),
+		}
+	}
+	return CheckResult{
+		Name:    checkName,
+		Status:  Pass,
+		Message: fmt.Sprintf("set %s=%s", varName, value),
+	}
+}
+
+// RepairRunnerLabelVar sets the RUNNER_LABEL repo variable to its default value.
+func RepairRunnerLabelVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	return repairRepoVariable(owner, repoName, "RUNNER_LABEL", bootstrap.DefaultRunnerLabel, checkRunnerLabelVarName, run)
+}
+
+// RepairGooseProviderVar sets the GOOSE_PROVIDER repo variable to its default value.
+func RepairGooseProviderVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	return repairRepoVariable(owner, repoName, "GOOSE_PROVIDER", bootstrap.DefaultGooseProvider, checkGooseProviderVarName, run)
+}
+
+// RepairGooseModelVar sets the GOOSE_MODEL repo variable to its default value.
+func RepairGooseModelVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	return repairRepoVariable(owner, repoName, "GOOSE_MODEL", bootstrap.DefaultGooseModel, checkGooseModelVarName, run)
+}
+
+// RepairGooseAgentPATSecret returns ManualAction — the PAT value is not knowable
+// by the tool and must be created by the user.
+func RepairGooseAgentPATSecret(owner, repoName string) CheckResult {
+	settingsURL := fmt.Sprintf("https://github.com/%s/%s/settings/secrets/actions", owner, repoName)
+	return CheckResult{
+		Name:   checkGooseAgentPATSecretName,
+		Status: ManualAction,
+		Message: fmt.Sprintf(
+			"GOOSE_AGENT_PAT must be set manually. Create a PAT with repo and project scopes, then add it at: %s",
+			settingsURL,
+		),
+	}
+}
+
+// credentialsFilePath is the relative path from home to the Claude credentials file.
+const credentialsFilePath = ".claude/.credentials.json"
+
+// RepairClaudeCredentialsSecret reads ~/.claude/.credentials.json, base64-encodes it,
+// and sets it as the CLAUDE_CREDENTIALS_JSON repo secret. If the file does not exist,
+// returns ManualAction with instructions for the user.
+func RepairClaudeCredentialsSecret(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return repairClaudeCredentialsManualAction(owner, repoName)
+	}
+
+	credPath := filepath.Join(home, credentialsFilePath)
+	data, err := os.ReadFile(credPath)
+	if err != nil {
+		return repairClaudeCredentialsManualAction(owner, repoName)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+	repoFullName := owner + "/" + repoName
+	_, setErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", repoFullName)
+	if setErr != nil {
+		return CheckResult{
+			Name:    checkClaudeCredentialsSecretName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to set secret: %v", setErr),
+		}
+	}
+
+	return CheckResult{
+		Name:    checkClaudeCredentialsSecretName,
+		Status:  Pass,
+		Message: "CLAUDE_CREDENTIALS_JSON secret set from ~/.claude/.credentials.json",
+	}
+}
+
+// repairClaudeCredentialsManualAction returns ManualAction with instructions
+// for the user to manually set the CLAUDE_CREDENTIALS_JSON secret.
+func repairClaudeCredentialsManualAction(owner, repoName string) CheckResult {
+	repoFullName := owner + "/" + repoName
+	return CheckResult{
+		Name:   checkClaudeCredentialsSecretName,
+		Status: ManualAction,
+		Message: fmt.Sprintf(
+			"~/.claude/.credentials.json not found. Run manually:\n"+
+				"  base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s",
+			repoFullName,
+		),
+	}
+}
+
+// RepairClaudeCredentialsSecretWithReadFile is a testable version that accepts
+// a readFile function and homeDir function instead of using os.ReadFile and
+// os.UserHomeDir directly.
+func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run bootstrap.RunCommandFunc, readFile func(string) ([]byte, error), homeDir func() (string, error)) CheckResult {
+	home, err := homeDir()
+	if err != nil {
+		return repairClaudeCredentialsManualAction(owner, repoName)
+	}
+
+	credPath := filepath.Join(home, credentialsFilePath)
+	data, err := readFile(credPath)
+	if err != nil {
+		return repairClaudeCredentialsManualAction(owner, repoName)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+	repoFullName := owner + "/" + repoName
+	_, setErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", repoFullName)
+	if setErr != nil {
+		return CheckResult{
+			Name:    checkClaudeCredentialsSecretName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to set secret: %v", setErr),
+		}
+	}
+
+	return CheckResult{
+		Name:    checkClaudeCredentialsSecretName,
+		Status:  Pass,
+		Message: "CLAUDE_CREDENTIALS_JSON secret set from ~/.claude/.credentials.json",
+	}
+}
