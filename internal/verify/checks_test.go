@@ -1231,3 +1231,193 @@ func TestCheckAgenticProjectID(t *testing.T) {
 		})
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pipeline variable check tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckRunnerLabelVar_Present_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[{"name":"RUNNER_LABEL"},{"name":"OTHER"}]`, nil
+	}
+	result := CheckRunnerLabelVar("owner", "repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckRunnerLabelVar_Missing_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[{"name":"OTHER"}]`, nil
+	}
+	result := CheckRunnerLabelVar("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "ubuntu-latest") {
+		t.Errorf("expected message to mention default value, got %q", result.Message)
+	}
+}
+
+func TestCheckRunnerLabelVar_ParseError_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `not json`, nil
+	}
+	result := CheckRunnerLabelVar("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "parse") {
+		t.Errorf("expected parse error message, got %q", result.Message)
+	}
+}
+
+func TestCheckGooseProviderVar_Present_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[{"name":"GOOSE_PROVIDER"}]`, nil
+	}
+	result := CheckGooseProviderVar("owner", "repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseProviderVar_Missing_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[]`, nil
+	}
+	result := CheckGooseProviderVar("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "claude-code") {
+		t.Errorf("expected message to mention default value, got %q", result.Message)
+	}
+}
+
+func TestCheckGooseProviderVar_ParseError_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `{bad}`, nil
+	}
+	result := CheckGooseProviderVar("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseModelVar_Present_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[{"name":"GOOSE_MODEL"}]`, nil
+	}
+	result := CheckGooseModelVar("owner", "repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseModelVar_Missing_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[]`, nil
+	}
+	result := CheckGooseModelVar("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "default") {
+		t.Errorf("expected message to mention default value, got %q", result.Message)
+	}
+}
+
+func TestCheckGooseModelVar_ParseError_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `not valid`, nil
+	}
+	result := CheckGooseModelVar("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pipeline secret check tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckGooseAgentPATSecret_Present_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+	}
+	result := CheckGooseAgentPATSecret("owner", "repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseAgentPATSecret_Missing_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[{"name":"OTHER_SECRET"}]`, nil
+	}
+	result := CheckGooseAgentPATSecret("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseAgentPATSecret_ParseError_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `bad json`, nil
+	}
+	result := CheckGooseAgentPATSecret("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckClaudeCredentialsSecret_Present_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[{"name":"CLAUDE_CREDENTIALS_JSON"}]`, nil
+	}
+	result := CheckClaudeCredentialsSecret("owner", "repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckClaudeCredentialsSecret_Missing_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `[]`, nil
+	}
+	result := CheckClaudeCredentialsSecret("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckClaudeCredentialsSecret_ParseError_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return `invalid`, nil
+	}
+	result := CheckClaudeCredentialsSecret("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckRunnerLabelVar_CommandError_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("network error")
+	}
+	result := CheckRunnerLabelVar("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckGooseAgentPATSecret_CommandError_ReturnsWarning(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("network error")
+	}
+	result := CheckGooseAgentPATSecret("owner", "repo", fakeRun)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}

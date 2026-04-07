@@ -85,6 +85,19 @@ func RunSteps(
 			fn:    func() error { return SetAgentUserVariable(w, cfg, state, run) },
 		},
 		{
+			label: "Setting pipeline variables",
+			fn:    func() error { return SetPipelineVariables(w, cfg, state, run) },
+		},
+		{
+			label: "Configuring pipeline secrets",
+			fn: func() error {
+				if err := SetClaudeCredentials(w, cfg, state, run, DefaultReadFile, DefaultUserHomeDir); err != nil {
+					return err
+				}
+				return ValidateAgentPAT(w, cfg, state, run)
+			},
+		},
+		{
 			label: "Configuring project status columns",
 			fn:    func() error { return ConfigureProjectStatus(w, cfg, state, graphqlDo) },
 		},
