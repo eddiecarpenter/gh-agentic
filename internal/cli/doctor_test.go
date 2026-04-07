@@ -119,6 +119,21 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	// CheckAgentUserVar: gh variable list --repo (return AGENT_USER).
 	m.Expect([]string{"gh", "variable", "list", "--repo", "testowner/testrepo", "--json", "name"}, `[{"name":"AGENT_USER"}]`, nil)
 
+	// CheckRunnerLabelVar: gh variable list --repo (return RUNNER_LABEL).
+	m.Expect([]string{"gh", "variable", "list", "--repo", "testowner/testrepo", "--json", "name"}, `[{"name":"RUNNER_LABEL"}]`, nil)
+
+	// CheckGooseProviderVar: gh variable list --repo (return GOOSE_PROVIDER).
+	m.Expect([]string{"gh", "variable", "list", "--repo", "testowner/testrepo", "--json", "name"}, `[{"name":"GOOSE_PROVIDER"}]`, nil)
+
+	// CheckGooseModelVar: gh variable list --repo (return GOOSE_MODEL).
+	m.Expect([]string{"gh", "variable", "list", "--repo", "testowner/testrepo", "--json", "name"}, `[{"name":"GOOSE_MODEL"}]`, nil)
+
+	// CheckGooseAgentPATSecret: gh secret list --repo (return GOOSE_AGENT_PAT).
+	m.Expect([]string{"gh", "secret", "list", "--repo", "testowner/testrepo", "--json", "name"}, `[{"name":"GOOSE_AGENT_PAT"}]`, nil)
+
+	// CheckClaudeCredentialsSecret: gh secret list --repo (return CLAUDE_CREDENTIALS_JSON).
+	m.Expect([]string{"gh", "secret", "list", "--repo", "testowner/testrepo", "--json", "name"}, `[{"name":"CLAUDE_CREDENTIALS_JSON"}]`, nil)
+
 	// CheckStaleOpenRequirements: gh issue list --label requirement --state open
 	m.Expect([]string{"gh", "issue", "list", "--repo", "testowner/testrepo", "--label", "requirement", "--state", "open", "--json", "number,title", "--limit", "200"}, "[]", nil)
 

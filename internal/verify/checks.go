@@ -998,6 +998,15 @@ func CheckStaleOpenRequirements(repoFullName string, run bootstrap.RunCommandFun
 // checkAgentUserVarName is the check name used for AGENT_USER variable verification.
 const checkAgentUserVarName = "AGENT_USER variable configured"
 
+// Check name constants for pipeline variable and secret checks.
+const (
+	checkRunnerLabelVarName        = "RUNNER_LABEL variable configured"
+	checkGooseProviderVarName      = "GOOSE_PROVIDER variable configured"
+	checkGooseModelVarName         = "GOOSE_MODEL variable configured"
+	checkGooseAgentPATSecretName   = "GOOSE_AGENT_PAT secret configured"
+	checkClaudeCredentialsSecretName = "CLAUDE_CREDENTIALS_JSON secret configured"
+)
+
 // variableEntry is used to unmarshal JSON output from `gh variable list`.
 type variableEntry struct {
 	Name  string `json:"name"`
@@ -1104,4 +1113,108 @@ func CheckStaleOpenFeatures(repoFullName string, run bootstrap.RunCommandFunc) C
 		Status:  Warning,
 		Message: fmt.Sprintf("open features with all tasks closed: %s", strings.Join(msgs, ", ")),
 	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pipeline variable checks
+// ──────────────────────────────────────────────────────────────────────────────
+
+// secretEntry is used to unmarshal JSON output from `gh secret list`.
+type secretEntry struct {
+	Name string `json:"name"`
+}
+
+// checkRepoVariable checks whether a named repo variable exists by querying
+// `gh variable list --repo`. Returns Pass if present, Warning if missing.
+func checkRepoVariable(owner, repoName, varName, checkName, defaultValue string, run bootstrap.RunCommandFunc) CheckResult {
+	repoFullName := owner + "/" + repoName
+	out, err := run("gh", "variable", "list", "--repo", repoFullName, "--json", "name")
+	if err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Warning,
+			Message: fmt.Sprintf("could not list repo variables: %v", err),
+		}
+	}
+
+	var vars []variableEntry
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Warning,
+			Message: fmt.Sprintf("failed to parse variable list: %v", jsonErr),
+		}
+	}
+
+	for _, v := range vars {
+		if v.Name == varName {
+			return CheckResult{Name: checkName, Status: Pass}
+		}
+	}
+
+	return CheckResult{
+		Name:    checkName,
+		Status:  Warning,
+		Message: fmt.Sprintf("%s not set — repair will set to %q", varName, defaultValue),
+	}
+}
+
+// checkRepoSecret checks whether a named repo secret exists by querying
+// `gh secret list --repo`. Returns Pass if present, Warning if missing.
+func checkRepoSecret(owner, repoName, secretName, checkName string, run bootstrap.RunCommandFunc) CheckResult {
+	repoFullName := owner + "/" + repoName
+	out, err := run("gh", "secret", "list", "--repo", repoFullName, "--json", "name")
+	if err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Warning,
+			Message: fmt.Sprintf("could not list repo secrets: %v", err),
+		}
+	}
+
+	var secrets []secretEntry
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &secrets); jsonErr != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Warning,
+			Message: fmt.Sprintf("failed to parse secret list: %v", jsonErr),
+		}
+	}
+
+	for _, s := range secrets {
+		if s.Name == secretName {
+			return CheckResult{Name: checkName, Status: Pass}
+		}
+	}
+
+	return CheckResult{
+		Name:    checkName,
+		Status:  Warning,
+		Message: fmt.Sprintf("%s secret not set", secretName),
+	}
+}
+
+// CheckRunnerLabelVar verifies that RUNNER_LABEL is configured as a repo variable.
+func CheckRunnerLabelVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoVariable(owner, repoName, "RUNNER_LABEL", checkRunnerLabelVarName, bootstrap.DefaultRunnerLabel, run)
+}
+
+// CheckGooseProviderVar verifies that GOOSE_PROVIDER is configured as a repo variable.
+func CheckGooseProviderVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoVariable(owner, repoName, "GOOSE_PROVIDER", checkGooseProviderVarName, bootstrap.DefaultGooseProvider, run)
+}
+
+// CheckGooseModelVar verifies that GOOSE_MODEL is configured as a repo variable.
+func CheckGooseModelVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoVariable(owner, repoName, "GOOSE_MODEL", checkGooseModelVarName, bootstrap.DefaultGooseModel, run)
+}
+
+// CheckGooseAgentPATSecret verifies that GOOSE_AGENT_PAT is configured as a repo secret.
+func CheckGooseAgentPATSecret(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoSecret(owner, repoName, "GOOSE_AGENT_PAT", checkGooseAgentPATSecretName, run)
+}
+
+// CheckClaudeCredentialsSecret verifies that CLAUDE_CREDENTIALS_JSON is configured as a repo secret.
+func CheckClaudeCredentialsSecret(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoSecret(owner, repoName, "CLAUDE_CREDENTIALS_JSON", checkClaudeCredentialsSecretName, run)
 }

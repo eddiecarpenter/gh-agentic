@@ -1150,3 +1150,194 @@ func TestRepairAgenticProjectID(t *testing.T) {
 		})
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pipeline variable repair tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairRunnerLabelVar_Success(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set RUNNER_LABEL") && strings.Contains(joined, "ubuntu-latest") {
+			setCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairRunnerLabelVar("owner", "repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh variable set to be called")
+	}
+}
+
+func TestRepairRunnerLabelVar_Failure(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("permission denied")
+	}
+	result := RepairRunnerLabelVar("owner", "repo", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairGooseProviderVar_Success(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set GOOSE_PROVIDER") && strings.Contains(joined, "claude-code") {
+			setCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairGooseProviderVar("owner", "repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh variable set to be called")
+	}
+}
+
+func TestRepairGooseProviderVar_Failure(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("permission denied")
+	}
+	result := RepairGooseProviderVar("owner", "repo", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairGooseModelVar_Success(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set GOOSE_MODEL") && strings.Contains(joined, "default") {
+			setCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairGooseModelVar("owner", "repo", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh variable set to be called")
+	}
+}
+
+func TestRepairGooseModelVar_Failure(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("permission denied")
+	}
+	result := RepairGooseModelVar("owner", "repo", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pipeline secret repair tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairGooseAgentPATSecret_ReturnsManualAction(t *testing.T) {
+	result := RepairGooseAgentPATSecret("owner", "repo")
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "https://github.com/owner/repo/settings/secrets/actions") {
+		t.Errorf("expected GitHub secrets URL in message, got %q", result.Message)
+	}
+	if !strings.Contains(result.Message, "repo and project scopes") {
+		t.Errorf("expected scope instructions in message, got %q", result.Message)
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_FileExists_SetsSecret(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set CLAUDE_CREDENTIALS_JSON") {
+			setCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"abc123"}`), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh secret set to be called")
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_FileMissing_ReturnsManualAction(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return nil, fmt.Errorf("file not found")
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "gh secret set") {
+		t.Errorf("expected manual instructions in message, got %q", result.Message)
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_HomeDirError_ReturnsManualAction(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte("data"), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "", fmt.Errorf("no home")
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_SetFails_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("permission denied")
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"abc123"}`), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}

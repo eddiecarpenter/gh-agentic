@@ -99,6 +99,11 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckProjectViews(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckAgentUserVar(cfg.owner, cfg.repoName, run) },
+		func() verify.CheckResult { return verify.CheckRunnerLabelVar(cfg.owner, cfg.repoName, run) },
+		func() verify.CheckResult { return verify.CheckGooseProviderVar(cfg.owner, cfg.repoName, run) },
+		func() verify.CheckResult { return verify.CheckGooseModelVar(cfg.owner, cfg.repoName, run) },
+		func() verify.CheckResult { return verify.CheckGooseAgentPATSecret(cfg.owner, cfg.repoName, run) },
+		func() verify.CheckResult { return verify.CheckClaudeCredentialsSecret(cfg.owner, cfg.repoName, run) },
 		func() verify.CheckResult { return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run) },
 		func() verify.CheckResult { return verify.CheckStaleOpenRequirements(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckStaleOpenFeatures(cfg.repoFullName, run) },
@@ -148,6 +153,16 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
 			case "AGENT_USER variable configured":
 				r = verify.RepairAgentUserVar(cfg.owner, cfg.repoName, cfg.agentUser, cfg.agentUserScope, run, textConfirm)
+			case "RUNNER_LABEL variable configured":
+				r = verify.RepairRunnerLabelVar(cfg.owner, cfg.repoName, run)
+			case "GOOSE_PROVIDER variable configured":
+				r = verify.RepairGooseProviderVar(cfg.owner, cfg.repoName, run)
+			case "GOOSE_MODEL variable configured":
+				r = verify.RepairGooseModelVar(cfg.owner, cfg.repoName, run)
+			case "GOOSE_AGENT_PAT secret configured":
+				r = verify.RepairGooseAgentPATSecret(cfg.owner, cfg.repoName)
+			case "CLAUDE_CREDENTIALS_JSON secret configured":
+				r = verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, run)
 			case "Agent user is a project collaborator":
 				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
 			case "No stale open requirements":
