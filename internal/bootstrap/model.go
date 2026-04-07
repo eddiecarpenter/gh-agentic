@@ -44,6 +44,16 @@ type BootstrapConfig struct {
 	// AgentUserScope is the scope for the AGENT_USER variable: "org" or "repo".
 	// Optional — if empty, it will be collected interactively during bootstrap.
 	AgentUserScope string
+
+	// RunnerLabel is the GitHub Actions runner label (e.g. "ubuntu-latest" for
+	// GitHub-hosted runners, or a custom label for self-hosted runners).
+	RunnerLabel string
+
+	// GooseProvider is the Goose LLM provider name (e.g. "claude-code").
+	GooseProvider string
+
+	// GooseModel is the Goose model override (e.g. "default" to use the provider's default).
+	GooseModel string
 }
 
 const (
@@ -51,4 +61,11 @@ const (
 	AgentUserScopeOrg = "org"
 	// AgentUserScopeRepo indicates the AGENT_USER variable is set at repo level.
 	AgentUserScopeRepo = "repo"
+
+	// DefaultRunnerLabel is the default GitHub Actions runner label.
+	DefaultRunnerLabel = "ubuntu-latest"
+	// DefaultGooseProvider is the default Goose LLM provider.
+	DefaultGooseProvider = "claude-code"
+	// DefaultGooseModel is the default Goose model override.
+	DefaultGooseModel = "default"
 )
