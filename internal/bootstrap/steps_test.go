@@ -1155,21 +1155,23 @@ func TestCreateProject_VariableSetSuccess_CallsGhVariable(t *testing.T) {
 // --------------------------------------------------------------------------------------
 
 func TestPrintSummary_OutputContainsAllFields(t *testing.T) {
-	cfg := BootstrapConfig{ProjectName: "my-project"}
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
 	state := &StepState{
-		RepoURL:    "https://github.com/alice/my-project",
-		ProjectURL: "https://github.com/orgs/alice/projects/1",
-		ClonePath:  "/home/alice/Development/my-project",
+		RepoURL:        "https://github.com/alice/my-project",
+		ProjectURL:     "https://github.com/orgs/alice/projects/1",
+		ClonePath:      "/home/alice/Development/my-project",
+		AgentPATFound:  true,
+		CredentialsSet: true,
 	}
 
-	// Fake launch that skips without running goose.
 	fakeLaunch := func(clonePath string) error { return nil }
 
-	// We cannot drive the huh form in a test without a TTY.
-	// PrintSummary will return an error from the form (no TTY) — we only test
-	// the pre-form output (summary box).
 	var buf bytes.Buffer
-	// The form will fail — that's expected. Check what was written before the error.
 	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
 
 	out := buf.String()
@@ -1185,11 +1187,18 @@ func TestPrintSummary_OutputContainsAllFields(t *testing.T) {
 }
 
 func TestPrintSummary_OrgAccount_ShowsPATGuidance(t *testing.T) {
-	cfg := BootstrapConfig{ProjectName: "my-project", OwnerType: OwnerTypeOrg}
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		OwnerType:     OwnerTypeOrg,
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
 	state := &StepState{
-		RepoURL:    "https://github.com/acme-org/my-project",
-		ProjectURL: "https://github.com/orgs/acme-org/projects/1",
-		ClonePath:  "/home/alice/Development/my-project",
+		RepoURL:       "https://github.com/acme-org/my-project",
+		ProjectURL:    "https://github.com/orgs/acme-org/projects/1",
+		ClonePath:     "/home/alice/Development/my-project",
+		AgentPATFound: true,
 	}
 
 	fakeLaunch := func(clonePath string) error { return nil }
@@ -1198,20 +1207,24 @@ func TestPrintSummary_OrgAccount_ShowsPATGuidance(t *testing.T) {
 	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
 
 	out := buf.String()
-	if !strings.Contains(out, "GOOSE_AGENT_PAT") {
-		t.Errorf("expected PAT guidance for org account, got: %s", out)
-	}
 	if !strings.Contains(out, "github.com/settings/tokens") {
 		t.Errorf("expected token URL in PAT guidance, got: %s", out)
 	}
 }
 
-func TestPrintSummary_UserAccount_NoPATGuidance(t *testing.T) {
-	cfg := BootstrapConfig{ProjectName: "my-project", OwnerType: OwnerTypeUser}
+func TestPrintSummary_UserAccount_NoPATScopeGuidance(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		OwnerType:     OwnerTypeUser,
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
 	state := &StepState{
-		RepoURL:    "https://github.com/alice/my-project",
-		ProjectURL: "https://github.com/users/alice/projects/1",
-		ClonePath:  "/home/alice/Development/my-project",
+		RepoURL:       "https://github.com/alice/my-project",
+		ProjectURL:    "https://github.com/users/alice/projects/1",
+		ClonePath:     "/home/alice/Development/my-project",
+		AgentPATFound: true,
 	}
 
 	fakeLaunch := func(clonePath string) error { return nil }
@@ -1220,8 +1233,199 @@ func TestPrintSummary_UserAccount_NoPATGuidance(t *testing.T) {
 	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
 
 	out := buf.String()
-	if strings.Contains(out, "GOOSE_AGENT_PAT") {
-		t.Errorf("expected no PAT guidance for personal account, got: %s", out)
+	// PAT scope guidance (org-specific) should not appear for personal accounts.
+	if strings.Contains(out, "github.com/settings/tokens") {
+		t.Errorf("expected no org PAT scope guidance for personal account, got: %s", out)
+	}
+}
+
+func TestPrintSummary_PipelineConfig_ShowsRunnerProviderModel(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		Owner:         "alice",
+		RunnerLabel:   "ubuntu-latest",
+		GooseProvider: "claude-code",
+		GooseModel:    "default",
+	}
+	state := &StepState{
+		RepoName:       "my-project",
+		RepoURL:        "https://github.com/alice/my-project",
+		ClonePath:      "/tmp/my-project",
+		CredentialsSet: true,
+		AgentPATFound:  true,
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	for _, want := range []string{"ubuntu-latest", "claude-code", "default"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in pipeline config output, got: %s", want, out)
+		}
+	}
+}
+
+func TestPrintSummary_CredentialsNotSet_ShowsWarning(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		Owner:         "alice",
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
+	state := &StepState{
+		RepoName:       "my-project",
+		RepoURL:        "https://github.com/alice/my-project",
+		ClonePath:      "/tmp/my-project",
+		CredentialsSet: false,
+		AgentPATFound:  true,
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if !strings.Contains(out, "not set") {
+		t.Errorf("expected 'not set' credentials warning, got: %s", out)
+	}
+}
+
+func TestPrintSummary_CredentialsSet_ShowsOK(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		Owner:         "alice",
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
+	state := &StepState{
+		RepoName:       "my-project",
+		RepoURL:        "https://github.com/alice/my-project",
+		ClonePath:      "/tmp/my-project",
+		CredentialsSet: true,
+		AgentPATFound:  true,
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if strings.Contains(out, "not set") {
+		t.Errorf("expected no 'not set' when credentials are set, got: %s", out)
+	}
+}
+
+func TestPrintSummary_CustomRunner_ShowsSelfHostedNote(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		Owner:         "alice",
+		RunnerLabel:   "self-hosted-gpu",
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
+	state := &StepState{
+		RepoName:      "my-project",
+		RepoURL:       "https://github.com/alice/my-project",
+		ClonePath:     "/tmp/my-project",
+		AgentPATFound: true,
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if !strings.Contains(out, "Self-hosted runner") {
+		t.Errorf("expected self-hosted runner note, got: %s", out)
+	}
+}
+
+func TestPrintSummary_DefaultRunner_NoSelfHostedNote(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		Owner:         "alice",
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
+	state := &StepState{
+		RepoName:      "my-project",
+		RepoURL:       "https://github.com/alice/my-project",
+		ClonePath:     "/tmp/my-project",
+		AgentPATFound: true,
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if strings.Contains(out, "Self-hosted runner") {
+		t.Errorf("expected no self-hosted runner note for default runner, got: %s", out)
+	}
+}
+
+func TestPrintSummary_PATMissing_ShowsWarning(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		Owner:         "alice",
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
+	state := &StepState{
+		RepoName:      "my-project",
+		RepoURL:       "https://github.com/alice/my-project",
+		ClonePath:     "/tmp/my-project",
+		AgentPATFound: false,
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if !strings.Contains(out, "GOOSE_AGENT_PAT secret not found") {
+		t.Errorf("expected PAT missing warning, got: %s", out)
+	}
+	if !strings.Contains(out, "settings/secrets/actions") {
+		t.Errorf("expected settings URL in PAT warning, got: %s", out)
+	}
+}
+
+func TestPrintSummary_PATFound_NoPATWarning(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		Owner:         "alice",
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
+	state := &StepState{
+		RepoName:      "my-project",
+		RepoURL:       "https://github.com/alice/my-project",
+		ClonePath:     "/tmp/my-project",
+		AgentPATFound: true,
+	}
+
+	fakeLaunch := func(clonePath string) error { return nil }
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+
+	out := buf.String()
+	if strings.Contains(out, "GOOSE_AGENT_PAT secret not found") {
+		t.Errorf("expected no PAT warning when PAT is found, got: %s", out)
 	}
 }
 

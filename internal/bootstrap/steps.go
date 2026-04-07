@@ -790,9 +790,36 @@ func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch Lau
 	fmt.Fprintln(w, box.Render(content))
 	fmt.Fprintln(w)
 
+	// --- Pipeline configuration ---
+	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorPrimary))
+
+	credStatus := ui.RenderWarning("not set")
+	if state.CredentialsSet {
+		credStatus = ui.RenderOK("set")
+	}
+
+	fmt.Fprintln(w, "  "+ui.Muted.Render("Runner      ")+ui.Value.Render(cfg.RunnerLabel))
+	fmt.Fprintln(w, "  "+ui.Muted.Render("Provider    ")+ui.Value.Render(cfg.GooseProvider))
+	fmt.Fprintln(w, "  "+ui.Muted.Render("Model       ")+ui.Value.Render(cfg.GooseModel))
+	fmt.Fprintln(w, "  "+ui.Muted.Render("Credentials ")+credStatus)
+	fmt.Fprintln(w)
+
+	// --- Self-hosted runner note ---
+	if cfg.RunnerLabel != DefaultRunnerLabel {
+		fmt.Fprintln(w, "  "+infoStyle.Render("ℹ")+"  Self-hosted runner: ensure gh CLI and Claude Code CLI are pre-installed and authenticated on the runner.")
+		fmt.Fprintln(w)
+	}
+
+	// --- GOOSE_AGENT_PAT warning ---
+	if !state.AgentPATFound {
+		fullName := cfg.Owner + "/" + state.RepoName
+		fmt.Fprintln(w, "  "+ui.RenderWarning("GOOSE_AGENT_PAT secret not found — pipeline will not run until added."))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("  Add it at: "+fmt.Sprintf("https://github.com/%s/settings/secrets/actions", fullName)))
+		fmt.Fprintln(w)
+	}
+
 	// --- PAT scope guidance for org accounts ---
 	if cfg.OwnerType == OwnerTypeOrg {
-		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorPrimary))
 		fmt.Fprintln(w, "  "+infoStyle.Render("ℹ")+"  GOOSE_AGENT_PAT requires 'repo' and 'project' scopes for kanban sync to work.")
 		fmt.Fprintln(w, "     Verify scopes at: "+ui.URL.Render("github.com/settings/tokens"))
 		fmt.Fprintln(w)
