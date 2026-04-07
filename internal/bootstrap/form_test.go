@@ -115,6 +115,52 @@ func TestRenderSummaryBox_AntoraFalse_ShowsNo(t *testing.T) {
 	}
 }
 
+func TestRenderSummaryBox_ContainsPipelineFields(t *testing.T) {
+	cfg := BootstrapConfig{
+		Topology:      "Single",
+		Owner:         "alice",
+		ProjectName:   "my-project",
+		Description:   "test",
+		Stack:         "Go",
+		Antora:        false,
+		RunnerLabel:   "ubuntu-latest",
+		GooseProvider: "claude-code",
+		GooseModel:    "default",
+	}
+
+	rendered := RenderSummaryBox(cfg)
+
+	checks := []string{
+		"ubuntu-latest",
+		"claude-code",
+		"default",
+		"Runner",
+		"Provider",
+		"Model",
+	}
+	for _, want := range checks {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("RenderSummaryBox() expected %q in output, got:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestRenderSummaryBox_CustomRunnerLabel_ShowsCustomValue(t *testing.T) {
+	cfg := BootstrapConfig{
+		RunnerLabel:   "self-hosted-gpu",
+		GooseProvider: "openai",
+		GooseModel:    "gpt-4",
+	}
+
+	rendered := RenderSummaryBox(cfg)
+
+	for _, want := range []string{"self-hosted-gpu", "openai", "gpt-4"} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("RenderSummaryBox() expected %q in output, got:\n%s", want, rendered)
+		}
+	}
+}
+
 // --- FetchOwnersFunc injection tests ---
 
 func TestFetchOwners_PersonalAccountFirst(t *testing.T) {
