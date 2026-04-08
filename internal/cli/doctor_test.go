@@ -416,3 +416,4 @@ func TestRunDoctor_AgenticProjectIDCheckAppearsInOutput(t *testing.T) {
 	}
 }
 
+

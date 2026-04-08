@@ -1445,6 +1445,14 @@ func TestCheckRunnerLabelVar_CommandError_ReturnsWarning(t *testing.T) {
 	}
 }
 
+func TestExpectedWorkflowYMLs_ExcludesPublishRelease(t *testing.T) {
+	for _, name := range expectedWorkflowYMLs {
+		if name == "publish-release.yml" {
+			t.Errorf("expectedWorkflowYMLs should not contain publish-release.yml — it is project-owned and deployed by bootstrap")
+		}
+	}
+}
+
 func TestCheckGooseAgentPATSecret_CommandError_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("network error")

@@ -343,6 +343,23 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 		}
 	}
 
+	// Deploy publish-release.yml if the example exists in the template.
+	publishReleaseSrc := filepath.Join(state.ClonePath, "base", "docs", "examples", "publish-release.yml")
+	publishReleaseDst := filepath.Join(state.ClonePath, ".github", "workflows", "publish-release.yml")
+	if srcData, err := os.ReadFile(publishReleaseSrc); err == nil {
+		if err := os.MkdirAll(filepath.Dir(publishReleaseDst), 0755); err != nil {
+			return fmt.Errorf("creating .github/workflows/: %w", err)
+		}
+		if err := os.WriteFile(publishReleaseDst, srcData, 0644); err != nil {
+			return fmt.Errorf("writing publish-release.yml: %w", err)
+		}
+		fmt.Fprintf(w, "· publish-release.yml deployed\n")
+	} else if os.IsNotExist(err) {
+		fmt.Fprintf(w, "· publish-release.yml example not found in template — skipping\n")
+	} else {
+		return fmt.Errorf("reading publish-release.yml example: %w", err)
+	}
+
 	// Stage and commit.
 	out, err := runInDir(run, state.ClonePath, "git", "add", "-A")
 	if err != nil {
