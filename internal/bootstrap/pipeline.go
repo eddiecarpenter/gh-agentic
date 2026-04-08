@@ -83,6 +83,13 @@ func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 		data = []byte(out)
 	}
 
+	// Validate Claude auth before pushing credentials.
+	if authErr := ValidateClaudeAuth(run); authErr != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Claude authentication check failed — run 'claude auth login' to refresh your credentials"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("  Skipping CLAUDE_CREDENTIALS_JSON secret — credentials may be stale"))
+		return nil
+	}
+
 	encoded := base64.StdEncoding.EncodeToString(data)
 
 	out, runErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", fullName)
