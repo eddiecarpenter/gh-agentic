@@ -208,42 +208,46 @@ func RunSync(
 
 	cfg.LatestVersion = targetRelease.TagName
 
-	if len(available) == 1 {
-		// Single version available — display release notes directly, skip picker.
-		fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("Update available: %s → %s", cfg.CurrentVersion, targetRelease.TagName)))
-		fmt.Fprintln(w)
-		DisplayReleaseNotes(w, targetRelease)
-	} else if len(available) > 1 {
-		// Multiple versions available — show picker.
-		fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("%d releases available since %s", len(available), cfg.CurrentVersion)))
-		fmt.Fprintln(w)
+	// Step 4: Version picker → release notes → confirm loop.
+	// When the user declines, clear the screen and return to the picker.
+	for {
+		if len(available) == 1 {
+			// Single version available — display release notes directly, skip picker.
+			fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("Update available: %s → %s", cfg.CurrentVersion, targetRelease.TagName)))
+			fmt.Fprintln(w)
+			DisplayReleaseNotes(w, targetRelease)
+		} else if len(available) > 1 {
+			// Multiple versions available — show picker.
+			fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("%d releases available since %s", len(available), cfg.CurrentVersion)))
+			fmt.Fprintln(w)
 
-		if selectVersion != nil {
-			selected, selectErr := selectVersion(available)
-			if selectErr != nil {
-				return fmt.Errorf("version selection: %w", selectErr)
+			if selectVersion != nil {
+				selected, selectErr := selectVersion(available)
+				if selectErr != nil {
+					return fmt.Errorf("version selection: %w", selectErr)
+				}
+				targetRelease = selected
+				cfg.LatestVersion = targetRelease.TagName
 			}
-			targetRelease = selected
-			cfg.LatestVersion = targetRelease.TagName
+
+			DisplayReleaseNotes(w, targetRelease)
+		} else {
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))
 		}
 
-		DisplayReleaseNotes(w, targetRelease)
-	} else {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))
-	}
-
-	fmt.Fprintln(w)
-
-	// Step 4: Confirm with user before any destructive work.
-	confirmed, err := confirm(fmt.Sprintf("Install %s?", cfg.LatestVersion))
-	if err != nil {
-		return fmt.Errorf("confirmation prompt: %w", err)
-	}
-
-	if !confirmed {
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  "+ui.Muted.Render("Sync cancelled — no changes made"))
-		return nil
+
+		confirmed, confirmErr := confirm(fmt.Sprintf("Install %s?", cfg.LatestVersion))
+		if confirmErr != nil {
+			return fmt.Errorf("confirmation prompt: %w", confirmErr)
+		}
+
+		if confirmed {
+			break
+		}
+
+		// Decline — clear screen and loop back to picker.
+		clearScreen(w)
 	}
 
 	// Step 5: Clone template to temp dir.

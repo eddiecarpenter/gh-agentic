@@ -223,20 +223,98 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 	mock.AssertExpectations(t)
 }
 
-func TestRunSync_DeclineNoFileChanges(t *testing.T) {
+func TestRunSync_DeclineThenAccept(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 
 	mock := &testutil.MockRunner{}
+
+	confirmCalls := 0
+	confirmFn := func(_ string) (bool, error) {
+		confirmCalls++
+		// First call declines, second accepts.
+		return confirmCalls >= 2, nil
+	}
+
+	clearCalls := 0
+	trackingClear := func(_ io.Writer) {
+		clearCalls++
+	}
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		mock.RunCommand, // no clone runner — nothing should be cloned
+		cloneRunner(mock, "updated content"),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
-		func(_ string) (bool, error) { return false, nil },
+		confirmFn,
 		nil, // selectVersion
+		trackingClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Confirm was called twice (decline + accept).
+	if confirmCalls != 2 {
+		t.Errorf("expected confirm called 2 times, got %d", confirmCalls)
+	}
+
+	// ClearScreen was called when returning to picker after decline.
+	if clearCalls < 1 {
+		t.Errorf("expected clearScreen called at least once on decline, got %d", clearCalls)
+	}
+
+	// Install still completed — TEMPLATE_VERSION updated.
+	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "v2.0.0" {
+		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_DeclineThenAccept_MultipleReleases(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	confirmCalls := 0
+	confirmFn := func(_ string) (bool, error) {
+		confirmCalls++
+		return confirmCalls >= 2, nil
+	}
+
+	selectCalls := 0
+	fakeSelect := func(releases []Release) (Release, error) {
+		selectCalls++
+		// Always select the first release.
+		return releases[0], nil
+	}
+
+	multiReleases := fakeReleases([]Release{
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+	}, nil)
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "selected content"),
+		multiReleases,
+		testutil.NoopSpinner,
+		confirmFn,
+		fakeSelect,
 		noopClear,
 		false,
 		false,
@@ -249,27 +327,9 @@ func TestRunSync_DeclineNoFileChanges(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify no files were modified — base/ still has original content.
-	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != "# AGENTS.md\n" {
-		t.Errorf("base/AGENTS.md = %q, want '# AGENTS.md\\n' — files should not be modified on decline", data)
-	}
-
-	// TEMPLATE_VERSION should be unchanged.
-	data, err = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v1.0.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v1.0.0", string(data))
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "cancelled") {
-		t.Errorf("expected 'cancelled' message, got: %s", output)
+	// SelectVersion should be called twice (once per loop iteration).
+	if selectCalls != 2 {
+		t.Errorf("expected selectVersion called 2 times, got %d", selectCalls)
 	}
 
 	mock.AssertExpectations(t)
