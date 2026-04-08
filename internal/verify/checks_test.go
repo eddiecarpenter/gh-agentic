@@ -935,7 +935,7 @@ func TestCheckProjectCollaborator_EmptyAgentUser_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectCollaborator("owner", "my-repo", "", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -951,7 +951,7 @@ func TestCheckProjectCollaborator_UserPresent_ReturnsPass(t *testing.T) {
 		return "alice\ngoose-agent\nbob", nil // collaborators
 	}
 
-	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -967,7 +967,7 @@ func TestCheckProjectCollaborator_UserAbsent_ReturnsFail(t *testing.T) {
 		return "alice\nbob", nil // goose-agent not present
 	}
 
-	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -983,9 +983,69 @@ func TestCheckProjectCollaborator_APIFailure_ReturnsFail(t *testing.T) {
 		return "", fmt.Errorf("API error")
 	}
 
-	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CheckProjectCollaborator org-aware tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckProjectCollaborator_OrgMemberFound_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		// Should query orgs/{owner}/members, not GraphQL.
+		joined := strings.Join(args, " ")
+		if !strings.Contains(joined, "orgs/acme-org/members") {
+			t.Errorf("expected org members API call, got args: %v", args)
+		}
+		return "alice\ngoose-agent\nbob", nil
+	}
+
+	result := CheckProjectCollaborator("acme-org", "my-repo", "goose-agent", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_OrgMemberNotFound_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "alice\nbob", nil // goose-agent not in org
+	}
+
+	result := CheckProjectCollaborator("acme-org", "my-repo", "goose-agent", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "not an org member") {
+		t.Errorf("expected org membership failure message, got %q", result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_OrgAPIFailure_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("forbidden")
+	}
+
+	result := CheckProjectCollaborator("acme-org", "my-repo", "goose-agent", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "failed to fetch org members") {
+		t.Errorf("expected org members error message, got %q", result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_OrgEmptyAgentUser_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		t.Fatal("run should not be called when agent user is empty")
+		return "", nil
+	}
+
+	result := CheckProjectCollaborator("acme-org", "my-repo", "", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
 

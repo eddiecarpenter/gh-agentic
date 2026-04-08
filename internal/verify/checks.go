@@ -812,8 +812,11 @@ func CheckProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCom
 const checkProjectCollaboratorName = "Agent user is a project collaborator"
 
 // CheckProjectCollaborator verifies that the configured agent user is a collaborator
-// on the GitHub Project. Returns Pass with note when agentUser is empty (skips gracefully).
-func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+// on the GitHub Project. When ownerType is Organization, it queries org membership
+// via `gh api orgs/{owner}/members` instead of the GraphQL project collaborators
+// query (which fails for org projects). Returns Pass with note when agentUser is
+// empty (skips gracefully).
+func CheckProjectCollaborator(owner, repoName, agentUser, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
 	if agentUser == "" {
 		return CheckResult{
 			Name:    checkProjectCollaboratorName,
@@ -822,7 +825,34 @@ func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.R
 		}
 	}
 
-	// Find the project node ID.
+	// Organisation path: query org membership via REST API.
+	if ownerType == bootstrap.OwnerTypeOrg {
+		out, err := run("gh", "api", fmt.Sprintf("orgs/%s/members", owner), "--jq", ".[].login")
+		if err != nil {
+			return CheckResult{
+				Name:    checkProjectCollaboratorName,
+				Status:  Fail,
+				Message: fmt.Sprintf("failed to fetch org members: %v", err),
+			}
+		}
+
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if strings.TrimSpace(line) == agentUser {
+				return CheckResult{
+					Name:   checkProjectCollaboratorName,
+					Status: Pass,
+				}
+			}
+		}
+
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: agentUser + " is not an org member of " + owner,
+		}
+	}
+
+	// User path: query project collaborators via GraphQL.
 	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return CheckResult{
@@ -832,7 +862,6 @@ func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.R
 		}
 	}
 
-	// Query project collaborators.
 	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { collaborators(first: 100) { nodes { login } } } } }`, projectNodeID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", ".data.node.collaborators.nodes[].login")
 	if err != nil {
@@ -843,7 +872,6 @@ func CheckProjectCollaborator(owner, repoName, agentUser string, run bootstrap.R
 		}
 	}
 
-	// Check if agent user is present in the list.
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if strings.TrimSpace(line) == agentUser {
 			return CheckResult{

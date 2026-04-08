@@ -111,7 +111,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckGooseAgentPATSecret(cfg.owner, cfg.repoName, cfg.ownerType, run) },
 		func() verify.CheckResult { return verify.CheckClaudeCredentialsSecret(cfg.owner, cfg.repoName, cfg.ownerType, run) },
 		func() verify.CheckResult {
-			return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
+			return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, cfg.ownerType, run)
 		},
 		func() verify.CheckResult { return verify.CheckStaleOpenRequirements(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckStaleOpenFeatures(cfg.repoFullName, run) },
