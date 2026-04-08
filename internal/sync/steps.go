@@ -31,6 +31,7 @@ func CloneTemplate(repo, tmpDir string, run bootstrap.RunCommandFunc) error {
 func BackupBase(repoRoot string) (string, error) {
 	baseSrc := filepath.Join(repoRoot, "base")
 	workflowsSrc := filepath.Join(repoRoot, ".github", "workflows")
+	recipesSrc := filepath.Join(repoRoot, ".goose", "recipes")
 
 	baseExists := false
 	if _, err := os.Stat(baseSrc); err == nil {
@@ -42,8 +43,13 @@ func BackupBase(repoRoot string) (string, error) {
 		workflowsExist = true
 	}
 
+	recipesExist := false
+	if _, err := os.Stat(recipesSrc); err == nil {
+		recipesExist = true
+	}
+
 	// Nothing to back up on first sync.
-	if !baseExists && !workflowsExist {
+	if !baseExists && !workflowsExist && !recipesExist {
 		return "", nil
 	}
 
@@ -63,6 +69,13 @@ func BackupBase(repoRoot string) (string, error) {
 		if err := fsutil.CopyDir(workflowsSrc, filepath.Join(backupDir, "workflows")); err != nil {
 			_ = os.RemoveAll(backupDir)
 			return "", fmt.Errorf("backing up .github/workflows/: %w", err)
+		}
+	}
+
+	if recipesExist {
+		if err := fsutil.CopyDir(recipesSrc, filepath.Join(backupDir, "recipes")); err != nil {
+			_ = os.RemoveAll(backupDir)
+			return "", fmt.Errorf("backing up .goose/recipes/: %w", err)
 		}
 	}
 
@@ -125,6 +138,34 @@ func DeployWorkflows(tmpDir, repoRoot string, excludeFiles []string) error {
 				return fmt.Errorf("removing excluded workflow %s: %w", name, removeErr)
 			}
 		}
+	}
+
+	return nil
+}
+
+// DeployRecipes copies .goose/recipes/ from the cloned template into the local
+// repo's .goose/recipes/. Returns nil if the source directory does not exist
+// (template has no recipes).
+func DeployRecipes(tmpDir, repoRoot string) error {
+	src := filepath.Join(tmpDir, ".goose", "recipes")
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return nil
+	}
+
+	dst := filepath.Join(repoRoot, ".goose", "recipes")
+
+	// Remove existing destination before copying, matching CopyBase pattern.
+	if err := os.RemoveAll(dst); err != nil {
+		return fmt.Errorf("removing existing .goose/recipes/: %w", err)
+	}
+
+	// Ensure parent directory exists.
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("creating .goose/: %w", err)
+	}
+
+	if err := fsutil.CopyDir(src, dst); err != nil {
+		return fmt.Errorf("copying .goose/recipes/: %w", err)
 	}
 
 	return nil
@@ -215,6 +256,18 @@ func ShowDiff(repoRoot string, run bootstrap.RunCommandFunc) (string, error) {
 		out += "\n--- New workflow files ---\n" + wfUntracked
 	}
 
+	// Include .goose/recipes/ diffs.
+	recipesDiff, _ := runInDir(run, repoRoot, "git", "diff", ".goose/recipes/")
+	if strings.TrimSpace(recipesDiff) != "" {
+		out += "\n" + recipesDiff
+	}
+
+	// Include untracked recipe files.
+	recipesUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", ".goose/recipes/")
+	if strings.TrimSpace(recipesUntracked) != "" {
+		out += "\n--- New recipe files ---\n" + recipesUntracked
+	}
+
 	return out, nil
 }
 
@@ -229,7 +282,7 @@ func UpdateVersion(repoRoot, version string) error {
 
 // StageSync stages base/, .github/workflows/, and TEMPLATE_VERSION for commit.
 func StageSync(repoRoot string, run bootstrap.RunCommandFunc) error {
-	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION", ".github/workflows/"); err != nil {
+	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION", ".github/workflows/", ".goose/recipes/"); err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
 	}
 	return nil
@@ -250,7 +303,7 @@ func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) er
 	}
 
 	// Commit.
-	msg := fmt.Sprintf("chore: sync base/ and workflows from %s %s", repo, version)
+	msg := fmt.Sprintf("chore: sync base/, workflows, and recipes from %s %s", repo, version)
 	if out, err := runInDir(run, repoRoot, "git", "commit", "-m", msg); err != nil {
 		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
 	}
@@ -286,6 +339,18 @@ func RestoreBase(repoRoot, backupDir string) error {
 		}
 		if err := fsutil.CopyDir(workflowsSrc, workflowsDst); err != nil {
 			return fmt.Errorf("restoring .github/workflows/: %w", err)
+		}
+	}
+
+	// Restore .goose/recipes/ if it was backed up.
+	recipesSrc := filepath.Join(backupDir, "recipes")
+	if _, err := os.Stat(recipesSrc); err == nil {
+		recipesDst := filepath.Join(repoRoot, ".goose", "recipes")
+		if err := os.RemoveAll(recipesDst); err != nil {
+			return fmt.Errorf("removing .goose/recipes/ for restore: %w", err)
+		}
+		if err := fsutil.CopyDir(recipesSrc, recipesDst); err != nil {
+			return fmt.Errorf("restoring .goose/recipes/: %w", err)
 		}
 	}
 

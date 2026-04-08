@@ -397,6 +397,267 @@ func TestRestoreBase_WithWorkflows(t *testing.T) {
 	})
 }
 
+func TestBackupBase_WithRecipes(t *testing.T) {
+	t.Run("backs up recipes when they exist", func(t *testing.T) {
+		root := t.TempDir()
+		// Create .goose/recipes/.
+		recipesDir := filepath.Join(root, ".goose", "recipes")
+		if err := os.MkdirAll(recipesDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(recipesDir, "dev.yaml"), []byte("dev-recipe"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		backupDir, err := BackupBase(root)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.RemoveAll(backupDir)
+
+		if backupDir == "" {
+			t.Fatal("expected non-empty backup dir")
+		}
+
+		// Verify recipes backup.
+		data, err := os.ReadFile(filepath.Join(backupDir, "recipes", "dev.yaml"))
+		if err != nil {
+			t.Fatalf("recipes backup missing: %v", err)
+		}
+		if string(data) != "dev-recipe" {
+			t.Errorf("recipe content mismatch: %s", data)
+		}
+	})
+
+	t.Run("no recipes directory is not an error", func(t *testing.T) {
+		root := t.TempDir()
+		// Create only base/.
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		backupDir, err := BackupBase(root)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.RemoveAll(backupDir)
+
+		// Verify recipes backup dir does NOT exist.
+		if _, err := os.Stat(filepath.Join(backupDir, "recipes")); !os.IsNotExist(err) {
+			t.Error("expected no recipes backup when dir is absent")
+		}
+	})
+
+	t.Run("backs up all three directories", func(t *testing.T) {
+		root := t.TempDir()
+		// Create base/.
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// Create .github/workflows/.
+		wfDir := filepath.Join(root, ".github", "workflows")
+		if err := os.MkdirAll(wfDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wfDir, "ci.yml"), []byte("ci"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// Create .goose/recipes/.
+		recipesDir := filepath.Join(root, ".goose", "recipes")
+		if err := os.MkdirAll(recipesDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(recipesDir, "dev.yaml"), []byte("dev"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		backupDir, err := BackupBase(root)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.RemoveAll(backupDir)
+
+		// Verify all three backed up.
+		if _, err := os.Stat(filepath.Join(backupDir, "base", "AGENTS.md")); err != nil {
+			t.Error("base backup missing")
+		}
+		if _, err := os.Stat(filepath.Join(backupDir, "workflows", "ci.yml")); err != nil {
+			t.Error("workflows backup missing")
+		}
+		if _, err := os.Stat(filepath.Join(backupDir, "recipes", "dev.yaml")); err != nil {
+			t.Error("recipes backup missing")
+		}
+	})
+}
+
+func TestRestoreBase_WithRecipes(t *testing.T) {
+	t.Run("restores recipes from backup", func(t *testing.T) {
+		root := t.TempDir()
+		backupDir := t.TempDir()
+
+		// Create recipes backup.
+		if err := os.MkdirAll(filepath.Join(backupDir, "recipes"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(backupDir, "recipes", "dev.yaml"), []byte("original-recipe"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create modified recipes in repo.
+		recipesDir := filepath.Join(root, ".goose", "recipes")
+		if err := os.MkdirAll(recipesDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(recipesDir, "dev.yaml"), []byte("modified-recipe"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := RestoreBase(root, backupDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify recipes restored.
+		data, err := os.ReadFile(filepath.Join(root, ".goose", "recipes", "dev.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "original-recipe" {
+			t.Errorf("recipes not restored: %q", data)
+		}
+	})
+
+	t.Run("no recipes backup skips recipe restore", func(t *testing.T) {
+		root := t.TempDir()
+		backupDir := t.TempDir()
+
+		// Only base backup.
+		if err := os.MkdirAll(filepath.Join(backupDir, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(backupDir, "base", "AGENTS.md"), []byte("original"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create modified base in repo.
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := RestoreBase(root, backupDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// base should be restored.
+		data, err := os.ReadFile(filepath.Join(root, "base", "AGENTS.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "original" {
+			t.Errorf("base not restored: %q", data)
+		}
+	})
+}
+
+func TestDeployRecipes(t *testing.T) {
+	t.Run("copies recipes from template to repo", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Create source recipes in template.
+		srcRecipes := filepath.Join(tmpDir, ".goose", "recipes")
+		if err := os.MkdirAll(srcRecipes, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcRecipes, "dev.yaml"), []byte("dev-content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcRecipes, "review.yaml"), []byte("review-content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployRecipes(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify files were copied.
+		data, err := os.ReadFile(filepath.Join(repoRoot, ".goose", "recipes", "dev.yaml"))
+		if err != nil {
+			t.Fatalf("recipe file missing: %v", err)
+		}
+		if string(data) != "dev-content" {
+			t.Errorf("content mismatch: %s", data)
+		}
+
+		data, err = os.ReadFile(filepath.Join(repoRoot, ".goose", "recipes", "review.yaml"))
+		if err != nil {
+			t.Fatalf("review recipe file missing: %v", err)
+		}
+		if string(data) != "review-content" {
+			t.Errorf("review content mismatch: %s", data)
+		}
+	})
+
+	t.Run("returns nil when source absent", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		err := DeployRecipes(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("expected nil for absent source, got: %v", err)
+		}
+	})
+
+	t.Run("replaces existing recipes", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Create source recipes.
+		srcRecipes := filepath.Join(tmpDir, ".goose", "recipes")
+		if err := os.MkdirAll(srcRecipes, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcRecipes, "new.yaml"), []byte("new-content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create existing recipes in repo.
+		dstRecipes := filepath.Join(repoRoot, ".goose", "recipes")
+		if err := os.MkdirAll(dstRecipes, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dstRecipes, "old.yaml"), []byte("old-content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployRecipes(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify new file exists.
+		if _, err := os.Stat(filepath.Join(dstRecipes, "new.yaml")); os.IsNotExist(err) {
+			t.Error("new.yaml should exist")
+		}
+
+		// Verify old file was removed.
+		if _, err := os.Stat(filepath.Join(dstRecipes, "old.yaml")); !os.IsNotExist(err) {
+			t.Error("old.yaml should have been removed")
+		}
+	})
+}
+
 func TestCopyBase(t *testing.T) {
 	t.Run("success with nested dirs", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -645,6 +906,8 @@ func TestShowDiff(t *testing.T) {
 			{output: "", err: nil},                             // ls-files base/
 			{output: "", err: nil},                             // git diff .github/workflows/
 			{output: "", err: nil},                             // ls-files .github/workflows/
+			{output: "", err: nil},                             // git diff .goose/recipes/
+			{output: "", err: nil},                             // ls-files .goose/recipes/
 		}
 		run := fakeRunMulti(responses)
 
@@ -662,10 +925,12 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                    // git diff base/
-			{output: "base/new-file.md\n", err: nil},  // ls-files base/
-			{output: "", err: nil},                    // git diff .github/workflows/
-			{output: "", err: nil},                    // ls-files .github/workflows/
+			{output: "", err: nil},                   // git diff base/
+			{output: "base/new-file.md\n", err: nil}, // ls-files base/
+			{output: "", err: nil},                   // git diff .github/workflows/
+			{output: "", err: nil},                   // ls-files .github/workflows/
+			{output: "", err: nil},                   // git diff .goose/recipes/
+			{output: "", err: nil},                   // ls-files .goose/recipes/
 		}
 		run := fakeRunMulti(responses)
 
@@ -683,10 +948,12 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                                     // git diff base/
-			{output: "", err: nil},                                     // ls-files base/
+			{output: "", err: nil},                                      // git diff base/
+			{output: "", err: nil},                                      // ls-files base/
 			{output: "diff --git a/.github/workflows/ci.yml", err: nil}, // git diff .github/workflows/
-			{output: "", err: nil},                                     // ls-files .github/workflows/
+			{output: "", err: nil},                                      // ls-files .github/workflows/
+			{output: "", err: nil},                                      // git diff .goose/recipes/
+			{output: "", err: nil},                                      // ls-files .goose/recipes/
 		}
 		run := fakeRunMulti(responses)
 
@@ -704,10 +971,12 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                                                    // git diff base/
-			{output: "", err: nil},                                                    // ls-files base/
-			{output: "", err: nil},                                                    // git diff .github/workflows/
-			{output: ".github/workflows/new-pipeline.yml\n", err: nil},                // ls-files .github/workflows/
+			{output: "", err: nil},                                     // git diff base/
+			{output: "", err: nil},                                     // ls-files base/
+			{output: "", err: nil},                                     // git diff .github/workflows/
+			{output: ".github/workflows/new-pipeline.yml\n", err: nil}, // ls-files .github/workflows/
+			{output: "", err: nil},                                     // git diff .goose/recipes/
+			{output: "", err: nil},                                     // ls-files .goose/recipes/
 		}
 		run := fakeRunMulti(responses)
 
@@ -717,6 +986,52 @@ func TestShowDiff(t *testing.T) {
 		}
 		if !strings.Contains(diff, "New workflow files") {
 			t.Errorf("expected new workflow files section, got %q", diff)
+		}
+	})
+
+	t.Run("includes recipe diffs", func(t *testing.T) {
+		responses := []struct {
+			output string
+			err    error
+		}{
+			{output: "", err: nil},                                              // git diff base/
+			{output: "", err: nil},                                              // ls-files base/
+			{output: "", err: nil},                                              // git diff .github/workflows/
+			{output: "", err: nil},                                              // ls-files .github/workflows/
+			{output: "diff --git a/.goose/recipes/dev.yaml", err: nil},          // git diff .goose/recipes/
+			{output: "", err: nil},                                              // ls-files .goose/recipes/
+		}
+		run := fakeRunMulti(responses)
+
+		diff, err := ShowDiff("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(diff, ".goose/recipes/dev.yaml") {
+			t.Errorf("expected recipe diff, got %q", diff)
+		}
+	})
+
+	t.Run("includes new recipe files", func(t *testing.T) {
+		responses := []struct {
+			output string
+			err    error
+		}{
+			{output: "", err: nil},                                  // git diff base/
+			{output: "", err: nil},                                  // ls-files base/
+			{output: "", err: nil},                                  // git diff .github/workflows/
+			{output: "", err: nil},                                  // ls-files .github/workflows/
+			{output: "", err: nil},                                  // git diff .goose/recipes/
+			{output: ".goose/recipes/new-recipe.yaml\n", err: nil},  // ls-files .goose/recipes/
+		}
+		run := fakeRunMulti(responses)
+
+		diff, err := ShowDiff("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(diff, "New recipe files") {
+			t.Errorf("expected new recipe files section, got %q", diff)
 		}
 	})
 
@@ -778,6 +1093,9 @@ func TestStageSync(t *testing.T) {
 		if !strings.Contains(calls[0], ".github/workflows/") {
 			t.Errorf("expected .github/workflows/ in git add: %s", calls[0])
 		}
+		if !strings.Contains(calls[0], ".goose/recipes/") {
+			t.Errorf("expected .goose/recipes/ in git add: %s", calls[0])
+		}
 	})
 
 	t.Run("add error", func(t *testing.T) {
@@ -825,7 +1143,7 @@ func TestCommitSync(t *testing.T) {
 		}
 
 		// Verify git commit was called with correct message.
-		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync base/ and workflows") {
+		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync base/, workflows, and recipes") {
 			t.Errorf("third call should be git commit with updated message: %s", calls[2])
 		}
 	})
