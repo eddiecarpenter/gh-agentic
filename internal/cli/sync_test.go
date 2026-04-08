@@ -382,3 +382,109 @@ func TestSyncCmd_ListAndReleaseMutuallyExclusive(t *testing.T) {
 		t.Errorf("expected 'mutually exclusive' error, got: %v", execErr)
 	}
 }
+
+func TestSyncCmd_ReleaseFlagRegistration(t *testing.T) {
+	root := newRootCmd("dev", "")
+
+	var syncCmd *cobra.Command
+	for _, cmd := range root.Commands() {
+		if cmd.Use == "sync" {
+			syncCmd = cmd
+			break
+		}
+	}
+	if syncCmd == nil {
+		t.Fatal("sync subcommand not found")
+	}
+
+	f := syncCmd.Flags().Lookup("release")
+	if f == nil {
+		t.Fatal("--release flag not registered")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--release default should be empty, got %q", f.DefValue)
+	}
+}
+
+func TestSyncCmd_ReleaseSyncsToSpecificVersion(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo.Root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	mock := &testutil.MockRunner{}
+	deps := syncDeps{
+		run: syncCloneRunner(mock, "targeted content"),
+		fetchReleases: func(_ string) ([]sync.Release, error) {
+			return []sync.Release{
+				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+				{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+			}, nil
+		},
+		spinner: testutil.NoopSpinner,
+	}
+
+	syncCmd := newSyncCmdWithDeps(deps)
+	root := newTestSyncRoot(syncCmd)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"sync", "--release", "v1.5.0", "--yes"})
+	execErr := root.Execute()
+
+	if execErr != nil {
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", execErr, buf.String())
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Sync applied") {
+		t.Errorf("expected 'Sync applied' message, got:\n%s", output)
+	}
+}
+
+func TestSyncCmd_ReleaseNotFound(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo.Root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	mock := &testutil.MockRunner{}
+	deps := syncDeps{
+		run: mock.RunCommand,
+		fetchReleases: func(_ string) ([]sync.Release, error) {
+			return []sync.Release{
+				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+			}, nil
+		},
+		spinner: testutil.NoopSpinner,
+	}
+
+	syncCmd := newSyncCmdWithDeps(deps)
+	root := newTestSyncRoot(syncCmd)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"sync", "--release", "vX.Y.Z"})
+	execErr := root.Execute()
+
+	if execErr == nil {
+		t.Fatal("expected error for non-existent release tag")
+	}
+	if !strings.Contains(execErr.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", execErr)
+	}
+}
