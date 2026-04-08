@@ -1427,22 +1427,27 @@ const credentialsFilePath = ".claude/.credentials.json"
 // returns ManualAction with instructions for the user.
 // This is a thin wrapper that delegates to RepairClaudeCredentialsSecretWithReadFile
 // with the production os.ReadFile and os.UserHomeDir implementations.
-func RepairClaudeCredentialsSecret(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return RepairClaudeCredentialsSecretWithReadFile(owner, repoName, run, os.ReadFile, os.UserHomeDir)
+func RepairClaudeCredentialsSecret(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return RepairClaudeCredentialsSecretWithReadFile(owner, repoName, ownerType, run, os.ReadFile, os.UserHomeDir)
 }
 
 // repairClaudeCredentialsManualAction returns ManualAction with instructions
 // for the user to manually set the CLAUDE_CREDENTIALS_JSON secret.
-func repairClaudeCredentialsManualAction(owner, repoName string) CheckResult {
-	repoFullName := owner + "/" + repoName
+func repairClaudeCredentialsManualAction(owner, repoName, ownerType string) CheckResult {
+	var scopeFlag string
+	if ownerType == bootstrap.OwnerTypeOrg {
+		scopeFlag = "--org " + owner
+	} else {
+		scopeFlag = "--repo " + owner + "/" + repoName
+	}
 	return CheckResult{
 		Name:   checkClaudeCredentialsSecretName,
 		Status: ManualAction,
 		Message: fmt.Sprintf(
 			"Claude credentials not found (tried ~/.claude/.credentials.json and macOS Keychain). Run manually:\n"+
-				"  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s\n"+
-				`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`,
-			repoFullName, repoFullName,
+				"  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - %s\n"+
+				`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - %s`,
+			scopeFlag, scopeFlag,
 		),
 	}
 }
@@ -1450,10 +1455,10 @@ func repairClaudeCredentialsManualAction(owner, repoName string) CheckResult {
 // RepairClaudeCredentialsSecretWithReadFile is a testable version that accepts
 // a readFile function and homeDir function instead of using os.ReadFile and
 // os.UserHomeDir directly.
-func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run bootstrap.RunCommandFunc, readFile func(string) ([]byte, error), homeDir func() (string, error)) CheckResult {
+func RepairClaudeCredentialsSecretWithReadFile(owner, repoName, ownerType string, run bootstrap.RunCommandFunc, readFile func(string) ([]byte, error), homeDir func() (string, error)) CheckResult {
 	home, err := homeDir()
 	if err != nil {
-		return repairClaudeCredentialsManualAction(owner, repoName)
+		return repairClaudeCredentialsManualAction(owner, repoName, ownerType)
 	}
 
 	credPath := filepath.Join(home, credentialsFilePath)
@@ -1463,7 +1468,7 @@ func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run boots
 		out, keychainErr := run("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
 		out = strings.TrimSpace(out)
 		if keychainErr != nil || out == "" {
-			return repairClaudeCredentialsManualAction(owner, repoName)
+			return repairClaudeCredentialsManualAction(owner, repoName, ownerType)
 		}
 		data = []byte(out)
 	}
@@ -1479,8 +1484,17 @@ func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run boots
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(data)
-	repoFullName := owner + "/" + repoName
-	_, setErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", repoFullName)
+
+	// Use --org for org-owned repos, --repo for personal repos.
+	var ghArgs []string
+	if ownerType == bootstrap.OwnerTypeOrg {
+		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--org", owner}
+	} else {
+		repoFullName := owner + "/" + repoName
+		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", repoFullName}
+	}
+
+	_, setErr := run("gh", ghArgs...)
 	if setErr != nil {
 		return CheckResult{
 			Name:    checkClaudeCredentialsSecretName,

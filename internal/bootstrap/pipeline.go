@@ -32,8 +32,6 @@ var DefaultUserHomeDir UserHomeDirFunc = os.UserHomeDir
 // GitHub Actions repo variables. Each variable failure is non-fatal — a warning
 // is logged and the step continues with the remaining variables.
 func SetPipelineVariables(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
-	fullName := cfg.Owner + "/" + state.RepoName
-
 	vars := []struct {
 		name  string
 		value string
@@ -43,13 +41,26 @@ func SetPipelineVariables(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 		{name: "GOOSE_MODEL", value: cfg.GooseModel},
 	}
 
+	// Use --org for org-owned repos, --repo for personal repos.
+	var scopeArgs []string
+	var scopeLabel string
+	if cfg.OwnerType == OwnerTypeOrg {
+		scopeArgs = []string{"--org", cfg.Owner}
+		scopeLabel = "org level"
+	} else {
+		fullName := cfg.Owner + "/" + state.RepoName
+		scopeArgs = []string{"--repo", fullName}
+		scopeLabel = "repo level"
+	}
+
 	for _, v := range vars {
-		out, err := run("gh", "variable", "set", v.name, "--body", v.value, "--repo", fullName)
+		args := append([]string{"variable", "set", v.name, "--body", v.value}, scopeArgs...)
+		out, err := run("gh", args...)
 		if err != nil {
 			fmt.Fprintln(w, "  "+ui.RenderWarning(fmt.Sprintf("Could not set %s variable: %s", v.name, strings.TrimSpace(out))))
 			continue
 		}
-		fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· %s=%s set at repo level", v.name, v.value)))
+		fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· %s=%s set at %s", v.name, v.value, scopeLabel)))
 	}
 
 	return nil
@@ -60,12 +71,18 @@ func SetPipelineVariables(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 // file is not found, a warning and manual instructions are printed. All
 // failures are non-fatal.
 func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc, readFile ReadFileFunc, homeDir UserHomeDirFunc) error {
-	fullName := cfg.Owner + "/" + state.RepoName
+	// Determine scope flag for gh secret set.
+	var scopeFlag string
+	if cfg.OwnerType == OwnerTypeOrg {
+		scopeFlag = "--org " + cfg.Owner
+	} else {
+		scopeFlag = "--repo " + cfg.Owner + "/" + state.RepoName
+	}
 
 	home, err := homeDir()
 	if err != nil {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not determine home directory: "+err.Error()))
-		printCredentialInstructions(w, fullName)
+		printCredentialInstructions(w, scopeFlag)
 		return nil
 	}
 
@@ -77,7 +94,7 @@ func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 		out = strings.TrimSpace(out)
 		if keychainErr != nil || out == "" {
 			fmt.Fprintln(w, "  "+ui.RenderWarning("Claude credentials not found (tried "+credPath+" and macOS Keychain)"))
-			printCredentialInstructions(w, fullName)
+			printCredentialInstructions(w, scopeFlag)
 			return nil
 		}
 		data = []byte(out)
@@ -92,28 +109,38 @@ func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	out, runErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", fullName)
+	// Use --org for org-owned repos, --repo for personal repos.
+	var ghArgs []string
+	if cfg.OwnerType == OwnerTypeOrg {
+		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--org", cfg.Owner}
+	} else {
+		fullName := cfg.Owner + "/" + state.RepoName
+		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", fullName}
+	}
+
+	out, runErr := run("gh", ghArgs...)
 	if runErr != nil {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not set CLAUDE_CREDENTIALS_JSON secret: "+strings.TrimSpace(out)))
-		printCredentialInstructions(w, fullName)
+		printCredentialInstructions(w, scopeFlag)
 		return nil
 	}
 
 	state.CredentialsSet = true
 	fmt.Fprintln(w, "  "+ui.Muted.Render("· CLAUDE_CREDENTIALS_JSON secret set"))
 	fmt.Fprintln(w, "  "+ui.Muted.Render("  To renew manually:"))
-	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s", fullName)))
-	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`, fullName)))
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - %s", scopeFlag)))
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - %s`, scopeFlag)))
 
 	return nil
 }
 
 // printCredentialInstructions prints manual instructions for setting the
 // CLAUDE_CREDENTIALS_JSON secret for both Linux/Windows and macOS.
-func printCredentialInstructions(w io.Writer, fullName string) {
+// scopeFlag is the pre-formatted scope argument, e.g. "--org acme" or "--repo alice/repo".
+func printCredentialInstructions(w io.Writer, scopeFlag string) {
 	fmt.Fprintln(w, "  "+ui.Muted.Render("  To set manually:"))
-	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s", fullName)))
-	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`, fullName)))
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - %s", scopeFlag)))
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - %s`, scopeFlag)))
 }
 
 // ValidateClaudeAuth verifies that the local Claude CLI can authenticate by

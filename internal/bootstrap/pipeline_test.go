@@ -84,9 +84,10 @@ func TestSetPipelineVariables_PartialFailure_ContinuesWithRemaining(t *testing.T
 	}
 }
 
-func TestSetPipelineVariables_CorrectArguments(t *testing.T) {
+func TestSetPipelineVariables_UserScope_CorrectArguments(t *testing.T) {
 	cfg := BootstrapConfig{
-		Owner:         "org-name",
+		Owner:         "alice",
+		OwnerType:     OwnerTypeUser,
 		RunnerLabel:   "self-hosted",
 		GooseProvider: "openai",
 		GooseModel:    "gpt-4",
@@ -117,7 +118,7 @@ func TestSetPipelineVariables_CorrectArguments(t *testing.T) {
 
 	for i, exp := range expected {
 		call := calls[i]
-		// Expected: gh variable set <name> --body <value> --repo org-name/my-project
+		// Expected: gh variable set <name> --body <value> --repo alice/my-project
 		if call[0] != "gh" || call[1] != "variable" || call[2] != "set" {
 			t.Errorf("call %d: expected 'gh variable set', got: %v", i, call[:3])
 		}
@@ -127,9 +128,54 @@ func TestSetPipelineVariables_CorrectArguments(t *testing.T) {
 		if call[5] != exp.varValue {
 			t.Errorf("call %d: expected variable value %q, got %q", i, exp.varValue, call[5])
 		}
-		if call[7] != "org-name/my-project" {
-			t.Errorf("call %d: expected repo 'org-name/my-project', got %q", i, call[7])
+		joined := strings.Join(call, " ")
+		if !strings.Contains(joined, "--repo alice/my-project") {
+			t.Errorf("call %d: expected --repo alice/my-project, got: %v", i, call)
 		}
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "repo level") {
+		t.Errorf("expected 'repo level' in output, got: %s", out)
+	}
+}
+
+func TestSetPipelineVariables_OrgScope_UsesOrgFlag(t *testing.T) {
+	cfg := BootstrapConfig{
+		Owner:         "acme-org",
+		OwnerType:     OwnerTypeOrg,
+		RunnerLabel:   "ubuntu-latest",
+		GooseProvider: "claude-code",
+		GooseModel:    "default",
+	}
+	state := &StepState{RepoName: "my-project"}
+
+	var calls [][]string
+	run := func(name string, args ...string) (string, error) {
+		calls = append(calls, append([]string{name}, args...))
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	_ = SetPipelineVariables(&buf, cfg, state, run)
+
+	if len(calls) != 3 {
+		t.Fatalf("expected 3 calls, got %d", len(calls))
+	}
+
+	for i, call := range calls {
+		joined := strings.Join(call, " ")
+		if !strings.Contains(joined, "--org acme-org") {
+			t.Errorf("call %d: expected --org acme-org, got: %v", i, call)
+		}
+		if strings.Contains(joined, "--repo") {
+			t.Errorf("call %d: expected no --repo flag for org scope, got: %v", i, call)
+		}
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "org level") {
+		t.Errorf("expected 'org level' in output, got: %s", out)
 	}
 }
 
@@ -344,6 +390,116 @@ func TestSetClaudeCredentials_AuthSucceeds_SetsSecret(t *testing.T) {
 	expectedEncoded := base64.StdEncoding.EncodeToString(credContent)
 	if secretBody != expectedEncoded {
 		t.Errorf("expected base64-encoded body %q, got %q", expectedEncoded, secretBody)
+	}
+}
+
+func TestSetClaudeCredentials_OrgScope_UsesOrgFlag(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{RepoName: "my-project"}
+
+	credContent := []byte(`{"key":"org-value"}`)
+	readFile := func(path string) ([]byte, error) {
+		return credContent, nil
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+
+	var ghArgs []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" {
+			ghArgs = args
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !state.CredentialsSet {
+		t.Error("expected state.CredentialsSet to be true")
+	}
+
+	// Verify --org flag is used.
+	joined := strings.Join(ghArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in gh args, got: %v", ghArgs)
+	}
+	if strings.Contains(joined, "--repo") {
+		t.Errorf("expected no --repo flag for org scope, got: %v", ghArgs)
+	}
+
+	// Verify renewal instructions use --org.
+	out := buf.String()
+	if !strings.Contains(out, "--org acme-org") {
+		t.Errorf("expected --org acme-org in renewal instructions, got: %s", out)
+	}
+}
+
+func TestSetClaudeCredentials_UserScope_UsesRepoFlag(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{RepoName: "my-project"}
+
+	credContent := []byte(`{"key":"user-value"}`)
+	readFile := func(path string) ([]byte, error) {
+		return credContent, nil
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+
+	var ghArgs []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" {
+			ghArgs = args
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify --repo flag is used with owner/repo.
+	joined := strings.Join(ghArgs, " ")
+	if !strings.Contains(joined, "--repo alice/my-project") {
+		t.Errorf("expected --repo alice/my-project in gh args, got: %v", ghArgs)
+	}
+	if strings.Contains(joined, "--org") {
+		t.Errorf("expected no --org flag for user scope, got: %v", ghArgs)
+	}
+
+	// Verify renewal instructions use --repo.
+	out := buf.String()
+	if !strings.Contains(out, "--repo alice/my-project") {
+		t.Errorf("expected --repo alice/my-project in renewal instructions, got: %s", out)
+	}
+}
+
+func TestSetClaudeCredentials_OrgScope_ManualInstructions_UseOrg(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{RepoName: "my-project"}
+
+	readFile := func(path string) ([]byte, error) {
+		return nil, errors.New("file not found")
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+	// Keychain returns empty — triggers manual instruction path.
+	run := fakeRunOK("")
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--org acme-org") {
+		t.Errorf("expected --org acme-org in manual instructions, got: %s", out)
+	}
+	if strings.Contains(out, "--repo") {
+		t.Errorf("expected no --repo in manual instructions for org scope, got: %s", out)
 	}
 }
 

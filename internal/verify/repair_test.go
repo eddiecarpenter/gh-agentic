@@ -1326,7 +1326,7 @@ func TestRepairClaudeCredentialsSecret_FileExists_SetsSecret(t *testing.T) {
 		return "/home/testuser", nil
 	}
 
-	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", "User", fakeRun, fakeReadFile, fakeHomeDir)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1347,7 +1347,7 @@ func TestRepairClaudeCredentialsSecret_FileMissing_ReturnsManualAction(t *testin
 		return "/home/testuser", nil
 	}
 
-	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", "User", fakeRun, fakeReadFile, fakeHomeDir)
 	if result.Status != ManualAction {
 		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
 	}
@@ -1375,7 +1375,7 @@ func TestRepairClaudeCredentialsSecret_FileMissing_KeychainPresent_SetsSecret(t 
 		return "/home/testuser", nil
 	}
 
-	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", "User", fakeRun, fakeReadFile, fakeHomeDir)
 	if result.Status != Pass {
 		t.Errorf("expected Pass when keychain has credentials, got %v: %s", result.Status, result.Message)
 	}
@@ -1395,7 +1395,7 @@ func TestRepairClaudeCredentialsSecret_HomeDirError_ReturnsManualAction(t *testi
 		return "", fmt.Errorf("no home")
 	}
 
-	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", "User", fakeRun, fakeReadFile, fakeHomeDir)
 	if result.Status != ManualAction {
 		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
 	}
@@ -1416,7 +1416,7 @@ func TestRepairClaudeCredentialsSecret_SetFails_ReturnsFail(t *testing.T) {
 		return "/home/testuser", nil
 	}
 
-	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", "User", fakeRun, fakeReadFile, fakeHomeDir)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -1441,7 +1441,7 @@ func TestRepairClaudeCredentialsSecret_AuthFails_ReturnsManualAction(t *testing.
 		return "/home/testuser", nil
 	}
 
-	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", "User", fakeRun, fakeReadFile, fakeHomeDir)
 	if result.Status != ManualAction {
 		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
 	}
@@ -1472,7 +1472,7 @@ func TestRepairClaudeCredentialsSecret_AuthSucceeds_SetsSecret(t *testing.T) {
 		return "/home/testuser", nil
 	}
 
-	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", "User", fakeRun, fakeReadFile, fakeHomeDir)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1488,7 +1488,7 @@ func TestRepairClaudeCredentialsSecret_DelegatesToWithReadFile(t *testing.T) {
 	// result as calling WithReadFile directly with failing injections.
 	// We can't inject fakes into the wrapper, but we can verify the function
 	// returns a valid CheckResult (not a panic or compile error).
-	result := RepairClaudeCredentialsSecret("owner", "repo", func(name string, args ...string) (string, error) {
+	result := RepairClaudeCredentialsSecret("owner", "repo", "User", func(name string, args ...string) (string, error) {
 		// Keychain lookup fails — triggers ManualAction.
 		return "", fmt.Errorf("not available")
 	})
@@ -1496,5 +1496,99 @@ func TestRepairClaudeCredentialsSecret_DelegatesToWithReadFile(t *testing.T) {
 	// in CI, but it should never panic and should return a valid result.
 	if result.Name != checkClaudeCredentialsSecretName {
 		t.Errorf("expected check name %q, got %q", checkClaudeCredentialsSecretName, result.Name)
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_OrgScope_UsesOrgFlag(t *testing.T) {
+	var ghArgs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		if name == "gh" {
+			ghArgs = args
+		}
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"abc123"}`), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("acme-org", "repo", "Organization", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// Verify --org flag is used with owner only (not owner/repo).
+	joined := strings.Join(ghArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in gh args, got: %v", ghArgs)
+	}
+	if strings.Contains(joined, "--repo") {
+		t.Errorf("expected no --repo flag for org scope, got: %v", ghArgs)
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_UserScope_UsesRepoFlag(t *testing.T) {
+	var ghArgs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		if name == "gh" {
+			ghArgs = args
+		}
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"abc123"}`), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("alice", "repo", "User", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// Verify --repo flag is used with owner/repo.
+	joined := strings.Join(ghArgs, " ")
+	if !strings.Contains(joined, "--repo alice/repo") {
+		t.Errorf("expected --repo alice/repo in gh args, got: %v", ghArgs)
+	}
+	if strings.Contains(joined, "--org") {
+		t.Errorf("expected no --org flag for user scope, got: %v", ghArgs)
+	}
+}
+
+func TestRepairClaudeCredentialsManualAction_OrgScope_ShowsOrgInstructions(t *testing.T) {
+	result := RepairClaudeCredentialsSecretWithReadFile("acme-org", "repo", "Organization",
+		func(name string, args ...string) (string, error) { return "", nil },
+		func(path string) ([]byte, error) { return nil, fmt.Errorf("not found") },
+		func() (string, error) { return "/home/testuser", nil },
+	)
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "--org acme-org") {
+		t.Errorf("expected --org acme-org in manual instructions, got %q", result.Message)
+	}
+	if strings.Contains(result.Message, "--repo") {
+		t.Errorf("expected no --repo in manual instructions for org, got %q", result.Message)
+	}
+}
+
+func TestRepairClaudeCredentialsManualAction_UserScope_ShowsRepoInstructions(t *testing.T) {
+	result := RepairClaudeCredentialsSecretWithReadFile("alice", "repo", "User",
+		func(name string, args ...string) (string, error) { return "", nil },
+		func(path string) ([]byte, error) { return nil, fmt.Errorf("not found") },
+		func() (string, error) { return "/home/testuser", nil },
+	)
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "--repo alice/repo") {
+		t.Errorf("expected --repo alice/repo in manual instructions, got %q", result.Message)
+	}
+	if strings.Contains(result.Message, "--org") {
+		t.Errorf("expected no --org in manual instructions for user, got %q", result.Message)
 	}
 }
