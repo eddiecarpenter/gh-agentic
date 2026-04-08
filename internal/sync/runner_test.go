@@ -223,7 +223,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 	mock.AssertExpectations(t)
 }
 
-func TestRunSync_DeclineAndRestore(t *testing.T) {
+func TestRunSync_DeclineNoFileChanges(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 
 	mock := &testutil.MockRunner{}
@@ -232,7 +232,7 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "new content"),
+		mock.RunCommand, // no clone runner — nothing should be cloned
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
@@ -249,14 +249,16 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// Verify no files were modified — base/ still has original content.
 	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != "# AGENTS.md\n" {
-		t.Errorf("base/AGENTS.md = %q, want '# AGENTS.md\\n'", data)
+		t.Errorf("base/AGENTS.md = %q, want '# AGENTS.md\\n' — files should not be modified on decline", data)
 	}
 
+	// TEMPLATE_VERSION should be unchanged.
 	data, err = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
 	if err != nil {
 		t.Fatal(err)
@@ -407,8 +409,10 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 	mock := &testutil.MockRunner{}
 
 	confirmCalled := 0
-	confirmFn := func(_ string) (bool, error) {
+	var confirmPrompt string
+	confirmFn := func(prompt string) (bool, error) {
 		confirmCalled++
+		confirmPrompt = prompt
 		return true, nil
 	}
 
@@ -435,6 +439,11 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 
 	if confirmCalled != 1 {
 		t.Errorf("expected confirm called 1 time, got %d", confirmCalled)
+	}
+
+	// Verify the new prompt text matches the UX design.
+	if confirmPrompt != "Install v2.0.0?" {
+		t.Errorf("expected confirm prompt %q, got %q", "Install v2.0.0?", confirmPrompt)
 	}
 
 	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
