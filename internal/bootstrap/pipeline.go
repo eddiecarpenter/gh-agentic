@@ -83,6 +83,12 @@ func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 		data = []byte(out)
 	}
 
+	// Validate Claude CLI auth before pushing credentials.
+	if authErr := ValidateClaudeAuth(run); authErr != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Claude CLI auth check failed — skipping credential upload. Please run `claude auth login` to authenticate."))
+		return nil
+	}
+
 	encoded := base64.StdEncoding.EncodeToString(data)
 
 	out, runErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", fullName)

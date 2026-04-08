@@ -249,7 +249,13 @@ func TestSetClaudeCredentials_SecretSetFails_WarnsAndContinues(t *testing.T) {
 		return []byte(`{"key":"value"}`), nil
 	}
 	homeDir := func() (string, error) { return "/home/test", nil }
-	run := fakeRunFail("permission denied")
+	// Auth check succeeds, but gh secret set fails.
+	run := func(name string, args ...string) (string, error) {
+		if name == "claude" {
+			return "Hello!", nil
+		}
+		return "permission denied", errors.New("permission denied")
+	}
 
 	var buf bytes.Buffer
 	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
@@ -259,6 +265,79 @@ func TestSetClaudeCredentials_SecretSetFails_WarnsAndContinues(t *testing.T) {
 
 	if state.CredentialsSet {
 		t.Error("expected state.CredentialsSet to be false when secret set fails")
+	}
+}
+
+func TestSetClaudeCredentials_AuthFails_SkipsSecretSet(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice"}
+	state := &StepState{RepoName: "my-project"}
+
+	readFile := func(path string) ([]byte, error) {
+		return []byte(`{"key":"value"}`), nil
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+
+	var secretSetCalled bool
+	run := func(name string, args ...string) (string, error) {
+		if name == "claude" {
+			return "", errors.New("not authenticated")
+		}
+		if name == "gh" && len(args) > 1 && args[0] == "secret" {
+			secretSetCalled = true
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("expected nil error (non-fatal), got: %v", err)
+	}
+
+	if secretSetCalled {
+		t.Error("expected gh secret set NOT to be called when auth fails")
+	}
+
+	if state.CredentialsSet {
+		t.Error("expected state.CredentialsSet to be false when auth fails")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "claude auth login") {
+		t.Errorf("expected warning with 'claude auth login' instruction, got: %s", out)
+	}
+}
+
+func TestSetClaudeCredentials_AuthSucceeds_SetsSecret(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice"}
+	state := &StepState{RepoName: "my-project"}
+
+	credContent := []byte(`{"key":"test-value"}`)
+	readFile := func(path string) ([]byte, error) {
+		return credContent, nil
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+
+	var secretSetCalled bool
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) > 1 && args[0] == "secret" {
+			secretSetCalled = true
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !secretSetCalled {
+		t.Error("expected gh secret set to be called when auth succeeds")
+	}
+
+	if !state.CredentialsSet {
+		t.Error("expected state.CredentialsSet to be true when auth succeeds")
 	}
 }
 
