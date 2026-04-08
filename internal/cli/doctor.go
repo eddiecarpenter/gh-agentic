@@ -170,7 +170,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "GOOSE_AGENT_PAT secret configured":
 				r = verify.RepairGooseAgentPATSecret(cfg.owner, cfg.repoName)
 			case "CLAUDE_CREDENTIALS_JSON secret configured":
-				r = verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, run)
+				r = verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, cfg.ownerType, run)
 			case "Agent user is a project collaborator":
 				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
 			case "No stale open requirements":
@@ -196,7 +196,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 	if cfg.forceCredentials {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, ui.SectionHeading.Render("  Force credentials refresh"))
-		result := verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, run)
+		result := verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, cfg.ownerType, run)
 		switch result.Status {
 		case verify.Pass:
 			fmt.Fprintln(w, "  "+ui.RenderOK(result.Name))
