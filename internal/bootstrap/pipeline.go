@@ -32,8 +32,6 @@ var DefaultUserHomeDir UserHomeDirFunc = os.UserHomeDir
 // GitHub Actions repo variables. Each variable failure is non-fatal — a warning
 // is logged and the step continues with the remaining variables.
 func SetPipelineVariables(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
-	fullName := cfg.Owner + "/" + state.RepoName
-
 	vars := []struct {
 		name  string
 		value string
@@ -43,13 +41,26 @@ func SetPipelineVariables(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 		{name: "GOOSE_MODEL", value: cfg.GooseModel},
 	}
 
+	// Use --org for org-owned repos, --repo for personal repos.
+	var scopeArgs []string
+	var scopeLabel string
+	if cfg.OwnerType == OwnerTypeOrg {
+		scopeArgs = []string{"--org", cfg.Owner}
+		scopeLabel = "org level"
+	} else {
+		fullName := cfg.Owner + "/" + state.RepoName
+		scopeArgs = []string{"--repo", fullName}
+		scopeLabel = "repo level"
+	}
+
 	for _, v := range vars {
-		out, err := run("gh", "variable", "set", v.name, "--body", v.value, "--repo", fullName)
+		args := append([]string{"variable", "set", v.name, "--body", v.value}, scopeArgs...)
+		out, err := run("gh", args...)
 		if err != nil {
 			fmt.Fprintln(w, "  "+ui.RenderWarning(fmt.Sprintf("Could not set %s variable: %s", v.name, strings.TrimSpace(out))))
 			continue
 		}
-		fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· %s=%s set at repo level", v.name, v.value)))
+		fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· %s=%s set at %s", v.name, v.value, scopeLabel)))
 	}
 
 	return nil
