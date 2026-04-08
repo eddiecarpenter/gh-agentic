@@ -393,6 +393,116 @@ func TestSetClaudeCredentials_AuthSucceeds_SetsSecret(t *testing.T) {
 	}
 }
 
+func TestSetClaudeCredentials_OrgScope_UsesOrgFlag(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{RepoName: "my-project"}
+
+	credContent := []byte(`{"key":"org-value"}`)
+	readFile := func(path string) ([]byte, error) {
+		return credContent, nil
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+
+	var ghArgs []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" {
+			ghArgs = args
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !state.CredentialsSet {
+		t.Error("expected state.CredentialsSet to be true")
+	}
+
+	// Verify --org flag is used.
+	joined := strings.Join(ghArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in gh args, got: %v", ghArgs)
+	}
+	if strings.Contains(joined, "--repo") {
+		t.Errorf("expected no --repo flag for org scope, got: %v", ghArgs)
+	}
+
+	// Verify renewal instructions use --org.
+	out := buf.String()
+	if !strings.Contains(out, "--org acme-org") {
+		t.Errorf("expected --org acme-org in renewal instructions, got: %s", out)
+	}
+}
+
+func TestSetClaudeCredentials_UserScope_UsesRepoFlag(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{RepoName: "my-project"}
+
+	credContent := []byte(`{"key":"user-value"}`)
+	readFile := func(path string) ([]byte, error) {
+		return credContent, nil
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+
+	var ghArgs []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" {
+			ghArgs = args
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify --repo flag is used with owner/repo.
+	joined := strings.Join(ghArgs, " ")
+	if !strings.Contains(joined, "--repo alice/my-project") {
+		t.Errorf("expected --repo alice/my-project in gh args, got: %v", ghArgs)
+	}
+	if strings.Contains(joined, "--org") {
+		t.Errorf("expected no --org flag for user scope, got: %v", ghArgs)
+	}
+
+	// Verify renewal instructions use --repo.
+	out := buf.String()
+	if !strings.Contains(out, "--repo alice/my-project") {
+		t.Errorf("expected --repo alice/my-project in renewal instructions, got: %s", out)
+	}
+}
+
+func TestSetClaudeCredentials_OrgScope_ManualInstructions_UseOrg(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{RepoName: "my-project"}
+
+	readFile := func(path string) ([]byte, error) {
+		return nil, errors.New("file not found")
+	}
+	homeDir := func() (string, error) { return "/home/test", nil }
+	// Keychain returns empty — triggers manual instruction path.
+	run := fakeRunOK("")
+
+	var buf bytes.Buffer
+	err := SetClaudeCredentials(&buf, cfg, state, run, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--org acme-org") {
+		t.Errorf("expected --org acme-org in manual instructions, got: %s", out)
+	}
+	if strings.Contains(out, "--repo") {
+		t.Errorf("expected no --repo in manual instructions for org scope, got: %s", out)
+	}
+}
+
 // --- ValidateClaudeAuth tests ---
 
 func TestValidateClaudeAuth_Success_ReturnsNil(t *testing.T) {
