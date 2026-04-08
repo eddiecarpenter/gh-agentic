@@ -40,17 +40,30 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
 
-      - name: Install Goose
-        uses: clouatre-labs/setup-goose-action@6add528f3872405bbcb6e6c13bf2af3b7d2b81ce
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
 
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y bzip2 libgomp1
+          mkdir -p ~/.local/bin
+          GH_VERSION=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
+          tar -xz -C /tmp -f /tmp/gh.tar.gz
+          mv /tmp/gh_${GH_VERSION}_linux_amd64/bin/gh ~/.local/bin/gh
+          GOOSE_VERSION=$(curl -fsSL https://api.github.com/repos/block/goose/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/block/goose/releases/download/v${GOOSE_VERSION}/goose-x86_64-unknown-linux-gnu.tar.bz2" -o /tmp/goose.tar.bz2
+          tar -xj -C ~/.local/bin -f /tmp/goose.tar.bz2
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          npm install -g @anthropic-ai/claude-code
 
       - name: Restore Claude Code auth
         run: |
@@ -103,6 +116,15 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Install gh CLI
+        run: |
+          mkdir -p ~/.local/bin
+          GH_VERSION=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
+          tar -xz -C /tmp -f /tmp/gh.tar.gz
+          mv /tmp/gh_${GH_VERSION}_linux_amd64/bin/gh ~/.local/bin/gh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Resolve feature branch
         id: branch
         env:
@@ -119,17 +141,24 @@ jobs:
           echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ steps.branch.outputs.name }}
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
 
-      - name: Install Goose
-        uses: clouatre-labs/setup-goose-action@6add528f3872405bbcb6e6c13bf2af3b7d2b81ce
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
 
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Install Goose and Claude Code CLI
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y bzip2 libgomp1
+          GOOSE_VERSION=$(curl -fsSL https://api.github.com/repos/block/goose/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/block/goose/releases/download/v${GOOSE_VERSION}/goose-x86_64-unknown-linux-gnu.tar.bz2" -o /tmp/goose.tar.bz2
+          tar -xj -C ~/.local/bin -f /tmp/goose.tar.bz2
+          npm install -g @anthropic-ai/claude-code
 
       - name: Restore Claude Code auth
         run: |
@@ -200,17 +229,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
+          BRANCH="${{ steps.branch.outputs.name }}"
+          COMMITS=$(git rev-list --count origin/main..HEAD)
+          if [ "${COMMITS}" -eq 0 ]; then
+            echo "No commits on ${BRANCH} beyond main — nothing to PR. Skipping."
+            exit 0
+          fi
           gh pr create \
             --title "feat: ${{ github.event.issue.title }}" \
             --body "Closes #${{ github.event.issue.number }}" \
             --base main \
-            --head ${{ steps.branch.outputs.name }}
+            --head ${BRANCH}
 
       - name: Apply in-review label
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
+          COMMITS=$(git rev-list --count origin/main..HEAD)
+          if [ "${COMMITS}" -eq 0 ]; then
+            echo "No commits — PR was not opened. Leaving issue in-development."
+            exit 0
+          fi
           gh issue edit ${{ github.event.issue.number }} \
             --remove-label "in-development" \
             --add-label "in-review"
@@ -238,17 +278,30 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ github.event.inputs.branch_name || github.event.pull_request.head.ref }}
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
 
-      - name: Install Goose
-        uses: clouatre-labs/setup-goose-action@6add528f3872405bbcb6e6c13bf2af3b7d2b81ce
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
 
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y bzip2 libgomp1
+          mkdir -p ~/.local/bin
+          GH_VERSION=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
+          tar -xz -C /tmp -f /tmp/gh.tar.gz
+          mv /tmp/gh_${GH_VERSION}_linux_amd64/bin/gh ~/.local/bin/gh
+          GOOSE_VERSION=$(curl -fsSL https://api.github.com/repos/block/goose/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/block/goose/releases/download/v${GOOSE_VERSION}/goose-x86_64-unknown-linux-gnu.tar.bz2" -o /tmp/goose.tar.bz2
+          tar -xj -C ~/.local/bin -f /tmp/goose.tar.bz2
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          npm install -g @anthropic-ai/claude-code
 
       - name: Restore Claude Code auth
         run: |
@@ -321,17 +374,30 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
 
-      - name: Install Goose
-        uses: clouatre-labs/setup-goose-action@6add528f3872405bbcb6e6c13bf2af3b7d2b81ce
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
 
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y bzip2 libgomp1
+          mkdir -p ~/.local/bin
+          GH_VERSION=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
+          tar -xz -C /tmp -f /tmp/gh.tar.gz
+          mv /tmp/gh_${GH_VERSION}_linux_amd64/bin/gh ~/.local/bin/gh
+          GOOSE_VERSION=$(curl -fsSL https://api.github.com/repos/block/goose/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          curl -fsSL "https://github.com/block/goose/releases/download/v${GOOSE_VERSION}/goose-x86_64-unknown-linux-gnu.tar.bz2" -o /tmp/goose.tar.bz2
+          tar -xj -C ~/.local/bin -f /tmp/goose.tar.bz2
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          npm install -g @anthropic-ai/claude-code
 
       - name: Restore Claude Code auth
         run: |

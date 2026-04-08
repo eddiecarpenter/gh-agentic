@@ -63,6 +63,28 @@ One branch per Feature. Tasks are commits on that branch, not separate branches.
 - See the relevant file in `base/standards/` for language-specific test commands,
   frameworks, naming conventions, and patterns
 
+### Integration Tests
+
+Integration testing is a first-class engineering discipline in this framework, not an
+afterthought. The framework's position:
+
+- **Unit tests** are mandatory and enforced unconditionally by the agent
+- **Contract and API tests** are required wherever an external interface exists —
+  API boundary, event schema, service contract. The agent implements these when scoped.
+- **Integration test strategy** is an architectural decision owned by the human.
+  It must be established from day one — not bolted on later. A system not designed
+  for integration testing cannot be retrofitted cheaply.
+- **Integration test implementation** is delivered through the pipeline like any other
+  requirement. The human scopes it; the agent builds it.
+- **Integration test infrastructure** (environments, tooling) is out of scope for the
+  framework — it is the repo's own concern.
+
+The agent does not invent integration test strategy. When a feature introduces or
+changes an external interface, the agent identifies the contract and flags that a
+contract test should be scoped — but the human decides the approach.
+
+See `base/concepts/delivery-philosophy.md` for the full context.
+
 ---
 
 ## Build Verification — Universal Rules
@@ -81,6 +103,10 @@ One branch per Feature. Tasks are commits on that branch, not separate branches.
 - Correctness and maintainability take precedence over cleverness
 - Do not make changes outside the scope of the current task
 - Propose large refactors before implementing them — never execute without approval
+- **Features and enhancements deploy behind a feature switch by default.** Bug fixes
+  deploy directly — no switch. The human may waive the switch during scoping; the
+  decision and reason must be recorded in the feature issue. See
+  `base/concepts/feature-switches.md` for the full taxonomy and implementation guidance.
 - **To cancel a requirement or feature, delete the GitHub Issue.** The agent will detect
   its absence during the next session and will not attempt work against it. Clean up any
   associated feature branch manually if one was already created.
@@ -97,6 +123,12 @@ One branch per Feature. Tasks are commits on that branch, not separate branches.
 
   **Deferring a phase:** If a phase genuinely cannot proceed yet, the agent must stop and
   ask the human before deferring. The human decides; the agent never defers unilaterally.
+
+- **When a pipeline trigger label is applied, exit immediately.** Applying `in-design`
+  or `in-development` hands control to the automated pipeline. The agent must exit cleanly
+  the moment a trigger label is applied — it must never continue into the next phase
+  manually, even if the next steps are obvious. The automation runs the next session.
+  This rule is unconditional and overrides any "completing early" logic.
 
 ---
 
