@@ -102,6 +102,8 @@ func RunSync(
 	selectVersion SelectFunc,
 	force bool,
 	commit bool,
+	list bool,
+	releaseTag string,
 	detectOwnerType bootstrap.DetectOwnerTypeFunc,
 ) error {
 	fmt.Fprintln(w)
@@ -135,6 +137,33 @@ func RunSync(
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	// --list mode: display available releases and exit.
+	if list {
+		if len(available) == 0 {
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "  "+ui.RenderOK("Already up to date ("+cfg.CurrentVersion+")"))
+			return nil
+		}
+		fmt.Fprintln(w)
+		DisplayReleaseList(w, available)
+		return nil
+	}
+
+	// --release mode: find specific tag and use it.
+	if releaseTag != "" {
+		all, fetchErr := fetchReleases(cfg.TemplateRepo)
+		if fetchErr != nil {
+			return fetchErr
+		}
+		// Use all releases (not just filtered) so we can find any tag.
+		found, ok := FindReleaseByTag(all, releaseTag)
+		if !ok {
+			return fmt.Errorf("release tag %s not found in %s", releaseTag, cfg.TemplateRepo)
+		}
+		// Override available with just this release.
+		available = []Release{found}
 	}
 
 	// Step 3: Check if up to date — bypass when base/ is missing or --force is set.

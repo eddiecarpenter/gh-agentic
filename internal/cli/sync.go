@@ -39,18 +39,27 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 	var force bool
 	var yes bool
 	var commit bool
+	var list bool
+	var releaseTag string
 
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync base/ from the upstream template",
 		Long: "Syncs the base/ directory from the upstream agentic-development template.\n" +
 			"Reads TEMPLATE_SOURCE and TEMPLATE_VERSION to determine what to sync.\n" +
-			"Shows a diff and asks for confirmation before staging.\n" +
+			"Shows release notes and asks for confirmation before staging.\n" +
 			"By default, changes are staged but not committed.\n" +
 			"Pass --commit to automatically commit after staging.\n" +
 			"Pass --force to re-sync even when already at the latest version.\n" +
-			"Pass --yes to automatically confirm all prompts.",
+			"Pass --yes to automatically confirm all prompts.\n" +
+			"Pass --list to display available releases without syncing.\n" +
+			"Pass --release <tag> to sync to a specific release version.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate mutually exclusive flags.
+			if list && releaseTag != "" {
+				return fmt.Errorf("--list and --release are mutually exclusive")
+			}
+
 			w := cmd.OutOrStdout()
 
 			// Detect repo root by walking up from cwd.
@@ -80,6 +89,8 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 				deps.selectVersion,
 				force,
 				commit,
+				list,
+				releaseTag,
 				deps.detectOwnerType,
 			)
 		},
@@ -88,6 +99,8 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 	cmd.Flags().BoolVar(&force, "force", false, "re-sync even if already at the latest version")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all prompts")
 	cmd.Flags().BoolVar(&commit, "commit", false, "commit changes after staging (default is stage-only)")
+	cmd.Flags().BoolVar(&list, "list", false, "display available releases without syncing")
+	cmd.Flags().StringVar(&releaseTag, "release", "", "sync to a specific release version")
 	return cmd
 }
 

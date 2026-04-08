@@ -316,6 +316,31 @@ func DisplayReleaseNotes(w io.Writer, release Release) {
 	fmt.Fprintln(w, "  "+divider)
 }
 
+// DisplayReleaseList renders all releases with their version tags and notes.
+// Used by the --list flag to display available releases without performing a sync.
+func DisplayReleaseList(w io.Writer, releases []Release) {
+	fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Available releases:"))
+	fmt.Fprintln(w)
+	for i, r := range releases {
+		label := r.TagName
+		if r.Name != "" {
+			label += "  — " + r.Name
+		}
+		fmt.Fprintln(w, "  "+ui.Value.Render(label))
+		if strings.TrimSpace(r.Body) != "" {
+			divider := ui.Muted.Render(strings.Repeat("─", 40))
+			fmt.Fprintln(w, "  "+ui.Muted.Render("── Release notes ──"))
+			for _, line := range strings.Split(strings.TrimSpace(r.Body), "\n") {
+				fmt.Fprintln(w, "  "+line)
+			}
+			fmt.Fprintln(w, "  "+divider)
+		}
+		if i < len(releases)-1 {
+			fmt.Fprintln(w)
+		}
+	}
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────

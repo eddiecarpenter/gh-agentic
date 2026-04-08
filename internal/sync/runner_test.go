@@ -94,6 +94,8 @@ func TestRunSync_UpToDate(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -125,6 +127,8 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -175,6 +179,8 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		nil, // selectVersion
 		false,
 		true,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -225,6 +231,8 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -272,6 +280,8 @@ func TestRunSync_FetchError(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -301,6 +311,8 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		nil, // selectVersion
 		true,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -352,6 +364,8 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -397,6 +411,8 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -456,6 +472,8 @@ func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		fakeDetectOwnerType(bootstrap.OwnerTypeUser),
 	)
 
@@ -501,6 +519,8 @@ func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		fakeDetectOwnerType(bootstrap.OwnerTypeOrg),
 	)
 
@@ -540,6 +560,8 @@ func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		fakeDetectOwnerTypeError(), // detection fails
 	)
 
@@ -579,7 +601,9 @@ func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 		nil, // selectVersion
 		false,
 		false,
-		nil, // no detect function
+		false, // list
+		"",    // releaseTag
+		nil,   // no detect function
 	)
 
 	if err != nil {
@@ -627,6 +651,8 @@ func TestRunSync_MultipleReleases_CallsSelectFunc(t *testing.T) {
 		fakeSelect,
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -677,6 +703,8 @@ func TestRunSync_SingleRelease_SkipsSelectFunc(t *testing.T) {
 		fakeSelect,
 		false,
 		false,
+		false, // list
+		"",    // releaseTag
 		nil,
 	)
 
@@ -691,6 +719,92 @@ func TestRunSync_SingleRelease_SkipsSelectFunc(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "Update available") {
 		t.Errorf("expected 'Update available' message, got: %s", output)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_ListMode_DisplaysReleases(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	multiReleases := fakeReleases([]Release{
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+	}, nil)
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		mock.RunCommand,
+		multiReleases,
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { t.Fatal("confirm should not be called in list mode"); return false, nil },
+		nil, // selectVersion
+		false,
+		false,
+		true, // list
+		"",
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "v2.0.0") {
+		t.Errorf("expected v2.0.0 in output, got: %s", output)
+	}
+	if !strings.Contains(output, "v1.5.0") {
+		t.Errorf("expected v1.5.0 in output, got: %s", output)
+	}
+	if !strings.Contains(output, "Latest notes") {
+		t.Errorf("expected release notes in output, got: %s", output)
+	}
+
+	// Verify no sync was performed — TEMPLATE_VERSION unchanged.
+	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "v1.0.0" {
+		t.Errorf("TEMPLATE_VERSION changed during --list: %q", string(data))
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_ListMode_UpToDate(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		mock.RunCommand,
+		singleRelease("v1.0.0"),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return false, nil },
+		nil,
+		false,
+		false,
+		true, // list
+		"",
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "up to date") {
+		t.Errorf("expected 'up to date' message in list mode, got: %s", output)
 	}
 
 	mock.AssertExpectations(t)

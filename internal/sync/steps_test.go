@@ -88,6 +88,44 @@ func TestDisplayReleaseNotes(t *testing.T) {
 	})
 }
 
+func TestDisplayReleaseList(t *testing.T) {
+	t.Run("displays multiple releases with notes", func(t *testing.T) {
+		var buf bytes.Buffer
+		releases := []Release{
+			{TagName: "v0.9.8", Name: "Fix sync runner", Body: "Fixed the sync runner bug."},
+			{TagName: "v0.9.7", Name: "Add guards", Body: "Added execution guards."},
+		}
+		DisplayReleaseList(&buf, releases)
+
+		output := buf.String()
+		if !strings.Contains(output, "v0.9.8") {
+			t.Errorf("expected v0.9.8 in output, got: %s", output)
+		}
+		if !strings.Contains(output, "v0.9.7") {
+			t.Errorf("expected v0.9.7 in output, got: %s", output)
+		}
+		if !strings.Contains(output, "Fixed the sync runner") {
+			t.Errorf("expected release notes in output, got: %s", output)
+		}
+		if !strings.Contains(output, "Added execution guards") {
+			t.Errorf("expected release notes in output, got: %s", output)
+		}
+	})
+
+	t.Run("displays release name alongside tag", func(t *testing.T) {
+		var buf bytes.Buffer
+		releases := []Release{
+			{TagName: "v1.0.0", Name: "First stable", Body: "Notes"},
+		}
+		DisplayReleaseList(&buf, releases)
+
+		output := buf.String()
+		if !strings.Contains(output, "First stable") {
+			t.Errorf("expected release name in output, got: %s", output)
+		}
+	})
+}
+
 func TestCloneTemplate(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		tmpDir := t.TempDir()
