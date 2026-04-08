@@ -52,6 +52,11 @@ instructions: |
   "Closes #N" or "Parent requirement: #N" in existing feature issue bodies).
   If a matching Feature already exists, tell the human and treat it as context.
 
+  Transition the requirement from backlog to scoping:
+    gh issue edit <number> --repo <owner>/<agentic-repo> \
+      --remove-label "backlog" \
+      --add-label "scoping"
+
   ## The Seven Artefacts (work through these in order)
 
   ### Artefact 1 — Raw Idea
@@ -65,10 +70,20 @@ instructions: |
   Ask: "What capability, when delivered, resolves this problem?"
   The goal must be a single sentence. If it contains "and" — it is two features.
   Name the feature with a short descriptive title.
+  Produce a user story statement in the format:
+    "As a [user/role], I want [goal], so that [benefit]."
+  This statement becomes the `## User Story` section of the feature issue.
 
   ### Artefact 4 — MVP Scope
   Ask: "What is the minimum version that delivers real value?"
   Challenge: "If we removed X, would the core problem still be solved?"
+
+  ### Parallel/Serial Checkpoint
+  After defining MVP scope, decide how the work should be decomposed:
+  Ask: "Can all parts of this work be built and merged independently, or must some parts wait for others?"
+  - Independent → proceed with multiple features (run in parallel)
+  - Sequential → consolidate into one feature with ordered tasks (same branch, same PR)
+  - Never create multiple features with implied serial dependencies
 
   ### Artefact 5 — Acceptance Criteria
   Ask: "How will we know the implementation is correct?"
@@ -90,11 +105,18 @@ instructions: |
 
   ## The Two-Question Checkpoint
 
-  Before creating the Feature issue:
+  Before creating the Feature issue, verify:
+  0. The user story statement is present and complete (As a / I want / so that)
   1. "Can the design session decompose this without inventing requirements?"
   2. "Would you recognise the correct implementation when you see it in a PR?"
+  3. The parallel/serial decomposition decision has been made and is consistent with
+     the proposed feature structure — if multiple features exist, confirm none have
+     implied serial dependencies. If sequential work was identified, confirm it has
+     been consolidated into one feature with ordered tasks.
 
-  If the answers are both yes — proceed. Otherwise return to the failing artefact.
+  If the user story is missing or incomplete — return to Artefact 3.
+  If the answers to both questions are yes and the decomposition is consistent — proceed.
+  Otherwise return to the failing artefact or the Parallel/Serial Checkpoint.
 
   ## Creating Feature Issues
 
@@ -104,24 +126,32 @@ instructions: |
       --repo <owner>/<domain-repo> \
       --label "feature,backlog" \
       --title "<feature title>" \
-      --body "## Feature
+      --body "## User Story
 
-  <what this feature delivers>
+  As a [user/role], I want [goal], so that [benefit].
+
+  ## Context
+
+  <background and motivation>
 
   ## Scope
 
   <files to create or modify, key functions, data structures>
 
+  ## Out of Scope
+
+  <what is explicitly excluded>
+
+  ## Acceptance Criteria
+
+  - [ ] <testable condition 1>
+  - [ ] <testable condition 2>
+
   ## UX Design (if applicable)
 
   <ASCII mockups, flow description, field layout, error states>
 
-  ## Acceptance criteria
-
-  - <testable condition 1>
-  - <testable condition 2>
-
-  ## Parent requirement
+  ## Parent Requirement
   Closes #<requirement-issue-number>"
 
   Wire the sub-issue relationship using the GitHub GraphQL API:
@@ -145,6 +175,12 @@ instructions: |
       --add-label "in-design"
 
   Confirm to the human: "Feature #N created and queued for design."
+
+  After all features have been created and sent to design, transition the parent
+  requirement from scoping to scheduled:
+    gh issue edit <requirement-number> --repo <owner>/<agentic-repo> \
+      --remove-label "scoping" \
+      --add-label "scheduled"
 
   ## Ending the Session
 
