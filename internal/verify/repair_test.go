@@ -1403,7 +1403,7 @@ func TestRepairClaudeCredentialsSecret_HomeDirError_ReturnsManualAction(t *testi
 
 func TestRepairClaudeCredentialsSecret_SetFails_ReturnsFail(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
-		// Auth check succeeds, but gh secret set fails.
+		// Auth succeeds but gh secret set fails.
 		if name == "claude" {
 			return "Hello!", nil
 		}
@@ -1426,9 +1426,10 @@ func TestRepairClaudeCredentialsSecret_AuthFails_ReturnsManualAction(t *testing.
 	var secretSetCalled bool
 	fakeRun := func(name string, args ...string) (string, error) {
 		if name == "claude" {
-			return "", fmt.Errorf("not authenticated")
+			return "", fmt.Errorf("auth required")
 		}
-		if strings.Contains(strings.Join(args, " "), "secret set") {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set CLAUDE_CREDENTIALS_JSON") {
 			secretSetCalled = true
 		}
 		return "", nil
@@ -1445,7 +1446,7 @@ func TestRepairClaudeCredentialsSecret_AuthFails_ReturnsManualAction(t *testing.
 		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
 	}
 	if !strings.Contains(result.Message, "claude auth login") {
-		t.Errorf("expected 'claude auth login' instruction in message, got: %s", result.Message)
+		t.Errorf("expected 'claude auth login' in message, got %q", result.Message)
 	}
 	if secretSetCalled {
 		t.Error("expected gh secret set NOT to be called when auth fails")
@@ -1453,13 +1454,14 @@ func TestRepairClaudeCredentialsSecret_AuthFails_ReturnsManualAction(t *testing.
 }
 
 func TestRepairClaudeCredentialsSecret_AuthSucceeds_SetsSecret(t *testing.T) {
-	var secretSetCalled bool
+	var setCalled bool
 	fakeRun := func(name string, args ...string) (string, error) {
 		if name == "claude" {
 			return "Hello!", nil
 		}
-		if strings.Contains(strings.Join(args, " "), "secret set CLAUDE_CREDENTIALS_JSON") {
-			secretSetCalled = true
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set CLAUDE_CREDENTIALS_JSON") {
+			setCalled = true
 		}
 		return "", nil
 	}
@@ -1474,7 +1476,25 @@ func TestRepairClaudeCredentialsSecret_AuthSucceeds_SetsSecret(t *testing.T) {
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
-	if !secretSetCalled {
+	if !setCalled {
 		t.Error("expected gh secret set to be called when auth succeeds")
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_DelegatesToWithReadFile(t *testing.T) {
+	// RepairClaudeCredentialsSecret delegates to RepairClaudeCredentialsSecretWithReadFile.
+	// Since both os.ReadFile and os.UserHomeDir are injected, calling the wrapper
+	// with a non-existent home/credentials path should produce the same ManualAction
+	// result as calling WithReadFile directly with failing injections.
+	// We can't inject fakes into the wrapper, but we can verify the function
+	// returns a valid CheckResult (not a panic or compile error).
+	result := RepairClaudeCredentialsSecret("owner", "repo", func(name string, args ...string) (string, error) {
+		// Keychain lookup fails — triggers ManualAction.
+		return "", fmt.Errorf("not available")
+	})
+	// The wrapper calls os.UserHomeDir and os.ReadFile which may or may not succeed
+	// in CI, but it should never panic and should return a valid result.
+	if result.Name != checkClaudeCredentialsSecretName {
+		t.Errorf("expected check name %q, got %q", checkClaudeCredentialsSecretName, result.Name)
 	}
 }

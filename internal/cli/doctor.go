@@ -19,11 +19,11 @@ import (
 // Tests can construct this directly with fake values; the production path
 // resolves real values in newDoctorCmd.
 type doctorConfig struct {
-	root           string
-	repoFullName   string
-	owner          string
-	repoName       string
-	ownerType      string
+	root             string
+	repoFullName     string
+	owner            string
+	repoName         string
+	ownerType        string
 	run              bootstrap.RunCommandFunc
 	repair           bool
 	yes              bool
@@ -187,21 +187,25 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 	if err := verify.RunVerify(w, checks, repairFn); err != nil {
 		fmt.Fprintln(w, "  Run 'gh agentic doctor --repair' to attempt automatic fixes.")
 		fmt.Fprintln(w, "  For AGENT_USER repair, add: --agent-user <username> --agent-user-scope org|repo")
-		return ErrSilent
+		if !cfg.forceCredentials {
+			return ErrSilent
+		}
 	}
 
-	// Force credential re-upload when --force-credentials is set.
+	// --force-credentials: unconditionally re-upload Claude credentials.
 	if cfg.forceCredentials {
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Force credential upload"))
+		fmt.Fprintln(w, ui.SectionHeading.Render("  Force credentials refresh"))
 		result := verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, run)
 		switch result.Status {
 		case verify.Pass:
-			fmt.Fprintln(w, "  "+ui.RenderOK(result.Message))
+			fmt.Fprintln(w, "  "+ui.RenderOK(result.Name))
+		case verify.Warning:
+			fmt.Fprintln(w, "  "+ui.RenderWarning(result.Name+": "+result.Message))
+		case verify.Fail:
+			fmt.Fprintln(w, "  "+ui.RenderError(result.Name+": "+result.Message))
 		case verify.ManualAction:
-			fmt.Fprintln(w, "  "+ui.RenderInfo(result.Message))
-		default:
-			fmt.Fprintln(w, "  "+ui.RenderError(result.Message))
+			fmt.Fprintln(w, "  "+ui.RenderInfo(result.Name+": "+result.Message))
 		}
 	}
 
@@ -256,14 +260,14 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			return runDoctor(w, cmd.InOrStdin(), doctorConfig{
-				root:           root,
-				repoFullName:   currentRepo.Owner + "/" + currentRepo.Name,
-				owner:          currentRepo.Owner,
-				repoName:       currentRepo.Name,
-				ownerType:      ownerType,
-				run:            bootstrap.DefaultRunCommand,
-				repair:         repair,
-				yes:            yes,
+				root:             root,
+				repoFullName:     currentRepo.Owner + "/" + currentRepo.Name,
+				owner:            currentRepo.Owner,
+				repoName:         currentRepo.Name,
+				ownerType:        ownerType,
+				run:              bootstrap.DefaultRunCommand,
+				repair:           repair,
+				yes:              yes,
 				agentUser:        agentUser,
 				agentUserScope:   agentUserScope,
 				forceCredentials: forceCredentials,
@@ -275,6 +279,6 @@ func newDoctorCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all repair prompts")
 	cmd.Flags().StringVar(&agentUser, "agent-user", "", "agent username for repair (skips prompt)")
 	cmd.Flags().StringVar(&agentUserScope, "agent-user-scope", "", "variable scope: org or repo (skips prompt)")
-	cmd.Flags().BoolVar(&forceCredentials, "force-credentials", false, "unconditionally re-upload Claude credentials secret")
+	cmd.Flags().BoolVar(&forceCredentials, "force-credentials", false, "unconditionally re-upload Claude credentials after checks complete")
 	return cmd
 }

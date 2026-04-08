@@ -249,7 +249,7 @@ func TestSetClaudeCredentials_SecretSetFails_WarnsAndContinues(t *testing.T) {
 		return []byte(`{"key":"value"}`), nil
 	}
 	homeDir := func() (string, error) { return "/home/test", nil }
-	// Auth check succeeds, but gh secret set fails.
+	// Auth succeeds but gh secret set fails.
 	run := func(name string, args ...string) (string, error) {
 		if name == "claude" {
 			return "Hello!", nil
@@ -280,9 +280,10 @@ func TestSetClaudeCredentials_AuthFails_SkipsSecretSet(t *testing.T) {
 	var secretSetCalled bool
 	run := func(name string, args ...string) (string, error) {
 		if name == "claude" {
-			return "", errors.New("not authenticated")
+			return "", errors.New("auth required")
 		}
-		if name == "gh" && len(args) > 1 && args[0] == "secret" {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set CLAUDE_CREDENTIALS_JSON") {
 			secretSetCalled = true
 		}
 		return "", nil
@@ -294,17 +295,16 @@ func TestSetClaudeCredentials_AuthFails_SkipsSecretSet(t *testing.T) {
 		t.Fatalf("expected nil error (non-fatal), got: %v", err)
 	}
 
+	if state.CredentialsSet {
+		t.Error("expected state.CredentialsSet to be false when auth fails")
+	}
 	if secretSetCalled {
 		t.Error("expected gh secret set NOT to be called when auth fails")
 	}
 
-	if state.CredentialsSet {
-		t.Error("expected state.CredentialsSet to be false when auth fails")
-	}
-
 	out := buf.String()
 	if !strings.Contains(out, "claude auth login") {
-		t.Errorf("expected warning with 'claude auth login' instruction, got: %s", out)
+		t.Errorf("expected 'claude auth login' instruction in output, got: %s", out)
 	}
 }
 
@@ -318,10 +318,15 @@ func TestSetClaudeCredentials_AuthSucceeds_SetsSecret(t *testing.T) {
 	}
 	homeDir := func() (string, error) { return "/home/test", nil }
 
-	var secretSetCalled bool
+	var secretBody string
 	run := func(name string, args ...string) (string, error) {
-		if name == "gh" && len(args) > 1 && args[0] == "secret" {
-			secretSetCalled = true
+		if name == "claude" {
+			return "Hello!", nil
+		}
+		for i, a := range args {
+			if a == "--body" && i+1 < len(args) {
+				secretBody = args[i+1]
+			}
 		}
 		return "", nil
 	}
@@ -332,12 +337,13 @@ func TestSetClaudeCredentials_AuthSucceeds_SetsSecret(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !secretSetCalled {
-		t.Error("expected gh secret set to be called when auth succeeds")
-	}
-
 	if !state.CredentialsSet {
 		t.Error("expected state.CredentialsSet to be true when auth succeeds")
+	}
+
+	expectedEncoded := base64.StdEncoding.EncodeToString(credContent)
+	if secretBody != expectedEncoded {
+		t.Errorf("expected base64-encoded body %q, got %q", expectedEncoded, secretBody)
 	}
 }
 
@@ -347,18 +353,18 @@ func TestValidateClaudeAuth_Success_ReturnsNil(t *testing.T) {
 	run := fakeRunOK("Hello!")
 	err := ValidateClaudeAuth(run)
 	if err != nil {
-		t.Fatalf("expected nil error when claude -p hi succeeds, got: %v", err)
+		t.Fatalf("expected nil error, got: %v", err)
 	}
 }
 
 func TestValidateClaudeAuth_Failure_ReturnsErrorWithInstruction(t *testing.T) {
-	run := fakeRunFail("not authenticated")
+	run := fakeRunFail("auth required")
 	err := ValidateClaudeAuth(run)
 	if err == nil {
-		t.Fatal("expected error when claude -p hi fails, got nil")
+		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "claude auth login") {
-		t.Errorf("expected error to contain 'claude auth login', got: %v", err)
+		t.Errorf("expected error to contain 'claude auth login', got: %s", err.Error())
 	}
 }
 

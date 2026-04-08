@@ -83,9 +83,10 @@ func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 		data = []byte(out)
 	}
 
-	// Validate Claude CLI auth before pushing credentials.
+	// Validate Claude auth before pushing credentials.
 	if authErr := ValidateClaudeAuth(run); authErr != nil {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Claude CLI auth check failed — skipping credential upload. Please run `claude auth login` to authenticate."))
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Claude authentication check failed — run 'claude auth login' to refresh your credentials"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("  Skipping CLAUDE_CREDENTIALS_JSON secret — credentials may be stale"))
 		return nil
 	}
 
@@ -115,13 +116,13 @@ func printCredentialInstructions(w io.Writer, fullName string) {
 	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`, fullName)))
 }
 
-// ValidateClaudeAuth validates that the local Claude CLI is authenticated by
-// running `claude -p "hi"` via the injected run function. Returns nil on success
-// or a descriptive error instructing the user to run `claude auth login`.
+// ValidateClaudeAuth verifies that the local Claude CLI can authenticate by
+// running `claude -p "hi"`. Returns nil if auth succeeds, or a descriptive
+// error instructing the user to run `claude auth login` if it fails.
 func ValidateClaudeAuth(run RunCommandFunc) error {
 	_, err := run("claude", "-p", "hi")
 	if err != nil {
-		return fmt.Errorf("Claude CLI auth check failed: %w — please run `claude auth login` to authenticate", err)
+		return fmt.Errorf("Claude authentication failed — run 'claude auth login' to refresh your credentials: %w", err)
 	}
 	return nil
 }

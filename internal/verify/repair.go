@@ -1425,6 +1425,8 @@ const credentialsFilePath = ".claude/.credentials.json"
 // RepairClaudeCredentialsSecret reads ~/.claude/.credentials.json, base64-encodes it,
 // and sets it as the CLAUDE_CREDENTIALS_JSON repo secret. If the file does not exist,
 // returns ManualAction with instructions for the user.
+// This is a thin wrapper that delegates to RepairClaudeCredentialsSecretWithReadFile
+// with the production os.ReadFile and os.UserHomeDir implementations.
 func RepairClaudeCredentialsSecret(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
 	return RepairClaudeCredentialsSecretWithReadFile(owner, repoName, run, os.ReadFile, os.UserHomeDir)
 }
@@ -1466,12 +1468,13 @@ func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run boots
 		data = []byte(out)
 	}
 
-	// Validate Claude CLI auth before pushing credentials.
+	// Validate Claude auth before pushing credentials.
 	if authErr := bootstrap.ValidateClaudeAuth(run); authErr != nil {
 		return CheckResult{
-			Name:    checkClaudeCredentialsSecretName,
-			Status:  ManualAction,
-			Message: "Claude CLI auth check failed — please run `claude auth login` to authenticate before retrying",
+			Name:   checkClaudeCredentialsSecretName,
+			Status: ManualAction,
+			Message: "Claude authentication failed — run 'claude auth login' to refresh your credentials, " +
+				"then re-run 'gh agentic doctor --repair'",
 		}
 	}
 
