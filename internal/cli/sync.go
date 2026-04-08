@@ -17,6 +17,7 @@ type syncDeps struct {
 	run             bootstrap.RunCommandFunc
 	fetchReleases   sync.FetchReleasesFunc
 	spinner         sync.SpinnerFunc
+	selectVersion   sync.SelectFunc
 	detectOwnerType bootstrap.DetectOwnerTypeFunc
 }
 
@@ -26,6 +27,7 @@ func newSyncCmd() *cobra.Command {
 		run:             bootstrap.DefaultRunCommand,
 		fetchReleases:   sync.DefaultFetchReleases,
 		spinner:         sync.DefaultSpinner,
+		selectVersion:   sync.DefaultSelect,
 		detectOwnerType: bootstrap.DefaultDetectOwnerType,
 	})
 }
@@ -75,6 +77,7 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 				deps.fetchReleases,
 				deps.spinner,
 				confirmFn,
+				deps.selectVersion,
 				force,
 				commit,
 				deps.detectOwnerType,

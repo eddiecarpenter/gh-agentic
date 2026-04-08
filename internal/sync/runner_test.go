@@ -91,6 +91,7 @@ func TestRunSync_UpToDate(t *testing.T) {
 		singleRelease("v1.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
+		nil, // selectVersion
 		false,
 		false,
 		nil,
@@ -121,6 +122,7 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
 		false,
 		false,
 		nil,
@@ -170,6 +172,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
 		false,
 		true,
 		nil,
@@ -219,6 +222,7 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
+		nil, // selectVersion
 		false,
 		false,
 		nil,
@@ -265,6 +269,7 @@ func TestRunSync_FetchError(t *testing.T) {
 		fakeReleases(nil, fmt.Errorf("API error")),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
+		nil, // selectVersion
 		false,
 		false,
 		nil,
@@ -293,6 +298,7 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		singleRelease("v1.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
 		true,
 		false,
 		nil,
@@ -343,6 +349,7 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 		singleRelease("v1.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
 		false,
 		false,
 		nil,
@@ -387,6 +394,7 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		confirmFn,
+		nil, // selectVersion
 		false,
 		false,
 		nil,
@@ -445,6 +453,7 @@ func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
 		false,
 		false,
 		fakeDetectOwnerType(bootstrap.OwnerTypeUser),
@@ -489,6 +498,7 @@ func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
 		false,
 		false,
 		fakeDetectOwnerType(bootstrap.OwnerTypeOrg),
@@ -527,6 +537,7 @@ func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
 		false,
 		false,
 		fakeDetectOwnerTypeError(), // detection fails
@@ -565,6 +576,7 @@ func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
 		false,
 		false,
 		nil, // no detect function
@@ -578,6 +590,107 @@ func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 	syncPath := filepath.Join(repo.Root, ".github", "workflows", "sync-status-to-label.yml")
 	if _, err := os.Stat(syncPath); os.IsNotExist(err) {
 		t.Error("sync-status-to-label.yml should be deployed when detectOwnerType is nil")
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_MultipleReleases_CallsSelectFunc(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	selectCalled := false
+	fakeSelect := func(releases []Release) (Release, error) {
+		selectCalled = true
+		if len(releases) < 2 {
+			t.Fatalf("expected multiple releases, got %d", len(releases))
+		}
+		// Select the second release (not the newest).
+		return releases[1], nil
+	}
+
+	multiReleases := fakeReleases([]Release{
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+		{TagName: "v1.1.0", Name: "Older", Body: "Older notes"},
+	}, nil)
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "selected content"),
+		multiReleases,
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		fakeSelect,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !selectCalled {
+		t.Error("expected select function to be called for multiple releases")
+	}
+
+	// Verify the selected version (v1.5.0) was used.
+	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "v1.5.0" {
+		t.Errorf("TEMPLATE_VERSION = %q, want v1.5.0", string(data))
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "releases available") {
+		t.Errorf("expected 'releases available' message, got: %s", output)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_SingleRelease_SkipsSelectFunc(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	selectCalled := false
+	fakeSelect := func(releases []Release) (Release, error) {
+		selectCalled = true
+		return releases[0], nil
+	}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "single content"),
+		singleRelease("v2.0.0"),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		fakeSelect,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if selectCalled {
+		t.Error("select function should NOT be called for single release")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Update available") {
+		t.Errorf("expected 'Update available' message, got: %s", output)
 	}
 
 	mock.AssertExpectations(t)
