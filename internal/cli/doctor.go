@@ -105,13 +105,13 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
 		},
 		func() verify.CheckResult { return verify.CheckAgentUserVar(cfg.owner, cfg.repoName, run) },
-		func() verify.CheckResult { return verify.CheckRunnerLabelVar(cfg.owner, cfg.repoName, run) },
-		func() verify.CheckResult { return verify.CheckGooseProviderVar(cfg.owner, cfg.repoName, run) },
-		func() verify.CheckResult { return verify.CheckGooseModelVar(cfg.owner, cfg.repoName, run) },
-		func() verify.CheckResult { return verify.CheckGooseAgentPATSecret(cfg.owner, cfg.repoName, run) },
-		func() verify.CheckResult { return verify.CheckClaudeCredentialsSecret(cfg.owner, cfg.repoName, run) },
+		func() verify.CheckResult { return verify.CheckRunnerLabelVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },
+		func() verify.CheckResult { return verify.CheckGooseProviderVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },
+		func() verify.CheckResult { return verify.CheckGooseModelVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },
+		func() verify.CheckResult { return verify.CheckGooseAgentPATSecret(cfg.owner, cfg.repoName, cfg.ownerType, run) },
+		func() verify.CheckResult { return verify.CheckClaudeCredentialsSecret(cfg.owner, cfg.repoName, cfg.ownerType, run) },
 		func() verify.CheckResult {
-			return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
+			return verify.CheckProjectCollaborator(cfg.owner, cfg.repoName, agentUser, cfg.ownerType, run)
 		},
 		func() verify.CheckResult { return verify.CheckStaleOpenRequirements(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckStaleOpenFeatures(cfg.repoFullName, run) },

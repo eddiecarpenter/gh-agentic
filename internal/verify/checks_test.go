@@ -935,7 +935,7 @@ func TestCheckProjectCollaborator_EmptyAgentUser_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectCollaborator("owner", "my-repo", "", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -951,7 +951,7 @@ func TestCheckProjectCollaborator_UserPresent_ReturnsPass(t *testing.T) {
 		return "alice\ngoose-agent\nbob", nil // collaborators
 	}
 
-	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -967,7 +967,7 @@ func TestCheckProjectCollaborator_UserAbsent_ReturnsFail(t *testing.T) {
 		return "alice\nbob", nil // goose-agent not present
 	}
 
-	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -983,9 +983,69 @@ func TestCheckProjectCollaborator_APIFailure_ReturnsFail(t *testing.T) {
 		return "", fmt.Errorf("API error")
 	}
 
-	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := CheckProjectCollaborator("owner", "my-repo", "goose-agent", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CheckProjectCollaborator org-aware tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckProjectCollaborator_OrgMemberFound_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		// Should query orgs/{owner}/members, not GraphQL.
+		joined := strings.Join(args, " ")
+		if !strings.Contains(joined, "orgs/acme-org/members") {
+			t.Errorf("expected org members API call, got args: %v", args)
+		}
+		return "alice\ngoose-agent\nbob", nil
+	}
+
+	result := CheckProjectCollaborator("acme-org", "my-repo", "goose-agent", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_OrgMemberNotFound_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "alice\nbob", nil // goose-agent not in org
+	}
+
+	result := CheckProjectCollaborator("acme-org", "my-repo", "goose-agent", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "not an org member") {
+		t.Errorf("expected org membership failure message, got %q", result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_OrgAPIFailure_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("forbidden")
+	}
+
+	result := CheckProjectCollaborator("acme-org", "my-repo", "goose-agent", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "failed to fetch org members") {
+		t.Errorf("expected org members error message, got %q", result.Message)
+	}
+}
+
+func TestCheckProjectCollaborator_OrgEmptyAgentUser_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		t.Fatal("run should not be called when agent user is empty")
+		return "", nil
+	}
+
+	result := CheckProjectCollaborator("acme-org", "my-repo", "", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
 
@@ -1273,7 +1333,7 @@ func TestCheckRunnerLabelVar_Present_ReturnsPass(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[{"name":"RUNNER_LABEL"},{"name":"OTHER"}]`, nil
 	}
-	result := CheckRunnerLabelVar("owner", "repo", fakeRun)
+	result := CheckRunnerLabelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1283,7 +1343,7 @@ func TestCheckRunnerLabelVar_Missing_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[{"name":"OTHER"}]`, nil
 	}
-	result := CheckRunnerLabelVar("owner", "repo", fakeRun)
+	result := CheckRunnerLabelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1296,7 +1356,7 @@ func TestCheckRunnerLabelVar_ParseError_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `not json`, nil
 	}
-	result := CheckRunnerLabelVar("owner", "repo", fakeRun)
+	result := CheckRunnerLabelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1309,7 +1369,7 @@ func TestCheckGooseProviderVar_Present_ReturnsPass(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[{"name":"GOOSE_PROVIDER"}]`, nil
 	}
-	result := CheckGooseProviderVar("owner", "repo", fakeRun)
+	result := CheckGooseProviderVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1319,7 +1379,7 @@ func TestCheckGooseProviderVar_Missing_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[]`, nil
 	}
-	result := CheckGooseProviderVar("owner", "repo", fakeRun)
+	result := CheckGooseProviderVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1332,7 +1392,7 @@ func TestCheckGooseProviderVar_ParseError_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `{bad}`, nil
 	}
-	result := CheckGooseProviderVar("owner", "repo", fakeRun)
+	result := CheckGooseProviderVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1342,7 +1402,7 @@ func TestCheckGooseModelVar_Present_ReturnsPass(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[{"name":"GOOSE_MODEL"}]`, nil
 	}
-	result := CheckGooseModelVar("owner", "repo", fakeRun)
+	result := CheckGooseModelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1352,7 +1412,7 @@ func TestCheckGooseModelVar_Missing_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[]`, nil
 	}
-	result := CheckGooseModelVar("owner", "repo", fakeRun)
+	result := CheckGooseModelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1365,7 +1425,7 @@ func TestCheckGooseModelVar_ParseError_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `not valid`, nil
 	}
-	result := CheckGooseModelVar("owner", "repo", fakeRun)
+	result := CheckGooseModelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1379,7 +1439,7 @@ func TestCheckGooseAgentPATSecret_Present_ReturnsPass(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
 	}
-	result := CheckGooseAgentPATSecret("owner", "repo", fakeRun)
+	result := CheckGooseAgentPATSecret("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1389,7 +1449,7 @@ func TestCheckGooseAgentPATSecret_Missing_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[{"name":"OTHER_SECRET"}]`, nil
 	}
-	result := CheckGooseAgentPATSecret("owner", "repo", fakeRun)
+	result := CheckGooseAgentPATSecret("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1399,7 +1459,7 @@ func TestCheckGooseAgentPATSecret_ParseError_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `bad json`, nil
 	}
-	result := CheckGooseAgentPATSecret("owner", "repo", fakeRun)
+	result := CheckGooseAgentPATSecret("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1409,7 +1469,7 @@ func TestCheckClaudeCredentialsSecret_Present_ReturnsPass(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[{"name":"CLAUDE_CREDENTIALS_JSON"}]`, nil
 	}
-	result := CheckClaudeCredentialsSecret("owner", "repo", fakeRun)
+	result := CheckClaudeCredentialsSecret("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1419,7 +1479,7 @@ func TestCheckClaudeCredentialsSecret_Missing_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `[]`, nil
 	}
-	result := CheckClaudeCredentialsSecret("owner", "repo", fakeRun)
+	result := CheckClaudeCredentialsSecret("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1429,7 +1489,7 @@ func TestCheckClaudeCredentialsSecret_ParseError_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return `invalid`, nil
 	}
-	result := CheckClaudeCredentialsSecret("owner", "repo", fakeRun)
+	result := CheckClaudeCredentialsSecret("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1439,7 +1499,7 @@ func TestCheckRunnerLabelVar_CommandError_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("network error")
 	}
-	result := CheckRunnerLabelVar("owner", "repo", fakeRun)
+	result := CheckRunnerLabelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -1457,8 +1517,205 @@ func TestCheckGooseAgentPATSecret_CommandError_ReturnsWarning(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("network error")
 	}
-	result := CheckGooseAgentPATSecret("owner", "repo", fakeRun)
+	result := CheckGooseAgentPATSecret("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Org-aware variable and secret check tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckRepoVariable_OrgOwnerType_UsesOrgFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		ownerType  string
+		wantFlag   string
+		wantValue  string
+		varPresent bool
+		wantStatus CheckStatus
+	}{
+		{
+			name:       "org owner queries with --org flag and variable present",
+			ownerType:  bootstrap.OwnerTypeOrg,
+			wantFlag:   "--org",
+			wantValue:  "acme-org",
+			varPresent: true,
+			wantStatus: Pass,
+		},
+		{
+			name:       "org owner queries with --org flag and variable missing",
+			ownerType:  bootstrap.OwnerTypeOrg,
+			wantFlag:   "--org",
+			wantValue:  "acme-org",
+			varPresent: false,
+			wantStatus: Warning,
+		},
+		{
+			name:       "user owner queries with --repo flag and variable present",
+			ownerType:  bootstrap.OwnerTypeUser,
+			wantFlag:   "--repo",
+			wantValue:  "alice/my-repo",
+			varPresent: true,
+			wantStatus: Pass,
+		},
+		{
+			name:       "user owner queries with --repo flag and variable missing",
+			ownerType:  bootstrap.OwnerTypeUser,
+			wantFlag:   "--repo",
+			wantValue:  "alice/my-repo",
+			varPresent: false,
+			wantStatus: Warning,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				// Verify the correct flag is used.
+				foundFlag := false
+				for i, a := range args {
+					if a == tc.wantFlag && i+1 < len(args) && args[i+1] == tc.wantValue {
+						foundFlag = true
+					}
+				}
+				if !foundFlag {
+					t.Errorf("expected %s %s in args, got %v", tc.wantFlag, tc.wantValue, args)
+				}
+				if tc.varPresent {
+					return `[{"name":"RUNNER_LABEL"}]`, nil
+				}
+				return `[]`, nil
+			}
+
+			owner := "acme-org"
+			repoName := "my-repo"
+			if tc.ownerType == bootstrap.OwnerTypeUser {
+				owner = "alice"
+			}
+
+			result := CheckRunnerLabelVar(owner, repoName, tc.ownerType, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+		})
+	}
+}
+
+func TestCheckRepoSecret_OrgOwnerType_UsesOrgFlag(t *testing.T) {
+	tests := []struct {
+		name          string
+		ownerType     string
+		wantFlag      string
+		wantValue     string
+		secretPresent bool
+		wantStatus    CheckStatus
+	}{
+		{
+			name:          "org owner queries with --org flag and secret present",
+			ownerType:     bootstrap.OwnerTypeOrg,
+			wantFlag:      "--org",
+			wantValue:     "acme-org",
+			secretPresent: true,
+			wantStatus:    Pass,
+		},
+		{
+			name:          "org owner queries with --org flag and secret missing",
+			ownerType:     bootstrap.OwnerTypeOrg,
+			wantFlag:      "--org",
+			wantValue:     "acme-org",
+			secretPresent: false,
+			wantStatus:    Warning,
+		},
+		{
+			name:          "user owner queries with --repo flag and secret present",
+			ownerType:     bootstrap.OwnerTypeUser,
+			wantFlag:      "--repo",
+			wantValue:     "alice/my-repo",
+			secretPresent: true,
+			wantStatus:    Pass,
+		},
+		{
+			name:          "user owner queries with --repo flag and secret missing",
+			ownerType:     bootstrap.OwnerTypeUser,
+			wantFlag:      "--repo",
+			wantValue:     "alice/my-repo",
+			secretPresent: false,
+			wantStatus:    Warning,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				// Verify the correct flag is used.
+				foundFlag := false
+				for i, a := range args {
+					if a == tc.wantFlag && i+1 < len(args) && args[i+1] == tc.wantValue {
+						foundFlag = true
+					}
+				}
+				if !foundFlag {
+					t.Errorf("expected %s %s in args, got %v", tc.wantFlag, tc.wantValue, args)
+				}
+				if tc.secretPresent {
+					return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+				}
+				return `[]`, nil
+			}
+
+			owner := "acme-org"
+			repoName := "my-repo"
+			if tc.ownerType == bootstrap.OwnerTypeUser {
+				owner = "alice"
+			}
+
+			result := CheckGooseAgentPATSecret(owner, repoName, tc.ownerType, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+		})
+	}
+}
+
+func TestCheckAllVarAndSecretFunctions_OrgPath(t *testing.T) {
+	// Verify all five public check functions correctly use --org for Organization ownerType.
+	orgRun := func(name string, args ...string) (string, error) {
+		for i, a := range args {
+			if a == "--repo" {
+				t.Errorf("expected --org flag for org ownerType, but got --repo at position %d in %v", i, args)
+			}
+		}
+		// Return appropriate data based on the command type.
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable") {
+			return `[{"name":"RUNNER_LABEL"},{"name":"GOOSE_PROVIDER"},{"name":"GOOSE_MODEL"}]`, nil
+		}
+		return `[{"name":"GOOSE_AGENT_PAT"},{"name":"CLAUDE_CREDENTIALS_JSON"}]`, nil
+	}
+
+	// Variable checks.
+	result := CheckRunnerLabelVar("acme-org", "my-repo", bootstrap.OwnerTypeOrg, orgRun)
+	if result.Status != Pass {
+		t.Errorf("CheckRunnerLabelVar org: expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	result = CheckGooseProviderVar("acme-org", "my-repo", bootstrap.OwnerTypeOrg, orgRun)
+	if result.Status != Pass {
+		t.Errorf("CheckGooseProviderVar org: expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	result = CheckGooseModelVar("acme-org", "my-repo", bootstrap.OwnerTypeOrg, orgRun)
+	if result.Status != Pass {
+		t.Errorf("CheckGooseModelVar org: expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// Secret checks.
+	result = CheckGooseAgentPATSecret("acme-org", "my-repo", bootstrap.OwnerTypeOrg, orgRun)
+	if result.Status != Pass {
+		t.Errorf("CheckGooseAgentPATSecret org: expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	result = CheckClaudeCredentialsSecret("acme-org", "my-repo", bootstrap.OwnerTypeOrg, orgRun)
+	if result.Status != Pass {
+		t.Errorf("CheckClaudeCredentialsSecret org: expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
