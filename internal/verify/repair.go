@@ -1468,6 +1468,16 @@ func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run boots
 		data = []byte(out)
 	}
 
+	// Validate Claude auth before pushing credentials.
+	if authErr := bootstrap.ValidateClaudeAuth(run); authErr != nil {
+		return CheckResult{
+			Name:   checkClaudeCredentialsSecretName,
+			Status: ManualAction,
+			Message: "Claude authentication failed — run 'claude auth login' to refresh your credentials, " +
+				"then re-run 'gh agentic doctor --repair'",
+		}
+	}
+
 	encoded := base64.StdEncoding.EncodeToString(data)
 	repoFullName := owner + "/" + repoName
 	_, setErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", repoFullName)
