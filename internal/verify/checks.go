@@ -892,10 +892,20 @@ func CheckProjectCollaborator(owner, repoName, agentUser, ownerType string, run 
 const checkAgenticProjectIDName = "AGENTIC_PROJECT_ID is configured"
 
 // CheckAgenticProjectID verifies that the AGENTIC_PROJECT_ID GitHub Actions
-// repository variable is set. This variable is required by the
+// variable is set. For org-owned repos it checks at org level; for personal
+// repos it checks at repo level. This variable is required by the
 // sync-label-to-status workflow to update the GitHub Project board status.
-func CheckAgenticProjectID(repoFullName, owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	out, err := run("gh", "variable", "get", "AGENTIC_PROJECT_ID", "--repo", repoFullName)
+func CheckAgenticProjectID(repoFullName, owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	// Use --org for org-owned repos, --repo for personal repos.
+	var scopeArgs []string
+	if ownerType == bootstrap.OwnerTypeOrg {
+		scopeArgs = []string{"--org", owner}
+	} else {
+		scopeArgs = []string{"--repo", repoFullName}
+	}
+
+	args := append([]string{"variable", "get", "AGENTIC_PROJECT_ID"}, scopeArgs...)
+	out, err := run("gh", args...)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return CheckResult{
 			Name:    checkAgenticProjectIDName,

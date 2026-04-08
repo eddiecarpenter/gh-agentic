@@ -1229,6 +1229,77 @@ func TestCreateProject_VariableSetSuccess_CallsGhVariable(t *testing.T) {
 	}
 }
 
+// --- setProjectVariable org/user scope tests ---
+
+func TestSetProjectVariable_OrgScope_UsesOrgFlag(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{RepoName: "my-project", ProjectNodeID: "PVT_NODE_ID"}
+
+	var capturedArgs []string
+	run := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	setProjectVariable(&buf, cfg, state, run)
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
+	}
+	if strings.Contains(joined, "--repo") {
+		t.Errorf("expected no --repo flag for org scope, got: %v", capturedArgs)
+	}
+	if !strings.Contains(joined, "AGENTIC_PROJECT_ID") {
+		t.Errorf("expected AGENTIC_PROJECT_ID in args, got: %v", capturedArgs)
+	}
+}
+
+func TestSetProjectVariable_UserScope_UsesRepoFlag(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{RepoName: "my-project", ProjectNodeID: "PVT_NODE_ID"}
+
+	var capturedArgs []string
+	run := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	setProjectVariable(&buf, cfg, state, run)
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--repo alice/my-project") {
+		t.Errorf("expected --repo alice/my-project in args, got: %v", capturedArgs)
+	}
+	if strings.Contains(joined, "--org") {
+		t.Errorf("expected no --org flag for user scope, got: %v", capturedArgs)
+	}
+}
+
+func TestSetProjectVariable_EmptyNodeID_Skips(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{RepoName: "my-project", ProjectNodeID: ""}
+
+	runCalled := false
+	run := func(name string, args ...string) (string, error) {
+		runCalled = true
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	setProjectVariable(&buf, cfg, state, run)
+
+	if runCalled {
+		t.Error("expected gh not to be called when ProjectNodeID is empty")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Skipping AGENTIC_PROJECT_ID") {
+		t.Errorf("expected skip message, got: %s", out)
+	}
+}
+
 // --------------------------------------------------------------------------------------
 // Step 9 — PrintSummary
 // --------------------------------------------------------------------------------------
