@@ -37,4 +37,7 @@ jobs:
         with:
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Must use GOOSE_AGENT_PAT (not GITHUB_TOKEN) so that the published
+          # release event propagates to release.yml for AI note generation.
+          # Workflows triggered by GITHUB_TOKEN cannot trigger other workflows.
+          GITHUB_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
