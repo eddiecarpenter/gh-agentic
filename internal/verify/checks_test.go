@@ -1314,7 +1314,7 @@ func TestCheckAgenticProjectID(t *testing.T) {
 			fakeRun := func(name string, args ...string) (string, error) {
 				return tc.runOut, tc.runErr
 			}
-			result := CheckAgenticProjectID("owner/repo", "owner", "repo", fakeRun)
+			result := CheckAgenticProjectID("owner/repo", "owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 			if result.Status != tc.wantStatus {
 				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
 			}
@@ -1322,6 +1322,44 @@ func TestCheckAgenticProjectID(t *testing.T) {
 				t.Errorf("unexpected check name: %s", result.Name)
 			}
 		})
+	}
+}
+
+func TestCheckAgenticProjectID_OrgScope_UsesOrgFlag(t *testing.T) {
+	var capturedArgs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return "PVT_kwDOBtest", nil
+	}
+	result := CheckAgenticProjectID("owner/repo", "owner", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--org owner") {
+		t.Errorf("expected --org owner in args, got: %v", capturedArgs)
+	}
+	if strings.Contains(joined, "--repo") {
+		t.Errorf("expected no --repo flag for org scope, got: %v", capturedArgs)
+	}
+}
+
+func TestCheckAgenticProjectID_UserScope_UsesRepoFlag(t *testing.T) {
+	var capturedArgs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return "PVT_kwDOBtest", nil
+	}
+	result := CheckAgenticProjectID("owner/repo", "owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--repo owner/repo") {
+		t.Errorf("expected --repo owner/repo in args, got: %v", capturedArgs)
+	}
+	if strings.Contains(joined, "--org") {
+		t.Errorf("expected no --org flag for user scope, got: %v", capturedArgs)
 	}
 }
 

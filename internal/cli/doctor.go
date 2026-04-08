@@ -97,7 +97,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
 		func() verify.CheckResult {
-			return verify.CheckAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, run)
+			return verify.CheckAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, cfg.ownerType, run)
 		},
 		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectViews(cfg.owner, cfg.repoName, cfg.root, run) },
@@ -152,7 +152,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "GitHub Project linked":
 				r = verify.RepairProject(cfg.owner, cfg.repoName, run)
 			case "AGENTIC_PROJECT_ID is configured":
-				r = verify.RepairAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, run)
+				r = verify.RepairAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, cfg.ownerType, run)
 			case "GitHub Project status options are standard":
 				r = verify.RepairProjectStatus(cfg.owner, cfg.repoName, cfg.root, run)
 			case "GitHub Project has required views":
@@ -162,11 +162,11 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "AGENT_USER variable configured":
 				r = verify.RepairAgentUserVar(cfg.owner, cfg.repoName, cfg.agentUser, cfg.agentUserScope, run, textConfirm)
 			case "RUNNER_LABEL variable configured":
-				r = verify.RepairRunnerLabelVar(cfg.owner, cfg.repoName, run)
+				r = verify.RepairRunnerLabelVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
 			case "GOOSE_PROVIDER variable configured":
-				r = verify.RepairGooseProviderVar(cfg.owner, cfg.repoName, run)
+				r = verify.RepairGooseProviderVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
 			case "GOOSE_MODEL variable configured":
-				r = verify.RepairGooseModelVar(cfg.owner, cfg.repoName, run)
+				r = verify.RepairGooseModelVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
 			case "GOOSE_AGENT_PAT secret configured":
 				r = verify.RepairGooseAgentPATSecret(cfg.owner, cfg.repoName)
 			case "CLAUDE_CREDENTIALS_JSON secret configured":

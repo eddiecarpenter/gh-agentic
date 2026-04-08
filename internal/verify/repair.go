@@ -304,8 +304,9 @@ func RepairGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
 // ──────────────────────────────────────────────────────────────────────────────
 
 // RepairAgenticProjectID resolves the project node ID via resolveProjectEntry
-// and sets it as the AGENTIC_PROJECT_ID repository variable.
-func RepairAgenticProjectID(repoFullName, owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+// and sets it as the AGENTIC_PROJECT_ID variable. For org-owned repos it sets
+// at org level; for personal repos it sets at repo level.
+func RepairAgenticProjectID(repoFullName, owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
 	entry := resolveProjectEntry(owner, repoName, run)
 	if entry == nil {
 		return CheckResult{
@@ -315,7 +316,16 @@ func RepairAgenticProjectID(repoFullName, owner, repoName string, run bootstrap.
 		}
 	}
 
-	_, err := run("gh", "variable", "set", "AGENTIC_PROJECT_ID", "--body", entry.NodeID, "--repo", repoFullName)
+	// Use --org for org-owned repos, --repo for personal repos.
+	var scopeArgs []string
+	if ownerType == bootstrap.OwnerTypeOrg {
+		scopeArgs = []string{"--org", owner}
+	} else {
+		scopeArgs = []string{"--repo", repoFullName}
+	}
+
+	args := append([]string{"variable", "set", "AGENTIC_PROJECT_ID", "--body", entry.NodeID}, scopeArgs...)
+	_, err := run("gh", args...)
 	if err != nil {
 		return CheckResult{
 			Name:    checkAgenticProjectIDName,
@@ -1372,10 +1382,20 @@ func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run b
 // Pipeline variable and secret repair functions
 // ──────────────────────────────────────────────────────────────────────────────
 
-// repairRepoVariable sets a repo variable to a given value using gh variable set.
-func repairRepoVariable(owner, repoName, varName, value, checkName string, run bootstrap.RunCommandFunc) CheckResult {
-	repoFullName := owner + "/" + repoName
-	_, err := run("gh", "variable", "set", varName, "--body", value, "--repo", repoFullName)
+// repairRepoVariable sets a variable to a given value using gh variable set.
+// For org-owned repos it sets at org level; for personal repos at repo level.
+func repairRepoVariable(owner, repoName, varName, value, checkName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	// Use --org for org-owned repos, --repo for personal repos.
+	var scopeArgs []string
+	if ownerType == bootstrap.OwnerTypeOrg {
+		scopeArgs = []string{"--org", owner}
+	} else {
+		repoFullName := owner + "/" + repoName
+		scopeArgs = []string{"--repo", repoFullName}
+	}
+
+	args := append([]string{"variable", "set", varName, "--body", value}, scopeArgs...)
+	_, err := run("gh", args...)
 	if err != nil {
 		return CheckResult{
 			Name:    checkName,
@@ -1390,19 +1410,22 @@ func repairRepoVariable(owner, repoName, varName, value, checkName string, run b
 	}
 }
 
-// RepairRunnerLabelVar sets the RUNNER_LABEL repo variable to its default value.
-func RepairRunnerLabelVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return repairRepoVariable(owner, repoName, "RUNNER_LABEL", bootstrap.DefaultRunnerLabel, checkRunnerLabelVarName, run)
+// RepairRunnerLabelVar sets the RUNNER_LABEL variable to its default value.
+// For org-owned repos it sets at org level; for personal repos at repo level.
+func RepairRunnerLabelVar(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return repairRepoVariable(owner, repoName, "RUNNER_LABEL", bootstrap.DefaultRunnerLabel, checkRunnerLabelVarName, ownerType, run)
 }
 
-// RepairGooseProviderVar sets the GOOSE_PROVIDER repo variable to its default value.
-func RepairGooseProviderVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return repairRepoVariable(owner, repoName, "GOOSE_PROVIDER", bootstrap.DefaultGooseProvider, checkGooseProviderVarName, run)
+// RepairGooseProviderVar sets the GOOSE_PROVIDER variable to its default value.
+// For org-owned repos it sets at org level; for personal repos at repo level.
+func RepairGooseProviderVar(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return repairRepoVariable(owner, repoName, "GOOSE_PROVIDER", bootstrap.DefaultGooseProvider, checkGooseProviderVarName, ownerType, run)
 }
 
-// RepairGooseModelVar sets the GOOSE_MODEL repo variable to its default value.
-func RepairGooseModelVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return repairRepoVariable(owner, repoName, "GOOSE_MODEL", bootstrap.DefaultGooseModel, checkGooseModelVarName, run)
+// RepairGooseModelVar sets the GOOSE_MODEL variable to its default value.
+// For org-owned repos it sets at org level; for personal repos at repo level.
+func RepairGooseModelVar(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return repairRepoVariable(owner, repoName, "GOOSE_MODEL", bootstrap.DefaultGooseModel, checkGooseModelVarName, ownerType, run)
 }
 
 // RepairGooseAgentPATSecret returns ManualAction — the PAT value is not knowable

@@ -1184,7 +1184,7 @@ func TestRepairAgenticProjectID(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := RepairAgenticProjectID("owner/repo", "owner", "repo", tc.fakeRun)
+			result := RepairAgenticProjectID("owner/repo", "owner", "repo", bootstrap.OwnerTypeUser, tc.fakeRun)
 			if result.Status != tc.wantStatus {
 				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
 			}
@@ -1213,7 +1213,7 @@ func TestRepairRunnerLabelVar_Success(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairRunnerLabelVar("owner", "repo", fakeRun)
+	result := RepairRunnerLabelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1226,7 +1226,7 @@ func TestRepairRunnerLabelVar_Failure(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("permission denied")
 	}
-	result := RepairRunnerLabelVar("owner", "repo", fakeRun)
+	result := RepairRunnerLabelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -1243,7 +1243,7 @@ func TestRepairGooseProviderVar_Success(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairGooseProviderVar("owner", "repo", fakeRun)
+	result := RepairGooseProviderVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1256,7 +1256,7 @@ func TestRepairGooseProviderVar_Failure(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("permission denied")
 	}
-	result := RepairGooseProviderVar("owner", "repo", fakeRun)
+	result := RepairGooseProviderVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -1273,7 +1273,7 @@ func TestRepairGooseModelVar_Success(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairGooseModelVar("owner", "repo", fakeRun)
+	result := RepairGooseModelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1286,9 +1286,96 @@ func TestRepairGooseModelVar_Failure(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("permission denied")
 	}
-	result := RepairGooseModelVar("owner", "repo", fakeRun)
+	result := RepairGooseModelVar("owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairAgenticProjectID_OrgScope_UsesOrgFlag(t *testing.T) {
+	projectListJSON := `{"projects":[{"id":"PVT_kwDOBtest","title":"repo","number":1,"url":"https://github.com/orgs/acme-org/projects/1","owner":{"login":"acme-org","type":"Organization"}}]}`
+
+	var capturedArgs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		cmd := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(cmd, "project list") {
+			return projectListJSON, nil
+		}
+		if strings.Contains(cmd, "variable set") {
+			capturedArgs = append([]string{name}, args...)
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairAgenticProjectID("acme-org/repo", "acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
+	}
+	if strings.Contains(joined, "--repo") {
+		t.Errorf("expected no --repo flag for org scope, got: %v", capturedArgs)
+	}
+}
+
+func TestRepairRunnerLabelVar_OrgScope_UsesOrgFlag(t *testing.T) {
+	var capturedArgs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return "", nil
+	}
+
+	result := RepairRunnerLabelVar("acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
+	}
+	if strings.Contains(joined, "--repo") {
+		t.Errorf("expected no --repo flag for org scope, got: %v", capturedArgs)
+	}
+}
+
+func TestRepairGooseProviderVar_OrgScope_UsesOrgFlag(t *testing.T) {
+	var capturedArgs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return "", nil
+	}
+
+	result := RepairGooseProviderVar("acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
+	}
+}
+
+func TestRepairGooseModelVar_OrgScope_UsesOrgFlag(t *testing.T) {
+	var capturedArgs []string
+	fakeRun := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return "", nil
+	}
+
+	result := RepairGooseModelVar("acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
 	}
 }
 
