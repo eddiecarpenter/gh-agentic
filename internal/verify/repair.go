@@ -384,8 +384,8 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 	}
 	optionsStr := strings.Join(optionEntries, ", ")
 
-	mutation := fmt.Sprintf(`mutation { updateProjectV2Field(input: { fieldId: "%s", projectId: "%s", singleSelectOptions: [%s] }) { field { ... on ProjectV2SingleSelectField { id } } } }`,
-		fieldID, projectNodeID, optionsStr)
+	mutation := fmt.Sprintf(`mutation { updateProjectV2Field(input: { fieldId: "%s", singleSelectOptions: [%s] }) { projectV2Field { ... on ProjectV2SingleSelectField { id } } } }`,
+		fieldID, optionsStr)
 
 	out, err = run("gh", "api", "graphql", "-f", "query="+mutation)
 	if err != nil {
