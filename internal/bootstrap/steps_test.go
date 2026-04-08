@@ -562,6 +562,85 @@ func TestPopulateRepo_ReposMDContainsDescription(t *testing.T) {
 	}
 }
 
+func TestPopulateRepo_DeploysPublishReleaseYml(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create the example source file in the template clone path.
+	exampleDir := filepath.Join(dir, "base", "docs", "examples")
+	if err := os.MkdirAll(exampleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	exampleContent := []byte("name: Publish Release\non: push\n")
+	if err := os.WriteFile(filepath.Join(exampleDir, "publish-release.yml"), exampleContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stack:        "Go",
+		Description:  "A test project",
+		TemplateRepo: DefaultTemplateRepo,
+	}
+	state := &StepState{
+		RepoName:  "my-project",
+		ClonePath: dir,
+		RepoURL:   "https://github.com/alice/my-project",
+	}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Assert the file was deployed.
+	dstPath := filepath.Join(dir, ".github", "workflows", "publish-release.yml")
+	data, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatalf("expected .github/workflows/publish-release.yml to exist, got: %v", err)
+	}
+	if !bytes.Equal(data, exampleContent) {
+		t.Errorf("deployed content mismatch.\nwant: %s\ngot:  %s", exampleContent, data)
+	}
+
+	// Assert log message.
+	if !strings.Contains(buf.String(), "publish-release.yml deployed") {
+		t.Errorf("expected deploy log message, got: %s", buf.String())
+	}
+}
+
+func TestPopulateRepo_SkipsPublishReleaseYml_WhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	cfg := BootstrapConfig{
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stack:        "Go",
+		Description:  "A test project",
+		TemplateRepo: DefaultTemplateRepo,
+	}
+	state := &StepState{
+		RepoName:  "my-project",
+		ClonePath: dir,
+		RepoURL:   "https://github.com/alice/my-project",
+	}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Assert the file was NOT created.
+	dstPath := filepath.Join(dir, ".github", "workflows", "publish-release.yml")
+	if _, err := os.Stat(dstPath); !os.IsNotExist(err) {
+		t.Errorf("expected publish-release.yml to NOT exist when example is missing")
+	}
+
+	// Assert skip log message.
+	if !strings.Contains(buf.String(), "publish-release.yml example not found in template") {
+		t.Errorf("expected skip log message, got: %s", buf.String())
+	}
+}
+
 // --------------------------------------------------------------------------------------
 // Step 8 — CreateProject
 // --------------------------------------------------------------------------------------
