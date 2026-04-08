@@ -109,6 +109,17 @@ func printCredentialInstructions(w io.Writer, fullName string) {
 	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`, fullName)))
 }
 
+// ValidateClaudeAuth verifies that the local Claude CLI can authenticate by
+// running `claude -p "hi"`. Returns nil if auth succeeds, or a descriptive
+// error instructing the user to run `claude auth login` if it fails.
+func ValidateClaudeAuth(run RunCommandFunc) error {
+	_, err := run("claude", "-p", "hi")
+	if err != nil {
+		return fmt.Errorf("Claude authentication failed — run 'claude auth login' to refresh your credentials: %w", err)
+	}
+	return nil
+}
+
 // ValidateAgentPAT checks whether the GOOSE_AGENT_PAT secret exists on the repo.
 // If missing, a warning is printed with the URL to add it. This is purely
 // informational — the function always returns nil.

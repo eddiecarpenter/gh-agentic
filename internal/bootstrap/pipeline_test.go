@@ -262,6 +262,27 @@ func TestSetClaudeCredentials_SecretSetFails_WarnsAndContinues(t *testing.T) {
 	}
 }
 
+// --- ValidateClaudeAuth tests ---
+
+func TestValidateClaudeAuth_Success_ReturnsNil(t *testing.T) {
+	run := fakeRunOK("Hello!")
+	err := ValidateClaudeAuth(run)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+}
+
+func TestValidateClaudeAuth_Failure_ReturnsErrorWithInstruction(t *testing.T) {
+	run := fakeRunFail("auth required")
+	err := ValidateClaudeAuth(run)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "claude auth login") {
+		t.Errorf("expected error to contain 'claude auth login', got: %s", err.Error())
+	}
+}
+
 // --- ValidateAgentPAT tests ---
 
 func TestValidateAgentPAT_PATPresent_SetsAgentPATFound(t *testing.T) {
