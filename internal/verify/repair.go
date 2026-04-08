@@ -1425,40 +1425,10 @@ const credentialsFilePath = ".claude/.credentials.json"
 // RepairClaudeCredentialsSecret reads ~/.claude/.credentials.json, base64-encodes it,
 // and sets it as the CLAUDE_CREDENTIALS_JSON repo secret. If the file does not exist,
 // returns ManualAction with instructions for the user.
+// This is a thin wrapper that delegates to RepairClaudeCredentialsSecretWithReadFile
+// with the production os.ReadFile and os.UserHomeDir implementations.
 func RepairClaudeCredentialsSecret(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return repairClaudeCredentialsManualAction(owner, repoName)
-	}
-
-	credPath := filepath.Join(home, credentialsFilePath)
-	data, err := os.ReadFile(credPath)
-	if err != nil {
-		// Fall back to macOS Keychain.
-		out, keychainErr := run("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
-		out = strings.TrimSpace(out)
-		if keychainErr != nil || out == "" {
-			return repairClaudeCredentialsManualAction(owner, repoName)
-		}
-		data = []byte(out)
-	}
-
-	encoded := base64.StdEncoding.EncodeToString(data)
-	repoFullName := owner + "/" + repoName
-	_, setErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", repoFullName)
-	if setErr != nil {
-		return CheckResult{
-			Name:    checkClaudeCredentialsSecretName,
-			Status:  Fail,
-			Message: fmt.Sprintf("failed to set secret: %v", setErr),
-		}
-	}
-
-	return CheckResult{
-		Name:    checkClaudeCredentialsSecretName,
-		Status:  Pass,
-		Message: "CLAUDE_CREDENTIALS_JSON secret set from Claude credentials",
-	}
+	return RepairClaudeCredentialsSecretWithReadFile(owner, repoName, run, os.ReadFile, os.UserHomeDir)
 }
 
 // repairClaudeCredentialsManualAction returns ManualAction with instructions

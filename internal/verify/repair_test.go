@@ -1417,3 +1417,21 @@ func TestRepairClaudeCredentialsSecret_SetFails_ReturnsFail(t *testing.T) {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
 }
+
+func TestRepairClaudeCredentialsSecret_DelegatesToWithReadFile(t *testing.T) {
+	// RepairClaudeCredentialsSecret delegates to RepairClaudeCredentialsSecretWithReadFile.
+	// Since both os.ReadFile and os.UserHomeDir are injected, calling the wrapper
+	// with a non-existent home/credentials path should produce the same ManualAction
+	// result as calling WithReadFile directly with failing injections.
+	// We can't inject fakes into the wrapper, but we can verify the function
+	// returns a valid CheckResult (not a panic or compile error).
+	result := RepairClaudeCredentialsSecret("owner", "repo", func(name string, args ...string) (string, error) {
+		// Keychain lookup fails — triggers ManualAction.
+		return "", fmt.Errorf("not available")
+	})
+	// The wrapper calls os.UserHomeDir and os.ReadFile which may or may not succeed
+	// in CI, but it should never panic and should return a valid result.
+	if result.Name != checkClaudeCredentialsSecretName {
+		t.Errorf("expected check name %q, got %q", checkClaudeCredentialsSecretName, result.Name)
+	}
+}
