@@ -12,6 +12,22 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
+// fakeReleases returns a FetchReleasesFunc that returns the given releases.
+// The returned function ignores the repo argument.
+func fakeReleases(releases []Release, err error) FetchReleasesFunc {
+	return func(_ string) ([]Release, error) {
+		return releases, err
+	}
+}
+
+// singleRelease returns a FetchReleasesFunc that returns a single release
+// with the given tag. Useful for tests that only need one version.
+func singleRelease(tag string) FetchReleasesFunc {
+	return fakeReleases([]Release{
+		{TagName: tag, Name: "Release " + tag, Body: "Release notes for " + tag},
+	}, nil)
+}
+
 // cloneRunner wraps a MockRunner with a side-effect for git clone commands.
 // When a git clone call is intercepted, it populates the target directory with
 // a fake template base/ containing baseContent and then delegates to the mock.
@@ -72,7 +88,7 @@ func TestRunSync_UpToDate(t *testing.T) {
 		&buf,
 		repo.Root,
 		mock.RunCommand,
-		testutil.FakeRelease("v1.0.0", nil),
+		singleRelease("v1.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		false,
@@ -102,7 +118,7 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunner(mock, "updated content"),
-		testutil.FakeRelease("v2.0.0", nil),
+		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		false,
@@ -151,7 +167,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunner(mock, "updated content"),
-		testutil.FakeRelease("v2.0.0", nil),
+		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		false,
@@ -200,7 +216,7 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunner(mock, "new content"),
-		testutil.FakeRelease("v2.0.0", nil),
+		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		false,
@@ -246,7 +262,7 @@ func TestRunSync_FetchError(t *testing.T) {
 		&buf,
 		repo.Root,
 		mock.RunCommand,
-		testutil.FakeRelease("", fmt.Errorf("API error")),
+		fakeReleases(nil, fmt.Errorf("API error")),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		false,
@@ -274,7 +290,7 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunner(mock, "re-synced content"),
-		testutil.FakeRelease("v1.0.0", nil),
+		singleRelease("v1.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		true,
@@ -324,7 +340,7 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunner(mock, "restored content"),
-		testutil.FakeRelease("v1.0.0", nil),
+		singleRelease("v1.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		false,
@@ -368,7 +384,7 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunner(mock, "auto-confirmed content"),
-		testutil.FakeRelease("v2.0.0", nil),
+		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		confirmFn,
 		false,
@@ -426,7 +442,7 @@ func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunnerWithWorkflows(mock, "updated", workflows),
-		testutil.FakeRelease("v2.0.0", nil),
+		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		false,
@@ -470,7 +486,7 @@ func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunnerWithWorkflows(mock, "updated", workflows),
-		testutil.FakeRelease("v2.0.0", nil),
+		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		false,
@@ -508,7 +524,7 @@ func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunnerWithWorkflows(mock, "updated", workflows),
-		testutil.FakeRelease("v2.0.0", nil),
+		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		false,
@@ -546,7 +562,7 @@ func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 		&buf,
 		repo.Root,
 		cloneRunnerWithWorkflows(mock, "updated", workflows),
-		testutil.FakeRelease("v2.0.0", nil),
+		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		false,

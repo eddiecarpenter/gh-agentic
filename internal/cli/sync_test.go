@@ -9,8 +9,19 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
+
+// fakeCLIReleases returns a FetchReleasesFunc that returns a single release
+// with the given tag. Used by CLI-level tests.
+func fakeCLIReleases(tag string) sync.FetchReleasesFunc {
+	return func(_ string) ([]sync.Release, error) {
+		return []sync.Release{
+			{TagName: tag, Name: "Release " + tag, Body: "Release notes for " + tag},
+		}, nil
+	}
+}
 
 func TestSyncCmd_Registration(t *testing.T) {
 	root := newRootCmd("dev", "")
@@ -92,7 +103,7 @@ func TestSyncCmd_YesFlagAutoConfirms(t *testing.T) {
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
 		run:          syncCloneRunner(mock, "updated content"),
-		fetchRelease: testutil.FakeRelease("v2.0.0", nil),
+		fetchReleases: fakeCLIReleases("v2.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
 
@@ -136,7 +147,7 @@ func TestSyncCmd_CommitFlagCommits(t *testing.T) {
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
 		run:          syncCloneRunner(mock, "committed content"),
-		fetchRelease: testutil.FakeRelease("v2.0.0", nil),
+		fetchReleases: fakeCLIReleases("v2.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
 
@@ -203,7 +214,7 @@ func TestSyncCmd_ForceFlagResyncs(t *testing.T) {
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
 		run:          syncCloneRunner(mock, "force-synced content"),
-		fetchRelease: testutil.FakeRelease("v1.0.0", nil),
+		fetchReleases: fakeCLIReleases("v1.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
 
@@ -243,7 +254,7 @@ func TestSyncCmd_ErrorOutsideAgenticRepo_FullCommand(t *testing.T) {
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
 		run:          mock.RunCommand,
-		fetchRelease: testutil.FakeRelease("v1.0.0", nil),
+		fetchReleases: fakeCLIReleases("v1.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
 

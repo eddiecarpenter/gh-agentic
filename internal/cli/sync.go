@@ -15,7 +15,7 @@ import (
 // supply fakes; the production path uses newSyncCmd which fills in real defaults.
 type syncDeps struct {
 	run             bootstrap.RunCommandFunc
-	fetchRelease    sync.FetchReleaseFunc
+	fetchReleases   sync.FetchReleasesFunc
 	spinner         sync.SpinnerFunc
 	detectOwnerType bootstrap.DetectOwnerTypeFunc
 }
@@ -24,7 +24,7 @@ type syncDeps struct {
 func newSyncCmd() *cobra.Command {
 	return newSyncCmdWithDeps(syncDeps{
 		run:             bootstrap.DefaultRunCommand,
-		fetchRelease:    sync.DefaultFetchRelease,
+		fetchReleases:   sync.DefaultFetchReleases,
 		spinner:         sync.DefaultSpinner,
 		detectOwnerType: bootstrap.DefaultDetectOwnerType,
 	})
@@ -72,7 +72,7 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 				w,
 				repoRoot,
 				deps.run,
-				deps.fetchRelease,
+				deps.fetchReleases,
 				deps.spinner,
 				confirmFn,
 				force,

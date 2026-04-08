@@ -2,12 +2,14 @@ package sync
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/fsutil"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // backupSuffix is the directory name suffix used for the base/ backup.
@@ -296,6 +298,22 @@ func CleanupTemp(tmpDir string) error {
 		return nil
 	}
 	return os.RemoveAll(tmpDir)
+}
+
+// DisplayReleaseNotes renders a styled release notes block to the given writer.
+// The output includes a heading line with the tag name and the release body.
+func DisplayReleaseNotes(w io.Writer, release Release) {
+	divider := ui.Muted.Render(strings.Repeat("─", 50))
+
+	fmt.Fprintln(w, "  "+ui.Muted.Render("── Release notes: "+release.TagName+" ")+""+divider)
+	if strings.TrimSpace(release.Body) != "" {
+		for _, line := range strings.Split(strings.TrimSpace(release.Body), "\n") {
+			fmt.Fprintln(w, "  "+line)
+		}
+	} else {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("No release notes available"))
+	}
+	fmt.Fprintln(w, "  "+divider)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
