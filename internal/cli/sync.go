@@ -87,6 +87,7 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 				deps.spinner,
 				confirmFn,
 				deps.selectVersion,
+				sync.DefaultClear,
 				force,
 				commit,
 				list,

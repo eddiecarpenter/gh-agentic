@@ -810,7 +810,7 @@ func RepairBaseDirWithWriter(w io.Writer, root string, run bootstrap.RunCommandF
 		// base/ has never been synced — call sync.RunSync directly with force=true
 		// and an auto-confirm so it runs non-interactively.
 		autoConfirm := func(_ string) (bool, error) { return true, nil }
-		if syncErr := sync.RunSync(w, root, run, sync.DefaultFetchReleases, sync.DefaultSpinner, autoConfirm, nil, true, true, false, "", nil); syncErr != nil {
+		if syncErr := sync.RunSync(w, root, run, sync.DefaultFetchReleases, sync.DefaultSpinner, autoConfirm, nil, sync.DefaultClear, true, true, false, "", nil); syncErr != nil {
 			return CheckResult{
 				Name:    "base/ exists and is unmodified",
 				Status:  Fail,

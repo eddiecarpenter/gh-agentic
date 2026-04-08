@@ -2,7 +2,11 @@
 // All terminal styling is centralised here; no other package defines styles inline.
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"io"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // GitHub colour palette — from docs/TUI_DESIGN.md.
 const (
@@ -83,4 +87,10 @@ func RenderError(msg string) string {
 // Used for manual-action items that are not failures.
 func RenderInfo(msg string) string {
 	return URL.Render(SymbolInfo) + " " + msg
+}
+
+// ClearScreen writes the ANSI escape sequence to clear the terminal and move
+// the cursor to the top-left corner. Used between stages in interactive flows.
+func ClearScreen(w io.Writer) {
+	_, _ = io.WriteString(w, "\033[2J\033[H")
 }

@@ -3,6 +3,7 @@ package sync
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,10 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
+
+// noopClear is a ClearFunc that does nothing. Used in tests to avoid
+// writing ANSI sequences to test buffers.
+func noopClear(_ io.Writer) {}
 
 // fakeReleases returns a FetchReleasesFunc that returns the given releases.
 // The returned function ignores the repo argument.
@@ -92,6 +97,7 @@ func TestRunSync_UpToDate(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -125,6 +131,7 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -177,6 +184,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		true,
 		false, // list
@@ -215,20 +223,33 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 	mock.AssertExpectations(t)
 }
 
-func TestRunSync_DeclineAndRestore(t *testing.T) {
+func TestRunSync_DeclineThenAccept(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 
 	mock := &testutil.MockRunner{}
+
+	confirmCalls := 0
+	confirmFn := func(_ string) (bool, error) {
+		confirmCalls++
+		// First call declines, second accepts.
+		return confirmCalls >= 2, nil
+	}
+
+	clearCalls := 0
+	trackingClear := func(_ io.Writer) {
+		clearCalls++
+	}
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "new content"),
+		cloneRunner(mock, "updated content"),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
-		func(_ string) (bool, error) { return false, nil },
+		confirmFn,
 		nil, // selectVersion
+		trackingClear,
 		false,
 		false,
 		false, // list
@@ -240,25 +261,119 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	// Confirm was called twice (decline + accept).
+	if confirmCalls != 2 {
+		t.Errorf("expected confirm called 2 times, got %d", confirmCalls)
+	}
+
+	// ClearScreen should be called 3 times:
+	// 1. picker → notes on first iteration
+	// 2. decline → back to picker
+	// 3. picker → notes on second iteration
+	// 4. install → results
+	// Total: 4
+	if clearCalls != 4 {
+		t.Errorf("expected clearScreen called 4 times (notes+decline+notes+results), got %d", clearCalls)
+	}
+
+	// Install still completed — TEMPLATE_VERSION updated.
+	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "# AGENTS.md\n" {
-		t.Errorf("base/AGENTS.md = %q, want '# AGENTS.md\\n'", data)
+	if strings.TrimSpace(string(data)) != "v2.0.0" {
+		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
 	}
 
-	data, err = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_ClearScreenCount_NormalFlow(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	clearCalls := 0
+	trackingClear := func(_ io.Writer) {
+		clearCalls++
+	}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "updated content"),
+		singleRelease("v2.0.0"),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
+		trackingClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
 	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v1.0.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v1.0.0", string(data))
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "cancelled") {
-		t.Errorf("expected 'cancelled' message, got: %s", output)
+	// Normal flow (accept on first try): clear at picker→notes + install→results = 2.
+	if clearCalls != 2 {
+		t.Errorf("expected clearScreen called 2 times (notes+results), got %d", clearCalls)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_DeclineThenAccept_MultipleReleases(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	confirmCalls := 0
+	confirmFn := func(_ string) (bool, error) {
+		confirmCalls++
+		return confirmCalls >= 2, nil
+	}
+
+	selectCalls := 0
+	fakeSelect := func(releases []Release) (Release, error) {
+		selectCalls++
+		// Always select the first release.
+		return releases[0], nil
+	}
+
+	multiReleases := fakeReleases([]Release{
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+	}, nil)
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "selected content"),
+		multiReleases,
+		testutil.NoopSpinner,
+		confirmFn,
+		fakeSelect,
+		noopClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// SelectVersion should be called twice (once per loop iteration).
+	if selectCalls != 2 {
+		t.Errorf("expected selectVersion called 2 times, got %d", selectCalls)
 	}
 
 	mock.AssertExpectations(t)
@@ -278,6 +393,7 @@ func TestRunSync_FetchError(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -309,6 +425,7 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		true,
 		false,
 		false, // list
@@ -362,6 +479,7 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -395,8 +513,10 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 	mock := &testutil.MockRunner{}
 
 	confirmCalled := 0
-	confirmFn := func(_ string) (bool, error) {
+	var confirmPrompt string
+	confirmFn := func(prompt string) (bool, error) {
 		confirmCalled++
+		confirmPrompt = prompt
 		return true, nil
 	}
 
@@ -409,6 +529,7 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 		testutil.NoopSpinner,
 		confirmFn,
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -422,6 +543,11 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 
 	if confirmCalled != 1 {
 		t.Errorf("expected confirm called 1 time, got %d", confirmCalled)
+	}
+
+	// Verify the new prompt text matches the UX design.
+	if confirmPrompt != "Install v2.0.0?" {
+		t.Errorf("expected confirm prompt %q, got %q", "Install v2.0.0?", confirmPrompt)
 	}
 
 	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
@@ -470,6 +596,7 @@ func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -517,6 +644,7 @@ func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -558,6 +686,7 @@ func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -599,6 +728,7 @@ func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -649,6 +779,7 @@ func TestRunSync_MultipleReleases_CallsSelectFunc(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		fakeSelect,
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -701,6 +832,7 @@ func TestRunSync_SingleRelease_SkipsSelectFunc(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		fakeSelect,
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -743,6 +875,7 @@ func TestRunSync_ListMode_DisplaysReleases(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { t.Fatal("confirm should not be called in list mode"); return false, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		true, // list
@@ -791,6 +924,7 @@ func TestRunSync_ListMode_UpToDate(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil,
+		noopClear,
 		false,
 		false,
 		true, // list
@@ -830,6 +964,7 @@ func TestRunSync_ReleaseTag_SyncsToSpecificVersion(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false,    // list
@@ -876,6 +1011,7 @@ func TestRunSync_ReleaseTag_NotFound(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil,
+		noopClear,
 		false,
 		false,
 		false,    // list
@@ -930,6 +1066,7 @@ func TestRunSync_ReleaseTag_SkipsPicker(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		fakeSelect,
+		noopClear,
 		false,
 		false,
 		false,    // list

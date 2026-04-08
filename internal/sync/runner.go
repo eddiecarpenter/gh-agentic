@@ -26,6 +26,10 @@ type ConfirmFunc func(prompt string) (bool, error)
 // fake without requiring a real TTY.
 type SelectFunc func(releases []Release) (Release, error)
 
+// ClearFunc clears the terminal screen. Injected so tests can substitute a
+// no-op without requiring a real TTY.
+type ClearFunc func(w io.Writer)
+
 // DefaultSpinner is the production SpinnerFunc. Prints "⠸ label..." then
 // "✔ label" or "✖ label: error".
 func DefaultSpinner(w io.Writer, label string, fn func() error) error {
@@ -55,6 +59,12 @@ func DefaultConfirm(prompt string) (bool, error) {
 		return false, err
 	}
 	return confirmed, nil
+}
+
+// DefaultClear is the production ClearFunc. Delegates to ui.ClearScreen
+// to clear the terminal and reset the cursor position.
+func DefaultClear(w io.Writer) {
+	ui.ClearScreen(w)
 }
 
 // DefaultSelect is the production SelectFunc. Uses huh.Select to present an
@@ -100,6 +110,7 @@ func RunSync(
 	spinner SpinnerFunc,
 	confirm ConfirmFunc,
 	selectVersion SelectFunc,
+	clearScreen ClearFunc,
 	force bool,
 	commit bool,
 	list bool,
@@ -197,33 +208,54 @@ func RunSync(
 
 	cfg.LatestVersion = targetRelease.TagName
 
-	if len(available) == 1 {
-		// Single version available — display release notes directly, skip picker.
-		fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("Update available: %s → %s", cfg.CurrentVersion, targetRelease.TagName)))
-		fmt.Fprintln(w)
-		DisplayReleaseNotes(w, targetRelease)
-	} else if len(available) > 1 {
-		// Multiple versions available — show picker.
-		fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("%d releases available since %s", len(available), cfg.CurrentVersion)))
-		fmt.Fprintln(w)
+	// Step 4: Version picker → release notes → confirm loop.
+	// When the user declines, clear the screen and return to the picker.
+	for {
+		if len(available) == 1 {
+			// Single version available — display release notes directly, skip picker.
+			// Clear screen before showing release notes (picker → notes transition).
+			clearScreen(w)
+			fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("Update available: %s → %s", cfg.CurrentVersion, targetRelease.TagName)))
+			fmt.Fprintln(w)
+			DisplayReleaseNotes(w, targetRelease)
+		} else if len(available) > 1 {
+			// Multiple versions available — show picker.
+			fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("%d releases available since %s", len(available), cfg.CurrentVersion)))
+			fmt.Fprintln(w)
 
-		if selectVersion != nil {
-			selected, selectErr := selectVersion(available)
-			if selectErr != nil {
-				return fmt.Errorf("version selection: %w", selectErr)
+			if selectVersion != nil {
+				selected, selectErr := selectVersion(available)
+				if selectErr != nil {
+					return fmt.Errorf("version selection: %w", selectErr)
+				}
+				targetRelease = selected
+				cfg.LatestVersion = targetRelease.TagName
 			}
-			targetRelease = selected
-			cfg.LatestVersion = targetRelease.TagName
+
+			// Clear screen before showing release notes (picker → notes transition).
+			clearScreen(w)
+			DisplayReleaseNotes(w, targetRelease)
+		} else {
+			clearScreen(w)
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))
 		}
 
-		DisplayReleaseNotes(w, targetRelease)
-	} else {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))
+		fmt.Fprintln(w)
+
+		confirmed, confirmErr := confirm(fmt.Sprintf("Install %s?", cfg.LatestVersion))
+		if confirmErr != nil {
+			return fmt.Errorf("confirmation prompt: %w", confirmErr)
+		}
+
+		if confirmed {
+			break
+		}
+
+		// Decline — clear screen and loop back to picker.
+		clearScreen(w)
 	}
 
-	fmt.Fprintln(w)
-
-	// Step 4: Clone template to temp dir.
+	// Step 5: Clone template to temp dir.
 	tmpDir, err := os.MkdirTemp("", "agentic-sync-clone-*")
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
@@ -236,7 +268,7 @@ func RunSync(
 		return err
 	}
 
-	// Step 5: Backup existing base/.
+	// Step 6: Backup existing base/.
 	var backupDir string
 	if err := spinner(w, "Backing up base/", func() error {
 		var backupErr error
@@ -247,7 +279,7 @@ func RunSync(
 	}
 	defer func() { _ = CleanupTemp(backupDir) }()
 
-	// Step 6: Copy base/ from template.
+	// Step 7: Copy base/ from template.
 	if err := spinner(w, "Copying base/", func() error {
 		return CopyBase(tmpDir, repoRoot)
 	}); err != nil {
@@ -256,7 +288,7 @@ func RunSync(
 		return err
 	}
 
-	// Step 6b: Resolve owner type to determine workflow excludes.
+	// Step 7b: Resolve owner type to determine workflow excludes.
 	var workflowExcludes []string
 	if detectOwnerType != nil {
 		owner := extractOwnerFromAgentsLocal(repoRoot)
@@ -269,7 +301,7 @@ func RunSync(
 		}
 	}
 
-	// Step 6c: Deploy workflows from template.
+	// Step 7c: Deploy workflows from template.
 	if err := spinner(w, "Deploying workflows", func() error {
 		return DeployWorkflows(tmpDir, repoRoot, workflowExcludes)
 	}); err != nil {
@@ -277,31 +309,7 @@ func RunSync(
 		return err
 	}
 
-	// Step 7: Confirm with user.
-	confirmed, err := confirm("Apply " + cfg.LatestVersion + " and update TEMPLATE_VERSION?")
-	if err != nil {
-		_ = RestoreBase(repoRoot, backupDir)
-		return fmt.Errorf("confirmation prompt: %w", err)
-	}
-
-	if !confirmed {
-		// Decline — restore.
-		if err := spinner(w, "Restoring base/", func() error {
-			return RestoreBase(repoRoot, backupDir)
-		}); err != nil {
-			return err
-		}
-
-		// Also reset any git changes to base/ and .github/workflows/.
-		_, _ = runInDir(run, repoRoot, "git", "checkout", "--", "base/")
-		_, _ = runInDir(run, repoRoot, "git", "checkout", "--", ".github/workflows/")
-
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  "+ui.Muted.Render("Sync cancelled — no changes committed"))
-		return nil
-	}
-
-	// Step 8: Confirmed — update version and stage (optionally commit).
+	// Step 8: Update version and stage (optionally commit).
 	if err := spinner(w, "Updating TEMPLATE_VERSION", func() error {
 		return UpdateVersion(repoRoot, cfg.LatestVersion)
 	}); err != nil {
@@ -309,6 +317,9 @@ func RunSync(
 	}
 
 	commitMsg := fmt.Sprintf("chore: sync base/ and workflows from %s %s", cfg.TemplateRepo, cfg.LatestVersion)
+
+	// Clear screen before showing results summary (install → results transition).
+	clearScreen(w)
 
 	if commit {
 		if err := spinner(w, "Committing changes", func() error {
