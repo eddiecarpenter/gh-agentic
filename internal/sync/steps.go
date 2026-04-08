@@ -2,12 +2,14 @@ package sync
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/fsutil"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // backupSuffix is the directory name suffix used for the base/ backup.
@@ -296,6 +298,47 @@ func CleanupTemp(tmpDir string) error {
 		return nil
 	}
 	return os.RemoveAll(tmpDir)
+}
+
+// DisplayReleaseNotes renders a styled release notes block to the given writer.
+// The output includes a heading line with the tag name and the release body.
+func DisplayReleaseNotes(w io.Writer, release Release) {
+	divider := ui.Muted.Render(strings.Repeat("─", 50))
+
+	fmt.Fprintln(w, "  "+ui.Muted.Render("── Release notes: "+release.TagName+" ")+""+divider)
+	if strings.TrimSpace(release.Body) != "" {
+		for _, line := range strings.Split(strings.TrimSpace(release.Body), "\n") {
+			fmt.Fprintln(w, "  "+line)
+		}
+	} else {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("No release notes available"))
+	}
+	fmt.Fprintln(w, "  "+divider)
+}
+
+// DisplayReleaseList renders all releases with their version tags and notes.
+// Used by the --list flag to display available releases without performing a sync.
+func DisplayReleaseList(w io.Writer, releases []Release) {
+	fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Available releases:"))
+	fmt.Fprintln(w)
+	for i, r := range releases {
+		label := r.TagName
+		if r.Name != "" {
+			label += "  — " + r.Name
+		}
+		fmt.Fprintln(w, "  "+ui.Value.Render(label))
+		if strings.TrimSpace(r.Body) != "" {
+			divider := ui.Muted.Render(strings.Repeat("─", 40))
+			fmt.Fprintln(w, "  "+ui.Muted.Render("── Release notes ──"))
+			for _, line := range strings.Split(strings.TrimSpace(r.Body), "\n") {
+				fmt.Fprintln(w, "  "+line)
+			}
+			fmt.Fprintln(w, "  "+divider)
+		}
+		if i < len(releases)-1 {
+			fmt.Fprintln(w)
+		}
+	}
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

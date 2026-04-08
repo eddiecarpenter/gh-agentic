@@ -9,8 +9,19 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
+
+// fakeCLIReleases returns a FetchReleasesFunc that returns a single release
+// with the given tag. Used by CLI-level tests.
+func fakeCLIReleases(tag string) sync.FetchReleasesFunc {
+	return func(_ string) ([]sync.Release, error) {
+		return []sync.Release{
+			{TagName: tag, Name: "Release " + tag, Body: "Release notes for " + tag},
+		}, nil
+	}
+}
 
 func TestSyncCmd_Registration(t *testing.T) {
 	root := newRootCmd("dev", "")
@@ -92,7 +103,7 @@ func TestSyncCmd_YesFlagAutoConfirms(t *testing.T) {
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
 		run:          syncCloneRunner(mock, "updated content"),
-		fetchRelease: testutil.FakeRelease("v2.0.0", nil),
+		fetchReleases: fakeCLIReleases("v2.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
 
@@ -136,7 +147,7 @@ func TestSyncCmd_CommitFlagCommits(t *testing.T) {
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
 		run:          syncCloneRunner(mock, "committed content"),
-		fetchRelease: testutil.FakeRelease("v2.0.0", nil),
+		fetchReleases: fakeCLIReleases("v2.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
 
@@ -203,7 +214,7 @@ func TestSyncCmd_ForceFlagResyncs(t *testing.T) {
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
 		run:          syncCloneRunner(mock, "force-synced content"),
-		fetchRelease: testutil.FakeRelease("v1.0.0", nil),
+		fetchReleases: fakeCLIReleases("v1.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
 
@@ -243,7 +254,7 @@ func TestSyncCmd_ErrorOutsideAgenticRepo_FullCommand(t *testing.T) {
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
 		run:          mock.RunCommand,
-		fetchRelease: testutil.FakeRelease("v1.0.0", nil),
+		fetchReleases: fakeCLIReleases("v1.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
 
@@ -264,5 +275,216 @@ func TestSyncCmd_ErrorOutsideAgenticRepo_FullCommand(t *testing.T) {
 		if strings.Contains(output, "Synced") {
 			t.Error("expected failure outside agentic repo, but got success")
 		}
+	}
+}
+
+func TestSyncCmd_ListFlagRegistration(t *testing.T) {
+	root := newRootCmd("dev", "")
+
+	var syncCmd *cobra.Command
+	for _, cmd := range root.Commands() {
+		if cmd.Use == "sync" {
+			syncCmd = cmd
+			break
+		}
+	}
+	if syncCmd == nil {
+		t.Fatal("sync subcommand not found")
+	}
+
+	f := syncCmd.Flags().Lookup("list")
+	if f == nil {
+		t.Fatal("--list flag not registered")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--list default should be false, got %q", f.DefValue)
+	}
+}
+
+func TestSyncCmd_ListDisplaysReleases(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo.Root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	mock := &testutil.MockRunner{}
+	deps := syncDeps{
+		run: mock.RunCommand,
+		fetchReleases: func(_ string) ([]sync.Release, error) {
+			return []sync.Release{
+				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+				{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+			}, nil
+		},
+		spinner: testutil.NoopSpinner,
+	}
+
+	syncCmd := newSyncCmdWithDeps(deps)
+	root := newTestSyncRoot(syncCmd)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"sync", "--list"})
+	execErr := root.Execute()
+
+	if execErr != nil {
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", execErr, buf.String())
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "v2.0.0") {
+		t.Errorf("expected v2.0.0 in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "v1.5.0") {
+		t.Errorf("expected v1.5.0 in output, got:\n%s", output)
+	}
+}
+
+func TestSyncCmd_ListAndReleaseMutuallyExclusive(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo.Root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	mock := &testutil.MockRunner{}
+	deps := syncDeps{
+		run:           mock.RunCommand,
+		fetchReleases: fakeCLIReleases("v2.0.0"),
+		spinner:       testutil.NoopSpinner,
+	}
+
+	syncCmd := newSyncCmdWithDeps(deps)
+	root := newTestSyncRoot(syncCmd)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"sync", "--list", "--release", "v1.0.0"})
+	execErr := root.Execute()
+
+	if execErr == nil {
+		t.Fatal("expected error for mutually exclusive flags")
+	}
+	if !strings.Contains(execErr.Error(), "mutually exclusive") {
+		t.Errorf("expected 'mutually exclusive' error, got: %v", execErr)
+	}
+}
+
+func TestSyncCmd_ReleaseFlagRegistration(t *testing.T) {
+	root := newRootCmd("dev", "")
+
+	var syncCmd *cobra.Command
+	for _, cmd := range root.Commands() {
+		if cmd.Use == "sync" {
+			syncCmd = cmd
+			break
+		}
+	}
+	if syncCmd == nil {
+		t.Fatal("sync subcommand not found")
+	}
+
+	f := syncCmd.Flags().Lookup("release")
+	if f == nil {
+		t.Fatal("--release flag not registered")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--release default should be empty, got %q", f.DefValue)
+	}
+}
+
+func TestSyncCmd_ReleaseSyncsToSpecificVersion(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo.Root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	mock := &testutil.MockRunner{}
+	deps := syncDeps{
+		run: syncCloneRunner(mock, "targeted content"),
+		fetchReleases: func(_ string) ([]sync.Release, error) {
+			return []sync.Release{
+				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+				{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+			}, nil
+		},
+		spinner: testutil.NoopSpinner,
+	}
+
+	syncCmd := newSyncCmdWithDeps(deps)
+	root := newTestSyncRoot(syncCmd)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"sync", "--release", "v1.5.0", "--yes"})
+	execErr := root.Execute()
+
+	if execErr != nil {
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", execErr, buf.String())
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Sync applied") {
+		t.Errorf("expected 'Sync applied' message, got:\n%s", output)
+	}
+}
+
+func TestSyncCmd_ReleaseNotFound(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo.Root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	mock := &testutil.MockRunner{}
+	deps := syncDeps{
+		run: mock.RunCommand,
+		fetchReleases: func(_ string) ([]sync.Release, error) {
+			return []sync.Release{
+				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+			}, nil
+		},
+		spinner: testutil.NoopSpinner,
+	}
+
+	syncCmd := newSyncCmdWithDeps(deps)
+	root := newTestSyncRoot(syncCmd)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"sync", "--release", "vX.Y.Z"})
+	execErr := root.Execute()
+
+	if execErr == nil {
+		t.Fatal("expected error for non-existent release tag")
+	}
+	if !strings.Contains(execErr.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", execErr)
 	}
 }

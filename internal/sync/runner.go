@@ -21,6 +21,11 @@ type SpinnerFunc func(w io.Writer, label string, fn func() error) error
 // Injected so tests can simulate user input without a real TTY.
 type ConfirmFunc func(prompt string) (bool, error)
 
+// SelectFunc presents a version picker to the user when multiple releases are
+// available. Returns the selected release. Injected so tests can substitute a
+// fake without requiring a real TTY.
+type SelectFunc func(releases []Release) (Release, error)
+
 // DefaultSpinner is the production SpinnerFunc. Prints "⠸ label..." then
 // "✔ label" or "✖ label: error".
 func DefaultSpinner(w io.Writer, label string, fn func() error) error {
@@ -52,8 +57,35 @@ func DefaultConfirm(prompt string) (bool, error) {
 	return confirmed, nil
 }
 
-// RunSync orchestrates the full sync flow: read config → check version →
-// clone → copy → show diff → confirm → stage (and optionally commit) or restore.
+// DefaultSelect is the production SelectFunc. Uses huh.Select to present an
+// interactive version picker. Each option shows the tag and release name;
+// the description shows the release body (notes).
+func DefaultSelect(releases []Release) (Release, error) {
+	opts := make([]huh.Option[int], len(releases))
+	for i, r := range releases {
+		label := r.TagName
+		if r.Name != "" {
+			label += " — " + r.Name
+		}
+		opts[i] = huh.NewOption(label, i)
+	}
+
+	var selected int
+	sel := huh.NewSelect[int]().
+		Title("Select a version to sync to").
+		Options(opts...).
+		Value(&selected)
+
+	form := huh.NewForm(huh.NewGroup(sel))
+	if err := form.Run(); err != nil {
+		return Release{}, err
+	}
+
+	return releases[selected], nil
+}
+
+// RunSync orchestrates the full sync flow: read config → fetch releases →
+// display release notes → confirm → clone → copy → stage (and optionally commit) or restore.
 //
 // When commit is false (the default), changes are staged but not committed,
 // leaving the human to review, commit, and raise a PR. When commit is true,
@@ -64,11 +96,14 @@ func RunSync(
 	w io.Writer,
 	repoRoot string,
 	run bootstrap.RunCommandFunc,
-	fetchRelease FetchReleaseFunc,
+	fetchReleases FetchReleasesFunc,
 	spinner SpinnerFunc,
 	confirm ConfirmFunc,
+	selectVersion SelectFunc,
 	force bool,
 	commit bool,
+	list bool,
+	releaseTag string,
 	detectOwnerType bootstrap.DetectOwnerTypeFunc,
 ) error {
 	fmt.Fprintln(w)
@@ -91,35 +126,101 @@ func RunSync(
 
 	fmt.Fprintln(w, "  "+ui.RenderOK("Template: "+cfg.TemplateRepo+" (current: "+cfg.CurrentVersion+")"))
 
-	// Step 2: Fetch latest release.
-	if err := spinner(w, "Checking latest release", func() error {
-		tag, fetchErr := FetchLatestRelease(cfg.TemplateRepo, fetchRelease)
+	// Step 2: Fetch all releases and filter to those newer than current version.
+	var available []Release
+	if err := spinner(w, "Checking for updates", func() error {
+		all, fetchErr := fetchReleases(cfg.TemplateRepo)
 		if fetchErr != nil {
 			return fetchErr
 		}
-		cfg.LatestVersion = tag
+		available = FilterReleasesSince(all, cfg.CurrentVersion)
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	// --list mode: display available releases and exit.
+	if list {
+		if len(available) == 0 {
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "  "+ui.RenderOK("Already up to date ("+cfg.CurrentVersion+")"))
+			return nil
+		}
+		fmt.Fprintln(w)
+		DisplayReleaseList(w, available)
+		return nil
+	}
+
+	// --release mode: find specific tag and use it.
+	if releaseTag != "" {
+		all, fetchErr := fetchReleases(cfg.TemplateRepo)
+		if fetchErr != nil {
+			return fetchErr
+		}
+		// Use all releases (not just filtered) so we can find any tag.
+		found, ok := FindReleaseByTag(all, releaseTag)
+		if !ok {
+			return fmt.Errorf("release tag %s not found in %s", releaseTag, cfg.TemplateRepo)
+		}
+		// Override available with just this release.
+		available = []Release{found}
 	}
 
 	// Step 3: Check if up to date — bypass when base/ is missing or --force is set.
 	baseDir := filepath.Join(repoRoot, "base")
 	_, statErr := os.Stat(baseDir)
 	baseMissing := os.IsNotExist(statErr)
-	if IsUpToDate(cfg.CurrentVersion, cfg.LatestVersion) && !baseMissing && !force {
+	if len(available) == 0 && !baseMissing && !force {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "  "+ui.RenderOK("Already up to date ("+cfg.CurrentVersion+")"))
 		return nil
 	}
+
+	// Determine the target version.
+	var targetRelease Release
 	switch {
 	case baseMissing:
 		fmt.Fprintln(w, "  "+ui.RenderWarning("base/ is missing — restoring from "+cfg.CurrentVersion))
-	case force:
+		// When base is missing, target the latest available or current version.
+		if len(available) > 0 {
+			targetRelease = available[0]
+		} else {
+			targetRelease = Release{TagName: cfg.CurrentVersion}
+		}
+	case force && len(available) == 0:
 		fmt.Fprintln(w, "  "+ui.RenderWarning("--force set — re-syncing from "+cfg.CurrentVersion))
+		targetRelease = Release{TagName: cfg.CurrentVersion}
+	default:
+		// Use the newest available release as the default target.
+		targetRelease = available[0]
 	}
 
-	fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))
+	cfg.LatestVersion = targetRelease.TagName
+
+	if len(available) == 1 {
+		// Single version available — display release notes directly, skip picker.
+		fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("Update available: %s → %s", cfg.CurrentVersion, targetRelease.TagName)))
+		fmt.Fprintln(w)
+		DisplayReleaseNotes(w, targetRelease)
+	} else if len(available) > 1 {
+		// Multiple versions available — show picker.
+		fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("%d releases available since %s", len(available), cfg.CurrentVersion)))
+		fmt.Fprintln(w)
+
+		if selectVersion != nil {
+			selected, selectErr := selectVersion(available)
+			if selectErr != nil {
+				return fmt.Errorf("version selection: %w", selectErr)
+			}
+			targetRelease = selected
+			cfg.LatestVersion = targetRelease.TagName
+		}
+
+		DisplayReleaseNotes(w, targetRelease)
+	} else {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))
+	}
+
 	fmt.Fprintln(w)
 
 	// Step 4: Clone template to temp dir.
@@ -176,33 +277,15 @@ func RunSync(
 		return err
 	}
 
-	// Step 7: Show diff.
-	fmt.Fprintln(w)
-	diff, err := ShowDiff(repoRoot, run)
-	if err != nil {
-		_ = RestoreBase(repoRoot, backupDir)
-		return err
-	}
-
-	if diff != "" {
-		fmt.Fprintln(w, ui.Muted.Render("  ─── Changes ───"))
-		fmt.Fprintln(w, diff)
-		fmt.Fprintln(w, ui.Muted.Render("  ─── End ───"))
-	} else {
-		fmt.Fprintln(w, "  "+ui.Muted.Render("No visible changes in base/"))
-	}
-
-	fmt.Fprintln(w)
-
-	// Step 8: Confirm with user.
-	confirmed, err := confirm("Apply these changes and update TEMPLATE_VERSION to " + cfg.LatestVersion + "?")
+	// Step 7: Confirm with user.
+	confirmed, err := confirm("Apply " + cfg.LatestVersion + " and update TEMPLATE_VERSION?")
 	if err != nil {
 		_ = RestoreBase(repoRoot, backupDir)
 		return fmt.Errorf("confirmation prompt: %w", err)
 	}
 
 	if !confirmed {
-		// Step 10: Decline — restore.
+		// Decline — restore.
 		if err := spinner(w, "Restoring base/", func() error {
 			return RestoreBase(repoRoot, backupDir)
 		}); err != nil {
@@ -218,7 +301,7 @@ func RunSync(
 		return nil
 	}
 
-	// Step 9: Confirmed — update version and stage (optionally commit).
+	// Step 8: Confirmed — update version and stage (optionally commit).
 	if err := spinner(w, "Updating TEMPLATE_VERSION", func() error {
 		return UpdateVersion(repoRoot, cfg.LatestVersion)
 	}); err != nil {

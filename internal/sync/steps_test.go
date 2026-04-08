@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +30,100 @@ func fakeRunMulti(responses []struct {
 		idx++
 		return r.output, r.err
 	}
+}
+
+func TestDisplayReleaseNotes(t *testing.T) {
+	t.Run("displays tag and body", func(t *testing.T) {
+		var buf bytes.Buffer
+		release := Release{
+			TagName: "v0.9.8",
+			Name:    "Fix sync runner edge case",
+			Body:    "Fixed a bug in the sync runner.\nMultiple lines of notes.",
+		}
+		DisplayReleaseNotes(&buf, release)
+
+		output := buf.String()
+		if !strings.Contains(output, "v0.9.8") {
+			t.Errorf("expected tag in output, got: %s", output)
+		}
+		if !strings.Contains(output, "Fixed a bug") {
+			t.Errorf("expected body in output, got: %s", output)
+		}
+		if !strings.Contains(output, "Multiple lines") {
+			t.Errorf("expected multi-line body in output, got: %s", output)
+		}
+	})
+
+	t.Run("handles empty body", func(t *testing.T) {
+		var buf bytes.Buffer
+		release := Release{
+			TagName: "v0.9.7",
+			Name:    "No notes",
+			Body:    "",
+		}
+		DisplayReleaseNotes(&buf, release)
+
+		output := buf.String()
+		if !strings.Contains(output, "v0.9.7") {
+			t.Errorf("expected tag in output, got: %s", output)
+		}
+		if !strings.Contains(output, "No release notes available") {
+			t.Errorf("expected 'No release notes available' message, got: %s", output)
+		}
+	})
+
+	t.Run("handles whitespace-only body", func(t *testing.T) {
+		var buf bytes.Buffer
+		release := Release{
+			TagName: "v0.9.6",
+			Name:    "Whitespace",
+			Body:    "   \n  \n  ",
+		}
+		DisplayReleaseNotes(&buf, release)
+
+		output := buf.String()
+		if !strings.Contains(output, "No release notes available") {
+			t.Errorf("expected 'No release notes available' for whitespace body, got: %s", output)
+		}
+	})
+}
+
+func TestDisplayReleaseList(t *testing.T) {
+	t.Run("displays multiple releases with notes", func(t *testing.T) {
+		var buf bytes.Buffer
+		releases := []Release{
+			{TagName: "v0.9.8", Name: "Fix sync runner", Body: "Fixed the sync runner bug."},
+			{TagName: "v0.9.7", Name: "Add guards", Body: "Added execution guards."},
+		}
+		DisplayReleaseList(&buf, releases)
+
+		output := buf.String()
+		if !strings.Contains(output, "v0.9.8") {
+			t.Errorf("expected v0.9.8 in output, got: %s", output)
+		}
+		if !strings.Contains(output, "v0.9.7") {
+			t.Errorf("expected v0.9.7 in output, got: %s", output)
+		}
+		if !strings.Contains(output, "Fixed the sync runner") {
+			t.Errorf("expected release notes in output, got: %s", output)
+		}
+		if !strings.Contains(output, "Added execution guards") {
+			t.Errorf("expected release notes in output, got: %s", output)
+		}
+	})
+
+	t.Run("displays release name alongside tag", func(t *testing.T) {
+		var buf bytes.Buffer
+		releases := []Release{
+			{TagName: "v1.0.0", Name: "First stable", Body: "Notes"},
+		}
+		DisplayReleaseList(&buf, releases)
+
+		output := buf.String()
+		if !strings.Contains(output, "First stable") {
+			t.Errorf("expected release name in output, got: %s", output)
+		}
+	})
 }
 
 func TestCloneTemplate(t *testing.T) {
