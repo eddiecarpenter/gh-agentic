@@ -24,11 +24,12 @@ type doctorConfig struct {
 	owner          string
 	repoName       string
 	ownerType      string
-	run            bootstrap.RunCommandFunc
-	repair         bool
-	yes            bool
-	agentUser      string
-	agentUserScope string
+	run              bootstrap.RunCommandFunc
+	repair           bool
+	yes              bool
+	agentUser        string
+	agentUserScope   string
+	forceCredentials bool
 }
 
 // runDoctor executes the doctor check/repair pipeline. It accepts an io.Writer
@@ -188,6 +189,22 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		fmt.Fprintln(w, "  For AGENT_USER repair, add: --agent-user <username> --agent-user-scope org|repo")
 		return ErrSilent
 	}
+
+	// Force credential re-upload when --force-credentials is set.
+	if cfg.forceCredentials {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Force credential upload"))
+		result := verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, run)
+		switch result.Status {
+		case verify.Pass:
+			fmt.Fprintln(w, "  "+ui.RenderOK(result.Message))
+		case verify.ManualAction:
+			fmt.Fprintln(w, "  "+ui.RenderInfo(result.Message))
+		default:
+			fmt.Fprintln(w, "  "+ui.RenderError(result.Message))
+		}
+	}
+
 	return nil
 }
 
@@ -197,6 +214,7 @@ func newDoctorCmd() *cobra.Command {
 	var yes bool
 	var agentUser string
 	var agentUserScope string
+	var forceCredentials bool
 
 	cmd := &cobra.Command{
 		Use:          "doctor",
@@ -246,8 +264,9 @@ func newDoctorCmd() *cobra.Command {
 				run:            bootstrap.DefaultRunCommand,
 				repair:         repair,
 				yes:            yes,
-				agentUser:      agentUser,
-				agentUserScope: agentUserScope,
+				agentUser:        agentUser,
+				agentUserScope:   agentUserScope,
+				forceCredentials: forceCredentials,
 			})
 		},
 	}
@@ -256,5 +275,6 @@ func newDoctorCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all repair prompts")
 	cmd.Flags().StringVar(&agentUser, "agent-user", "", "agent username for repair (skips prompt)")
 	cmd.Flags().StringVar(&agentUserScope, "agent-user-scope", "", "variable scope: org or repo (skips prompt)")
+	cmd.Flags().BoolVar(&forceCredentials, "force-credentials", false, "unconditionally re-upload Claude credentials secret")
 	return cmd
 }

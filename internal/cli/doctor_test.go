@@ -350,3 +350,55 @@ func TestRunDoctor_AgenticProjectIDCheckAppearsInOutput(t *testing.T) {
 	}
 }
 
+func TestRunDoctor_ForceCredentials_CallsRepair(t *testing.T) {
+	repo := setupDoctorFakeRepo(t)
+	mock := newMockRunner(t)
+
+	// Add expectations for the force-credentials path:
+	// claude -p hi (auth check)
+	mock.Expect([]string{"claude", "-p", "hi"}, "Hello!", nil)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		root:             repo.Root,
+		repoFullName:     "testowner/testrepo",
+		owner:            "testowner",
+		repoName:         "testrepo",
+		run:              mock.RunCommand,
+		repair:           false,
+		yes:              false,
+		forceCredentials: true,
+	}
+
+	_ = runDoctor(&buf, strings.NewReader(""), cfg)
+
+	output := buf.String()
+	if !strings.Contains(output, "Force credential upload") {
+		t.Errorf("expected 'Force credential upload' in output when --force-credentials set, got:\n%s", output)
+	}
+}
+
+func TestRunDoctor_NoForceCredentials_SkipsRepair(t *testing.T) {
+	repo := setupDoctorFakeRepo(t)
+	mock := newMockRunner(t)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		root:             repo.Root,
+		repoFullName:     "testowner/testrepo",
+		owner:            "testowner",
+		repoName:         "testrepo",
+		run:              mock.RunCommand,
+		repair:           false,
+		yes:              false,
+		forceCredentials: false,
+	}
+
+	_ = runDoctor(&buf, strings.NewReader(""), cfg)
+
+	output := buf.String()
+	if strings.Contains(output, "Force credential upload") {
+		t.Errorf("expected 'Force credential upload' NOT in output when --force-credentials not set, got:\n%s", output)
+	}
+}
+
