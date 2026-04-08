@@ -1137,11 +1137,19 @@ type secretEntry struct {
 	Name string `json:"name"`
 }
 
-// checkRepoVariable checks whether a named repo variable exists by querying
-// `gh variable list --repo`. Returns Pass if present, Warning if missing.
-func checkRepoVariable(owner, repoName, varName, checkName, defaultValue string, run bootstrap.RunCommandFunc) CheckResult {
-	repoFullName := owner + "/" + repoName
-	out, err := run("gh", "variable", "list", "--repo", repoFullName, "--json", "name")
+// checkRepoVariable checks whether a named variable exists by querying
+// `gh variable list`. When ownerType is Organization, it queries at the org
+// level (--org); otherwise it queries at the repo level (--repo).
+// Returns Pass if present, Warning if missing.
+func checkRepoVariable(owner, repoName, varName, checkName, defaultValue, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	var args []string
+	if ownerType == bootstrap.OwnerTypeOrg {
+		args = []string{"gh", "variable", "list", "--org", owner, "--json", "name"}
+	} else {
+		repoFullName := owner + "/" + repoName
+		args = []string{"gh", "variable", "list", "--repo", repoFullName, "--json", "name"}
+	}
+	out, err := run(args[0], args[1:]...)
 	if err != nil {
 		return CheckResult{
 			Name:    checkName,
@@ -1172,11 +1180,19 @@ func checkRepoVariable(owner, repoName, varName, checkName, defaultValue string,
 	}
 }
 
-// checkRepoSecret checks whether a named repo secret exists by querying
-// `gh secret list --repo`. Returns Pass if present, Warning if missing.
-func checkRepoSecret(owner, repoName, secretName, checkName string, run bootstrap.RunCommandFunc) CheckResult {
-	repoFullName := owner + "/" + repoName
-	out, err := run("gh", "secret", "list", "--repo", repoFullName, "--json", "name")
+// checkRepoSecret checks whether a named secret exists by querying
+// `gh secret list`. When ownerType is Organization, it queries at the org
+// level (--org); otherwise it queries at the repo level (--repo).
+// Returns Pass if present, Warning if missing.
+func checkRepoSecret(owner, repoName, secretName, checkName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	var args []string
+	if ownerType == bootstrap.OwnerTypeOrg {
+		args = []string{"gh", "secret", "list", "--org", owner, "--json", "name"}
+	} else {
+		repoFullName := owner + "/" + repoName
+		args = []string{"gh", "secret", "list", "--repo", repoFullName, "--json", "name"}
+	}
+	out, err := run(args[0], args[1:]...)
 	if err != nil {
 		return CheckResult{
 			Name:    checkName,
@@ -1207,27 +1223,32 @@ func checkRepoSecret(owner, repoName, secretName, checkName string, run bootstra
 	}
 }
 
-// CheckRunnerLabelVar verifies that RUNNER_LABEL is configured as a repo variable.
-func CheckRunnerLabelVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return checkRepoVariable(owner, repoName, "RUNNER_LABEL", checkRunnerLabelVarName, bootstrap.DefaultRunnerLabel, run)
+// CheckRunnerLabelVar verifies that RUNNER_LABEL is configured as a variable.
+// When ownerType is Organization, checks at org level; otherwise repo level.
+func CheckRunnerLabelVar(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoVariable(owner, repoName, "RUNNER_LABEL", checkRunnerLabelVarName, bootstrap.DefaultRunnerLabel, ownerType, run)
 }
 
-// CheckGooseProviderVar verifies that GOOSE_PROVIDER is configured as a repo variable.
-func CheckGooseProviderVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return checkRepoVariable(owner, repoName, "GOOSE_PROVIDER", checkGooseProviderVarName, bootstrap.DefaultGooseProvider, run)
+// CheckGooseProviderVar verifies that GOOSE_PROVIDER is configured as a variable.
+// When ownerType is Organization, checks at org level; otherwise repo level.
+func CheckGooseProviderVar(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoVariable(owner, repoName, "GOOSE_PROVIDER", checkGooseProviderVarName, bootstrap.DefaultGooseProvider, ownerType, run)
 }
 
-// CheckGooseModelVar verifies that GOOSE_MODEL is configured as a repo variable.
-func CheckGooseModelVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return checkRepoVariable(owner, repoName, "GOOSE_MODEL", checkGooseModelVarName, bootstrap.DefaultGooseModel, run)
+// CheckGooseModelVar verifies that GOOSE_MODEL is configured as a variable.
+// When ownerType is Organization, checks at org level; otherwise repo level.
+func CheckGooseModelVar(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoVariable(owner, repoName, "GOOSE_MODEL", checkGooseModelVarName, bootstrap.DefaultGooseModel, ownerType, run)
 }
 
-// CheckGooseAgentPATSecret verifies that GOOSE_AGENT_PAT is configured as a repo secret.
-func CheckGooseAgentPATSecret(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return checkRepoSecret(owner, repoName, "GOOSE_AGENT_PAT", checkGooseAgentPATSecretName, run)
+// CheckGooseAgentPATSecret verifies that GOOSE_AGENT_PAT is configured as a secret.
+// When ownerType is Organization, checks at org level; otherwise repo level.
+func CheckGooseAgentPATSecret(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoSecret(owner, repoName, "GOOSE_AGENT_PAT", checkGooseAgentPATSecretName, ownerType, run)
 }
 
-// CheckClaudeCredentialsSecret verifies that CLAUDE_CREDENTIALS_JSON is configured as a repo secret.
-func CheckClaudeCredentialsSecret(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	return checkRepoSecret(owner, repoName, "CLAUDE_CREDENTIALS_JSON", checkClaudeCredentialsSecretName, run)
+// CheckClaudeCredentialsSecret verifies that CLAUDE_CREDENTIALS_JSON is configured as a secret.
+// When ownerType is Organization, checks at org level; otherwise repo level.
+func CheckClaudeCredentialsSecret(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	return checkRepoSecret(owner, repoName, "CLAUDE_CREDENTIALS_JSON", checkClaudeCredentialsSecretName, ownerType, run)
 }
