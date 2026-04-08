@@ -309,6 +309,14 @@ func RunSync(
 		return err
 	}
 
+	// Step 7d: Deploy recipes from template.
+	if err := spinner(w, "Deploying recipes", func() error {
+		return DeployRecipes(tmpDir, repoRoot)
+	}); err != nil {
+		_ = RestoreBase(repoRoot, backupDir)
+		return err
+	}
+
 	// Step 8: Update version and stage (optionally commit).
 	if err := spinner(w, "Updating TEMPLATE_VERSION", func() error {
 		return UpdateVersion(repoRoot, cfg.LatestVersion)
@@ -316,7 +324,7 @@ func RunSync(
 		return err
 	}
 
-	commitMsg := fmt.Sprintf("chore: sync base/ and workflows from %s %s", cfg.TemplateRepo, cfg.LatestVersion)
+	commitMsg := fmt.Sprintf("chore: sync base/, workflows, and recipes from %s %s", cfg.TemplateRepo, cfg.LatestVersion)
 
 	// Clear screen before showing results summary (install → results transition).
 	clearScreen(w)
