@@ -1466,6 +1466,15 @@ func RepairClaudeCredentialsSecretWithReadFile(owner, repoName string, run boots
 		data = []byte(out)
 	}
 
+	// Validate Claude CLI auth before pushing credentials.
+	if authErr := bootstrap.ValidateClaudeAuth(run); authErr != nil {
+		return CheckResult{
+			Name:    checkClaudeCredentialsSecretName,
+			Status:  ManualAction,
+			Message: "Claude CLI auth check failed — please run `claude auth login` to authenticate before retrying",
+		}
+	}
+
 	encoded := base64.StdEncoding.EncodeToString(data)
 	repoFullName := owner + "/" + repoName
 	_, setErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", repoFullName)
