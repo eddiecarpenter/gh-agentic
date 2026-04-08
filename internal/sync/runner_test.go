@@ -3,6 +3,7 @@ package sync
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,10 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
+
+// noopClear is a ClearFunc that does nothing. Used in tests to avoid
+// writing ANSI sequences to test buffers.
+func noopClear(_ io.Writer) {}
 
 // fakeReleases returns a FetchReleasesFunc that returns the given releases.
 // The returned function ignores the repo argument.
@@ -92,6 +97,7 @@ func TestRunSync_UpToDate(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -125,6 +131,7 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -177,6 +184,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		true,
 		false, // list
@@ -229,6 +237,7 @@ func TestRunSync_DeclineAndRestore(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -278,6 +287,7 @@ func TestRunSync_FetchError(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -309,6 +319,7 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		true,
 		false,
 		false, // list
@@ -362,6 +373,7 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -409,6 +421,7 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 		testutil.NoopSpinner,
 		confirmFn,
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -470,6 +483,7 @@ func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -517,6 +531,7 @@ func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -558,6 +573,7 @@ func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -599,6 +615,7 @@ func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -649,6 +666,7 @@ func TestRunSync_MultipleReleases_CallsSelectFunc(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		fakeSelect,
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -701,6 +719,7 @@ func TestRunSync_SingleRelease_SkipsSelectFunc(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		fakeSelect,
+		noopClear,
 		false,
 		false,
 		false, // list
@@ -743,6 +762,7 @@ func TestRunSync_ListMode_DisplaysReleases(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { t.Fatal("confirm should not be called in list mode"); return false, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		true, // list
@@ -791,6 +811,7 @@ func TestRunSync_ListMode_UpToDate(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil,
+		noopClear,
 		false,
 		false,
 		true, // list
@@ -830,6 +851,7 @@ func TestRunSync_ReleaseTag_SyncsToSpecificVersion(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		nil, // selectVersion
+		noopClear,
 		false,
 		false,
 		false,    // list
@@ -876,6 +898,7 @@ func TestRunSync_ReleaseTag_NotFound(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return false, nil },
 		nil,
+		noopClear,
 		false,
 		false,
 		false,    // list
@@ -930,6 +953,7 @@ func TestRunSync_ReleaseTag_SkipsPicker(t *testing.T) {
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
 		fakeSelect,
+		noopClear,
 		false,
 		false,
 		false,    // list

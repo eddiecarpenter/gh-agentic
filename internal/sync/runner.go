@@ -26,6 +26,10 @@ type ConfirmFunc func(prompt string) (bool, error)
 // fake without requiring a real TTY.
 type SelectFunc func(releases []Release) (Release, error)
 
+// ClearFunc clears the terminal screen. Injected so tests can substitute a
+// no-op without requiring a real TTY.
+type ClearFunc func(w io.Writer)
+
 // DefaultSpinner is the production SpinnerFunc. Prints "⠸ label..." then
 // "✔ label" or "✖ label: error".
 func DefaultSpinner(w io.Writer, label string, fn func() error) error {
@@ -55,6 +59,12 @@ func DefaultConfirm(prompt string) (bool, error) {
 		return false, err
 	}
 	return confirmed, nil
+}
+
+// DefaultClear is the production ClearFunc. Delegates to ui.ClearScreen
+// to clear the terminal and reset the cursor position.
+func DefaultClear(w io.Writer) {
+	ui.ClearScreen(w)
 }
 
 // DefaultSelect is the production SelectFunc. Uses huh.Select to present an
@@ -100,6 +110,7 @@ func RunSync(
 	spinner SpinnerFunc,
 	confirm ConfirmFunc,
 	selectVersion SelectFunc,
+	clearScreen ClearFunc,
 	force bool,
 	commit bool,
 	list bool,

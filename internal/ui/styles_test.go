@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -91,5 +92,15 @@ func TestRenderError_ContainsSymbol(t *testing.T) {
 	}
 	if !strings.Contains(out, "git not found") {
 		t.Errorf("RenderError must contain the message, got: %q", out)
+	}
+}
+
+func TestClearScreen_WritesANSISequence(t *testing.T) {
+	var buf bytes.Buffer
+	ClearScreen(&buf)
+	got := buf.String()
+	want := "\033[2J\033[H"
+	if got != want {
+		t.Errorf("ClearScreen wrote %q, want %q", got, want)
 	}
 }
