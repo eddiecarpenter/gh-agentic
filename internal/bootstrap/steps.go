@@ -648,7 +648,7 @@ func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, 
 
 	// Build the singleSelectOptions input.
 	var optionInputs []map[string]string
-	for _, opt := range tmpl.StatusOptions {
+	for _, opt := range tmpl.ResolvedStatusOptions() {
 		optionInputs = append(optionInputs, map[string]string{
 			"name":        opt.Name,
 			"color":       opt.Color,

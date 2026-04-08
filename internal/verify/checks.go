@@ -569,15 +569,15 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 		}
 	}
 
-	if len(got) != len(tmpl.StatusOptions) {
+	if len(got) != len(tmpl.ResolvedStatusOptions()) {
 		return CheckResult{
 			Name:    checkProjectStatusName,
 			Status:  Warning,
-			Message: fmt.Sprintf("expected %d options, got %d", len(tmpl.StatusOptions), len(got)),
+			Message: fmt.Sprintf("expected %d options, got %d", len(tmpl.ResolvedStatusOptions()), len(got)),
 		}
 	}
 
-	for i, want := range tmpl.StatusOptions {
+	for i, want := range tmpl.ResolvedStatusOptions() {
 		if got[i].name != want.Name || got[i].color != want.Color {
 			return CheckResult{
 				Name:    checkProjectStatusName,

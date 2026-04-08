@@ -33,23 +33,23 @@ func TestLoadProjectTemplate_ValidJSON_ReturnsOptions(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(tmpl.StatusOptions) != 7 {
-		t.Fatalf("expected 7 status options, got %d", len(tmpl.StatusOptions))
+	if len(tmpl.ResolvedStatusOptions()) != 7 {
+		t.Fatalf("expected 7 status options, got %d", len(tmpl.ResolvedStatusOptions()))
 	}
 
 	expectedNames := []string{"Backlog", "Scoping", "Scheduled", "In Design", "In Development", "In Review", "Done"}
 	for i, name := range expectedNames {
-		if tmpl.StatusOptions[i].Name != name {
-			t.Errorf("option[%d]: expected name %q, got %q", i, name, tmpl.StatusOptions[i].Name)
+		if tmpl.ResolvedStatusOptions()[i].Name != name {
+			t.Errorf("option[%d]: expected name %q, got %q", i, name, tmpl.ResolvedStatusOptions()[i].Name)
 		}
 	}
 
 	// Verify color and description are populated.
-	if tmpl.StatusOptions[0].Color != "GRAY" {
-		t.Errorf("expected color GRAY for Backlog, got %q", tmpl.StatusOptions[0].Color)
+	if tmpl.ResolvedStatusOptions()[0].Color != "GRAY" {
+		t.Errorf("expected color GRAY for Backlog, got %q", tmpl.ResolvedStatusOptions()[0].Color)
 	}
-	if tmpl.StatusOptions[0].Description != "Prioritised, ready to start" {
-		t.Errorf("unexpected description for Backlog: %q", tmpl.StatusOptions[0].Description)
+	if tmpl.ResolvedStatusOptions()[0].Description != "Prioritised, ready to start" {
+		t.Errorf("unexpected description for Backlog: %q", tmpl.ResolvedStatusOptions()[0].Description)
 	}
 }
 
@@ -79,6 +79,39 @@ func TestLoadProjectTemplate_MalformedJSON_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoadProjectTemplate_StatusFieldFormat_ReturnsOptions(t *testing.T) {
+	root := t.TempDir()
+	baseDir := filepath.Join(root, "base")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// New format: statusField.options instead of top-level statusOptions.
+	content := `{
+  "statusField": {
+    "options": [
+      {"name": "Backlog", "color": "GRAY", "description": "Prioritised, ready to start"},
+      {"name": "Done",    "color": "GREEN", "description": "Merged and closed"}
+    ]
+  }
+}`
+	if err := os.WriteFile(filepath.Join(baseDir, "project-template.json"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tmpl, err := LoadProjectTemplate(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	opts := tmpl.ResolvedStatusOptions()
+	if len(opts) != 2 {
+		t.Fatalf("expected 2 status options from statusField.options, got %d", len(opts))
+	}
+	if opts[0].Name != "Backlog" {
+		t.Errorf("expected first option 'Backlog', got %q", opts[0].Name)
+	}
+}
+
 func TestLoadProjectTemplate_EmptyOptions_ReturnsEmpty(t *testing.T) {
 	root := t.TempDir()
 	baseDir := filepath.Join(root, "base")
@@ -94,7 +127,7 @@ func TestLoadProjectTemplate_EmptyOptions_ReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(tmpl.StatusOptions) != 0 {
-		t.Errorf("expected 0 status options, got %d", len(tmpl.StatusOptions))
+	if len(tmpl.ResolvedStatusOptions()) != 0 {
+		t.Errorf("expected 0 status options, got %d", len(tmpl.ResolvedStatusOptions()))
 	}
 }

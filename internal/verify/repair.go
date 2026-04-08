@@ -379,7 +379,7 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 
 	// Step 3: Build the mutation with options from project template.
 	var optionEntries []string
-	for _, opt := range tmpl.StatusOptions {
+	for _, opt := range tmpl.ResolvedStatusOptions() {
 		optionEntries = append(optionEntries, fmt.Sprintf(`{name: "%s", color: %s, description: "%s"}`, opt.Name, opt.Color, opt.Description))
 	}
 	optionsStr := strings.Join(optionEntries, ", ")
