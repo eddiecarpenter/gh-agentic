@@ -69,6 +69,34 @@ func cloneRunnerWithWorkflows(mock *testutil.MockRunner, baseContent string, wor
 	}
 }
 
+// cloneRunnerWithRecipes is like cloneRunnerWithWorkflows but also creates
+// recipe files in the cloned template's .goose/recipes/.
+func cloneRunnerWithRecipes(mock *testutil.MockRunner, baseContent string, workflows []string, recipes []string) func(string, ...string) (string, error) {
+	return func(name string, args ...string) (string, error) {
+		if name == "git" && len(args) >= 1 && args[0] == "clone" {
+			targetDir := args[len(args)-1]
+			_ = os.MkdirAll(filepath.Join(targetDir, "base"), 0o755)
+			_ = os.WriteFile(filepath.Join(targetDir, "base", "AGENTS.md"), []byte(baseContent), 0o644)
+			if len(workflows) > 0 {
+				wfDir := filepath.Join(targetDir, "base", ".github", "workflows")
+				_ = os.MkdirAll(wfDir, 0o755)
+				for _, wf := range workflows {
+					_ = os.WriteFile(filepath.Join(wfDir, wf), []byte("workflow: "+wf), 0o644)
+				}
+			}
+			if len(recipes) > 0 {
+				recipesDir := filepath.Join(targetDir, ".goose", "recipes")
+				_ = os.MkdirAll(recipesDir, 0o755)
+				for _, r := range recipes {
+					_ = os.WriteFile(filepath.Join(recipesDir, r), []byte("recipe: "+r), 0o644)
+				}
+			}
+			return "", nil
+		}
+		return mock.RunCommand(name, args...)
+	}
+}
+
 // fakeDetectOwnerType returns a DetectOwnerTypeFunc that always returns the given type.
 func fakeDetectOwnerType(ownerType string) bootstrap.DetectOwnerTypeFunc {
 	return func(owner string) (string, error) {
@@ -1036,6 +1064,181 @@ func TestRunSync_ReleaseTag_NotFound(t *testing.T) {
 	}
 	if strings.TrimSpace(string(data)) != "v1.0.0" {
 		t.Errorf("TEMPLATE_VERSION should be unchanged: %q", string(data))
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_WithRecipes_DeploysRecipes(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunnerWithRecipes(mock, "updated", nil, []string{"dev-session.yaml", "review.yaml"}),
+		singleRelease("v2.0.0"),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
+		noopClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify recipes were deployed.
+	data, err := os.ReadFile(filepath.Join(repo.Root, ".goose", "recipes", "dev-session.yaml"))
+	if err != nil {
+		t.Fatalf("recipe file missing: %v", err)
+	}
+	if string(data) != "recipe: dev-session.yaml" {
+		t.Errorf("recipe content mismatch: %s", data)
+	}
+
+	data, err = os.ReadFile(filepath.Join(repo.Root, ".goose", "recipes", "review.yaml"))
+	if err != nil {
+		t.Fatalf("review recipe file missing: %v", err)
+	}
+	if string(data) != "recipe: review.yaml" {
+		t.Errorf("review recipe content mismatch: %s", data)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_WithoutRecipes_SucceedsGracefully(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "updated content"),
+		singleRelease("v2.0.0"),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
+		noopClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify .goose/recipes/ was NOT created (template has no recipes).
+	if _, err := os.Stat(filepath.Join(repo.Root, ".goose", "recipes")); err == nil {
+		t.Error(".goose/recipes/ should not exist when template has no recipes")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Sync applied") {
+		t.Errorf("expected 'Sync applied' message, got: %s", output)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_WithRecipes_DeclineRestoresRecipes(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	// Create existing recipes in the repo.
+	recipesDir := filepath.Join(repo.Root, ".goose", "recipes")
+	if err := os.MkdirAll(recipesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(recipesDir, "original.yaml"), []byte("original-recipe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &testutil.MockRunner{}
+
+	// Decline permanently — confirm always returns false.
+	// To avoid infinite loop, use a counter to accept on second call.
+	confirmCalls := 0
+	confirmFn := func(_ string) (bool, error) {
+		confirmCalls++
+		return confirmCalls >= 2, nil
+	}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunnerWithRecipes(mock, "updated", nil, []string{"new.yaml"}),
+		singleRelease("v2.0.0"),
+		testutil.NoopSpinner,
+		confirmFn,
+		nil, // selectVersion
+		noopClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Sync completed (accepted on second call), so recipes should be from template.
+	data, err := os.ReadFile(filepath.Join(repo.Root, ".goose", "recipes", "new.yaml"))
+	if err != nil {
+		t.Fatalf("new recipe file missing: %v", err)
+	}
+	if string(data) != "recipe: new.yaml" {
+		t.Errorf("recipe content mismatch: %s", data)
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_CommitMessage_IncludesRecipes(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunnerWithRecipes(mock, "updated", nil, []string{"dev.yaml"}),
+		singleRelease("v2.0.0"),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
+		noopClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	// The output should contain the updated commit message with "recipes".
+	if !strings.Contains(output, "recipes") {
+		t.Errorf("expected 'recipes' in output, got: %s", output)
 	}
 
 	mock.AssertExpectations(t)
