@@ -512,17 +512,27 @@ func CreateProject(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCo
 	return nil
 }
 
-// setProjectVariable stores the project node ID as a repository variable via gh CLI.
-// This is best-effort — failure is logged as a warning, not returned as an error.
+// setProjectVariable stores the project node ID as a variable via gh CLI.
+// For org-owned repos it sets at org level; for personal repos it sets at repo
+// level. This is best-effort — failure is logged as a warning, not returned as
+// an error.
 func setProjectVariable(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) {
 	if state.ProjectNodeID == "" {
 		fmt.Fprintln(w, "  "+ui.Muted.Render("· Skipping AGENTIC_PROJECT_ID variable (no project node ID)"))
 		return
 	}
 
-	fullName := cfg.Owner + "/" + state.RepoName
-	out, err := run("gh", "variable", "set", "AGENTIC_PROJECT_ID",
-		"--body", state.ProjectNodeID, "--repo", fullName)
+	// Use --org for org-owned repos, --repo for personal repos.
+	var scopeArgs []string
+	if cfg.OwnerType == OwnerTypeOrg {
+		scopeArgs = []string{"--org", cfg.Owner}
+	} else {
+		fullName := cfg.Owner + "/" + state.RepoName
+		scopeArgs = []string{"--repo", fullName}
+	}
+
+	args := append([]string{"variable", "set", "AGENTIC_PROJECT_ID", "--body", state.ProjectNodeID}, scopeArgs...)
+	out, err := run("gh", args...)
 	if err != nil {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not set AGENTIC_PROJECT_ID variable: "+strings.TrimSpace(out)))
 		return

@@ -154,15 +154,28 @@ func ValidateClaudeAuth(run RunCommandFunc) error {
 	return nil
 }
 
-// ValidateAgentPAT checks whether the GOOSE_AGENT_PAT secret exists on the repo.
-// If missing, a warning is printed with the URL to add it. This is purely
-// informational — the function always returns nil.
+// ValidateAgentPAT checks whether the GOOSE_AGENT_PAT secret exists.
+// For org-owned repos it checks at org level; for personal repos it checks at
+// repo level. If missing, a warning is printed with the URL to add it. This is
+// purely informational — the function always returns nil.
 func ValidateAgentPAT(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
-	fullName := cfg.Owner + "/" + state.RepoName
+	// Use --org for org-owned repos, --repo for personal repos.
+	var scopeArgs []string
+	var settingsURL string
+	if cfg.OwnerType == OwnerTypeOrg {
+		scopeArgs = []string{"--org", cfg.Owner}
+		settingsURL = fmt.Sprintf("https://github.com/organizations/%s/settings/secrets/actions", cfg.Owner)
+	} else {
+		fullName := cfg.Owner + "/" + state.RepoName
+		scopeArgs = []string{"--repo", fullName}
+		settingsURL = fmt.Sprintf("https://github.com/%s/settings/secrets/actions", fullName)
+	}
 
-	out, err := run("gh", "secret", "list", "--repo", fullName, "--json", "name")
+	args := append([]string{"secret", "list"}, scopeArgs...)
+	args = append(args, "--json", "name")
+	out, err := run("gh", args...)
 	if err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not list repo secrets: "+strings.TrimSpace(out)))
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not list secrets: "+strings.TrimSpace(out)))
 		return nil
 	}
 
@@ -182,7 +195,6 @@ func ValidateAgentPAT(w io.Writer, cfg BootstrapConfig, state *StepState, run Ru
 		}
 	}
 
-	settingsURL := fmt.Sprintf("https://github.com/%s/settings/secrets/actions", fullName)
 	fmt.Fprintln(w, "  "+ui.RenderWarning("GOOSE_AGENT_PAT secret not found — pipeline will not run until added."))
 	fmt.Fprintln(w, "  "+ui.Muted.Render("  Add it at: "+settingsURL))
 

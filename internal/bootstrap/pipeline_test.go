@@ -584,3 +584,93 @@ func TestValidateAgentPAT_ListFails_WarnsAndContinues(t *testing.T) {
 		t.Error("expected state.AgentPATFound to be false on failure")
 	}
 }
+
+func TestValidateAgentPAT_OrgScope_UsesOrgFlag(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{RepoName: "my-project"}
+
+	var capturedArgs []string
+	run := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+	}
+
+	var buf bytes.Buffer
+	err := ValidateAgentPAT(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !state.AgentPATFound {
+		t.Error("expected state.AgentPATFound to be true")
+	}
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--org acme-org") {
+		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
+	}
+	if strings.Contains(joined, "--repo") {
+		t.Errorf("expected no --repo flag for org scope, got: %v", capturedArgs)
+	}
+}
+
+func TestValidateAgentPAT_UserScope_UsesRepoFlag(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{RepoName: "my-project"}
+
+	var capturedArgs []string
+	run := func(name string, args ...string) (string, error) {
+		capturedArgs = append([]string{name}, args...)
+		return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+	}
+
+	var buf bytes.Buffer
+	err := ValidateAgentPAT(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	joined := strings.Join(capturedArgs, " ")
+	if !strings.Contains(joined, "--repo alice/my-project") {
+		t.Errorf("expected --repo alice/my-project in args, got: %v", capturedArgs)
+	}
+	if strings.Contains(joined, "--org") {
+		t.Errorf("expected no --org flag for user scope, got: %v", capturedArgs)
+	}
+}
+
+func TestValidateAgentPAT_OrgScope_PATMissing_ShowsOrgSettingsURL(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
+	state := &StepState{RepoName: "my-project"}
+
+	run := fakeRunOK(`[{"name":"OTHER_SECRET"}]`)
+
+	var buf bytes.Buffer
+	err := ValidateAgentPAT(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "organizations/acme-org/settings/secrets/actions") {
+		t.Errorf("expected org settings URL in output, got: %s", out)
+	}
+}
+
+func TestValidateAgentPAT_UserScope_PATMissing_ShowsRepoSettingsURL(t *testing.T) {
+	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
+	state := &StepState{RepoName: "my-project"}
+
+	run := fakeRunOK(`[{"name":"OTHER_SECRET"}]`)
+
+	var buf bytes.Buffer
+	err := ValidateAgentPAT(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "alice/my-project/settings/secrets/actions") {
+		t.Errorf("expected repo settings URL in output, got: %s", out)
+	}
+}
