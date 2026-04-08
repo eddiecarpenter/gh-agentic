@@ -327,6 +327,72 @@ func TestRunDoctor_RepairYes_RestoreAGENTSLocalMD(t *testing.T) {
 	}
 }
 
+func TestRunDoctor_ForceCredentials_CallsRepair(t *testing.T) {
+	repo := setupDoctorFakeRepo(t)
+	mock := newMockRunner(t)
+
+	// Add expectations for RepairClaudeCredentialsSecret:
+	// It will try to read credentials via os.ReadFile (which will fail in test),
+	// then try macOS Keychain (security command) — we return credentials.
+	mock.Expect([]string{"security", "find-generic-password", "-s", "Claude Code-credentials", "-w"},
+		`{"token":"test"}`, nil)
+	// ValidateClaudeAuth: claude -p hi
+	mock.Expect([]string{"claude", "-p", "hi"}, "Hello!", nil)
+	// gh secret set CLAUDE_CREDENTIALS_JSON
+	mock.Expect([]string{"gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", "eyJ0b2tlbiI6InRlc3QifQ==", "--repo", "testowner/testrepo"}, "", nil)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		root:             repo.Root,
+		repoFullName:     "testowner/testrepo",
+		owner:            "testowner",
+		repoName:         "testrepo",
+		run:              mock.RunCommand,
+		repair:           false,
+		yes:              false,
+		forceCredentials: true,
+	}
+
+	err := runDoctor(&buf, strings.NewReader(""), cfg)
+
+	output := buf.String()
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v\nOutput:\n%s", err, output)
+	}
+
+	if !strings.Contains(output, "Force credentials refresh") {
+		t.Errorf("expected 'Force credentials refresh' in output, got:\n%s", output)
+	}
+}
+
+func TestRunDoctor_NoForceCredentials_SkipsRepair(t *testing.T) {
+	repo := setupDoctorFakeRepo(t)
+	mock := newMockRunner(t)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		root:             repo.Root,
+		repoFullName:     "testowner/testrepo",
+		owner:            "testowner",
+		repoName:         "testrepo",
+		run:              mock.RunCommand,
+		repair:           false,
+		yes:              false,
+		forceCredentials: false,
+	}
+
+	err := runDoctor(&buf, strings.NewReader(""), cfg)
+
+	output := buf.String()
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v\nOutput:\n%s", err, output)
+	}
+
+	if strings.Contains(output, "Force credentials refresh") {
+		t.Errorf("did not expect 'Force credentials refresh' when flag is not set, got:\n%s", output)
+	}
+}
+
 func TestRunDoctor_AgenticProjectIDCheckAppearsInOutput(t *testing.T) {
 	repo := setupDoctorFakeRepo(t)
 	mock := newMockRunner(t)

@@ -83,6 +83,13 @@ func SetClaudeCredentials(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 		data = []byte(out)
 	}
 
+	// Validate Claude auth before pushing credentials.
+	if authErr := ValidateClaudeAuth(run); authErr != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Claude authentication check failed — run 'claude auth login' to refresh your credentials"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("  Skipping CLAUDE_CREDENTIALS_JSON secret — credentials may be stale"))
+		return nil
+	}
+
 	encoded := base64.StdEncoding.EncodeToString(data)
 
 	out, runErr := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", fullName)
@@ -107,6 +114,17 @@ func printCredentialInstructions(w io.Writer, fullName string) {
 	fmt.Fprintln(w, "  "+ui.Muted.Render("  To set manually:"))
 	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("  Linux/Windows: base64 < ~/.claude/.credentials.json | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s", fullName)))
 	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf(`  macOS:         security find-generic-password -s "Claude Code-credentials" -w | base64 | gh secret set CLAUDE_CREDENTIALS_JSON --body - --repo %s`, fullName)))
+}
+
+// ValidateClaudeAuth verifies that the local Claude CLI can authenticate by
+// running `claude -p "hi"`. Returns nil if auth succeeds, or a descriptive
+// error instructing the user to run `claude auth login` if it fails.
+func ValidateClaudeAuth(run RunCommandFunc) error {
+	_, err := run("claude", "-p", "hi")
+	if err != nil {
+		return fmt.Errorf("Claude authentication failed — run 'claude auth login' to refresh your credentials: %w", err)
+	}
+	return nil
 }
 
 // ValidateAgentPAT checks whether the GOOSE_AGENT_PAT secret exists on the repo.

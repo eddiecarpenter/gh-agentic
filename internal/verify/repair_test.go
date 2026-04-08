@@ -1403,6 +1403,10 @@ func TestRepairClaudeCredentialsSecret_HomeDirError_ReturnsManualAction(t *testi
 
 func TestRepairClaudeCredentialsSecret_SetFails_ReturnsFail(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
+		// Auth succeeds but gh secret set fails.
+		if name == "claude" {
+			return "Hello!", nil
+		}
 		return "", fmt.Errorf("permission denied")
 	}
 	fakeReadFile := func(path string) ([]byte, error) {
@@ -1415,5 +1419,82 @@ func TestRepairClaudeCredentialsSecret_SetFails_ReturnsFail(t *testing.T) {
 	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_AuthFails_ReturnsManualAction(t *testing.T) {
+	var secretSetCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		if name == "claude" {
+			return "", fmt.Errorf("auth required")
+		}
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set CLAUDE_CREDENTIALS_JSON") {
+			secretSetCalled = true
+		}
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"abc123"}`), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "claude auth login") {
+		t.Errorf("expected 'claude auth login' in message, got %q", result.Message)
+	}
+	if secretSetCalled {
+		t.Error("expected gh secret set NOT to be called when auth fails")
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_AuthSucceeds_SetsSecret(t *testing.T) {
+	var setCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		if name == "claude" {
+			return "Hello!", nil
+		}
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set CLAUDE_CREDENTIALS_JSON") {
+			setCalled = true
+		}
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"abc123"}`), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("owner", "repo", fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !setCalled {
+		t.Error("expected gh secret set to be called when auth succeeds")
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_DelegatesToWithReadFile(t *testing.T) {
+	// RepairClaudeCredentialsSecret delegates to RepairClaudeCredentialsSecretWithReadFile.
+	// Since both os.ReadFile and os.UserHomeDir are injected, calling the wrapper
+	// with a non-existent home/credentials path should produce the same ManualAction
+	// result as calling WithReadFile directly with failing injections.
+	// We can't inject fakes into the wrapper, but we can verify the function
+	// returns a valid CheckResult (not a panic or compile error).
+	result := RepairClaudeCredentialsSecret("owner", "repo", func(name string, args ...string) (string, error) {
+		// Keychain lookup fails — triggers ManualAction.
+		return "", fmt.Errorf("not available")
+	})
+	// The wrapper calls os.UserHomeDir and os.ReadFile which may or may not succeed
+	// in CI, but it should never panic and should return a valid result.
+	if result.Name != checkClaudeCredentialsSecretName {
+		t.Errorf("expected check name %q, got %q", checkClaudeCredentialsSecretName, result.Name)
 	}
 }
