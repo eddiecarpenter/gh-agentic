@@ -213,6 +213,8 @@ func RunSync(
 	for {
 		if len(available) == 1 {
 			// Single version available — display release notes directly, skip picker.
+			// Clear screen before showing release notes (picker → notes transition).
+			clearScreen(w)
 			fmt.Fprintln(w, "  "+ui.RenderOK(fmt.Sprintf("Update available: %s → %s", cfg.CurrentVersion, targetRelease.TagName)))
 			fmt.Fprintln(w)
 			DisplayReleaseNotes(w, targetRelease)
@@ -230,8 +232,11 @@ func RunSync(
 				cfg.LatestVersion = targetRelease.TagName
 			}
 
+			// Clear screen before showing release notes (picker → notes transition).
+			clearScreen(w)
 			DisplayReleaseNotes(w, targetRelease)
 		} else {
+			clearScreen(w)
 			fmt.Fprintln(w, "  "+ui.RenderWarning("Update available: "+cfg.CurrentVersion+" → "+cfg.LatestVersion))
 		}
 
@@ -312,6 +317,9 @@ func RunSync(
 	}
 
 	commitMsg := fmt.Sprintf("chore: sync base/ and workflows from %s %s", cfg.TemplateRepo, cfg.LatestVersion)
+
+	// Clear screen before showing results summary (install → results transition).
+	clearScreen(w)
 
 	if commit {
 		if err := spinner(w, "Committing changes", func() error {

@@ -266,9 +266,14 @@ func TestRunSync_DeclineThenAccept(t *testing.T) {
 		t.Errorf("expected confirm called 2 times, got %d", confirmCalls)
 	}
 
-	// ClearScreen was called when returning to picker after decline.
-	if clearCalls < 1 {
-		t.Errorf("expected clearScreen called at least once on decline, got %d", clearCalls)
+	// ClearScreen should be called 3 times:
+	// 1. picker → notes on first iteration
+	// 2. decline → back to picker
+	// 3. picker → notes on second iteration
+	// 4. install → results
+	// Total: 4
+	if clearCalls != 4 {
+		t.Errorf("expected clearScreen called 4 times (notes+decline+notes+results), got %d", clearCalls)
 	}
 
 	// Install still completed — TEMPLATE_VERSION updated.
@@ -278,6 +283,45 @@ func TestRunSync_DeclineThenAccept(t *testing.T) {
 	}
 	if strings.TrimSpace(string(data)) != "v2.0.0" {
 		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_ClearScreenCount_NormalFlow(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	clearCalls := 0
+	trackingClear := func(_ io.Writer) {
+		clearCalls++
+	}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		cloneRunner(mock, "updated content"),
+		singleRelease("v2.0.0"),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
+		trackingClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Normal flow (accept on first try): clear at picker→notes + install→results = 2.
+	if clearCalls != 2 {
+		t.Errorf("expected clearScreen called 2 times (notes+results), got %d", clearCalls)
 	}
 
 	mock.AssertExpectations(t)
