@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -250,29 +251,27 @@ func TestCreateRepo_TarballFetchFails_CleansUpRepo(t *testing.T) {
 	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 
+	// Override the package-level tarball fetch to simulate a failure.
+	orig := fetchTarballFn
+	fetchTarballFn = func(repo, version string) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("404 not found")
+	}
+	defer func() { fetchTarballFn = orig }()
+
 	var deleteCalled bool
-	callCount := 0
 	run := func(name string, args ...string) (string, error) {
-		callCount++
-		if name == "gh" && len(args) > 0 && args[0] == "repo" {
-			if len(args) > 1 && args[1] == "create" {
-				return "", nil // repo create succeeds
-			}
-			if len(args) > 1 && args[1] == "delete" {
-				deleteCalled = true
-				return "", nil
-			}
+		if name == "gh" && len(args) > 1 && args[0] == "repo" && args[1] == "create" {
+			return "", nil
+		}
+		if name == "gh" && len(args) > 1 && args[0] == "repo" && args[1] == "delete" {
+			deleteCalled = true
+			return "", nil
 		}
 		if name == "git" && len(args) > 0 && args[0] == "clone" {
-			// Create the clone directory.
 			if len(args) > 2 {
 				os.MkdirAll(args[2], 0o755)
 			}
 			return "", nil
-		}
-		if name == "gh" && len(args) > 0 && args[0] == "api" {
-			// Tarball fetch fails.
-			return "404 not found", fmt.Errorf("API error")
 		}
 		return "", nil
 	}

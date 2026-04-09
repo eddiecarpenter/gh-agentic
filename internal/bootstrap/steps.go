@@ -67,6 +67,10 @@ func repoName(cfg BootstrapConfig) string {
 // Injected so tests can substitute a fake implementation.
 type FetchReleaseFunc func(repo string) (string, error)
 
+// fetchTarballFn is the tarball fetch function used by CreateRepo.
+// Overridden in tests to simulate fetch failures.
+var fetchTarballFn = tarball.DefaultFetch
+
 // CreateRepo creates a blank private GitHub repository, clones it locally,
 // fetches the template tarball for the current release tag, extracts it into
 // the cloned repo, and commits the initial state. It populates state with
@@ -116,8 +120,7 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 	}
 
 	// Fetch and extract the tarball into the cloned repo.
-	tarballRun := tarball.RunCommandFunc(run)
-	if err := tarball.FetchAndExtract(cfg.TemplateRepo, releaseTag, state.ClonePath, tarballRun); err != nil {
+	if err := tarball.ExtractFromTemplate(cfg.TemplateRepo, releaseTag, state.ClonePath, nil, fetchTarballFn); err != nil {
 		// Clean up the remote repo on tarball failure.
 		cleanupOut, cleanupErr := run("gh", "repo", "delete", fullName, "--yes")
 		if cleanupErr != nil {
