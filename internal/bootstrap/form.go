@@ -47,6 +47,78 @@ type ghRepoListResp struct {
 	ID int `json:"id"`
 }
 
+// Repo represents a GitHub repository returned by FetchReposFunc.
+type Repo struct {
+	// Name is the short name of the repository (e.g. "my-project").
+	Name string
+	// FullName is the owner-qualified name (e.g. "alice/my-project").
+	FullName string
+}
+
+// ghRepoResp is the API response shape for one element in the repos list endpoint.
+type ghRepoResp struct {
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+}
+
+// FetchReposFunc fetches the list of repositories owned by a given GitHub owner.
+// Injected so tests can substitute a fake implementation without real gh auth.
+type FetchReposFunc func(owner string) ([]Repo, error)
+
+// DefaultFetchRepos fetches all repositories for the given owner using the
+// authenticated go-gh/v2 REST client. It handles pagination (GitHub returns
+// max 100 per page) and returns results sorted alphabetically by name.
+func DefaultFetchRepos(owner string) ([]Repo, error) {
+	client, err := api.DefaultRESTClient()
+	if err != nil {
+		return nil, fmt.Errorf("creating GitHub API client: %w", err)
+	}
+
+	// Detect whether the owner is a user or org to choose the correct endpoint.
+	var ownerResp struct {
+		Type string `json:"type"`
+	}
+	if err := client.Get(fmt.Sprintf("users/%s", owner), &ownerResp); err != nil {
+		return nil, fmt.Errorf("detecting owner type for %q: %w", owner, err)
+	}
+
+	var allRepos []Repo
+	page := 1
+	for {
+		var endpoint string
+		if ownerResp.Type == OwnerTypeOrg {
+			endpoint = fmt.Sprintf("orgs/%s/repos?per_page=100&page=%d", owner, page)
+		} else {
+			endpoint = fmt.Sprintf("users/%s/repos?per_page=100&page=%d", owner, page)
+		}
+
+		var pageRepos []ghRepoResp
+		if err := client.Get(endpoint, &pageRepos); err != nil {
+			return nil, fmt.Errorf("fetching repos for %q (page %d): %w", owner, page, err)
+		}
+
+		for _, r := range pageRepos {
+			allRepos = append(allRepos, Repo{
+				Name:     r.Name,
+				FullName: r.FullName,
+			})
+		}
+
+		// If we got fewer than 100, we've reached the last page.
+		if len(pageRepos) < 100 {
+			break
+		}
+		page++
+	}
+
+	// Sort alphabetically by name (case-insensitive).
+	sort.Slice(allRepos, func(i, j int) bool {
+		return strings.ToLower(allRepos[i].Name) < strings.ToLower(allRepos[j].Name)
+	})
+
+	return allRepos, nil
+}
+
 // DefaultFetchOwners fetches owners using the authenticated go-gh/v2 REST client.
 // It returns the personal account first, followed by orgs sorted alphabetically.
 // Each org is annotated with "✔ clean" or "⚠ has repos".
