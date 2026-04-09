@@ -1,13 +1,18 @@
 package verify
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
 )
 
 func TestRepairSkillsDir_CreatesDirectoryAndFile(t *testing.T) {
@@ -208,47 +213,6 @@ func TestRepairREADMEMD_CreatesFile(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// gh-notify LaunchAgent repair tests
-// ──────────────────────────────────────────────────────────────────────────────
-
-func TestRepairGhNotify_Success_ReturnsPass(t *testing.T) {
-	root := t.TempDir()
-	var calledWith []string
-	fakeRun := func(name string, args ...string) (string, error) {
-		calledWith = append(calledWith, name)
-		calledWith = append(calledWith, args...)
-		return "", nil
-	}
-
-	result := RepairGhNotify(root, fakeRun)
-	if result.Status != Pass {
-		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
-	}
-	if result.Message != "gh-notify installed and running" {
-		t.Errorf("unexpected message: %s", result.Message)
-	}
-	expectedScript := filepath.Join(root, "base", "scripts", "install-gh-notify.sh")
-	if len(calledWith) < 2 || calledWith[0] != "bash" || calledWith[1] != expectedScript {
-		t.Errorf("expected run(bash, %s), got %v", expectedScript, calledWith)
-	}
-}
-
-func TestRepairGhNotify_ScriptFails_ReturnsFail(t *testing.T) {
-	root := t.TempDir()
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", fmt.Errorf("script exited with code 1")
-	}
-
-	result := RepairGhNotify(root, fakeRun)
-	if result.Status != Fail {
-		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
-	}
-	if !strings.Contains(result.Message, "install script failed") {
-		t.Errorf("expected error detail in message, got: %s", result.Message)
-	}
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // Directory integrity repair tests
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -288,85 +252,110 @@ func TestRepairBaseDir_UserDeclines_ReturnsFail(t *testing.T) {
 
 func TestRepairBaseRecipes_UserConfirms_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", nil
-	}
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 	confirmFn := func(prompt string) (bool, error) {
 		return true, nil
 	}
+	fetch := buildTestFetchFunc(t, map[string]string{
+		"base/skills/session-init.md": "# Session Init",
+		"base/skills/dev-session.md":  "# Dev Session",
+	})
 
-	result := RepairBaseRecipes(root, fakeRun, confirmFn)
+	result := RepairBaseRecipes(root, confirmFn, fetch)
 	if result.Status != Pass {
 		t.Errorf("expected Pass after confirmed repair, got %v: %s", result.Status, result.Message)
+	}
+
+	// Verify extracted file exists.
+	data, err := os.ReadFile(filepath.Join(root, "base", "skills", "session-init.md"))
+	if err != nil {
+		t.Fatalf("expected extracted file: %v", err)
+	}
+	if string(data) != "# Session Init" {
+		t.Errorf("unexpected content: %q", string(data))
 	}
 }
 
 func TestRepairBaseRecipes_UserDeclines_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", nil
-	}
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 	confirmFn := func(prompt string) (bool, error) {
 		return false, nil
 	}
 
-	result := RepairBaseRecipes(root, fakeRun, confirmFn)
+	result := RepairBaseRecipes(root, confirmFn, nil)
 	if result.Status != Warning {
 		t.Errorf("expected Warning when user declines, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestRepairGooseRecipes_AlwaysOverwrites(t *testing.T) {
+func TestRepairBaseRecipes_MissingTemplateConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	// Write TEMPLATE_SOURCE so the repair doesn't fail early.
-	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("owner/template"), 0o644); err != nil {
-		t.Fatal(err)
+	// No TEMPLATE_SOURCE or TEMPLATE_VERSION — should fail.
+	confirmFn := func(prompt string) (bool, error) {
+		return true, nil
 	}
-	recipesDir := filepath.Join(root, ".goose", "recipes")
 
-	// Create all expected files with old content.
-	if err := os.MkdirAll(recipesDir, 0o755); err != nil {
-		t.Fatal(err)
+	result := RepairBaseRecipes(root, confirmFn, nil)
+	if result.Status != Fail {
+		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
 	}
+	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
+		t.Errorf("message should mention TEMPLATE_SOURCE, got: %s", result.Message)
+	}
+}
+
+func TestRepairGooseRecipes_ExtractsFromTarball(t *testing.T) {
+	root := t.TempDir()
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
+
+	// Build a tarball with recipe files.
+	recipeFiles := make(map[string]string)
 	for _, name := range expectedRecipeYAMLs {
-		if err := os.WriteFile(filepath.Join(recipesDir, name), []byte("old-content"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		recipeFiles[".goose/recipes/"+name] = "name: " + name
 	}
+	fetch := buildTestFetchFunc(t, recipeFiles)
 
-	// Stub fetchFileFn to return updated content.
-	origFetch := fetchFileFn
-	defer func() { fetchFileFn = origFetch }()
-	fetchFileFn = func(repo, path string) ([]byte, error) {
-		return []byte("updated-content"), nil
-	}
-
-	result := RepairGooseRecipes(root)
+	result := RepairGooseRecipes(root, fetch)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	// Verify every recipe was overwritten with the new content.
+	// Verify every recipe was extracted.
 	for _, name := range expectedRecipeYAMLs {
-		data, err := os.ReadFile(filepath.Join(recipesDir, name))
+		data, err := os.ReadFile(filepath.Join(root, ".goose", "recipes", name))
 		if err != nil {
 			t.Fatalf("failed to read %s: %v", name, err)
 		}
-		if string(data) != "updated-content" {
-			t.Errorf("%s: expected 'updated-content', got %q", name, string(data))
+		expected := "name: " + name
+		if string(data) != expected {
+			t.Errorf("%s: expected %q, got %q", name, expected, string(data))
 		}
 	}
 }
 
-func TestRepairGooseRecipes_MissingSource_ReturnsFail(t *testing.T) {
+func TestRepairGooseRecipes_MissingConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
 	// No TEMPLATE_SOURCE — repair should fail with a clear message.
-	result := RepairGooseRecipes(root)
+	result := RepairGooseRecipes(root, nil)
 	if result.Status != Fail {
-		t.Errorf("expected Fail when TEMPLATE_SOURCE missing, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
 	}
 	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
 		t.Error("message should mention TEMPLATE_SOURCE")
+	}
+}
+
+func TestRepairGooseRecipes_TarballError_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
+
+	result := RepairGooseRecipes(root, failingFetchFunc("download failed"))
+	if result.Status != Fail {
+		t.Errorf("expected Fail on tarball error, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "tarball extraction failed") {
+		t.Errorf("expected tarball error in message, got: %s", result.Message)
 	}
 }
 
@@ -399,7 +388,7 @@ func TestRepairWorkflows_FromBase_CopiesAndStages(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun, nil)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -419,39 +408,52 @@ func TestRepairWorkflows_FromBase_CopiesAndStages(t *testing.T) {
 	}
 }
 
-func TestRepairWorkflows_Fallback_AllPresent(t *testing.T) {
+func TestRepairWorkflows_Fallback_ExtractsFromTarball(t *testing.T) {
 	root := t.TempDir()
-	workflowsDir := filepath.Join(root, ".github", "workflows")
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 
-	// No base/.github/workflows/ — fallback mode.
-	// Create all expected files.
-	if err := os.MkdirAll(workflowsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// No base/.github/workflows/ — fallback to tarball.
+	workflowFiles := make(map[string]string)
 	for _, name := range expectedWorkflowYMLs {
-		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("content"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		workflowFiles[".github/workflows/"+name] = "on: push # " + name
 	}
+	fetch := buildTestFetchFunc(t, workflowFiles)
 
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
 
-	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun, fetch)
 	if result.Status != Pass {
-		t.Errorf("expected Pass when all files present, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// Verify workflows were extracted.
+	for _, name := range expectedWorkflowYMLs {
+		data, err := os.ReadFile(filepath.Join(root, ".github", "workflows", name))
+		if err != nil {
+			t.Errorf("expected workflow %s: %v", name, err)
+			continue
+		}
+		expected := "on: push # " + name
+		if string(data) != expected {
+			t.Errorf("%s: expected %q, got %q", name, expected, string(data))
+		}
 	}
 }
 
-func TestRepairWorkflows_MissingFiles_ReturnsFail(t *testing.T) {
+func TestRepairWorkflows_Fallback_MissingConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
+	// No base/ and no TEMPLATE_SOURCE — should fail.
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
-	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun, nil)
 	if result.Status != Fail {
-		t.Errorf("expected Fail for missing workflow files, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
+		t.Errorf("expected TEMPLATE_SOURCE in message, got: %s", result.Message)
 	}
 }
 
@@ -482,7 +484,7 @@ func TestRepairWorkflows_PersonalAccount_SkipsOrgOnlyWorkflow(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairWorkflows(root, bootstrap.OwnerTypeUser, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeUser, fakeRun, nil)
 	if result.Status != Pass {
 		t.Errorf("expected Pass for personal account repair, got %v: %s", result.Status, result.Message)
 	}
@@ -499,6 +501,39 @@ func TestRepairWorkflows_PersonalAccount_SkipsOrgOnlyWorkflow(t *testing.T) {
 	}
 	if string(data) != "pipeline-v2" {
 		t.Errorf("expected updated pipeline content, got %q", data)
+	}
+}
+
+func TestRepairWorkflows_Fallback_PersonalAccount_SkipsOrgOnly(t *testing.T) {
+	root := t.TempDir()
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
+
+	// No base/.github/workflows/ — fallback to tarball.
+	// Include both regular and org-only workflows in tarball.
+	workflowFiles := map[string]string{
+		".github/workflows/agentic-pipeline.yml":     "on: push",
+		".github/workflows/sync-status-to-label.yml": "org-only",
+	}
+	fetch := buildTestFetchFunc(t, workflowFiles)
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := RepairWorkflows(root, bootstrap.OwnerTypeUser, fakeRun, fetch)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// org-only file must NOT have been written.
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if _, err := os.Stat(filepath.Join(wfDir, "sync-status-to-label.yml")); err == nil {
+		t.Error("org-only workflow should not be extracted for personal account")
+	}
+
+	// Regular file should be present.
+	if _, err := os.Stat(filepath.Join(wfDir, "agentic-pipeline.yml")); err != nil {
+		t.Errorf("expected regular workflow file: %v", err)
 	}
 }
 
@@ -1677,5 +1712,81 @@ func TestRepairClaudeCredentialsManualAction_UserScope_ShowsRepoInstructions(t *
 	}
 	if strings.Contains(result.Message, "--org") {
 		t.Errorf("expected no --org in manual instructions for user, got %q", result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Test helpers for tarball-based repairs
+// ──────────────────────────────────────────────────────────────────────────────
+
+// writeTemplateConfig writes TEMPLATE_SOURCE and TEMPLATE_VERSION files.
+func writeTemplateConfig(t *testing.T, root, source, version string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_VERSION"), []byte(version), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// buildTestTarGz creates a gzipped tarball with the given files.
+// Keys are relative paths (without top-level prefix); values are content.
+// A "repo-v1.0.0/" prefix is added automatically.
+func buildTestTarGz(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	prefix := "repo-v1.0.0/"
+
+	for name, content := range files {
+		fullPath := prefix + name
+		// Create parent directories.
+		parts := strings.Split(fullPath, "/")
+		for i := 1; i < len(parts); i++ {
+			dirPath := strings.Join(parts[:i], "/") + "/"
+			_ = tw.WriteHeader(&tar.Header{
+				Name:     dirPath,
+				Typeflag: tar.TypeDir,
+				Mode:     0o755,
+			})
+		}
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     fullPath,
+			Typeflag: tar.TypeReg,
+			Mode:     0o644,
+			Size:     int64(len(content)),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// buildTestFetchFunc returns a tarball.FetchFunc that serves a tarball
+// containing the given files.
+func buildTestFetchFunc(t *testing.T, files map[string]string) tarball.FetchFunc {
+	t.Helper()
+	data := buildTestTarGz(t, files)
+	return func(repo, version string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+}
+
+// failingFetchFunc returns a tarball.FetchFunc that always errors.
+func failingFetchFunc(msg string) tarball.FetchFunc {
+	return func(repo, version string) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("%s", msg)
 	}
 }

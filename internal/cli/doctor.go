@@ -93,7 +93,6 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckBaseRecipes(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckGooseRecipes(cfg.root) },
 		func() verify.CheckResult { return verify.CheckWorkflows(cfg.root, cfg.ownerType) },
-		func() verify.CheckResult { return verify.CheckGhNotify(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
 		func() verify.CheckResult {
@@ -140,13 +139,11 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "base/ exists and is unmodified":
 				r = verify.RepairBaseDirWithWriter(w, cfg.root, run, boolConfirm)
 			case "base/skills/*.md unmodified":
-				r = verify.RepairBaseRecipes(cfg.root, run, boolConfirm)
+				r = verify.RepairBaseRecipes(cfg.root, boolConfirm, nil)
 			case ".goose/recipes/ exists and complete":
-				r = verify.RepairGooseRecipes(cfg.root)
+				r = verify.RepairGooseRecipes(cfg.root, nil)
 			case ".github/workflows/ exists and complete":
-				r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run)
-			case "gh-notify LaunchAgent installed":
-				r = verify.RepairGhNotify(cfg.root, run)
+				r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run, nil)
 			case "Standard labels present":
 				r = verify.RepairLabels(cfg.repoFullName, run)
 			case "GitHub Project linked":

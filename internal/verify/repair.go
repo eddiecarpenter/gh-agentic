@@ -7,12 +7,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/sync"
+	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
 )
 
 // ConfirmFunc prompts the user for a text input and returns the value.
@@ -276,28 +276,6 @@ func RepairREADMEMD(root string) CheckResult {
 	}
 }
 
-// RepairGhNotify runs install-gh-notify.sh to install or repair the
-// gh-notify LaunchAgent. root is the repo root, run is injected for
-// command execution.
-func RepairGhNotify(root string, run bootstrap.RunCommandFunc) CheckResult {
-	const checkName = "gh-notify LaunchAgent installed"
-
-	scriptPath := filepath.Join(root, "base", "scripts", "install-gh-notify.sh")
-	_, err := run("bash", scriptPath)
-	if err != nil {
-		return CheckResult{
-			Name:    checkName,
-			Status:  Fail,
-			Message: fmt.Sprintf("install script failed: %v", err),
-		}
-	}
-
-	return CheckResult{
-		Name:    checkName,
-		Status:  Pass,
-		Message: "gh-notify installed and running",
-	}
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // AGENTIC_PROJECT_ID repair
@@ -845,107 +823,81 @@ func RepairBaseDirWithWriter(w io.Writer, root string, run bootstrap.RunCommandF
 	}
 }
 
-// RepairBaseRecipes restores base/skills/ to its committed state after prompting.
-func RepairBaseRecipes(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
-	skillsDir := filepath.Join(root, "base", "skills")
+// RepairBaseRecipes restores base/skills/ from the TEMPLATE_VERSION tarball
+// after prompting the user for confirmation.
+func RepairBaseRecipes(root string, confirmFn BoolConfirmFunc, fetch tarball.FetchFunc) CheckResult {
+	const checkName = "base/skills/*.md unmodified"
 
-	// If base/skills/ is simply absent (e.g. base/ was just synced this run
-	// and the directory now exists on disk via the sync commit), there is
-	// nothing to restore — the files are already correct.
-	if _, err := os.Stat(skillsDir); err == nil {
-		return CheckResult{
-			Name:   "base/skills/*.md unmodified",
-			Status: Pass,
-		}
-	}
-
-	// base/skills/ is absent and not on disk — try to restore from git.
 	if confirmFn != nil {
-		ok, err := confirmFn("base/skills/ is missing — restore from git?")
+		ok, err := confirmFn("base/skills/ has issues — restore from template tarball?")
 		if err != nil || !ok {
 			return CheckResult{
-				Name:    "base/skills/*.md unmodified",
+				Name:    checkName,
 				Status:  Warning,
 				Message: "user declined restore",
 			}
 		}
 	}
 
-	_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/skills/", strings.ReplaceAll(root, "'", "'\\''")))
+	repo, version, err := tarball.ReadTemplateConfig(root)
 	if err != nil {
 		return CheckResult{
-			Name:    "base/skills/*.md unmodified",
-			Status:  Warning,
-			Message: fmt.Sprintf("git checkout failed: %v", err),
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("cannot read template config: %v", err),
+		}
+	}
+
+	if err := tarball.ExtractFromTemplate(repo, version, root, []string{"base/skills/"}, fetch); err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("tarball extraction failed: %v", err),
 		}
 	}
 
 	return CheckResult{
-		Name:   "base/skills/*.md unmodified",
+		Name:   checkName,
 		Status: Pass,
 	}
 }
 
-// RepairGooseRecipes fetches missing recipe YAML files from the template repo
-// and writes them into .goose/recipes/. Reads TEMPLATE_SOURCE to know which
-// repo to fetch from. Uses run to shell out to `gh api`.
-func RepairGooseRecipes(root string) CheckResult {
-	recipesPath := filepath.Join(root, ".goose", "recipes")
-	if err := os.MkdirAll(recipesPath, 0o755); err != nil {
-		return CheckResult{
-			Name:    ".goose/recipes/ exists and complete",
-			Status:  Fail,
-			Message: fmt.Sprintf("could not create directory: %v", err),
-		}
-	}
+// RepairGooseRecipes extracts recipe YAML files from the TEMPLATE_VERSION
+// tarball into .goose/recipes/.
+func RepairGooseRecipes(root string, fetch tarball.FetchFunc) CheckResult {
+	const checkName = ".goose/recipes/ exists and complete"
 
-	// Read TEMPLATE_SOURCE to know which repo to fetch from.
-	sourceData, err := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
+	repo, version, err := tarball.ReadTemplateConfig(root)
 	if err != nil {
 		return CheckResult{
-			Name:    ".goose/recipes/ exists and complete",
+			Name:    checkName,
 			Status:  Fail,
-			Message: "TEMPLATE_SOURCE missing — cannot fetch recipes from template",
-		}
-	}
-	templateRepo := strings.TrimSpace(string(sourceData))
-
-	var stillMissing []string
-	for _, name := range expectedRecipeYAMLs {
-		dst := filepath.Join(recipesPath, name)
-		// Always fetch and overwrite — recipe updates from the template must
-		// flow through to deployed repos (see issue #127).
-		content, fetchErr := fetchFileFn(templateRepo, ".goose/recipes/"+name)
-		if fetchErr != nil {
-			stillMissing = append(stillMissing, name)
-			continue
-		}
-		if writeErr := os.WriteFile(dst, content, 0o644); writeErr != nil {
-			stillMissing = append(stillMissing, name)
+			Message: fmt.Sprintf("cannot read template config: %v", err),
 		}
 	}
 
-	if len(stillMissing) > 0 {
+	if err := tarball.ExtractFromTemplate(repo, version, root, []string{".goose/recipes/"}, fetch); err != nil {
 		return CheckResult{
-			Name:    ".goose/recipes/ exists and complete",
+			Name:    checkName,
 			Status:  Fail,
-			Message: fmt.Sprintf("could not restore: %s", strings.Join(stillMissing, ", ")),
+			Message: fmt.Sprintf("tarball extraction failed: %v", err),
 		}
 	}
+
 	return CheckResult{
-		Name:   ".goose/recipes/ exists and complete",
+		Name:   checkName,
 		Status: Pass,
 	}
 }
 
 // RepairWorkflows copies workflow files from base/.github/workflows/ to
 // .github/workflows/ (overwriting existing), then stages them with git add.
-// Falls back to fetching from the template repo when base/.github/workflows/
-// is absent. run is injected for git operations.
+// Falls back to extracting from the TEMPLATE_VERSION tarball when
+// base/.github/workflows/ is absent. run is injected for git operations.
 //
 // ownerType is bootstrap.OwnerTypeUser or bootstrap.OwnerTypeOrg. Org-only
 // workflows are skipped for personal accounts.
-func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc, fetch tarball.FetchFunc) CheckResult {
 	const checkName = ".github/workflows/ exists and complete"
 
 	workflowsPath := filepath.Join(root, ".github", "workflows")
@@ -1012,67 +964,78 @@ func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc) Check
 		}
 	}
 
-	// Fallback: fetch missing files from template repo.
-	sourceData, _ := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
-	templateRepo := strings.TrimSpace(string(sourceData))
-
-	var stillMissing []string
-	for _, name := range expectedWorkflowYMLs {
-		dst := filepath.Join(workflowsPath, name)
-		if _, err := os.Stat(dst); err == nil {
-			continue // already present
-		}
-
-		// Fall back to fetching from the template repo.
-		if templateRepo != "" {
-			if content, fetchErr := fetchFileFromRepo(templateRepo, ".github/workflows/"+name); fetchErr == nil {
-				if writeErr := os.WriteFile(dst, content, 0o644); writeErr == nil {
-					continue
-				}
-			}
-		}
-
-		stillMissing = append(stillMissing, name)
-	}
-
-	if len(stillMissing) > 0 {
+	// Fallback: extract from TEMPLATE_VERSION tarball.
+	repo, version, err := tarball.ReadTemplateConfig(root)
+	if err != nil {
 		return CheckResult{
 			Name:    checkName,
 			Status:  Fail,
-			Message: fmt.Sprintf("could not restore: %s", strings.Join(stillMissing, ", ")),
+			Message: fmt.Sprintf("cannot read template config: %v", err),
 		}
 	}
+
+	// Extract workflows to a temporary directory first, then selectively
+	// copy to the destination (skipping org-only workflows for personal accounts).
+	tmpDir, tmpErr := os.MkdirTemp("", "workflow-extract-*")
+	if tmpErr != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("creating temp directory: %v", tmpErr),
+		}
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := tarball.ExtractFromTemplate(repo, version, tmpDir, []string{".github/workflows/"}, fetch); err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("tarball extraction failed: %v", err),
+		}
+	}
+
+	// Copy extracted workflows to the destination, filtering org-only files.
+	extractedDir := filepath.Join(tmpDir, ".github", "workflows")
+	entries, err := os.ReadDir(extractedDir)
+	if err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("reading extracted workflows: %v", err),
+		}
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if orgOnlyWorkflows[name] && ownerType == bootstrap.OwnerTypeUser {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(extractedDir, name))
+		if readErr != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("reading extracted %s: %v", name, readErr),
+			}
+		}
+		if writeErr := os.WriteFile(filepath.Join(workflowsPath, name), data, 0o644); writeErr != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("writing %s: %v", name, writeErr),
+			}
+		}
+	}
+
 	return CheckResult{
 		Name:   checkName,
 		Status: Pass,
 	}
 }
 
-// fetchFileFn is the function used to fetch files from a GitHub repo.
-// It defaults to fetchFileFromRepo but can be overridden in tests.
-var fetchFileFn = fetchFileFromRepo
-
-// fetchFileFromRepo fetches the raw content of a file from a GitHub repo
-// using the gh API. Returns the decoded file bytes.
-func fetchFileFromRepo(repo, path string) ([]byte, error) {
-	cmd := exec.Command("gh", "api",
-		fmt.Sprintf("repos/%s/contents/%s", repo, path),
-		"--jq", ".content",
-	)
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("gh api failed: %w", err)
-	}
-	// The API returns base64-encoded content with embedded newlines.
-	raw := strings.ReplaceAll(strings.TrimSpace(string(out)), "\\n", "\n")
-	// Strip surrounding quotes if jq returned a JSON string.
-	raw = strings.Trim(raw, `"`)
-	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(raw, "\n", ""))
-	if err != nil {
-		return nil, fmt.Errorf("decoding content: %w", err)
-	}
-	return decoded, nil
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // GitHub remote repairs
