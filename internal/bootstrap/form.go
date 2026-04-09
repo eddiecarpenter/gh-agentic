@@ -276,6 +276,29 @@ const repoModeSelectExisting = "existing"
 // repoModeCreateNew is the value for the "Create new repo" choice.
 const repoModeCreateNew = "new"
 
+// runnerOther is the sentinel value for the "other" runner option.
+const runnerOther = "__other__"
+
+// RunnerDefaultForTopology returns the smart default runner label based on topology.
+// Single topology defaults to "ubuntu-latest"; Federated defaults to the org name.
+func RunnerDefaultForTopology(topology, owner string) string {
+	if topology == "Federated" {
+		return owner
+	}
+	return DefaultRunnerLabel
+}
+
+// buildRunnerOptions builds the runner select options with dynamic repo and org names.
+func buildRunnerOptions(projectName, owner string) []huh.Option[string] {
+	return []huh.Option[string]{
+		huh.NewOption("ubuntu-latest — GitHub-hosted runner", DefaultRunnerLabel),
+		huh.NewOption(projectName+" — Selfhosted ARC queue", projectName),
+		huh.NewOption(owner+" — Selfhosted ARC queue", owner),
+		huh.NewOption("self-hosted — Self-hosted runner (not production)", "self-hosted"),
+		huh.NewOption("other — enter a custom label", runnerOther),
+	}
+}
+
 // RunForm runs the multi-phase huh form, renders the summary box, and asks
 // for final confirmation. Returns a populated BootstrapConfig, or ErrAborted
 // if the user declines the final "Create project?" confirm.
@@ -499,15 +522,18 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 	cfg.OwnerType = ownerType
 
 	// --- Pipeline configuration ---
-	cfg.RunnerLabel = DefaultRunnerLabel
+	cfg.RunnerLabel = RunnerDefaultForTopology(cfg.Topology, cfg.Owner)
 	cfg.GooseProvider = DefaultGooseProvider
 	cfg.GooseModel = DefaultGooseModel
 
+	runnerOpts := buildRunnerOptions(cfg.ProjectName, cfg.Owner)
+
 	pipelineForm := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().
+			huh.NewSelect[string]().
 				Title("Runner label").
 				Description("The GitHub Actions runner that will execute the agentic pipeline").
+				Options(runnerOpts...).
 				Value(&cfg.RunnerLabel),
 			huh.NewInput().
 				Title("Goose provider").
@@ -521,6 +547,28 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 	)
 	if err := pipelineForm.Run(); err != nil {
 		return BootstrapConfig{}, fmt.Errorf("pipeline config form: %w", err)
+	}
+
+	// If "other" was selected, prompt for a custom runner label.
+	if cfg.RunnerLabel == runnerOther {
+		cfg.RunnerLabel = ""
+		customRunnerForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Custom runner label").
+					Description("Enter your custom GitHub Actions runner label").
+					Value(&cfg.RunnerLabel).
+					Validate(func(s string) error {
+						if strings.TrimSpace(s) == "" {
+							return errors.New("runner label cannot be empty")
+						}
+						return nil
+					}),
+			),
+		)
+		if err := customRunnerForm.Run(); err != nil {
+			return BootstrapConfig{}, fmt.Errorf("custom runner form: %w", err)
+		}
 	}
 
 	// --- Summary box ---

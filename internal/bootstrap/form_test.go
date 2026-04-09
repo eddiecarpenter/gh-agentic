@@ -663,3 +663,64 @@ func TestValidateNewRepoName_CreateNewPath_SetsExistingRepoFalse(t *testing.T) {
 	}
 }
 
+// --- RunnerDefaultForTopology tests ---
+
+func TestRunnerDefaultForTopology_SingleTopology_ReturnsUbuntuLatest(t *testing.T) {
+	result := RunnerDefaultForTopology("Single", "alice")
+	if result != DefaultRunnerLabel {
+		t.Errorf("RunnerDefaultForTopology(Single, alice) = %q, want %q", result, DefaultRunnerLabel)
+	}
+}
+
+func TestRunnerDefaultForTopology_FederatedTopology_ReturnsOrgName(t *testing.T) {
+	result := RunnerDefaultForTopology("Federated", "acme-org")
+	if result != "acme-org" {
+		t.Errorf("RunnerDefaultForTopology(Federated, acme-org) = %q, want %q", result, "acme-org")
+	}
+}
+
+// --- buildRunnerOptions tests ---
+
+func TestBuildRunnerOptions_ContainsFiveOptions(t *testing.T) {
+	opts := buildRunnerOptions("my-project", "acme-org")
+	if len(opts) != 5 {
+		t.Fatalf("buildRunnerOptions() returned %d options, want 5", len(opts))
+	}
+}
+
+func TestBuildRunnerOptions_ContainsRepoAndOrgNames(t *testing.T) {
+	opts := buildRunnerOptions("my-project", "acme-org")
+
+	// Verify the option keys contain the dynamic names.
+	var keys []string
+	for _, o := range opts {
+		keys = append(keys, o.Value)
+	}
+
+	found := map[string]bool{
+		DefaultRunnerLabel: false,
+		"my-project":      false,
+		"acme-org":        false,
+		"self-hosted":     false,
+		runnerOther:       false,
+	}
+	for _, k := range keys {
+		if _, ok := found[k]; ok {
+			found[k] = true
+		}
+	}
+	for k, v := range found {
+		if !v {
+			t.Errorf("buildRunnerOptions() missing expected option value %q", k)
+		}
+	}
+}
+
+// --- runnerOther constant test ---
+
+func TestRunnerOtherConstant(t *testing.T) {
+	if runnerOther != "__other__" {
+		t.Errorf("runnerOther = %q, want %q", runnerOther, "__other__")
+	}
+}
+
