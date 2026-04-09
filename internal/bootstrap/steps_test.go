@@ -1792,3 +1792,154 @@ func TestSetAgentUserVariable_FailureIsNonFatal(t *testing.T) {
 		t.Errorf("expected warning message, got: %s", buf.String())
 	}
 }
+
+func TestSetAgentUserVariable_OrgScope_AlreadyMember_Succeeds(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{
+		Owner:          "acme-org",
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeOrg,
+	}
+	state := &StepState{RepoName: "my-project"}
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "orgs/acme-org/members/goose-agent") {
+			return "", nil // 204 — already a member
+		}
+		return "", nil
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "already an org member") {
+		t.Errorf("expected already-member message, got: %s", buf.String())
+	}
+}
+
+func TestSetAgentUserVariable_OrgScope_InvitationSent_Succeeds(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{
+		Owner:          "acme-org",
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeOrg,
+	}
+	state := &StepState{RepoName: "my-project"}
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set AGENT_USER") {
+			return "", nil // set variable succeeds
+		}
+		if strings.Contains(joined, "orgs/acme-org/members/goose-agent") {
+			return "", fmt.Errorf("HTTP 404") // not a member
+		}
+		if strings.Contains(joined, "users/goose-agent") && strings.Contains(joined, ".id") {
+			return "12345", nil // resolve user ID
+		}
+		if strings.Contains(joined, "orgs/acme-org/invitations") {
+			callCount++
+			return `{"id": 1}`, nil // invitation success
+		}
+		return "", nil
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected invitation API to be called once, got %d", callCount)
+	}
+	if !strings.Contains(buf.String(), "Invited goose-agent to org acme-org") {
+		t.Errorf("expected invitation message, got: %s", buf.String())
+	}
+}
+
+func TestSetAgentUserVariable_OrgScope_InvitationPermissionDenied_LogsManualAction(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{
+		Owner:          "acme-org",
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeOrg,
+	}
+	state := &StepState{RepoName: "my-project"}
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set AGENT_USER") {
+			return "", nil
+		}
+		if strings.Contains(joined, "orgs/acme-org/members/goose-agent") {
+			return "", fmt.Errorf("HTTP 404")
+		}
+		if strings.Contains(joined, "users/goose-agent") && strings.Contains(joined, ".id") {
+			return "12345", nil
+		}
+		if strings.Contains(joined, "orgs/acme-org/invitations") {
+			return "403 Forbidden", fmt.Errorf("HTTP 403")
+		}
+		return "", nil
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("expected nil error (non-fatal), got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "orgs/acme-org/people") {
+		t.Errorf("expected manual action URL, got: %s", buf.String())
+	}
+}
+
+func TestSetAgentUserVariable_OrgScope_InvitationFails_LogsWarning(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{
+		Owner:          "acme-org",
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeOrg,
+	}
+	state := &StepState{RepoName: "my-project"}
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set AGENT_USER") {
+			return "", nil
+		}
+		if strings.Contains(joined, "orgs/acme-org/members/goose-agent") {
+			return "", fmt.Errorf("HTTP 404")
+		}
+		if strings.Contains(joined, "users/goose-agent") && strings.Contains(joined, ".id") {
+			return "", fmt.Errorf("user resolution failed")
+		}
+		return "", nil
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("expected nil error (non-fatal), got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Could not resolve") {
+		t.Errorf("expected warning message, got: %s", buf.String())
+	}
+}
+
+func TestSetAgentUserVariable_RepoScope_NoOrgMembershipCheck(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := BootstrapConfig{
+		Owner:          "alice",
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeRepo,
+	}
+	state := &StepState{RepoName: "my-project"}
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "orgs/") {
+			t.Fatal("org membership check should not be called for repo scope")
+		}
+		return "", nil
+	}
+
+	err := SetAgentUserVariable(&buf, cfg, state, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
