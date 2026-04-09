@@ -139,7 +139,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "base/ exists and is unmodified":
 				r = verify.RepairBaseDirWithWriter(w, cfg.root, run, boolConfirm)
 			case "base/skills/*.md unmodified":
-				r = verify.RepairBaseRecipes(cfg.root, run, boolConfirm)
+				r = verify.RepairBaseRecipes(cfg.root, boolConfirm, nil)
 			case ".goose/recipes/ exists and complete":
 				r = verify.RepairGooseRecipes(cfg.root)
 			case ".github/workflows/ exists and complete":

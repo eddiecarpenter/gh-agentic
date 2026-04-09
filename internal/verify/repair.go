@@ -13,6 +13,7 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/sync"
+	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
 )
 
 // ConfirmFunc prompts the user for a text input and returns the value.
@@ -823,43 +824,41 @@ func RepairBaseDirWithWriter(w io.Writer, root string, run bootstrap.RunCommandF
 	}
 }
 
-// RepairBaseRecipes restores base/skills/ to its committed state after prompting.
-func RepairBaseRecipes(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
-	skillsDir := filepath.Join(root, "base", "skills")
+// RepairBaseRecipes restores base/skills/ from the TEMPLATE_VERSION tarball
+// after prompting the user for confirmation.
+func RepairBaseRecipes(root string, confirmFn BoolConfirmFunc, fetch tarball.FetchFunc) CheckResult {
+	const checkName = "base/skills/*.md unmodified"
 
-	// If base/skills/ is simply absent (e.g. base/ was just synced this run
-	// and the directory now exists on disk via the sync commit), there is
-	// nothing to restore — the files are already correct.
-	if _, err := os.Stat(skillsDir); err == nil {
-		return CheckResult{
-			Name:   "base/skills/*.md unmodified",
-			Status: Pass,
-		}
-	}
-
-	// base/skills/ is absent and not on disk — try to restore from git.
 	if confirmFn != nil {
-		ok, err := confirmFn("base/skills/ is missing — restore from git?")
+		ok, err := confirmFn("base/skills/ has issues — restore from template tarball?")
 		if err != nil || !ok {
 			return CheckResult{
-				Name:    "base/skills/*.md unmodified",
+				Name:    checkName,
 				Status:  Warning,
 				Message: "user declined restore",
 			}
 		}
 	}
 
-	_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/skills/", strings.ReplaceAll(root, "'", "'\\''")))
+	repo, version, err := tarball.ReadTemplateConfig(root)
 	if err != nil {
 		return CheckResult{
-			Name:    "base/skills/*.md unmodified",
-			Status:  Warning,
-			Message: fmt.Sprintf("git checkout failed: %v", err),
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("cannot read template config: %v", err),
+		}
+	}
+
+	if err := tarball.ExtractFromTemplate(repo, version, root, []string{"base/skills/"}, fetch); err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("tarball extraction failed: %v", err),
 		}
 	}
 
 	return CheckResult{
-		Name:   "base/skills/*.md unmodified",
+		Name:   checkName,
 		Status: Pass,
 	}
 }

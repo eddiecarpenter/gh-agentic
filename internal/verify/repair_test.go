@@ -1,13 +1,18 @@
 package verify
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
 )
 
 func TestRepairSkillsDir_CreatesDirectoryAndFile(t *testing.T) {
@@ -247,31 +252,56 @@ func TestRepairBaseDir_UserDeclines_ReturnsFail(t *testing.T) {
 
 func TestRepairBaseRecipes_UserConfirms_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", nil
-	}
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 	confirmFn := func(prompt string) (bool, error) {
 		return true, nil
 	}
+	fetch := buildTestFetchFunc(t, map[string]string{
+		"base/skills/session-init.md": "# Session Init",
+		"base/skills/dev-session.md":  "# Dev Session",
+	})
 
-	result := RepairBaseRecipes(root, fakeRun, confirmFn)
+	result := RepairBaseRecipes(root, confirmFn, fetch)
 	if result.Status != Pass {
 		t.Errorf("expected Pass after confirmed repair, got %v: %s", result.Status, result.Message)
+	}
+
+	// Verify extracted file exists.
+	data, err := os.ReadFile(filepath.Join(root, "base", "skills", "session-init.md"))
+	if err != nil {
+		t.Fatalf("expected extracted file: %v", err)
+	}
+	if string(data) != "# Session Init" {
+		t.Errorf("unexpected content: %q", string(data))
 	}
 }
 
 func TestRepairBaseRecipes_UserDeclines_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", nil
-	}
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 	confirmFn := func(prompt string) (bool, error) {
 		return false, nil
 	}
 
-	result := RepairBaseRecipes(root, fakeRun, confirmFn)
+	result := RepairBaseRecipes(root, confirmFn, nil)
 	if result.Status != Warning {
 		t.Errorf("expected Warning when user declines, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairBaseRecipes_MissingTemplateConfig_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	// No TEMPLATE_SOURCE or TEMPLATE_VERSION — should fail.
+	confirmFn := func(prompt string) (bool, error) {
+		return true, nil
+	}
+
+	result := RepairBaseRecipes(root, confirmFn, nil)
+	if result.Status != Fail {
+		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
+		t.Errorf("message should mention TEMPLATE_SOURCE, got: %s", result.Message)
 	}
 }
 
@@ -1636,5 +1666,81 @@ func TestRepairClaudeCredentialsManualAction_UserScope_ShowsRepoInstructions(t *
 	}
 	if strings.Contains(result.Message, "--org") {
 		t.Errorf("expected no --org in manual instructions for user, got %q", result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Test helpers for tarball-based repairs
+// ──────────────────────────────────────────────────────────────────────────────
+
+// writeTemplateConfig writes TEMPLATE_SOURCE and TEMPLATE_VERSION files.
+func writeTemplateConfig(t *testing.T, root, source, version string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_VERSION"), []byte(version), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// buildTestTarGz creates a gzipped tarball with the given files.
+// Keys are relative paths (without top-level prefix); values are content.
+// A "repo-v1.0.0/" prefix is added automatically.
+func buildTestTarGz(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	prefix := "repo-v1.0.0/"
+
+	for name, content := range files {
+		fullPath := prefix + name
+		// Create parent directories.
+		parts := strings.Split(fullPath, "/")
+		for i := 1; i < len(parts); i++ {
+			dirPath := strings.Join(parts[:i], "/") + "/"
+			_ = tw.WriteHeader(&tar.Header{
+				Name:     dirPath,
+				Typeflag: tar.TypeDir,
+				Mode:     0o755,
+			})
+		}
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     fullPath,
+			Typeflag: tar.TypeReg,
+			Mode:     0o644,
+			Size:     int64(len(content)),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// buildTestFetchFunc returns a tarball.FetchFunc that serves a tarball
+// containing the given files.
+func buildTestFetchFunc(t *testing.T, files map[string]string) tarball.FetchFunc {
+	t.Helper()
+	data := buildTestTarGz(t, files)
+	return func(repo, version string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+}
+
+// failingFetchFunc returns a tarball.FetchFunc that always errors.
+func failingFetchFunc(msg string) tarball.FetchFunc {
+	return func(repo, version string) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("%s", msg)
 	}
 }
