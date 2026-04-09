@@ -93,7 +93,6 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckBaseRecipes(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckGooseRecipes(cfg.root) },
 		func() verify.CheckResult { return verify.CheckWorkflows(cfg.root, cfg.ownerType) },
-		func() verify.CheckResult { return verify.CheckGhNotify(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
 		func() verify.CheckResult {
@@ -145,8 +144,6 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairGooseRecipes(cfg.root)
 			case ".github/workflows/ exists and complete":
 				r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run)
-			case "gh-notify LaunchAgent installed":
-				r = verify.RepairGhNotify(cfg.root, run)
 			case "Standard labels present":
 				r = verify.RepairLabels(cfg.repoFullName, run)
 			case "GitHub Project linked":

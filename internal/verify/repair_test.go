@@ -208,47 +208,6 @@ func TestRepairREADMEMD_CreatesFile(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// gh-notify LaunchAgent repair tests
-// ──────────────────────────────────────────────────────────────────────────────
-
-func TestRepairGhNotify_Success_ReturnsPass(t *testing.T) {
-	root := t.TempDir()
-	var calledWith []string
-	fakeRun := func(name string, args ...string) (string, error) {
-		calledWith = append(calledWith, name)
-		calledWith = append(calledWith, args...)
-		return "", nil
-	}
-
-	result := RepairGhNotify(root, fakeRun)
-	if result.Status != Pass {
-		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
-	}
-	if result.Message != "gh-notify installed and running" {
-		t.Errorf("unexpected message: %s", result.Message)
-	}
-	expectedScript := filepath.Join(root, "base", "scripts", "install-gh-notify.sh")
-	if len(calledWith) < 2 || calledWith[0] != "bash" || calledWith[1] != expectedScript {
-		t.Errorf("expected run(bash, %s), got %v", expectedScript, calledWith)
-	}
-}
-
-func TestRepairGhNotify_ScriptFails_ReturnsFail(t *testing.T) {
-	root := t.TempDir()
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", fmt.Errorf("script exited with code 1")
-	}
-
-	result := RepairGhNotify(root, fakeRun)
-	if result.Status != Fail {
-		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
-	}
-	if !strings.Contains(result.Message, "install script failed") {
-		t.Errorf("expected error detail in message, got: %s", result.Message)
-	}
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // Directory integrity repair tests
 // ──────────────────────────────────────────────────────────────────────────────
 
