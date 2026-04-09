@@ -1233,6 +1233,126 @@ func TestCheckAgenticProjectID_UserScope_UsesRepoFlag(t *testing.T) {
 	}
 }
 
+func TestCheckAgenticProjectID_DualScope_OrgTopology(t *testing.T) {
+	tests := []struct {
+		name        string
+		atOrg       bool
+		atRepo      bool
+		wantStatus  CheckStatus
+		wantMessage string
+	}{
+		{
+			name:       "org: value at org level returns Pass",
+			atOrg:      true,
+			atRepo:     false,
+			wantStatus: Pass,
+		},
+		{
+			name:        "org: value only at repo level returns Fail with topology message",
+			atOrg:       false,
+			atRepo:      true,
+			wantStatus:  Fail,
+			wantMessage: "must be at org level for federated topology",
+		},
+		{
+			name:        "org: value missing at both levels returns Fail",
+			atOrg:       false,
+			atRepo:      false,
+			wantStatus:  Fail,
+			wantMessage: "not set",
+		},
+		{
+			name:       "org: value at both levels returns Pass (org takes precedence)",
+			atOrg:      true,
+			atRepo:     true,
+			wantStatus: Pass,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "--org") {
+					if tc.atOrg {
+						return "PVT_kwDOBtest", nil
+					}
+					return "", fmt.Errorf("not found")
+				}
+				if strings.Contains(joined, "--repo") {
+					if tc.atRepo {
+						return "PVT_kwDOBtest", nil
+					}
+					return "", fmt.Errorf("not found")
+				}
+				return "", fmt.Errorf("unexpected")
+			}
+
+			result := CheckAgenticProjectID("acme-org/repo", "acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+			if tc.wantMessage != "" && !strings.Contains(result.Message, tc.wantMessage) {
+				t.Errorf("expected message containing %q, got %q", tc.wantMessage, result.Message)
+			}
+		})
+	}
+}
+
+func TestCheckAgenticProjectID_DualScope_UserTopology(t *testing.T) {
+	tests := []struct {
+		name       string
+		atRepo     bool
+		atOrg      bool
+		wantStatus CheckStatus
+	}{
+		{
+			name:       "user: value at repo level returns Pass",
+			atRepo:     true,
+			atOrg:      false,
+			wantStatus: Pass,
+		},
+		{
+			name:       "user: value only at org level returns Pass",
+			atRepo:     false,
+			atOrg:      true,
+			wantStatus: Pass,
+		},
+		{
+			name:       "user: value missing at both levels returns Fail",
+			atRepo:     false,
+			atOrg:      false,
+			wantStatus: Fail,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "--repo") {
+					if tc.atRepo {
+						return "PVT_kwDOBtest", nil
+					}
+					return "", fmt.Errorf("not found")
+				}
+				if strings.Contains(joined, "--org") {
+					if tc.atOrg {
+						return "PVT_kwDOBtest", nil
+					}
+					return "", fmt.Errorf("not found")
+				}
+				return "", fmt.Errorf("unexpected")
+			}
+
+			result := CheckAgenticProjectID("alice/repo", "alice", "repo", bootstrap.OwnerTypeUser, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+		})
+	}
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Pipeline variable check tests
 // ──────────────────────────────────────────────────────────────────────────────

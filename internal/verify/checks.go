@@ -840,30 +840,51 @@ func CheckProjectCollaborator(owner, repoName, agentUser, ownerType string, run 
 const checkAgenticProjectIDName = "AGENTIC_PROJECT_ID is configured"
 
 // CheckAgenticProjectID verifies that the AGENTIC_PROJECT_ID GitHub Actions
-// variable is set. For org-owned repos it checks at org level; for personal
-// repos it checks at repo level. This variable is required by the
-// sync-label-to-status workflow to update the GitHub Project board status.
+// variable is set with topology-aware dual-scope logic. For Organization
+// (federated) repos the variable must exist at org level; if found only at
+// repo level it fails with a topology message. For User (single) repos it
+// may exist at either scope.
 func CheckAgenticProjectID(repoFullName, owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
-	// Use --org for org-owned repos, --repo for personal repos.
-	var scopeArgs []string
 	if ownerType == bootstrap.OwnerTypeOrg {
-		scopeArgs = []string{"--org", owner}
-	} else {
-		scopeArgs = []string{"--repo", repoFullName}
-	}
-
-	args := append([]string{"variable", "get", "AGENTIC_PROJECT_ID"}, scopeArgs...)
-	out, err := run("gh", args...)
-	if err != nil || strings.TrimSpace(out) == "" {
+		// Federated: must be at org level.
+		orgArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--org", owner}
+		out, err := run("gh", orgArgs...)
+		if err == nil && strings.TrimSpace(out) != "" {
+			return CheckResult{Name: checkAgenticProjectIDName, Status: Pass}
+		}
+		// Not at org — check repo level to detect misplacement.
+		repoArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--repo", repoFullName}
+		repoOut, repoErr := run("gh", repoArgs...)
+		if repoErr == nil && strings.TrimSpace(repoOut) != "" {
+			return CheckResult{
+				Name:    checkAgenticProjectIDName,
+				Status:  Fail,
+				Message: "AGENTIC_PROJECT_ID is set at repo level but must be at org level for federated topology",
+			}
+		}
 		return CheckResult{
 			Name:    checkAgenticProjectIDName,
 			Status:  Fail,
 			Message: "AGENTIC_PROJECT_ID variable is not set",
 		}
 	}
+
+	// Single (User): check repo level first, then org level.
+	repoArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--repo", repoFullName}
+	out, err := run("gh", repoArgs...)
+	if err == nil && strings.TrimSpace(out) != "" {
+		return CheckResult{Name: checkAgenticProjectIDName, Status: Pass}
+	}
+	// Not at repo — check org level (acceptable for single topology).
+	orgArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--org", owner}
+	orgOut, orgErr := run("gh", orgArgs...)
+	if orgErr == nil && strings.TrimSpace(orgOut) != "" {
+		return CheckResult{Name: checkAgenticProjectIDName, Status: Pass}
+	}
 	return CheckResult{
-		Name:   checkAgenticProjectIDName,
-		Status: Pass,
+		Name:    checkAgenticProjectIDName,
+		Status:  Fail,
+		Message: "AGENTIC_PROJECT_ID variable is not set",
 	}
 }
 

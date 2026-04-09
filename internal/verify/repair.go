@@ -283,7 +283,8 @@ func RepairREADMEMD(root string) CheckResult {
 
 // RepairAgenticProjectID resolves the project node ID via resolveProjectEntry
 // and sets it as the AGENTIC_PROJECT_ID variable. For org-owned repos it sets
-// at org level; for personal repos it sets at repo level.
+// at org level and removes any misplaced repo-level copy; for personal repos
+// it sets at repo level.
 func RepairAgenticProjectID(repoFullName, owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
 	entry := resolveProjectEntry(owner, repoName, run)
 	if entry == nil {
@@ -309,6 +310,14 @@ func RepairAgenticProjectID(repoFullName, owner, repoName, ownerType string, run
 			Name:    checkAgenticProjectIDName,
 			Status:  Fail,
 			Message: fmt.Sprintf("failed to set variable: %v", err),
+		}
+	}
+
+	// For org topology, clean up any misplaced repo-level variable.
+	if ownerType == bootstrap.OwnerTypeOrg {
+		repoFound, _ := variableExistsAtScope(owner, repoName, "AGENTIC_PROJECT_ID", "repo", run)
+		if repoFound {
+			_, _ = run("gh", "variable", "delete", "AGENTIC_PROJECT_ID", "--repo", repoFullName)
 		}
 	}
 

@@ -1357,6 +1357,71 @@ func TestRepairAgenticProjectID_OrgScope_UsesOrgFlag(t *testing.T) {
 	}
 }
 
+func TestRepairAgenticProjectID_Org_DeletesMisplacedRepoVar(t *testing.T) {
+	projectListJSON := `{"projects":[{"id":"PVT_kwDOBtest","title":"repo","number":1,"url":"https://github.com/orgs/acme-org/projects/1","owner":{"login":"acme-org","type":"Organization"}}]}`
+	var deleteCalled bool
+	var deleteArgs string
+	fakeRun := func(name string, args ...string) (string, error) {
+		cmd := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(cmd, "project list") {
+			return projectListJSON, nil
+		}
+		if strings.Contains(cmd, "variable set") {
+			return "", nil
+		}
+		if strings.Contains(cmd, "variable list") && strings.Contains(cmd, "--repo") {
+			return `[{"name":"AGENTIC_PROJECT_ID"}]`, nil
+		}
+		if strings.Contains(cmd, "variable list") && strings.Contains(cmd, "--org") {
+			return `[]`, nil
+		}
+		if strings.Contains(cmd, "variable delete") {
+			deleteCalled = true
+			deleteArgs = cmd
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairAgenticProjectID("acme-org/repo", "acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !deleteCalled {
+		t.Error("expected repo-level AGENTIC_PROJECT_ID to be deleted")
+	}
+	if !strings.Contains(deleteArgs, "--repo acme-org/repo") {
+		t.Errorf("expected delete to target repo, got %q", deleteArgs)
+	}
+}
+
+func TestRepairAgenticProjectID_User_NoDeleteAttempted(t *testing.T) {
+	projectListJSON := `{"projects":[{"id":"PVT_kwDOBtest","title":"repo","number":1,"url":"https://github.com/users/alice/projects/1","owner":{"login":"alice","type":"User"}}]}`
+	var deleteCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		cmd := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(cmd, "project list") {
+			return projectListJSON, nil
+		}
+		if strings.Contains(cmd, "variable set") {
+			return "", nil
+		}
+		if strings.Contains(cmd, "variable delete") {
+			deleteCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairAgenticProjectID("alice/repo", "alice", "repo", bootstrap.OwnerTypeUser, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if deleteCalled {
+		t.Error("expected no delete for user topology")
+	}
+}
+
 func TestRepairRunnerLabelVar_OrgScope_UsesOrgFlag(t *testing.T) {
 	var setArgs []string
 	fakeRun := func(name string, args ...string) (string, error) {
