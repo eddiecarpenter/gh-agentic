@@ -113,9 +113,16 @@ See `base/concepts/delivery-philosophy.md` for the full context.
 - **Every phase must be completed before the next begins. Phases are mandatory; sessions
   are flexible** — a phase may be completed within an earlier session. Never defer a phase
   without human approval. The pipeline follows:
-  Requirements → Scoping → Design → Implementation.
-  Each phase produces a specific artefact. Scoping produces a Feature issue with a defined
-  scope. That artefact must exist before design begins, regardless of which session produced it.
+  Requirements → Scoping → Design → Implementation → PR Review → Issue/Bug Fix.
+  Each phase produces a specific artefact:
+  - **Requirements** produces a Requirement issue capturing the business need
+  - **Scoping** produces a Feature issue with defined scope and acceptance criteria
+  - **Design** produces ordered Task sub-issues and the feature branch
+  - **Implementation** produces committed code with passing tests and a PR
+  - **PR Review** produces reviewed, approved code ready to merge
+  - **Issue/Bug Fix** produces a targeted fix branch and PR for a reported bug or question
+
+  Each artefact must exist before the next phase begins, regardless of which session produced it.
 
   **Completing a phase early:** When the work of a later phase is apparent during an earlier
   session, complete it then — no separate session is needed. This is completing early, not
@@ -123,6 +130,10 @@ See `base/concepts/delivery-philosophy.md` for the full context.
 
   **Deferring a phase:** If a phase genuinely cannot proceed yet, the agent must stop and
   ask the human before deferring. The human decides; the agent never defers unilaterally.
+
+- **Never apply a pipeline trigger label (`in-design`, `in-development`) without explicit
+  human instruction in the current session.** A context summary or prior session's intent
+  is not a sufficient mandate. The human must say so directly.
 
 - **When a pipeline trigger label is applied, exit immediately.** Applying `in-design`
   or `in-development` hands control to the automated pipeline. The agent must exit cleanly

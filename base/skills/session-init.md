@@ -18,7 +18,8 @@ repo state, rules, and skills before doing any work.
 
 Execute these steps in order — do not skip any:
 
-1. Read `docs/PROJECT_BRIEF.md` — understand what the system is and how it works
+1. Read `docs/PROJECT_BRIEF.md` — understand what the system is and how it works.
+   If the file does not exist, note this and continue — do not block.
 
 2. Read `REPOS.md`. For each repo with status `active`, derive its local directory as
    `<type>s/<name>` (e.g. `type: domain` → `domains/<name>`, `type: tool` → `tools/<name>`).
@@ -28,11 +29,18 @@ Execute these steps in order — do not skip any:
    c. Add `<type>s/*/` to `.gitignore` and stage that too: `git add .gitignore`
    d. Commit both: `chore: bootstrap <type>s/ directory`
    Check whether each `<type>s/<name>` directory exists locally. If any repos are
-   missing, list them and ask the user whether to clone them before proceeding.
+   missing:
+
+   **Interactive session (GITHUB_ACTIONS is not set):** list the missing repos and
+   ask the user whether to clone them before proceeding.
    Clone command: `git clone <repo> <type>s/<name>`
-   If the user declines to clone missing repos, continue the session but limit all
-   work to repos that are present locally. Do not reference, modify, or make
-   assumptions about the content of repos that were not cloned.
+   If the user declines, continue the session but limit all work to repos that are
+   present locally. Do not reference, modify, or make assumptions about the content
+   of repos that were not cloned.
+
+   **CI session (GITHUB_ACTIONS=true):** note the missing repos in output and
+   continue immediately — do not prompt, do not block. Limit work to repos that
+   are present in the workspace.
 
 3. Query open Requirement issues in the agentic repo:
    `gh issue list --repo <agentic-repo> --label requirement --state open --json number,title,labels`
