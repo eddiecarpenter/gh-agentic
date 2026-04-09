@@ -1,14 +1,39 @@
 package bootstrap
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// TestMain installs a fake tarball fetcher for the whole bootstrap package test run.
+// This prevents CreateRepo from making real HTTP requests during tests.
+func TestMain(m *testing.M) {
+	// Build a minimal valid tarball once and reuse it across all tests.
+	var tarBuf bytes.Buffer
+	gw := gzip.NewWriter(&tarBuf)
+	tw := tar.NewWriter(gw)
+	_ = tw.WriteHeader(&tar.Header{Name: "repo-v1.0.0-abc123/", Typeflag: tar.TypeDir, Mode: 0o755})
+	content := []byte("# Template\n")
+	_ = tw.WriteHeader(&tar.Header{Name: "repo-v1.0.0-abc123/README.md", Size: int64(len(content)), Mode: 0o644, Typeflag: tar.TypeReg})
+	_, _ = tw.Write(content)
+	tw.Close()
+	gw.Close()
+	tarBytes := tarBuf.Bytes()
+
+	fetchTarballFn = func(repo, version string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(tarBytes)), nil
+	}
+
+	os.Exit(m.Run())
+}
 
 // --------------------------------------------------------------------------------------
 // Helpers shared across tests
@@ -56,6 +81,50 @@ func makeTempClone(t *testing.T) string {
 	return dir
 }
 
+// makeMinimalTarballBytes creates a minimal valid tar.gz archive in memory
+// containing a single file under a prefix directory.
+func makeMinimalTarballBytes(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	// Add top-level directory.
+	_ = tw.WriteHeader(&tar.Header{
+		Name:     "repo-v1.0.0-abc123/",
+		Typeflag: tar.TypeDir,
+		Mode:     0o755,
+	})
+	// Add a file.
+	content := []byte("# Template\n")
+	_ = tw.WriteHeader(&tar.Header{
+		Name:     "repo-v1.0.0-abc123/README.md",
+		Size:     int64(len(content)),
+		Mode:     0o644,
+		Typeflag: tar.TypeReg,
+	})
+	_, _ = tw.Write(content)
+
+	tw.Close()
+	gw.Close()
+	return buf.Bytes()
+}
+
+// writeTarballOnOutput returns true and writes tarball data if the command
+// includes --output flag (used by gh api). Returns false otherwise.
+func writeTarballOnOutput(t *testing.T, tarballData []byte, args []string) bool {
+	t.Helper()
+	for i, a := range args {
+		if a == "--output" && i+1 < len(args) {
+			if err := os.WriteFile(args[i+1], tarballData, 0o644); err != nil {
+				t.Fatalf("writing test tarball: %v", err)
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // --------------------------------------------------------------------------------------
 // repoName
 // --------------------------------------------------------------------------------------
@@ -78,13 +147,23 @@ func TestRepoName_Federated_AppendsSuffix(t *testing.T) {
 // Step 3 — CreateRepo
 // --------------------------------------------------------------------------------------
 
+// fakeFetchRelease returns a FetchReleaseFunc that always returns the given tag.
+func fakeFetchRelease(tag string) FetchReleaseFunc {
+	return func(repo string) (string, error) { return tag, nil }
+}
+
+// fakeFetchReleaseFail returns a FetchReleaseFunc that always fails.
+func fakeFetchReleaseFail(msg string) FetchReleaseFunc {
+	return func(repo string) (string, error) { return "", errors.New(msg) }
+}
+
 func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 	run := fakeRunFail("repository already exists")
 
 	var buf bytes.Buffer
-	err := CreateRepo(&buf, cfg, state, t.TempDir(), run)
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
 	if err == nil {
 		t.Fatal("CreateRepo() expected error when gh repo create fails, got nil")
 	}
@@ -94,7 +173,7 @@ func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
 }
 
 func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 
 	callCount := 0
@@ -104,12 +183,16 @@ func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
 			// gh repo create succeeds
 			return "https://github.com/alice/my-project", nil
 		}
-		// git clone fails
-		return "fatal: repository not found", errors.New("exit status 128")
+		if callCount == 2 {
+			// git clone fails
+			return "fatal: repository not found", errors.New("exit status 128")
+		}
+		// gh repo delete (cleanup) succeeds
+		return "", nil
 	}
 
 	var buf bytes.Buffer
-	err := CreateRepo(&buf, cfg, state, t.TempDir(), run)
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
 	if err == nil {
 		t.Fatal("CreateRepo() expected error when git clone fails, got nil")
 	}
@@ -119,7 +202,7 @@ func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
 }
 
 func TestCreateRepo_PopulatesStateRepoName(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 
 	// Both gh and git succeed; API call will fail gracefully (no real gh auth in tests).
@@ -128,7 +211,7 @@ func TestCreateRepo_PopulatesStateRepoName(t *testing.T) {
 	var buf bytes.Buffer
 	// We expect an error from the REST API call (no real auth), but state.RepoName
 	// should still be set before that point.
-	_ = CreateRepo(&buf, cfg, state, t.TempDir(), run)
+	_ = CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
 
 	if state.RepoName != "my-project" {
 		t.Errorf("state.RepoName = %q, want %q", state.RepoName, "my-project")
@@ -136,92 +219,97 @@ func TestCreateRepo_PopulatesStateRepoName(t *testing.T) {
 }
 
 func TestCreateRepo_Federated_SetsAgenticSuffix(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Federated", Owner: "acme", ProjectName: "myapp"}
+	cfg := BootstrapConfig{Topology: "Federated", Owner: "acme", ProjectName: "myapp", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 	run := fakeRunOK("")
 
 	var buf bytes.Buffer
-	_ = CreateRepo(&buf, cfg, state, t.TempDir(), run)
+	_ = CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
 
 	if state.RepoName != "myapp-agentic" {
 		t.Errorf("state.RepoName = %q, want %q", state.RepoName, "myapp-agentic")
 	}
 }
 
-// --------------------------------------------------------------------------------------
-// Step 4 — RemoveTemplateFiles
-// --------------------------------------------------------------------------------------
-
-func TestRemoveTemplateFiles_BothFilesPresent_CallsGitRm(t *testing.T) {
-	dir := t.TempDir()
-	// Create the two template files.
-	for _, f := range []string{"bootstrap.sh", "bootstrap.sh.md5"} {
-		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	state := &StepState{ClonePath: dir}
-	var rmCalled bool
-	run := func(name string, args ...string) (string, error) {
-		// runInDir wraps all commands in "bash -c 'cd ... && ...'",
-		// so we detect git rm by looking for "git" and "rm" in the bash script.
-		if name == "bash" {
-			script := strings.Join(args, " ")
-			if strings.Contains(script, "'git'") && strings.Contains(script, "'rm'") {
-				rmCalled = true
-			}
-		}
-		return "", nil
-	}
+func TestCreateRepo_EmptyTemplateRepo_ReturnsError(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: ""}
+	state := &StepState{}
 
 	var buf bytes.Buffer
-	if err := RemoveTemplateFiles(&buf, state, run); err != nil {
-		t.Fatalf("RemoveTemplateFiles() unexpected error: %v", err)
-	}
-	if !rmCalled {
-		t.Error("expected git rm to be called when files exist")
-	}
-}
-
-func TestRemoveTemplateFiles_NoFilesPresent_ReturnsNil(t *testing.T) {
-	dir := t.TempDir()
-	state := &StepState{ClonePath: dir}
-	run := fakeRunFail("should not be called")
-
-	var buf bytes.Buffer
-	if err := RemoveTemplateFiles(&buf, state, run); err != nil {
-		t.Fatalf("RemoveTemplateFiles() expected nil when no files present, got: %v", err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "not present") {
-		t.Errorf("expected 'not present' warning in output, got: %s", out)
-	}
-}
-
-func TestRemoveTemplateFiles_GitRmFails_ReturnsError(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "bootstrap.sh"), []byte("x"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	state := &StepState{ClonePath: dir}
-	run := func(name string, args ...string) (string, error) {
-		if name == "bash" {
-			return "error", errors.New("git rm failed")
-		}
-		return "", nil
-	}
-
-	var buf bytes.Buffer
-	err := RemoveTemplateFiles(&buf, state, run)
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), fakeRunOK(""), fakeFetchRelease("v1.0.0"))
 	if err == nil {
-		t.Fatal("RemoveTemplateFiles() expected error when git rm fails, got nil")
+		t.Fatal("CreateRepo() expected error when template repo is empty")
+	}
+	if !strings.Contains(err.Error(), "TEMPLATE_SOURCE") {
+		t.Errorf("error should mention 'TEMPLATE_SOURCE', got: %v", err)
+	}
+}
+
+func TestCreateRepo_FetchReleaseFails_ReturnsErrorBeforeRepoCreation(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
+	state := &StepState{}
+
+	// run should never be called — error should happen before repo creation.
+	runCalled := false
+	run := func(name string, args ...string) (string, error) {
+		runCalled = true
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchReleaseFail("no releases found"))
+	if err == nil {
+		t.Fatal("CreateRepo() expected error when release fetch fails")
+	}
+	if runCalled {
+		t.Error("expected no commands to be called when release fetch fails")
+	}
+	if !strings.Contains(err.Error(), "fetching release tag") {
+		t.Errorf("error should mention 'fetching release tag', got: %v", err)
+	}
+}
+
+func TestCreateRepo_TarballFetchFails_CleansUpRepo(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
+	state := &StepState{}
+
+	// Override the package-level tarball fetch to simulate a failure.
+	orig := fetchTarballFn
+	fetchTarballFn = func(_, _ string) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("404 not found")
+	}
+	defer func() { fetchTarballFn = orig }()
+
+	var deleteCalled bool
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) > 1 && args[0] == "repo" && args[1] == "create" {
+			return "", nil
+		}
+		if name == "gh" && len(args) > 1 && args[0] == "repo" && args[1] == "delete" {
+			deleteCalled = true
+			return "", nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "clone" {
+			if len(args) > 2 {
+				os.MkdirAll(args[2], 0o755)
+			}
+			return "", nil
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
+	if err == nil {
+		t.Fatal("CreateRepo() expected error when tarball fetch fails")
+	}
+	if !deleteCalled {
+		t.Error("expected gh repo delete to be called to clean up after tarball failure")
 	}
 }
 
 // --------------------------------------------------------------------------------------
-// Step 5 — ScaffoldStack / extractInitCommands
+// Step 4 — ScaffoldStack / extractInitCommands
 // --------------------------------------------------------------------------------------
 
 func TestExtractInitCommands_FindsGoSection(t *testing.T) {

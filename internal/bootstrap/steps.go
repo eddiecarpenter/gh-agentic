@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cli/go-gh/v2/pkg/api"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -62,12 +63,23 @@ func repoName(cfg BootstrapConfig) string {
 // Step 3 — CreateRepo
 // --------------------------------------------------------------------------------------
 
-// CreateRepo creates the GitHub repository from the agentic-development template,
-// clones it locally, and populates state with the repo name, clone path, URL, and node ID.
+// FetchReleaseFunc fetches the latest release tag for a given repo slug.
+// Injected so tests can substitute a fake implementation.
+type FetchReleaseFunc func(repo string) (string, error)
+
+// fetchTarballFn is the tarball fetch function used by CreateRepo.
+// Overridden in tests to simulate fetch failures.
+var fetchTarballFn = tarball.DefaultFetch
+
+// CreateRepo creates a blank private GitHub repository, clones it locally,
+// fetches the template tarball for the current release tag, extracts it into
+// the cloned repo, and commits the initial state. It populates state with
+// the repo name, clone path, URL, and node ID.
 //
 // workDir is the parent directory into which the repo will be cloned.
 // run is injected so tests can substitute a fake implementation without spawning real processes.
-func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir string, run RunCommandFunc) error {
+// fetchRelease is injected to fetch the latest release tag (use sync.DefaultFetchRelease for production).
+func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir string, run RunCommandFunc, fetchRelease FetchReleaseFunc) error {
 	name := repoName(cfg)
 	state.RepoName = name
 	state.ClonePath = filepath.Join(workDir, name)
@@ -75,19 +87,64 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 
 	fullName := cfg.Owner + "/" + name
 
-	// Create the repo from the template.
-	out, err := run("gh", "repo", "create", fullName,
-		"--template", cfg.TemplateRepo,
-		"--private")
+	// Pre-validate: template repo must be set.
+	if cfg.TemplateRepo == "" {
+		return fmt.Errorf("template repo (TEMPLATE_SOURCE) is not configured")
+	}
+
+	// Pre-validate: fetch the latest release tag before creating the repo.
+	releaseTag, err := fetchRelease(cfg.TemplateRepo)
+	if err != nil {
+		return fmt.Errorf("fetching release tag for %s: %w", cfg.TemplateRepo, err)
+	}
+	if releaseTag == "" {
+		return fmt.Errorf("no release found for template repo %s", cfg.TemplateRepo)
+	}
+
+	// Create the blank private repo (no --template).
+	out, err := run("gh", "repo", "create", fullName, "--private")
 	if err != nil {
 		return fmt.Errorf("gh repo create: %w\n%s", err, strings.TrimSpace(out))
 	}
 
-	// Clone the repo.
+	// Clone the blank repo.
 	sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
 	out, err = run("git", "clone", sshURL, state.ClonePath)
 	if err != nil {
+		// Clean up the remote repo on clone failure.
+		cleanupOut, cleanupErr := run("gh", "repo", "delete", fullName, "--yes")
+		if cleanupErr != nil {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not clean up remote repo: "+strings.TrimSpace(cleanupOut)))
+		}
 		return fmt.Errorf("git clone: %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	// Fetch and extract the tarball into the cloned repo.
+	if err := tarball.ExtractFromTemplate(cfg.TemplateRepo, releaseTag, state.ClonePath, nil, fetchTarballFn); err != nil {
+		// Clean up the remote repo on tarball failure.
+		cleanupOut, cleanupErr := run("gh", "repo", "delete", fullName, "--yes")
+		if cleanupErr != nil {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not clean up remote repo: "+strings.TrimSpace(cleanupOut)))
+		}
+		return fmt.Errorf("populating from template tarball: %w", err)
+	}
+
+	// Write TEMPLATE_VERSION so downstream steps know which version was used.
+	versionPath := filepath.Join(state.ClonePath, "TEMPLATE_VERSION")
+	if err := os.WriteFile(versionPath, []byte(releaseTag+"\n"), 0o644); err != nil {
+		return fmt.Errorf("writing TEMPLATE_VERSION: %w", err)
+	}
+
+	// Stage and commit the initial template content.
+	out, err = runInDir(run, state.ClonePath, "git", "add", "-A")
+	if err != nil {
+		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	commitMsg := fmt.Sprintf("chore: initialise from template %s", releaseTag)
+	out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", commitMsg)
+	if err != nil {
+		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
 	}
 
 	// Fetch the repo node ID via REST API (best-effort).
@@ -109,47 +166,7 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 }
 
 // --------------------------------------------------------------------------------------
-// Step 4 — RemoveTemplateFiles
-// --------------------------------------------------------------------------------------
-
-// RemoveTemplateFiles deletes bootstrap.sh and bootstrap.sh.md5 from the cloned repo
-// and commits the removal. If either file is absent it logs a warning and continues.
-//
-// run is injected so tests can substitute a fake implementation.
-func RemoveTemplateFiles(w io.Writer, state *StepState, run RunCommandFunc) error {
-	files := []string{"bootstrap.sh", "bootstrap.sh.md5"}
-
-	// Determine which files actually exist.
-	var toRemove []string
-	for _, f := range files {
-		if _, err := os.Stat(filepath.Join(state.ClonePath, f)); err == nil {
-			toRemove = append(toRemove, f)
-		} else {
-			fmt.Fprintln(w, "  "+ui.Muted.Render("· "+f+" not present — skipping"))
-		}
-	}
-
-	if len(toRemove) == 0 {
-		// Nothing to remove — template was already clean.
-		return nil
-	}
-
-	rmArgs := append([]string{"rm"}, toRemove...)
-	out, err := runInDir(run, state.ClonePath, "git", rmArgs...)
-	if err != nil {
-		return fmt.Errorf("git rm: %w\n%s", err, strings.TrimSpace(out))
-	}
-
-	out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", "chore: remove template bootstrap files")
-	if err != nil {
-		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
-	}
-
-	return nil
-}
-
-// --------------------------------------------------------------------------------------
-// Step 5 — ScaffoldStack
+// Step 4 — ScaffoldStack
 // --------------------------------------------------------------------------------------
 
 // stackFileName maps a stack name to its standards file basename.

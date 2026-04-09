@@ -36,12 +36,17 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 	// When "git clone" is called, create the ClonePath directory so that
 	// subsequent steps that write files into it don't fail with "no such file or directory".
 	clonePath := filepath.Join(dir, "my-project")
+	tarballData := makeMinimalTarballBytes(t)
 	run := func(name string, args ...string) (string, error) {
 		// CreateRepo calls run("git", "clone", sshURL, clonePath) directly.
 		if name == "git" && len(args) > 0 && args[0] == "clone" {
 			if mkErr := os.MkdirAll(clonePath, 0755); mkErr != nil {
 				return "", mkErr
 			}
+		}
+		// Handle tarball fetch — write a valid tarball to the --output path.
+		if name == "gh" && len(args) > 0 && args[0] == "api" {
+			writeTarballOnOutput(t, tarballData, args)
 		}
 		return `{"number":1,"url":"https://github.com/users/alice/projects/1"}`, nil
 	}
@@ -63,7 +68,9 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 	// In a test environment this will return an error from the form.
 	// We accept that — what we care about is that steps 3-8 ran without error.
 	// To avoid the form error propagating as a test failure we capture it.
-	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, spinner)
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
+	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, spinner, fetchRelease)
 
 	// The only acceptable error is from the huh form (no TTY).
 	if err != nil && !strings.Contains(err.Error(), "launch prompt") {
@@ -102,8 +109,10 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 	graphqlDo := func(_ string, _ map[string]interface{}, _ interface{}) error { return nil }
 	launch := func(_ string) error { return nil }
 
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, plainSpinnerFunc)
+	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, plainSpinnerFunc, fetchRelease)
 	if err == nil {
 		t.Fatal("RunSteps() expected error when first step fails, got nil")
 	}
@@ -111,7 +120,7 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 	// After failure, the spinner should have emitted an error marker.
 	// We verify no subsequent step messages appear.
 	out := buf.String()
-	if strings.Contains(out, "Removing template files") {
+	if strings.Contains(out, "Scaffolding") {
 		t.Error("expected subsequent steps to be skipped after failure")
 	}
 }
