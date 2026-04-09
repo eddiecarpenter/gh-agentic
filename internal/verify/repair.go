@@ -1321,14 +1321,21 @@ func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run b
 			Message: fmt.Sprintf("invalid scope %q — must be \"org\" or \"repo\"", agentUserScope)}
 	}
 
-	// Check owner type for org scope.
+	// Check owner type for org scope via the injected run function so tests can mock it.
 	if agentUserScope == "org" {
-		ownerType, err := bootstrap.DefaultDetectOwnerType(owner)
+		out, err := run("gh", "api", fmt.Sprintf("users/%s", owner))
 		if err != nil {
 			return CheckResult{Name: checkAgentUserVarName, Status: Fail,
 				Message: fmt.Sprintf("failed to detect owner type: %v", err)}
 		}
-		if ownerType != bootstrap.OwnerTypeOrg {
+		var ownerResp struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &ownerResp); err != nil {
+			return CheckResult{Name: checkAgentUserVarName, Status: Fail,
+				Message: fmt.Sprintf("failed to parse owner type response: %v", err)}
+		}
+		if ownerResp.Type != bootstrap.OwnerTypeOrg {
 			return CheckResult{Name: checkAgentUserVarName, Status: Fail,
 				Message: fmt.Sprintf("cannot set org-level variable — %s is a personal account, not an organisation", owner)}
 		}
