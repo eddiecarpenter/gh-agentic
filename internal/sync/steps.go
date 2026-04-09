@@ -16,36 +16,67 @@ import (
 // backupSuffix is the directory name suffix used for the base/ backup.
 const backupSuffix = ".agentic-sync-backup"
 
-// syncPathPrefixes defines the path prefixes extracted from the template tarball
-// during sync. These correspond to the directories that are managed by the template.
-var syncPathPrefixes = []string{"base/", ".github/workflows/", ".goose/recipes/"}
-
-// CloneTemplate clones the upstream template repo into tmpDir.
-// Deprecated: Use FetchAndExtractTemplate instead. This function remains until
-// RunSync is updated to use the tarball-based approach (task #332).
-func CloneTemplate(repo, tmpDir string, run bootstrap.RunCommandFunc) error {
-	url := fmt.Sprintf("https://github.com/%s.git", repo)
-	out, err := run("git", "clone", "--depth", "1", url, tmpDir)
-	if err != nil {
-		return fmt.Errorf("git clone template: %w\n%s", err, strings.TrimSpace(out))
-	}
-	return nil
-}
-
 // fetchTarballFn is the tarball fetch function used by FetchAndExtractTemplate.
 // Tests override this to inject fakes without making real HTTP requests.
 var fetchTarballFn = tarball.DefaultFetch
 
+// SetFetchTarballFn replaces the package-level fetch function used by
+// FetchAndExtractTemplate. Returns the previous function so callers can
+// restore it. Intended for use by tests in other packages (e.g. internal/cli).
+func SetFetchTarballFn(fn tarball.FetchFunc) tarball.FetchFunc {
+	prev := fetchTarballFn
+	fetchTarballFn = fn
+	return prev
+}
+
 // FetchAndExtractTemplate fetches the release tarball for the given repo and version,
-// then extracts the template-managed directories (base/, .github/workflows/, .goose/recipes/)
-// into the destination root. The tarballURL is validated before any fetch is attempted.
-// Extraction is atomic: on failure, no partial extraction remains in destRoot.
-func FetchAndExtractTemplate(tarballURL, repo, version, destRoot string) error {
+// extracts it to a temporary directory, and then deploys the template-managed
+// directories (base/, .github/workflows/, .goose/recipes/) into the repo root.
+// The tarballURL is validated before any fetch is attempted.
+//
+// This replaces the old CloneTemplate + CopyBase + DeployWorkflows + DeployRecipes
+// pipeline with a single atomic operation. On failure, no partial extraction
+// remains in repoRoot (the backup/restore flow in RunSync handles rollback).
+//
+// workflowExcludes lists workflow filenames that should not be deployed (e.g.
+// "sync-status-to-label.yml" for personal repos). Excluded files are also
+// retroactively removed from the destination if they already exist.
+func FetchAndExtractTemplate(tarballURL, repo, version, repoRoot string, workflowExcludes []string) error {
 	if tarballURL == "" {
 		return fmt.Errorf("tarball URL is empty for release %s — cannot fetch template", version)
 	}
 
-	return tarball.ExtractFromTemplate(repo, version, destRoot, syncPathPrefixes, fetchTarballFn)
+	// Extract the full tarball to a temp directory.
+	tmpDir, err := os.MkdirTemp("", "agentic-sync-tarball-*")
+	if err != nil {
+		return fmt.Errorf("creating temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Extract base/ (includes base/.github/workflows/) and .goose/ (recipes)
+	// so the subsequent CopyBase, DeployWorkflows, and DeployRecipes steps
+	// can operate on the extracted content just as they did on the old git clone.
+	extractPrefixes := []string{"base/", ".goose/"}
+	if err := tarball.ExtractFromTemplate(repo, version, tmpDir, extractPrefixes, fetchTarballFn); err != nil {
+		return err
+	}
+
+	// Deploy base/ from extracted tarball.
+	if err := CopyBase(tmpDir, repoRoot); err != nil {
+		return err
+	}
+
+	// Deploy workflows from extracted tarball.
+	if err := DeployWorkflows(tmpDir, repoRoot, workflowExcludes); err != nil {
+		return err
+	}
+
+	// Deploy recipes from extracted tarball.
+	if err := DeployRecipes(tmpDir, repoRoot); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // BackupBase copies existing base/ and .github/workflows/ to a temp backup

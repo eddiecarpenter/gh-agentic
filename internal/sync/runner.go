@@ -196,11 +196,17 @@ func RunSync(
 		if len(available) > 0 {
 			targetRelease = available[0]
 		} else {
-			targetRelease = Release{TagName: cfg.CurrentVersion}
+			targetRelease = Release{
+				TagName:    cfg.CurrentVersion,
+				TarballURL: fmt.Sprintf("https://api.github.com/repos/%s/tarball/%s", cfg.TemplateRepo, cfg.CurrentVersion),
+			}
 		}
 	case force && len(available) == 0:
 		fmt.Fprintln(w, "  "+ui.RenderWarning("--force set — re-syncing from "+cfg.CurrentVersion))
-		targetRelease = Release{TagName: cfg.CurrentVersion}
+		targetRelease = Release{
+			TagName:    cfg.CurrentVersion,
+			TarballURL: fmt.Sprintf("https://api.github.com/repos/%s/tarball/%s", cfg.TemplateRepo, cfg.CurrentVersion),
+		}
 	default:
 		// Use the newest available release as the default target.
 		targetRelease = available[0]
@@ -255,17 +261,9 @@ func RunSync(
 		clearScreen(w)
 	}
 
-	// Step 5: Clone template to temp dir.
-	tmpDir, err := os.MkdirTemp("", "agentic-sync-clone-*")
-	if err != nil {
-		return fmt.Errorf("creating temp directory: %w", err)
-	}
-	defer func() { _ = CleanupTemp(tmpDir) }()
-
-	if err := spinner(w, "Cloning template", func() error {
-		return CloneTemplate(cfg.TemplateRepo, tmpDir, run)
-	}); err != nil {
-		return err
+	// Step 5: Validate tarball URL before any file modification.
+	if targetRelease.TarballURL == "" {
+		return fmt.Errorf("selected release %s has no tarball URL — cannot sync", targetRelease.TagName)
 	}
 
 	// Step 6: Backup existing base/.
@@ -279,16 +277,7 @@ func RunSync(
 	}
 	defer func() { _ = CleanupTemp(backupDir) }()
 
-	// Step 7: Copy base/ from template.
-	if err := spinner(w, "Copying base/", func() error {
-		return CopyBase(tmpDir, repoRoot)
-	}); err != nil {
-		// On copy error, try to restore.
-		_ = RestoreBase(repoRoot, backupDir)
-		return err
-	}
-
-	// Step 7b: Resolve owner type to determine workflow excludes.
+	// Step 7: Resolve owner type to determine workflow excludes.
 	var workflowExcludes []string
 	if detectOwnerType != nil {
 		owner := extractOwnerFromAgentsLocal(repoRoot)
@@ -301,25 +290,24 @@ func RunSync(
 		}
 	}
 
-	// Step 7c: Deploy workflows from template.
-	if err := spinner(w, "Deploying workflows", func() error {
-		return DeployWorkflows(tmpDir, repoRoot, workflowExcludes)
+	// Step 8: Fetch tarball and extract template (replaces clone + copy + deploy).
+	if err := spinner(w, "Fetching and extracting template", func() error {
+		return FetchAndExtractTemplate(targetRelease.TarballURL, cfg.TemplateRepo, cfg.LatestVersion, repoRoot, workflowExcludes)
 	}); err != nil {
 		_ = RestoreBase(repoRoot, backupDir)
 		return err
 	}
 
-	// Step 7d: Deploy recipes from template.
-	if err := spinner(w, "Deploying recipes", func() error {
-		return DeployRecipes(tmpDir, repoRoot)
-	}); err != nil {
-		_ = RestoreBase(repoRoot, backupDir)
-		return err
-	}
-
-	// Step 8: Update version and stage (optionally commit).
+	// Step 9: Update version.
 	if err := spinner(w, "Updating TEMPLATE_VERSION", func() error {
 		return UpdateVersion(repoRoot, cfg.LatestVersion)
+	}); err != nil {
+		return err
+	}
+
+	// Step 10: Write POST_SYNC.md with the release body.
+	if err := spinner(w, "Writing POST_SYNC.md", func() error {
+		return WritePostSyncMD(repoRoot, targetRelease.Body)
 	}); err != nil {
 		return err
 	}

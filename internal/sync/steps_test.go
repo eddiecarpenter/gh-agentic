@@ -130,24 +130,29 @@ func TestDisplayReleaseList(t *testing.T) {
 }
 
 func TestFetchAndExtractTemplate(t *testing.T) {
-	t.Run("success extracts template files", func(t *testing.T) {
+	t.Run("success extracts template files to correct locations", func(t *testing.T) {
 		orig := fetchTarballFn
 		defer func() { fetchTarballFn = orig }()
 
 		destRoot := t.TempDir()
+		// Create existing base/ so CopyBase can replace it.
+		if err := os.MkdirAll(filepath.Join(destRoot, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
 		fetchTarballFn = createFakeTarballFetch(t, map[string]string{
-			"base/AGENTS.md":                    "# Agents",
-			"base/standards/go.md":              "Go standards",
-			".github/workflows/ci.yml":          "ci workflow",
-			".goose/recipes/dev.yaml":           "dev recipe",
+			"base/AGENTS.md":                         "# Agents",
+			"base/standards/go.md":                   "Go standards",
+			"base/.github/workflows/ci.yml":          "ci workflow",
+			".goose/recipes/dev.yaml":                "dev recipe",
 		})
 
-		err := FetchAndExtractTemplate("https://api.github.com/repos/owner/repo/tarball/v1.0.0", "owner/repo", "v1.0.0", destRoot)
+		err := FetchAndExtractTemplate("https://api.github.com/repos/owner/repo/tarball/v1.0.0", "owner/repo", "v1.0.0", destRoot, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// Verify extracted files.
+		// Verify extracted files are in correct locations.
 		for _, check := range []struct {
 			path    string
 			content string
@@ -178,7 +183,7 @@ func TestFetchAndExtractTemplate(t *testing.T) {
 			return nil, fmt.Errorf("should not be called")
 		}
 
-		err := FetchAndExtractTemplate("", "owner/repo", "v1.0.0", t.TempDir())
+		err := FetchAndExtractTemplate("", "owner/repo", "v1.0.0", t.TempDir(), nil)
 		if err == nil {
 			t.Fatal("expected error for empty tarball URL")
 		}
@@ -206,7 +211,7 @@ func TestFetchAndExtractTemplate(t *testing.T) {
 			return nil, fmt.Errorf("network timeout")
 		}
 
-		err := FetchAndExtractTemplate("https://api.github.com/repos/owner/repo/tarball/v1.0.0", "owner/repo", "v1.0.0", destRoot)
+		err := FetchAndExtractTemplate("https://api.github.com/repos/owner/repo/tarball/v1.0.0", "owner/repo", "v1.0.0", destRoot, nil)
 		if err == nil {
 			t.Fatal("expected error for fetch failure")
 		}

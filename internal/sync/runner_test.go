@@ -1,7 +1,9 @@
 package sync
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -29,72 +31,111 @@ func fakeReleases(releases []Release, err error) FetchReleasesFunc {
 // with the given tag. Useful for tests that only need one version.
 func singleRelease(tag string) FetchReleasesFunc {
 	return fakeReleases([]Release{
-		{TagName: tag, Name: "Release " + tag, Body: "Release notes for " + tag},
+		{TagName: tag, Name: "Release " + tag, Body: "Release notes for " + tag, TarballURL: "https://api.github.com/repos/owner/repo/tarball/" + tag},
 	}, nil)
 }
 
-// cloneRunner wraps a MockRunner with a side-effect for git clone commands.
-// When a git clone call is intercepted, it populates the target directory with
-// a fake template base/ containing baseContent and then delegates to the mock.
-// All other commands are passed through to the mock directly.
-func cloneRunner(mock *testutil.MockRunner, baseContent string) func(string, ...string) (string, error) {
-	return func(name string, args ...string) (string, error) {
-		if name == "git" && len(args) >= 1 && args[0] == "clone" {
-			// The last arg is the target directory.
-			targetDir := args[len(args)-1]
-			_ = os.MkdirAll(filepath.Join(targetDir, "base"), 0o755)
-			_ = os.WriteFile(filepath.Join(targetDir, "base", "AGENTS.md"), []byte(baseContent), 0o644)
-			return "", nil
-		}
-		return mock.RunCommand(name, args...)
-	}
-}
+// tarballFetchSetup overrides the package-level fetchTarballFn with a fake that
+// returns a gzipped tar containing the given files. The file map keys use the
+// template repo layout (e.g. "base/AGENTS.md", "base/.github/workflows/ci.yml",
+// ".goose/recipes/dev.yaml"). Returns a cleanup function that restores the
+// original fetchTarballFn.
+func tarballFetchSetup(t *testing.T, files map[string]string) func() {
+	t.Helper()
+	orig := fetchTarballFn
+	fetchTarballFn = func(repo, version string) (io.ReadCloser, error) {
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gw)
 
-// cloneRunnerWithWorkflows is like cloneRunner but also creates workflow files
-// in the cloned template's base/.github/workflows/.
-func cloneRunnerWithWorkflows(mock *testutil.MockRunner, baseContent string, workflows []string) func(string, ...string) (string, error) {
-	return func(name string, args ...string) (string, error) {
-		if name == "git" && len(args) >= 1 && args[0] == "clone" {
-			targetDir := args[len(args)-1]
-			_ = os.MkdirAll(filepath.Join(targetDir, "base"), 0o755)
-			_ = os.WriteFile(filepath.Join(targetDir, "base", "AGENTS.md"), []byte(baseContent), 0o644)
-			wfDir := filepath.Join(targetDir, "base", ".github", "workflows")
-			_ = os.MkdirAll(wfDir, 0o755)
-			for _, wf := range workflows {
-				_ = os.WriteFile(filepath.Join(wfDir, wf), []byte("workflow: "+wf), 0o644)
-			}
-			return "", nil
-		}
-		return mock.RunCommand(name, args...)
-	}
-}
+		prefix := "repo-" + version + "/"
+		_ = tw.WriteHeader(&tar.Header{
+			Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755,
+		})
 
-// cloneRunnerWithRecipes is like cloneRunnerWithWorkflows but also creates
-// recipe files in the cloned template's .goose/recipes/.
-func cloneRunnerWithRecipes(mock *testutil.MockRunner, baseContent string, workflows []string, recipes []string) func(string, ...string) (string, error) {
-	return func(name string, args ...string) (string, error) {
-		if name == "git" && len(args) >= 1 && args[0] == "clone" {
-			targetDir := args[len(args)-1]
-			_ = os.MkdirAll(filepath.Join(targetDir, "base"), 0o755)
-			_ = os.WriteFile(filepath.Join(targetDir, "base", "AGENTS.md"), []byte(baseContent), 0o644)
-			if len(workflows) > 0 {
-				wfDir := filepath.Join(targetDir, "base", ".github", "workflows")
-				_ = os.MkdirAll(wfDir, 0o755)
-				for _, wf := range workflows {
-					_ = os.WriteFile(filepath.Join(wfDir, wf), []byte("workflow: "+wf), 0o644)
+		// Track created directories to avoid duplicates.
+		createdDirs := make(map[string]bool)
+
+		for path, content := range files {
+			fullPath := prefix + path
+
+			// Create parent directories.
+			parts := strings.Split(filepath.Dir(path), string(filepath.Separator))
+			accumulated := prefix
+			for _, p := range parts {
+				if p == "." {
+					continue
+				}
+				accumulated += p + "/"
+				if !createdDirs[accumulated] {
+					_ = tw.WriteHeader(&tar.Header{
+						Name: accumulated, Typeflag: tar.TypeDir, Mode: 0o755,
+					})
+					createdDirs[accumulated] = true
 				}
 			}
-			if len(recipes) > 0 {
-				recipesDir := filepath.Join(targetDir, ".goose", "recipes")
-				_ = os.MkdirAll(recipesDir, 0o755)
-				for _, r := range recipes {
-					_ = os.WriteFile(filepath.Join(recipesDir, r), []byte("recipe: "+r), 0o644)
-				}
+
+			if err := tw.WriteHeader(&tar.Header{
+				Name: fullPath, Size: int64(len(content)),
+				Mode: 0o644, Typeflag: tar.TypeReg,
+			}); err != nil {
+				t.Fatalf("writing header for %s: %v", path, err)
 			}
-			return "", nil
+			if _, err := tw.Write([]byte(content)); err != nil {
+				t.Fatalf("writing content for %s: %v", path, err)
+			}
 		}
-		return mock.RunCommand(name, args...)
+
+		_ = tw.Close()
+		_ = gw.Close()
+		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
 	}
+	return func() { fetchTarballFn = orig }
+}
+
+// tarballRunner returns a run function that uses a MockRunner for all commands.
+// Unlike the old cloneRunner, there is no git clone interception — the tarball
+// fetch is handled by the package-level fetchTarballFn.
+func tarballRunner(mock *testutil.MockRunner) func(string, ...string) (string, error) {
+	return mock.RunCommand
+}
+
+// defaultTarballSetup sets up fetchTarballFn with a tarball containing
+// base/AGENTS.md with the given content. Returns a cleanup function.
+func defaultTarballSetup(t *testing.T, baseContent string) func() {
+	t.Helper()
+	return tarballFetchSetup(t, map[string]string{
+		"base/AGENTS.md": baseContent,
+	})
+}
+
+// workflowTarballSetup sets up fetchTarballFn with a tarball containing
+// base/AGENTS.md and workflow files under base/.github/workflows/.
+func workflowTarballSetup(t *testing.T, baseContent string, workflows []string) func() {
+	t.Helper()
+	files := map[string]string{
+		"base/AGENTS.md": baseContent,
+	}
+	for _, wf := range workflows {
+		files["base/.github/workflows/"+wf] = "workflow: " + wf
+	}
+	return tarballFetchSetup(t, files)
+}
+
+// recipeTarballSetup sets up fetchTarballFn with a tarball containing
+// base/AGENTS.md, optional workflows, and recipe files under .goose/recipes/.
+func recipeTarballSetup(t *testing.T, baseContent string, workflows []string, recipes []string) func() {
+	t.Helper()
+	files := map[string]string{
+		"base/AGENTS.md": baseContent,
+	}
+	for _, wf := range workflows {
+		files["base/.github/workflows/"+wf] = "workflow: " + wf
+	}
+	for _, r := range recipes {
+		files[".goose/recipes/"+r] = "recipe: " + r
+	}
+	return tarballFetchSetup(t, files)
 }
 
 // fakeDetectOwnerType returns a DetectOwnerTypeFunc that always returns the given type.
@@ -147,6 +188,7 @@ func TestRunSync_UpToDate(t *testing.T) {
 
 func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "updated content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -154,7 +196,7 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "updated content"),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -200,6 +242,7 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 
 func TestRunSync_ConfirmAndCommit(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "updated content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -207,7 +250,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "updated content"),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -253,6 +296,7 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 
 func TestRunSync_DeclineThenAccept(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "updated content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -272,7 +316,7 @@ func TestRunSync_DeclineThenAccept(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "updated content"),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		confirmFn,
@@ -318,6 +362,7 @@ func TestRunSync_DeclineThenAccept(t *testing.T) {
 
 func TestRunSync_ClearScreenCount_NormalFlow(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "updated content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -330,7 +375,7 @@ func TestRunSync_ClearScreenCount_NormalFlow(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "updated content"),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -357,6 +402,7 @@ func TestRunSync_ClearScreenCount_NormalFlow(t *testing.T) {
 
 func TestRunSync_DeclineThenAccept_MultipleReleases(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "selected content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -374,15 +420,15 @@ func TestRunSync_DeclineThenAccept_MultipleReleases(t *testing.T) {
 	}
 
 	multiReleases := fakeReleases([]Release{
-		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
-		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.5.0"},
 	}, nil)
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "selected content"),
+		tarballRunner(mock),
 		multiReleases,
 		testutil.NoopSpinner,
 		confirmFn,
@@ -441,6 +487,7 @@ func TestRunSync_FetchError(t *testing.T) {
 
 func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "re-synced content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -448,7 +495,7 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "re-synced content"),
+		tarballRunner(mock),
 		singleRelease("v1.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -491,6 +538,7 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 
 func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "restored content")()
 
 	if err := os.RemoveAll(filepath.Join(repo.Root, "base")); err != nil {
 		t.Fatal(err)
@@ -502,7 +550,7 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "restored content"),
+		tarballRunner(mock),
 		singleRelease("v1.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -537,6 +585,7 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 
 func TestRunSync_YesAutoConfirms(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "auto-confirmed content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -552,7 +601,7 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "auto-confirmed content"),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		confirmFn,
@@ -596,6 +645,8 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 
 func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
+	defer workflowTarballSetup(t, "updated", workflows)()
 
 	// Write AGENTS.local.md with owner info.
 	agentsLocal := "## Repo\n\n- **Owner:** alice\n"
@@ -613,13 +664,12 @@ func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 	}
 
 	mock := &testutil.MockRunner{}
-	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunnerWithWorkflows(mock, "updated", workflows),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -653,6 +703,8 @@ func TestRunSync_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 
 func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
+	defer workflowTarballSetup(t, "updated", workflows)()
 
 	// Write AGENTS.local.md with org owner info.
 	agentsLocal := "## Repo\n\n- **Owner:** acme-org\n"
@@ -661,13 +713,12 @@ func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 	}
 
 	mock := &testutil.MockRunner{}
-	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunnerWithWorkflows(mock, "updated", workflows),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -695,6 +746,8 @@ func TestRunSync_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 
 func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
+	defer workflowTarballSetup(t, "updated", workflows)()
 
 	// Write AGENTS.local.md with owner info.
 	agentsLocal := "## Repo\n\n- **Owner:** alice\n"
@@ -703,13 +756,12 @@ func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
 	}
 
 	mock := &testutil.MockRunner{}
-	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunnerWithWorkflows(mock, "updated", workflows),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -737,6 +789,8 @@ func TestRunSync_DetectOwnerTypeError_FallbackDeploysAll(t *testing.T) {
 
 func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
+	defer workflowTarballSetup(t, "updated", workflows)()
 
 	// Write AGENTS.local.md with owner info.
 	agentsLocal := "## Repo\n\n- **Owner:** alice\n"
@@ -745,13 +799,12 @@ func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 	}
 
 	mock := &testutil.MockRunner{}
-	workflows := []string{"dev-session.yml", "sync-status-to-label.yml"}
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunnerWithWorkflows(mock, "updated", workflows),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -779,6 +832,7 @@ func TestRunSync_NilDetectOwnerType_DeploysAll(t *testing.T) {
 
 func TestRunSync_MultipleReleases_CallsSelectFunc(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "selected content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -793,16 +847,16 @@ func TestRunSync_MultipleReleases_CallsSelectFunc(t *testing.T) {
 	}
 
 	multiReleases := fakeReleases([]Release{
-		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
-		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
-		{TagName: "v1.1.0", Name: "Older", Body: "Older notes"},
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.5.0"},
+		{TagName: "v1.1.0", Name: "Older", Body: "Older notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.1.0"},
 	}, nil)
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "selected content"),
+		tarballRunner(mock),
 		multiReleases,
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -842,6 +896,7 @@ func TestRunSync_MultipleReleases_CallsSelectFunc(t *testing.T) {
 
 func TestRunSync_SingleRelease_SkipsSelectFunc(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "single content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -855,7 +910,7 @@ func TestRunSync_SingleRelease_SkipsSelectFunc(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "single content"),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -890,8 +945,8 @@ func TestRunSync_ListMode_DisplaysReleases(t *testing.T) {
 	mock := &testutil.MockRunner{}
 
 	multiReleases := fakeReleases([]Release{
-		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
-		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.5.0"},
 	}, nil)
 
 	var buf bytes.Buffer
@@ -974,20 +1029,21 @@ func TestRunSync_ListMode_UpToDate(t *testing.T) {
 
 func TestRunSync_ReleaseTag_SyncsToSpecificVersion(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "targeted content")()
 
 	mock := &testutil.MockRunner{}
 
 	multiReleases := fakeReleases([]Release{
-		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
-		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
-		{TagName: "v1.1.0", Name: "Older", Body: "Older notes"},
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.5.0"},
+		{TagName: "v1.1.0", Name: "Older", Body: "Older notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.1.0"},
 	}, nil)
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "targeted content"),
+		tarballRunner(mock),
 		multiReleases,
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -1027,7 +1083,7 @@ func TestRunSync_ReleaseTag_NotFound(t *testing.T) {
 	mock := &testutil.MockRunner{}
 
 	multiReleases := fakeReleases([]Release{
-		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
 	}, nil)
 
 	var buf bytes.Buffer
@@ -1071,6 +1127,7 @@ func TestRunSync_ReleaseTag_NotFound(t *testing.T) {
 
 func TestRunSync_WithRecipes_DeploysRecipes(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer recipeTarballSetup(t, "updated", nil, []string{"dev-session.yaml", "review.yaml"})()
 
 	mock := &testutil.MockRunner{}
 
@@ -1078,7 +1135,7 @@ func TestRunSync_WithRecipes_DeploysRecipes(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunnerWithRecipes(mock, "updated", nil, []string{"dev-session.yaml", "review.yaml"}),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -1117,6 +1174,7 @@ func TestRunSync_WithRecipes_DeploysRecipes(t *testing.T) {
 
 func TestRunSync_WithoutRecipes_SucceedsGracefully(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "updated content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -1124,7 +1182,7 @@ func TestRunSync_WithoutRecipes_SucceedsGracefully(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "updated content"),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -1156,6 +1214,7 @@ func TestRunSync_WithoutRecipes_SucceedsGracefully(t *testing.T) {
 
 func TestRunSync_WithRecipes_DeclineRestoresRecipes(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer recipeTarballSetup(t, "updated", nil, []string{"new.yaml"})()
 
 	// Create existing recipes in the repo.
 	recipesDir := filepath.Join(repo.Root, ".goose", "recipes")
@@ -1180,7 +1239,7 @@ func TestRunSync_WithRecipes_DeclineRestoresRecipes(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunnerWithRecipes(mock, "updated", nil, []string{"new.yaml"}),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		confirmFn,
@@ -1211,6 +1270,7 @@ func TestRunSync_WithRecipes_DeclineRestoresRecipes(t *testing.T) {
 
 func TestRunSync_CommitMessage_IncludesRecipes(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer recipeTarballSetup(t, "updated", nil, []string{"dev.yaml"})()
 
 	mock := &testutil.MockRunner{}
 
@@ -1218,7 +1278,7 @@ func TestRunSync_CommitMessage_IncludesRecipes(t *testing.T) {
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunnerWithRecipes(mock, "updated", nil, []string{"dev.yaml"}),
+		tarballRunner(mock),
 		singleRelease("v2.0.0"),
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -1246,6 +1306,7 @@ func TestRunSync_CommitMessage_IncludesRecipes(t *testing.T) {
 
 func TestRunSync_ReleaseTag_SkipsPicker(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "targeted content")()
 
 	mock := &testutil.MockRunner{}
 
@@ -1256,15 +1317,15 @@ func TestRunSync_ReleaseTag_SkipsPicker(t *testing.T) {
 	}
 
 	multiReleases := fakeReleases([]Release{
-		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
-		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+		{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
+		{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.5.0"},
 	}, nil)
 
 	var buf bytes.Buffer
 	err := RunSync(
 		&buf,
 		repo.Root,
-		cloneRunner(mock, "targeted content"),
+		tarballRunner(mock),
 		multiReleases,
 		testutil.NoopSpinner,
 		func(_ string) (bool, error) { return true, nil },
@@ -1283,6 +1344,162 @@ func TestRunSync_ReleaseTag_SkipsPicker(t *testing.T) {
 
 	if selectCalled {
 		t.Error("select function should NOT be called when --release is specified")
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_EmptyTarballURL_FailsBeforeModification(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	mock := &testutil.MockRunner{}
+
+	// Create a release with empty TarballURL.
+	noTarballRelease := fakeReleases([]Release{
+		{TagName: "v2.0.0", Name: "Bad release", Body: "Notes", TarballURL: ""},
+	}, nil)
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		tarballRunner(mock),
+		noTarballRelease,
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
+		noopClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err == nil {
+		t.Fatal("expected error for empty tarball URL")
+	}
+	if !strings.Contains(err.Error(), "no tarball URL") {
+		t.Errorf("error should mention missing tarball URL: %v", err)
+	}
+
+	// Verify no files were modified — TEMPLATE_VERSION should still be v1.0.0.
+	data, readErr := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if strings.TrimSpace(string(data)) != "v1.0.0" {
+		t.Errorf("TEMPLATE_VERSION should be unchanged: %q", string(data))
+	}
+
+	// Verify base/AGENTS.md is unchanged.
+	data, readErr = os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(data) != "# AGENTS.md\n" {
+		t.Errorf("base/AGENTS.md should be unchanged: %q", string(data))
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_TarballFetchFailure_RestoresBackup(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+
+	// Set up a failing fetch function.
+	orig := fetchTarballFn
+	fetchTarballFn = func(_, _ string) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("network timeout: connection refused")
+	}
+	defer func() { fetchTarballFn = orig }()
+
+	mock := &testutil.MockRunner{}
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		tarballRunner(mock),
+		singleRelease("v2.0.0"),
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
+		noopClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err == nil {
+		t.Fatal("expected error for fetch failure")
+	}
+	if !strings.Contains(err.Error(), "network timeout") {
+		t.Errorf("error should contain fetch error detail: %v", err)
+	}
+
+	// Verify base/ was restored from backup.
+	data, readErr := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	if readErr != nil {
+		t.Fatalf("base/AGENTS.md should exist after restore: %v", readErr)
+	}
+	if string(data) != "# AGENTS.md\n" {
+		t.Errorf("base/AGENTS.md should be restored to original: %q", string(data))
+	}
+
+	// Verify TEMPLATE_VERSION is unchanged.
+	data, readErr = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if strings.TrimSpace(string(data)) != "v1.0.0" {
+		t.Errorf("TEMPLATE_VERSION should be unchanged: %q", string(data))
+	}
+
+	mock.AssertExpectations(t)
+}
+
+func TestRunSync_WritesPostSyncMD(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+	defer defaultTarballSetup(t, "updated content")()
+
+	mock := &testutil.MockRunner{}
+
+	releaseBody := "## What's Changed\n\n- Updated template\n- Fixed sync"
+	releases := fakeReleases([]Release{
+		{TagName: "v2.0.0", Name: "Latest", Body: releaseBody, TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
+	}, nil)
+
+	var buf bytes.Buffer
+	err := RunSync(
+		&buf,
+		repo.Root,
+		tarballRunner(mock),
+		releases,
+		testutil.NoopSpinner,
+		func(_ string) (bool, error) { return true, nil },
+		nil, // selectVersion
+		noopClear,
+		false,
+		false,
+		false, // list
+		"",    // releaseTag
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify POST_SYNC.md was written with the release body.
+	data, readErr := os.ReadFile(filepath.Join(repo.Root, "POST_SYNC.md"))
+	if readErr != nil {
+		t.Fatalf("POST_SYNC.md should exist: %v", readErr)
+	}
+	if string(data) != releaseBody {
+		t.Errorf("POST_SYNC.md content = %q, want %q", string(data), releaseBody)
 	}
 
 	mock.AssertExpectations(t)
