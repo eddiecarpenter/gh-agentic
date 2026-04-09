@@ -148,11 +148,6 @@ func validateTopologyOwner(topology, ownerType string) error {
 	return nil
 }
 
-// isPersonalSingleTopology returns true when a personal account selects Single topology.
-// This combination is allowed but the caller should show a warning.
-func isPersonalSingleTopology(topology, ownerType string) bool {
-	return ownerType == OwnerTypeUser && topology == "Single"
-}
 
 // RunForm runs the three-group huh form, renders the summary box, and asks
 // for final confirmation. Returns a populated BootstrapConfig, or ErrAborted
@@ -233,29 +228,6 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		fmt.Fprintln(w, "  "+ui.Muted.Render("Choose Single topology or select an org as the owner."))
 		fmt.Fprintln(w)
 		return BootstrapConfig{}, ErrFederatedRequiresOrg
-	}
-
-	if isPersonalSingleTopology(cfg.Topology, ownerType) {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Kanban triggering not available on personal accounts"))
-		fmt.Fprintln(w, "  "+ui.Muted.Render("A project board will be created, but dragging cards will not"))
-		fmt.Fprintln(w, "  "+ui.Muted.Render("trigger pipeline workflows. Apply labels manually to trigger."))
-		fmt.Fprintln(w)
-
-		var continueConfirmed bool
-		warningForm := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Continue?").
-					Value(&continueConfirmed),
-			),
-		)
-		if err := warningForm.Run(); err != nil {
-			return BootstrapConfig{}, fmt.Errorf("warning confirm form: %w", err)
-		}
-		if !continueConfirmed {
-			return BootstrapConfig{}, ErrAborted
-		}
 	}
 
 	// --- Group 3: Project details ---
