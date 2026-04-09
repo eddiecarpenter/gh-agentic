@@ -557,6 +557,9 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 				Title("Goose model").
 				Description("The model the agent will use — leave as 'default' unless you have a specific requirement").
 				Value(&cfg.GooseModel),
+			huh.NewNote().
+				Title("").
+				Description(ui.Muted.Render("Press Enter to submit ↵")),
 		),
 	)
 	if err := pipelineForm.Run(); err != nil {
