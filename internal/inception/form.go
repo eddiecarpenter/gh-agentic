@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -30,6 +31,14 @@ var stackOptions = []huh.Option[string]{
 	huh.NewOption("Python", "Python"),
 	huh.NewOption("Rust", "Rust"),
 	huh.NewOption("Other", "Other"),
+}
+
+// validateStackSelection returns an error if no stacks are selected.
+func validateStackSelection(selected []string) error {
+	if len(selected) == 0 {
+		return errors.New("at least one stack must be selected")
+	}
+	return nil
 }
 
 // validateRepoName returns an error if s is not a valid repo name.
@@ -90,10 +99,11 @@ func RunForm(w io.Writer, ctx EnvContext) (*InceptionConfig, error) {
 			huh.NewInput().
 				Title("Description (1-2 sentences)").
 				Value(&cfg.Description),
-			huh.NewSelect[string]().
-				Title("Stack").
+			huh.NewMultiSelect[string]().
+				Title("Stack (select all that apply)").
 				Options(stackOptions...).
-				Value(&cfg.Stack),
+				Value(&cfg.Stacks).
+				Validate(validateStackSelection),
 		),
 	)
 	if err := detailsForm.Run(); err != nil {
@@ -141,7 +151,7 @@ func RenderSummaryBox(cfg InceptionConfig) string {
 		label("Name       "), value(cfg.RepoName),
 		label("Full name  "), value(cfg.Owner+"/"+fullName),
 		label("Description"), value(cfg.Description),
-		label("Stack      "), value(cfg.Stack),
+		label("Stack      "), value(strings.Join(cfg.Stacks, ", ")),
 		label("Owner      "), value(cfg.Owner),
 	)
 

@@ -30,7 +30,7 @@ func TestRunSteps_AllStepsSucceed_PrintsSummary(t *testing.T) {
 		RepoType:    "domain",
 		RepoName:    "charging",
 		Description: "OCS charging engine",
-		Stack:       "Other", // Skip scaffold
+		Stacks:     []string{"Other"}, // Skip scaffold
 		Owner:       "acme-org",
 	}
 	env := &EnvContext{
@@ -74,7 +74,7 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 	cfg := &InceptionConfig{
 		RepoType: "domain",
 		RepoName: "charging",
-		Stack:    "Other",
+		Stacks:  []string{"Other"},
 		Owner:    "acme-org",
 	}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, Owner: "acme-org", TemplateRepo: bootstrap.DefaultTemplateRepo}
@@ -105,7 +105,7 @@ func TestRunSteps_StepSequence_CorrectOrder(t *testing.T) {
 	cfg := &InceptionConfig{
 		RepoType: "domain",
 		RepoName: "charging",
-		Stack:    "Other",
+		Stacks:  []string{"Other"},
 		Owner:    "acme-org",
 	}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, Owner: "acme-org", TemplateRepo: bootstrap.DefaultTemplateRepo}

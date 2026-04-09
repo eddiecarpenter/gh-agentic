@@ -3,6 +3,7 @@ package inception
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
@@ -60,8 +61,8 @@ func RunSteps(
 			fn:    func() error { return ConfigureLabels(w, cfg, state, run) },
 		},
 		{
-			label: "Scaffolding " + cfg.Stack + " project",
-			fn:    func() error { return ScaffoldStack(w, cfg, state, env, run) },
+			label: "Scaffolding " + strings.Join(cfg.Stacks, ", ") + " project",
+			fn:    func() error { return ScaffoldStacks(w, cfg, state, env, run) },
 		},
 		{
 			label: "Populating repository",

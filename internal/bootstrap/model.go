@@ -26,9 +26,10 @@ type BootstrapConfig struct {
 	// Description is a short human-readable description of the project.
 	Description string
 
-	// Stack is the primary language/framework: "Go", "Java Quarkus",
-	// "Java Spring Boot", "TypeScript Node.js", "Python", "Rust", or "Other".
-	Stack string
+	// Stacks is the list of selected language/frameworks. Each entry is one of:
+	// "Go", "Java Quarkus", "Java Spring Boot", "TypeScript Node.js",
+	// "Python", "Rust", or "Other".
+	Stacks []string
 
 	// Antora indicates whether an Antora documentation site should be scaffolded.
 	Antora bool

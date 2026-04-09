@@ -15,9 +15,10 @@ type InceptionConfig struct {
 	// Description is a short human-readable description of the repo.
 	Description string
 
-	// Stack is the primary language/framework: "Go", "Java Quarkus",
-	// "Java Spring Boot", "TypeScript Node.js", "Python", "Rust", or "Other".
-	Stack string
+	// Stacks is the list of selected language/frameworks. Each entry is one of:
+	// "Go", "Java Quarkus", "Java Spring Boot", "TypeScript Node.js",
+	// "Python", "Rust", or "Other".
+	Stacks []string
 
 	// Owner is the GitHub account or organisation login where the repo will be created.
 	// Extracted from the environment context.

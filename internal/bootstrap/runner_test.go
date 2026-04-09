@@ -25,7 +25,7 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 		Topology:     "Single",
 		Owner:        "alice",
 		ProjectName:  "my-project",
-		Stack:        "Other", // "Other" skips ScaffoldStack so we don't need base/standards/
+		Stacks:      []string{"Other"}, // "Other" skips ScaffoldStacks so we don't need base/standards/
 		Description:  "Test project",
 		Antora:       false,
 		OwnerType:    OwnerTypeUser,
@@ -90,7 +90,7 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 		Topology:     "Single",
 		Owner:        "alice",
 		ProjectName:  "my-project",
-		Stack:        "Other",
+		Stacks:      []string{"Other"},
 		Description:  "Test project",
 		OwnerType:    OwnerTypeUser,
 		TemplateRepo: DefaultTemplateRepo,
@@ -122,6 +122,68 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 	out := buf.String()
 	if strings.Contains(out, "Scaffolding") {
 		t.Error("expected subsequent steps to be skipped after failure")
+	}
+}
+
+func TestRunSteps_MergedConfiguringRepositoryStep_NoSeparateLabels(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := BootstrapConfig{
+		Topology:     "Single",
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stacks:      []string{"Other"},
+		Description:  "Test project",
+		OwnerType:    OwnerTypeUser,
+		TemplateRepo: DefaultTemplateRepo,
+	}
+
+	clonePath := filepath.Join(dir, "my-project")
+	tarballData := makeMinimalTarballBytes(t)
+
+	run := func(name string, args ...string) (string, error) {
+		if name == "git" && len(args) > 0 && args[0] == "clone" {
+			if mkErr := os.MkdirAll(clonePath, 0755); mkErr != nil {
+				return "", mkErr
+			}
+		}
+		if name == "gh" && len(args) > 0 && args[0] == "api" {
+			writeTarballOnOutput(t, tarballData, args)
+		}
+		return `{"number":1,"url":"https://github.com/users/alice/projects/1"}`, nil
+	}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		return errors.New("no auth in test")
+	}
+	launch := func(clonePath string) error { return nil }
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
+	// Track spinner labels.
+	var labels []string
+	trackingSpinner := func(w io.Writer, label string, fn func() error) error {
+		labels = append(labels, label)
+		return fn()
+	}
+
+	var buf bytes.Buffer
+	_ = RunSteps(&buf, cfg, dir, run, graphqlDo, launch, trackingSpinner, fetchRelease)
+
+	// Verify "Configuring repository" exists and old labels do not.
+	foundMerged := false
+	for _, l := range labels {
+		if strings.Contains(l, "Configuring repository") {
+			foundMerged = true
+		}
+		if strings.Contains(l, "Configuring labels") {
+			t.Error("should not have separate 'Configuring labels' step")
+		}
+		if strings.Contains(l, "Creating GitHub Project") {
+			t.Error("should not have separate 'Creating GitHub Project' step")
+		}
+	}
+	if !foundMerged {
+		t.Errorf("expected 'Configuring repository' step in labels, got: %v", labels)
 	}
 }
 

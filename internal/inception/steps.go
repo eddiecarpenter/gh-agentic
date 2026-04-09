@@ -121,32 +121,42 @@ func ConfigureLabels(w io.Writer, cfg *InceptionConfig, state *StepState, run bo
 // Step 3 — ScaffoldStack
 // --------------------------------------------------------------------------------------
 
-// ScaffoldStack reads the Project Initialisation section from the stack standards file
-// in the agentic repo and executes each bash code block in the cloned repo.
+// ScaffoldStacks reads the Project Initialisation section from each selected stack's
+// standards file in the agentic repo and executes each bash code block in the cloned repo.
+// Stacks with no entry in stackFileName (e.g. "Other") are skipped with a logged message.
+// If a command fails, execution halts immediately and the error identifies the failing track.
 //
 // run is injected so tests can substitute a fake implementation.
-func ScaffoldStack(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvContext, run bootstrap.RunCommandFunc) error {
-	filename, ok := stackFileName[cfg.Stack]
-	if !ok {
-		fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+cfg.Stack+" has no initialisation template — skipping scaffold"))
-		return nil
-	}
+func ScaffoldStacks(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvContext, run bootstrap.RunCommandFunc) error {
+	for _, stack := range cfg.Stacks {
+		filename, ok := stackFileName[stack]
+		if !ok {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no initialisation template — skipping scaffold"))
+			continue
+		}
 
-	standardsPath := filepath.Join(env.AgenticRepoRoot, "base", "standards", filename)
-	data, err := os.ReadFile(standardsPath)
-	if err != nil {
-		return fmt.Errorf("reading standards file %s: %w", standardsPath, err)
-	}
-
-	commands, err := extractInitCommands(string(data))
-	if err != nil {
-		return fmt.Errorf("parsing Project Initialisation section: %w", err)
-	}
-
-	for _, cmd := range commands {
-		out, err := runInDir(run, state.ClonePath, "bash", "-c", cmd)
+		standardsPath := filepath.Join(env.AgenticRepoRoot, "base", "standards", filename)
+		data, err := os.ReadFile(standardsPath)
 		if err != nil {
-			return fmt.Errorf("scaffold command %q: %w\n%s", cmd, err, strings.TrimSpace(out))
+			return fmt.Errorf("reading standards file %s: %w", standardsPath, err)
+		}
+
+		commands, err := extractInitCommands(string(data))
+		if err != nil {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no Project Initialisation section — skipping"))
+			continue
+		}
+
+		if len(commands) == 0 {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no Project Initialisation section — skipping"))
+			continue
+		}
+
+		for _, cmd := range commands {
+			out, err := runInDir(run, state.ClonePath, "bash", "-c", cmd)
+			if err != nil {
+				return fmt.Errorf("[%s] scaffold command %q: %w\n%s", stack, cmd, err, strings.TrimSpace(out))
+			}
 		}
 	}
 
@@ -232,7 +242,7 @@ func PopulateRepo(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvC
 			"## Repo\n\n"+
 			"- **GitHub:** %s\n"+
 			"- **Owner:** %s\n",
-		env.TemplateRepo, state.RepoName, cfg.RepoType, cfg.Stack, cfg.Description, state.RepoURL, cfg.Owner)
+		env.TemplateRepo, state.RepoName, cfg.RepoType, strings.Join(cfg.Stacks, ", "), cfg.Description, state.RepoURL, cfg.Owner)
 	if err := os.WriteFile(filepath.Join(state.ClonePath, "AGENTS.local.md"), []byte(agentsLocal), 0644); err != nil {
 		return fmt.Errorf("writing AGENTS.local.md: %w", err)
 	}
@@ -334,7 +344,7 @@ func RegisterInREPOS(w io.Writer, cfg *InceptionConfig, state *StepState, env *E
 		"- **Type:** %s\n"+
 		"- **Status:** active\n"+
 		"- **Description:** %s\n",
-		state.RepoName, cfg.Owner, state.RepoName, cfg.Stack, cfg.RepoType, cfg.Description)
+		state.RepoName, cfg.Owner, state.RepoName, strings.Join(cfg.Stacks, ", "), cfg.RepoType, cfg.Description)
 
 	updated := string(existing) + entry
 	if err := os.WriteFile(reposPath, []byte(updated), 0644); err != nil {

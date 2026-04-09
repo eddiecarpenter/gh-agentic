@@ -55,6 +55,22 @@ func TestValidateRepoName_SpecialChars_ReturnsError(t *testing.T) {
 	}
 }
 
+// --- validateStackSelection tests ---
+
+func TestValidateStackSelection_Empty_ReturnsError(t *testing.T) {
+	err := validateStackSelection([]string{})
+	if err == nil {
+		t.Error("validateStackSelection([]) expected error, got nil")
+	}
+}
+
+func TestValidateStackSelection_OneStack_ReturnsNil(t *testing.T) {
+	err := validateStackSelection([]string{"Go"})
+	if err != nil {
+		t.Errorf("validateStackSelection([Go]) expected nil, got: %v", err)
+	}
+}
+
 // --- DeriveRepoName tests ---
 
 func TestDeriveRepoName_Domain_AppendsSuffix(t *testing.T) {
@@ -85,7 +101,7 @@ func TestRenderSummaryBox_ContainsAllFields(t *testing.T) {
 		RepoType:    "domain",
 		RepoName:    "charging",
 		Description: "OCS charging engine",
-		Stack:       "Go",
+		Stacks:     []string{"Go"},
 		Owner:       "acme-org",
 	}
 
