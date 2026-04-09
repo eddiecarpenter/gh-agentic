@@ -53,6 +53,10 @@ type StepState struct {
 	// bootstrap ran. When set, downstream steps use a branch-based flow
 	// instead of committing directly to main.
 	ExistingRepo bool
+
+	// PRURL is the URL of the pull request created when bootstrapping an
+	// existing repo onto a bootstrap/init branch.
+	PRURL string
 }
 
 // agenticMarkers are the files and directories whose presence indicates
@@ -115,6 +119,8 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 	repoExists := apiErr == nil
 
 	if repoExists {
+		fmt.Fprintln(w, "  "+ui.RenderInfo("Repo already exists — bootstrapping onto existing repo"))
+
 		// Clone the existing repo so we can inspect it.
 		sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
 		out, cloneErr := run("git", "clone", sshURL, state.ClonePath)
@@ -130,9 +136,58 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 			}
 		}
 
-		// Repo exists but is not agentic — flag for branch-based flow.
+		// Guard 2 — Check if bootstrap/init branch already exists on the remote.
+		lsOut, _ := runInDir(run, state.ClonePath, "git", "ls-remote", "--heads", "origin", "bootstrap/init")
+		if strings.TrimSpace(lsOut) != "" {
+			return fmt.Errorf("branch bootstrap/init already exists — aborting to prevent force-push")
+		}
+
+		// Create the bootstrap/init branch.
+		out, err = runInDir(run, state.ClonePath, "git", "checkout", "-b", "bootstrap/init")
+		if err != nil {
+			return fmt.Errorf("git checkout -b bootstrap/init: %w\n%s", err, strings.TrimSpace(out))
+		}
+
+		// Fetch and extract the template tarball.
+		if err := tarball.ExtractFromTemplate(cfg.TemplateRepo, releaseTag, state.ClonePath, nil, fetchTarballFn); err != nil {
+			return fmt.Errorf("populating from template tarball: %w", err)
+		}
+
+		// Write TEMPLATE_VERSION.
+		versionPath := filepath.Join(state.ClonePath, "TEMPLATE_VERSION")
+		if err := os.WriteFile(versionPath, []byte(releaseTag+"\n"), 0o644); err != nil {
+			return fmt.Errorf("writing TEMPLATE_VERSION: %w", err)
+		}
+
+		// Stage and commit.
+		out, err = runInDir(run, state.ClonePath, "git", "add", "-A")
+		if err != nil {
+			return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
+		}
+
+		commitMsg := fmt.Sprintf("chore: initialise from template %s", releaseTag)
+		out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", commitMsg)
+		if err != nil {
+			return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
+		}
+
+		// Fetch the repo node ID via REST API (best-effort).
+		client, apiClientErr := api.DefaultRESTClient()
+		if apiClientErr != nil {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not create GitHub API client: "+apiClientErr.Error()))
+		} else {
+			var repoResp struct {
+				NodeID string `json:"node_id"`
+			}
+			if getErr := client.Get(fmt.Sprintf("repos/%s", fullName), &repoResp); getErr != nil {
+				fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not fetch repo node ID: "+getErr.Error()))
+			} else {
+				state.RepoNodeID = repoResp.NodeID
+			}
+		}
+
 		state.ExistingRepo = true
-		return fmt.Errorf("existing repo bootstrap not yet implemented")
+		return nil
 	}
 
 	// --- New repo path (unchanged) ---
@@ -435,12 +490,48 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
 	}
 
-	// Push.
-	out, err = runInDir(run, state.ClonePath, "git", "push", "origin", "main")
-	if err != nil {
-		return fmt.Errorf("git push: %w\n%s", err, strings.TrimSpace(out))
+	// Push — skip for existing repos (branch push + PR handled by OpenBootstrapPR).
+	if !state.ExistingRepo {
+		out, err = runInDir(run, state.ClonePath, "git", "push", "origin", "main")
+		if err != nil {
+			return fmt.Errorf("git push: %w\n%s", err, strings.TrimSpace(out))
+		}
 	}
 
+	return nil
+}
+
+// OpenBootstrapPR pushes the bootstrap/init branch and opens a pull request
+// titled "chore: bootstrap agentic environment". It is only called when
+// state.ExistingRepo is true. The PR URL is stored in state.PRURL.
+//
+// run is injected so tests can substitute a fake implementation.
+func OpenBootstrapPR(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
+	if !state.ExistingRepo {
+		return nil
+	}
+
+	fullName := cfg.Owner + "/" + state.RepoName
+
+	// Push the bootstrap/init branch.
+	out, err := runInDir(run, state.ClonePath, "git", "push", "-u", "origin", "bootstrap/init")
+	if err != nil {
+		return fmt.Errorf("git push bootstrap/init: %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	// Open a PR.
+	prOut, prErr := run("gh", "pr", "create",
+		"--repo", fullName,
+		"--base", "main",
+		"--head", "bootstrap/init",
+		"--title", "chore: bootstrap agentic environment",
+		"--body", "Bootstrap the agentic development framework onto this repository.",
+	)
+	if prErr != nil {
+		return fmt.Errorf("gh pr create: %w\n%s", prErr, strings.TrimSpace(prOut))
+	}
+
+	state.PRURL = strings.TrimSpace(prOut)
 	return nil
 }
 
@@ -864,12 +955,22 @@ func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch Lau
 	fmt.Fprintln(w, successBold.Render("  ✔ Bootstrap complete"))
 	fmt.Fprintln(w)
 
-	content := fmt.Sprintf(
-		"  %s  %s\n  %s  %s\n  %s  %s",
-		ui.Muted.Render("Repo   "), ui.URL.Render(state.RepoURL),
-		ui.Muted.Render("Project"), ui.URL.Render(state.ProjectURL),
-		ui.Muted.Render("Clone  "), ui.Value.Render(state.ClonePath),
-	)
+	var content string
+	if state.ExistingRepo && state.PRURL != "" {
+		content = fmt.Sprintf(
+			"  %s  %s\n  %s  %s\n  %s  %s",
+			ui.Muted.Render("PR     "), ui.URL.Render(state.PRURL),
+			ui.Muted.Render("Project"), ui.URL.Render(state.ProjectURL),
+			ui.Muted.Render("Clone  "), ui.Value.Render(state.ClonePath),
+		)
+	} else {
+		content = fmt.Sprintf(
+			"  %s  %s\n  %s  %s\n  %s  %s",
+			ui.Muted.Render("Repo   "), ui.URL.Render(state.RepoURL),
+			ui.Muted.Render("Project"), ui.URL.Render(state.ProjectURL),
+			ui.Muted.Render("Clone  "), ui.Value.Render(state.ClonePath),
+		)
+	}
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

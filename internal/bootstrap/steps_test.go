@@ -471,15 +471,101 @@ func TestCreateRepo_ExistingRepo_NonAgentic_SetsExistingRepoFlag(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
+	// CreateRepo now completes successfully for existing non-agentic repos
+	// (it creates the branch, applies template, and commits).
 	err := CreateRepo(&buf, cfg, state, workDir, run, fakeFetchRelease("v1.0.0"))
-	if err == nil {
-		t.Fatal("expected placeholder error for existing non-agentic repo, got nil")
-	}
-	if !strings.Contains(err.Error(), "existing repo bootstrap not yet implemented") {
-		t.Errorf("expected placeholder error message, got: %v", err)
+	if err != nil {
+		t.Fatalf("CreateRepo() unexpected error for existing non-agentic repo: %v", err)
 	}
 	if !state.ExistingRepo {
 		t.Error("expected state.ExistingRepo to be true for existing non-agentic repo")
+	}
+
+	// Verify TEMPLATE_VERSION was written.
+	versionData, readErr := os.ReadFile(filepath.Join(clonePath, "TEMPLATE_VERSION"))
+	if readErr != nil {
+		t.Errorf("expected TEMPLATE_VERSION to be written, got error: %v", readErr)
+	}
+	if !strings.Contains(string(versionData), "v1.0.0") {
+		t.Errorf("TEMPLATE_VERSION should contain 'v1.0.0', got: %s", string(versionData))
+	}
+}
+
+func TestCreateRepo_ExistingRepo_BranchAlreadyExists_Aborts(t *testing.T) {
+	workDir := t.TempDir()
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
+	state := &StepState{}
+
+	// Pre-create clone directory with no agentic markers.
+	clonePath := filepath.Join(workDir, "my-project")
+	if err := os.MkdirAll(clonePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) > 1 && args[0] == "api" && strings.HasPrefix(args[1], "repos/") {
+			return `{"node_id": "abc123"}`, nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "clone" {
+			return "", nil
+		}
+		// Simulate ls-remote returning a matching branch.
+		if name == "bash" && len(args) > 1 && strings.Contains(args[1], "ls-remote") {
+			return "abc123\trefs/heads/bootstrap/init", nil
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := CreateRepo(&buf, cfg, state, workDir, run, fakeFetchRelease("v1.0.0"))
+	if err == nil {
+		t.Fatal("expected error when bootstrap/init branch exists, got nil")
+	}
+	if !strings.Contains(err.Error(), "bootstrap/init already exists") {
+		t.Errorf("error should mention 'bootstrap/init already exists', got: %v", err)
+	}
+}
+
+func TestCreateRepo_ExistingRepo_CreatesBootstrapBranch(t *testing.T) {
+	workDir := t.TempDir()
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
+	state := &StepState{}
+
+	clonePath := filepath.Join(workDir, "my-project")
+	if err := os.MkdirAll(clonePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	checkoutCalled := false
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) > 1 && args[0] == "api" && strings.HasPrefix(args[1], "repos/") {
+			return `{"node_id": "abc123"}`, nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "clone" {
+			return "", nil
+		}
+		// ls-remote returns empty (no existing branch).
+		if name == "bash" && len(args) > 1 && strings.Contains(args[1], "ls-remote") {
+			return "", nil
+		}
+		// Capture checkout -b bootstrap/init.
+		if name == "bash" && len(args) > 1 && strings.Contains(args[1], "checkout") && strings.Contains(args[1], "bootstrap/init") {
+			checkoutCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := CreateRepo(&buf, cfg, state, workDir, run, fakeFetchRelease("v1.0.0"))
+	if err != nil {
+		t.Fatalf("CreateRepo() unexpected error: %v", err)
+	}
+	if !checkoutCalled {
+		t.Error("expected git checkout -b bootstrap/init to be called")
+	}
+	if !state.ExistingRepo {
+		t.Error("expected state.ExistingRepo to be true")
 	}
 }
 
@@ -1100,6 +1186,152 @@ func TestPopulateRepo_SkipsPublishReleaseYml_WhenMissing(t *testing.T) {
 	// Assert skip log message.
 	if !strings.Contains(buf.String(), "publish-release.yml example not found in template") {
 		t.Errorf("expected skip log message, got: %s", buf.String())
+	}
+}
+
+// --------------------------------------------------------------------------------------
+// PopulateRepo — Existing repo skip-push
+// --------------------------------------------------------------------------------------
+
+func TestPopulateRepo_ExistingRepo_SkipsPush(t *testing.T) {
+	dir := t.TempDir()
+	cfg := BootstrapConfig{
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stacks:       []string{"Go"},
+		Description:  "A test project",
+		TemplateRepo: DefaultTemplateRepo,
+	}
+	state := &StepState{RepoName: "my-project", ClonePath: dir, ExistingRepo: true}
+
+	pushCalled := false
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" {
+			script := strings.Join(args, " ")
+			if strings.Contains(script, "'git'") && strings.Contains(script, "'push'") {
+				pushCalled = true
+				return "", nil
+			}
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := PopulateRepo(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+	if pushCalled {
+		t.Error("expected git push to be skipped for existing repo, but it was called")
+	}
+}
+
+// --------------------------------------------------------------------------------------
+// OpenBootstrapPR
+// --------------------------------------------------------------------------------------
+
+func TestOpenBootstrapPR_NotExistingRepo_Noop(t *testing.T) {
+	state := &StepState{ExistingRepo: false}
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+
+	var buf bytes.Buffer
+	err := OpenBootstrapPR(&buf, cfg, state, fakeRunOK(""))
+	if err != nil {
+		t.Fatalf("OpenBootstrapPR() unexpected error: %v", err)
+	}
+	if state.PRURL != "" {
+		t.Error("expected PRURL to be empty when ExistingRepo is false")
+	}
+}
+
+func TestOpenBootstrapPR_PushesBranchAndCreatesPR(t *testing.T) {
+	dir := t.TempDir()
+	state := &StepState{
+		RepoName:     "my-project",
+		ClonePath:    dir,
+		ExistingRepo: true,
+	}
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+
+	pushCalled := false
+	prCreateCalled := false
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" && len(args) > 1 && strings.Contains(args[1], "'push'") && strings.Contains(args[1], "bootstrap/init") {
+			pushCalled = true
+			return "", nil
+		}
+		if name == "gh" && len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			prCreateCalled = true
+			return "https://github.com/alice/my-project/pull/1", nil
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := OpenBootstrapPR(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("OpenBootstrapPR() unexpected error: %v", err)
+	}
+	if !pushCalled {
+		t.Error("expected git push bootstrap/init to be called")
+	}
+	if !prCreateCalled {
+		t.Error("expected gh pr create to be called")
+	}
+	if state.PRURL != "https://github.com/alice/my-project/pull/1" {
+		t.Errorf("expected PRURL to be set, got: %q", state.PRURL)
+	}
+}
+
+func TestOpenBootstrapPR_PushFails_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	state := &StepState{
+		RepoName:     "my-project",
+		ClonePath:    dir,
+		ExistingRepo: true,
+	}
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" && len(args) > 1 && strings.Contains(args[1], "'push'") {
+			return "error: push failed", errors.New("exit status 1")
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := OpenBootstrapPR(&buf, cfg, state, run)
+	if err == nil {
+		t.Fatal("expected error when push fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "git push bootstrap/init") {
+		t.Errorf("error should mention 'git push bootstrap/init', got: %v", err)
+	}
+}
+
+func TestOpenBootstrapPR_PRCreateFails_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	state := &StepState{
+		RepoName:     "my-project",
+		ClonePath:    dir,
+		ExistingRepo: true,
+	}
+	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
+
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			return "error", errors.New("pr creation failed")
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := OpenBootstrapPR(&buf, cfg, state, run)
+	if err == nil {
+		t.Fatal("expected error when PR creation fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "gh pr create") {
+		t.Errorf("error should mention 'gh pr create', got: %v", err)
 	}
 }
 
