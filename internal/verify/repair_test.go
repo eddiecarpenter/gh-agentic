@@ -792,14 +792,35 @@ func TestRepairProjectCollaborator_MutationFails_ReturnsFail(t *testing.T) {
 	}
 }
 
+func TestRepairProjectCollaborator_Org_AlreadyMember_ReturnsPass(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "orgs/acme-org/members/goose-agent") {
+			return "", nil // already a member
+		}
+		t.Fatalf("unexpected call: %s %v", name, args)
+		return "", nil
+	}
+
+	result := RepairProjectCollaborator("acme-org", "my-repo", "goose-agent", "Organization", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "already an org member") {
+		t.Errorf("expected already-member message, got: %s", result.Message)
+	}
+}
+
 func TestRepairProjectCollaborator_Org_Success_ReturnsPass(t *testing.T) {
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
 		switch callCount {
 		case 1:
-			return "12345", nil // resolve user numeric ID
+			return "", fmt.Errorf("HTTP 404") // not a member
 		case 2:
+			return "12345", nil // resolve user numeric ID
+		case 3:
 			return `{"id": 1}`, nil // invitation success
 		}
 		return "", nil
@@ -820,8 +841,10 @@ func TestRepairProjectCollaborator_Org_PermissionDenied_ReturnsManualAction(t *t
 		callCount++
 		switch callCount {
 		case 1:
-			return "12345", nil // resolve user numeric ID
+			return "", fmt.Errorf("HTTP 404") // not a member
 		case 2:
+			return "12345", nil // resolve user numeric ID
+		case 3:
 			return "403 Forbidden", fmt.Errorf("HTTP 403") // permission denied
 		}
 		return "", nil
@@ -842,8 +865,10 @@ func TestRepairProjectCollaborator_Org_APIFailure_ReturnsFail(t *testing.T) {
 		callCount++
 		switch callCount {
 		case 1:
-			return "12345", nil // resolve user numeric ID
+			return "", fmt.Errorf("HTTP 404") // not a member
 		case 2:
+			return "12345", nil // resolve user numeric ID
+		case 3:
 			return "server error", fmt.Errorf("HTTP 500") // generic failure
 		}
 		return "", nil
@@ -856,7 +881,12 @@ func TestRepairProjectCollaborator_Org_APIFailure_ReturnsFail(t *testing.T) {
 }
 
 func TestRepairProjectCollaborator_Org_UserResolutionFails_ReturnsFail(t *testing.T) {
+	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		if callCount == 1 {
+			return "", fmt.Errorf("HTTP 404") // not a member
+		}
 		return "", fmt.Errorf("user not found")
 	}
 

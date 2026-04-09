@@ -737,9 +737,20 @@ func RepairProjectCollaborator(owner, repoName, agentUser, ownerType string, run
 	return repairProjectCollaboratorUser(owner, repoName, agentUser, run)
 }
 
-// repairOrgMembership invites the agent user as an org member via REST API.
-// Returns ManualAction if the running user lacks admin rights.
+// repairOrgMembership checks whether the agent user is already an org member
+// and, if not, invites them via the REST API. Returns ManualAction if the
+// running user lacks admin rights.
 func repairOrgMembership(owner, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+	// Check if already an org member (204 = member, 404 = not).
+	_, err := run("gh", "api", "orgs/"+owner+"/members/"+agentUser)
+	if err == nil {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Pass,
+			Message: agentUser + " is already an org member of " + owner,
+		}
+	}
+
 	// Resolve the agent user's numeric GitHub user ID.
 	out, err := run("gh", "api", "users/"+agentUser, "--jq", ".id")
 	if err != nil {
