@@ -2,7 +2,6 @@
 package bootstrap
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -254,113 +253,6 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 	}
 	state.RepoNodeID = repoResp.NodeID
 	return nil
-}
-
-// --------------------------------------------------------------------------------------
-// Step 4 — ScaffoldStack
-// --------------------------------------------------------------------------------------
-
-// stackFileName maps a stack name to its standards file basename.
-var stackFileName = map[string]string{
-	"Go":                 "go.md",
-	"Java Quarkus":       "java-quarkus.md",
-	"Java Spring Boot":   "java-spring.md",
-	"TypeScript Node.js": "typescript.md",
-	"Python":             "python.md",
-	"Rust":               "rust.md",
-}
-
-// ScaffoldStacks reads the Project Initialisation section from each selected stack's
-// standards file in the cloned repo and executes each bash code block sequentially.
-// Stacks with no entry in stackFileName (e.g. "Other") are skipped with a logged message.
-// If a command fails, execution halts immediately and the error identifies the failing track.
-//
-// run is injected so tests can substitute a fake implementation.
-func ScaffoldStacks(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
-	for _, stack := range cfg.Stacks {
-		filename, ok := stackFileName[stack]
-		if !ok {
-			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no initialisation template — skipping scaffold"))
-			continue
-		}
-
-		standardsPath := filepath.Join(state.ClonePath, "base", "standards", filename)
-		data, err := os.ReadFile(standardsPath)
-		if err != nil {
-			return fmt.Errorf("reading standards file %s: %w", standardsPath, err)
-		}
-
-		commands, err := extractInitCommands(string(data))
-		if err != nil {
-			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no Project Initialisation section — skipping"))
-			continue
-		}
-
-		if len(commands) == 0 {
-			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no Project Initialisation section — skipping"))
-			continue
-		}
-
-		for _, cmd := range commands {
-			// Substitute standards-file placeholders with actual project values.
-			cmd = strings.ReplaceAll(cmd, "<owner>", cfg.Owner)
-			cmd = strings.ReplaceAll(cmd, "<repo-name>", state.RepoName)
-			out, err := runInDir(run, state.ClonePath, "bash", "-c", cmd)
-			if err != nil {
-				return fmt.Errorf("[%s] scaffold command %q: %w\n%s", stack, cmd, err, strings.TrimSpace(out))
-			}
-		}
-	}
-
-	return nil
-}
-
-// extractInitCommands parses Markdown content and returns the shell commands found
-// inside ```bash code blocks within the "## Project Initialisation" section only.
-func extractInitCommands(content string) ([]string, error) {
-	const sectionHeading = "## Project Initialisation"
-
-	// Find the start of the section.
-	start := strings.Index(content, sectionHeading)
-	if start == -1 {
-		return nil, fmt.Errorf("section %q not found", sectionHeading)
-	}
-
-	// Find the end of the section (next ## heading or EOF).
-	rest := content[start+len(sectionHeading):]
-	end := strings.Index(rest, "\n## ")
-	if end == -1 {
-		end = len(rest)
-	}
-	section := rest[:end]
-
-	// Extract bash code blocks.
-	var commands []string
-	scanner := bufio.NewScanner(strings.NewReader(section))
-	inBlock := false
-	var blockLines []string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "```bash" {
-			inBlock = true
-			blockLines = nil
-			continue
-		}
-		if inBlock && trimmed == "```" {
-			inBlock = false
-			if len(blockLines) > 0 {
-				commands = append(commands, strings.Join(blockLines, "\n"))
-			}
-			continue
-		}
-		if inBlock {
-			blockLines = append(blockLines, line)
-		}
-	}
-
-	return commands, nil
 }
 
 // --------------------------------------------------------------------------------------
