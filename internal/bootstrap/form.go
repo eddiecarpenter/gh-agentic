@@ -270,14 +270,22 @@ func validateTopologyOwner(topology, ownerType string) error {
 }
 
 
-// RunForm runs the three-group huh form, renders the summary box, and asks
+// repoModeSelectExisting is the value for the "Select existing repo" choice.
+const repoModeSelectExisting = "existing"
+
+// repoModeCreateNew is the value for the "Create new repo" choice.
+const repoModeCreateNew = "new"
+
+// RunForm runs the multi-phase huh form, renders the summary box, and asks
 // for final confirmation. Returns a populated BootstrapConfig, or ErrAborted
 // if the user declines the final "Create project?" confirm.
 //
 // templateFlag is the value of --template from the CLI. If non-empty, it is
 // used directly and the interactive prompt is skipped. If empty, an interactive
 // input pre-filled with DefaultTemplateRepo is shown.
-func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc, templateFlag string) (BootstrapConfig, error) {
+//
+// fetchRepos and checkRepoExists are injected for the Phase 2 repo selection.
+func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc, fetchRepos FetchReposFunc, checkRepoExists CheckRepoExistsFunc, templateFlag string) (BootstrapConfig, error) {
 	var cfg BootstrapConfig
 
 	// Resolve template repo: flag value or interactive prompt.
@@ -297,7 +305,7 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		}
 	}
 
-	// --- Group 1: Topology ---
+	// --- Phase 1: Topology & Owner ---
 	topologyForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -313,7 +321,6 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		return BootstrapConfig{}, fmt.Errorf("topology form: %w", err)
 	}
 
-	// --- Group 2: Owner ---
 	owners, err := fetchOwners()
 	if err != nil {
 		return BootstrapConfig{}, fmt.Errorf("fetching owner list: %w", err)
@@ -336,7 +343,7 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		return BootstrapConfig{}, fmt.Errorf("owner form: %w", err)
 	}
 
-	// --- Owner type validation ---
+	// Owner type validation.
 	ownerType, err := detectOwnerType(cfg.Owner)
 	if err != nil {
 		return BootstrapConfig{}, fmt.Errorf("detecting owner type: %w", err)
@@ -351,32 +358,136 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		return BootstrapConfig{}, ErrFederatedRequiresOrg
 	}
 
-	// --- Group 3: Project details ---
-	detailsForm := huh.NewForm(
+	// --- Phase 2: Repository selection ---
+	var repoMode string
+	repoModeForm := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().
-				Title("Name").
-				Value(&cfg.ProjectName).
-				Validate(validateProjectName),
+			huh.NewSelect[string]().
+				Title("Repository").
+				Options(
+					huh.NewOption("Select existing repo", repoModeSelectExisting),
+					huh.NewOption("Create new repo", repoModeCreateNew),
+				).
+				Value(&repoMode),
+		),
+	)
+	if err := repoModeForm.Run(); err != nil {
+		return BootstrapConfig{}, fmt.Errorf("repo mode form: %w", err)
+	}
+
+	if repoMode == repoModeSelectExisting {
+		cfg.ExistingRepo = true
+
+		repos, err := fetchRepos(cfg.Owner)
+		if err != nil {
+			return BootstrapConfig{}, fmt.Errorf("fetching repo list: %w", err)
+		}
+		if len(repos) == 0 {
+			return BootstrapConfig{}, fmt.Errorf("no repositories found for %s — use 'Create new repo' instead", cfg.Owner)
+		}
+
+		repoOpts := make([]huh.Option[string], len(repos))
+		for i, r := range repos {
+			repoOpts[i] = huh.NewOption(r.Name, r.Name)
+		}
+
+		repoSelectForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title(fmt.Sprintf("Select repository (%d available)", len(repos))).
+					Options(repoOpts...).
+					Height(15).
+					Value(&cfg.ProjectName),
+			),
+		)
+		if err := repoSelectForm.Run(); err != nil {
+			return BootstrapConfig{}, fmt.Errorf("repo select form: %w", err)
+		}
+	} else {
+		cfg.ExistingRepo = false
+
+		repoNameForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Repository name").
+					Value(&cfg.ProjectName).
+					Validate(validateNewRepoName(cfg.Owner, checkRepoExists)),
+			),
+		)
+		if err := repoNameForm.Run(); err != nil {
+			return BootstrapConfig{}, fmt.Errorf("repo name form: %w", err)
+		}
+	}
+
+	// --- Phase 3: Remaining fields ---
+	// Build the details form group dynamically.
+	var detailFields []huh.Field
+
+	// Agent user input.
+	detailFields = append(detailFields,
+		huh.NewInput().
+			Title("Agent GitHub username").
+			Value(&cfg.AgentUser).
+			Validate(func(s string) error {
+				if strings.TrimSpace(s) == "" {
+					return errors.New("agent username is required")
+				}
+				return nil
+			}),
+	)
+
+	// Agent user scope — only shown when owner is an org.
+	if ownerType == OwnerTypeOrg {
+		cfg.AgentUserScope = AgentUserScopeOrg // default to org for orgs
+		detailFields = append(detailFields,
+			huh.NewSelect[string]().
+				Title("AGENT_USER variable scope").
+				Options(
+					huh.NewOption("Organisation level", AgentUserScopeOrg),
+					huh.NewOption("Repository level", AgentUserScopeRepo),
+				).
+				Value(&cfg.AgentUserScope),
+		)
+	} else {
+		cfg.AgentUserScope = AgentUserScopeRepo
+	}
+
+	// Description — only shown for "Create new" path.
+	if !cfg.ExistingRepo {
+		detailFields = append(detailFields,
 			huh.NewInput().
 				Title("Description").
 				Value(&cfg.Description),
-			huh.NewMultiSelect[string]().
-				Title("Stack (select all that apply)").
-				Options(stackOptions...).
-				Value(&cfg.Stacks).
-				Validate(validateStackSelection),
-			huh.NewConfirm().
-				Title("Antora documentation site?").
-				Value(&cfg.Antora),
-		),
+		)
+	}
+
+	// Stack multi-select (unchanged).
+	detailFields = append(detailFields,
+		huh.NewMultiSelect[string]().
+			Title("Stack (select all that apply)").
+			Options(stackOptions...).
+			Value(&cfg.Stacks).
+			Validate(validateStackSelection),
 	)
 
+	// Antora confirm (unchanged).
+	detailFields = append(detailFields,
+		huh.NewConfirm().
+			Title("Antora documentation site?").
+			Value(&cfg.Antora),
+	)
+
+	detailsForm := huh.NewForm(
+		huh.NewGroup(detailFields...),
+	)
 	if err := detailsForm.Run(); err != nil {
 		return BootstrapConfig{}, fmt.Errorf("project details form: %w", err)
 	}
 
-	// --- Group 4: Pipeline configuration ---
+	// Store detected owner type for downstream steps.
+	cfg.OwnerType = ownerType
+
+	// --- Pipeline configuration ---
 	cfg.RunnerLabel = DefaultRunnerLabel
 	cfg.GooseProvider = DefaultGooseProvider
 	cfg.GooseModel = DefaultGooseModel
@@ -436,11 +547,18 @@ func RenderSummaryBox(cfg BootstrapConfig) string {
 		antoraVal = "Yes"
 	}
 
+	repoModeVal := "new"
+	if cfg.ExistingRepo {
+		repoModeVal = "existing"
+	}
+
 	content := fmt.Sprintf(
-		"  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s",
+		"  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s",
 		label("Topology   "), value(cfg.Topology),
 		label("Owner      "), value(cfg.Owner),
+		label("Repo       "), value(repoModeVal),
 		label("Name       "), value(cfg.ProjectName),
+		label("Agent user "), value(cfg.AgentUser),
 		label("Description"), value(cfg.Description),
 		label("Stack      "), value(strings.Join(cfg.Stacks, ", ")),
 		label("Antora     "), value(antoraVal),

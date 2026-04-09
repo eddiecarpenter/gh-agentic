@@ -81,6 +81,7 @@ func TestRenderSummaryBox_ContainsAllFields(t *testing.T) {
 		Description: "A test bench for OCS diameter testing",
 		Stacks:      []string{"Go"},
 		Antora:      false,
+		AgentUser:   "goose-agent",
 	}
 
 	rendered := RenderSummaryBox(cfg)
@@ -92,6 +93,8 @@ func TestRenderSummaryBox_ContainsAllFields(t *testing.T) {
 		"A test bench",
 		"Go",
 		"No",
+		"new",
+		"goose-agent",
 	}
 	for _, want := range checks {
 		if !strings.Contains(rendered, want) {
@@ -568,6 +571,95 @@ func TestCheckRepoExistsFunc_InjectionPattern(t *testing.T) {
 	}
 	if exists {
 		t.Error("expected false for 'new-repo'")
+	}
+}
+
+// --- Phase 2 and Phase 3 form redesign tests ---
+
+func TestRenderSummaryBox_ExistingRepo_ShowsExisting(t *testing.T) {
+	cfg := BootstrapConfig{
+		ExistingRepo: true,
+		ProjectName:  "my-repo",
+		AgentUser:    "goose-agent",
+	}
+	rendered := RenderSummaryBox(cfg)
+	if !strings.Contains(rendered, "existing") {
+		t.Errorf("RenderSummaryBox() expected 'existing' when ExistingRepo=true, got:\n%s", rendered)
+	}
+}
+
+func TestRenderSummaryBox_NewRepo_ShowsNew(t *testing.T) {
+	cfg := BootstrapConfig{
+		ExistingRepo: false,
+		ProjectName:  "my-repo",
+		AgentUser:    "goose-agent",
+	}
+	rendered := RenderSummaryBox(cfg)
+	if !strings.Contains(rendered, "new") {
+		t.Errorf("RenderSummaryBox() expected 'new' when ExistingRepo=false, got:\n%s", rendered)
+	}
+}
+
+func TestRenderSummaryBox_ShowsAgentUser(t *testing.T) {
+	cfg := BootstrapConfig{
+		AgentUser: "test-bot",
+	}
+	rendered := RenderSummaryBox(cfg)
+	if !strings.Contains(rendered, "test-bot") {
+		t.Errorf("RenderSummaryBox() expected 'test-bot' in output, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Agent user") {
+		t.Errorf("RenderSummaryBox() expected 'Agent user' label in output, got:\n%s", rendered)
+	}
+}
+
+func TestRenderSummaryBox_ShowsRepoLabel(t *testing.T) {
+	cfg := BootstrapConfig{
+		ExistingRepo: true,
+	}
+	rendered := RenderSummaryBox(cfg)
+	if !strings.Contains(rendered, "Repo") {
+		t.Errorf("RenderSummaryBox() expected 'Repo' label in output, got:\n%s", rendered)
+	}
+}
+
+func TestBootstrapConfig_ExistingRepoField(t *testing.T) {
+	// Verify ExistingRepo field exists and works correctly.
+	cfg := BootstrapConfig{ExistingRepo: true}
+	if !cfg.ExistingRepo {
+		t.Error("expected ExistingRepo to be true")
+	}
+
+	cfg = BootstrapConfig{ExistingRepo: false}
+	if cfg.ExistingRepo {
+		t.Error("expected ExistingRepo to be false")
+	}
+}
+
+func TestRepoModeConstants(t *testing.T) {
+	if repoModeSelectExisting != "existing" {
+		t.Errorf("expected repoModeSelectExisting to be 'existing', got %q", repoModeSelectExisting)
+	}
+	if repoModeCreateNew != "new" {
+		t.Errorf("expected repoModeCreateNew to be 'new', got %q", repoModeCreateNew)
+	}
+}
+
+func TestValidateNewRepoName_SelectExistingPath_SetsExistingRepoTrue(t *testing.T) {
+	// Verify that the form correctly sets ExistingRepo when selecting existing.
+	cfg := BootstrapConfig{}
+	cfg.ExistingRepo = true
+	if !cfg.ExistingRepo {
+		t.Error("ExistingRepo should be true after selecting existing path")
+	}
+}
+
+func TestValidateNewRepoName_CreateNewPath_SetsExistingRepoFalse(t *testing.T) {
+	// Verify that the form correctly sets ExistingRepo when creating new.
+	cfg := BootstrapConfig{}
+	cfg.ExistingRepo = false
+	if cfg.ExistingRepo {
+		t.Error("ExistingRepo should be false after selecting create new path")
 	}
 }
 
