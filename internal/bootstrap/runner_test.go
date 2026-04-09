@@ -46,7 +46,13 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 		}
 		// Handle tarball fetch — write a valid tarball to the --output path.
 		if name == "gh" && len(args) > 0 && args[0] == "api" {
-			writeTarballOnOutput(t, tarballData, args)
+			if writeTarballOnOutput(t, tarballData, args) {
+				return "", nil
+			}
+			// Repo existence check: return 404 so we follow the new-repo path.
+			if len(args) > 1 && strings.HasPrefix(args[1], "repos/") {
+				return "Not Found", errors.New("HTTP 404")
+			}
 		}
 		return `{"number":1,"url":"https://github.com/users/alice/projects/1"}`, nil
 	}
@@ -96,11 +102,14 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 		TemplateRepo: DefaultTemplateRepo,
 	}
 
-	// Stub: gh repo create fails on the first call.
-	callCount := 0
+	// Stub: first real command (after API check) fails.
 	run := func(name string, args ...string) (string, error) {
-		callCount++
-		if callCount == 1 {
+		// Repo existence check: return 404 so we follow the new-repo path.
+		if name == "gh" && len(args) > 1 && args[0] == "api" && strings.HasPrefix(args[1], "repos/") {
+			return "Not Found", errors.New("HTTP 404")
+		}
+		// gh repo create fails.
+		if name == "gh" && len(args) > 1 && args[0] == "repo" && args[1] == "create" {
 			return "error", errors.New("gh repo create failed")
 		}
 		return "", nil
@@ -148,7 +157,13 @@ func TestRunSteps_MergedConfiguringRepositoryStep_NoSeparateLabels(t *testing.T)
 			}
 		}
 		if name == "gh" && len(args) > 0 && args[0] == "api" {
-			writeTarballOnOutput(t, tarballData, args)
+			if writeTarballOnOutput(t, tarballData, args) {
+				return "", nil
+			}
+			// Repo existence check: return 404 so we follow the new-repo path.
+			if len(args) > 1 && strings.HasPrefix(args[1], "repos/") {
+				return "Not Found", errors.New("HTTP 404")
+			}
 		}
 		return `{"number":1,"url":"https://github.com/users/alice/projects/1"}`, nil
 	}
@@ -211,7 +226,13 @@ func TestRunSteps_ConfigureRepoSucceeds_CreateProjectFails_ErrorPropagates(t *te
 			}
 		}
 		if name == "gh" && len(args) > 0 && args[0] == "api" {
-			writeTarballOnOutput(t, tarballData, args)
+			if writeTarballOnOutput(t, tarballData, args) {
+				return "", nil
+			}
+			// Repo existence check: return 404 so we follow the new-repo path.
+			if len(args) > 1 && strings.HasPrefix(args[1], "repos/") {
+				return "Not Found", errors.New("HTTP 404")
+			}
 		}
 		// Fail on "gh project create" — this is CreateProject's first call.
 		if name == "gh" && len(args) >= 2 && args[0] == "project" && args[1] == "create" {

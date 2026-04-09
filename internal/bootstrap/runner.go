@@ -112,6 +112,15 @@ func RunSteps(
 		}
 	}
 
+	// For existing repos: push branch and open PR as a final step.
+	if state.ExistingRepo {
+		if err := spinner(w, "Opening bootstrap pull request", func() error {
+			return OpenBootstrapPR(w, cfg, state, run)
+		}); err != nil {
+			return err
+		}
+	}
+
 	// Step 9: print summary and offer Goose launch.
 	return PrintSummary(w, cfg, state, launch)
 }
