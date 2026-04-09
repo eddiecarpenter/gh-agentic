@@ -42,7 +42,7 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners, bootstrap.DefaultDetectOwnerType, templateRepo)
+			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners, bootstrap.DefaultDetectOwnerType, bootstrap.DefaultFetchRepos, bootstrap.DefaultCheckRepoExists, templateRepo)
 			if errors.Is(err, bootstrap.ErrAborted) || errors.Is(err, bootstrap.ErrFederatedRequiresOrg) {
 				fmt.Fprintln(w, ui.Muted.Render("Aborted."))
 				return nil
@@ -51,31 +51,12 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			// Detect owner type and capture it in the config for step functions.
-			ownerType, detectErr := bootstrap.DefaultDetectOwnerType(cfg.Owner)
-			if detectErr != nil {
-				fmt.Fprintln(w, "  "+ui.RenderWarning("Could not detect owner type: "+detectErr.Error()))
-				fmt.Fprintln(w, "  "+ui.Muted.Render("Defaulting to personal account — org-only features will be skipped."))
-				cfg.OwnerType = bootstrap.OwnerTypeUser
-			} else {
-				cfg.OwnerType = ownerType
+			// Apply CLI flag overrides if provided — they take precedence over form values.
+			if agentUser != "" {
+				cfg.AgentUser = agentUser
 			}
-
-			// Populate agent user fields from CLI flags.
-			cfg.AgentUser = agentUser
-			cfg.AgentUserScope = agentUserScope
-
-			// Resolve agent user interactively if flags not fully provided.
-			textPrompt := func(prompt string) (string, error) {
-				fmt.Fprintf(w, "  %s: ", prompt)
-				scanner := bufio.NewScanner(cmd.InOrStdin())
-				if scanner.Scan() {
-					return strings.TrimSpace(scanner.Text()), nil
-				}
-				return "", scanner.Err()
-			}
-			if err := bootstrap.ResolveAgentUser(w, &cfg, bootstrap.DefaultRunCommand, textPrompt); err != nil {
-				return fmt.Errorf("resolving agent user: %w", err)
+			if agentUserScope != "" {
+				cfg.AgentUserScope = agentUserScope
 			}
 
 			workDir := bootstrap.DefaultWorkDirOrHome()

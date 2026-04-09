@@ -31,6 +31,10 @@ type BootstrapConfig struct {
 	// "Python", "Rust", or "Other".
 	Stacks []string
 
+	// ExistingRepo indicates whether the user selected an existing repo (true) or
+	// chose to create a new one (false). Set by the form's Phase 2 repo selection.
+	ExistingRepo bool
+
 	// Antora indicates whether an Antora documentation site should be scaffolded.
 	Antora bool
 
