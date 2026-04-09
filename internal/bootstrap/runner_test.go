@@ -187,6 +187,69 @@ func TestRunSteps_MergedConfiguringRepositoryStep_NoSeparateLabels(t *testing.T)
 	}
 }
 
+func TestRunSteps_ConfigureRepoSucceeds_CreateProjectFails_ErrorPropagates(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := BootstrapConfig{
+		Topology:     "Single",
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Stacks:       []string{"Other"},
+		Description:  "Test project",
+		OwnerType:    OwnerTypeUser,
+		TemplateRepo: DefaultTemplateRepo,
+	}
+
+	clonePath := filepath.Join(dir, "my-project")
+	tarballData := makeMinimalTarballBytes(t)
+
+	// Stub: ConfigureRepo calls succeed, CreateProject's "gh project create" fails.
+	run := func(name string, args ...string) (string, error) {
+		if name == "git" && len(args) > 0 && args[0] == "clone" {
+			if mkErr := os.MkdirAll(clonePath, 0755); mkErr != nil {
+				return "", mkErr
+			}
+		}
+		if name == "gh" && len(args) > 0 && args[0] == "api" {
+			writeTarballOnOutput(t, tarballData, args)
+		}
+		// Fail on "gh project create" — this is CreateProject's first call.
+		if name == "gh" && len(args) >= 2 && args[0] == "project" && args[1] == "create" {
+			return "", errors.New("project creation failed")
+		}
+		return `{"number":1}`, nil
+	}
+
+	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
+		return nil
+	}
+	launch := func(_ string) error { return nil }
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
+	// Track spinner labels to verify subsequent steps do not execute.
+	var labels []string
+	trackingSpinner := func(w io.Writer, label string, fn func() error) error {
+		labels = append(labels, label)
+		return fn()
+	}
+
+	var buf bytes.Buffer
+	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, trackingSpinner, fetchRelease)
+	if err == nil {
+		t.Fatal("expected error when CreateProject fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "project creation failed") {
+		t.Errorf("expected 'project creation failed' in error, got: %v", err)
+	}
+
+	// Verify that steps after "Configuring repository" did not execute.
+	for _, l := range labels {
+		if strings.Contains(l, "Populating repository") {
+			t.Error("subsequent step 'Populating repository' should not execute after failure")
+		}
+	}
+}
+
 func TestDefaultSpinner_Success_PrintsCheckmark(t *testing.T) {
 	var buf bytes.Buffer
 	err := DefaultSpinner(&buf, "my step", func() error { return nil })
