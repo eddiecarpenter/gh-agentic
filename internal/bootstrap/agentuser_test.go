@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestResolveAgentUser_FlagsProvided_SkipsPrompts(t *testing.T) {
+func TestResolveAgentUser_ValidConfig_ReturnsNil(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := &BootstrapConfig{
 		Owner:          "acme-org",
@@ -18,18 +18,28 @@ func TestResolveAgentUser_FlagsProvided_SkipsPrompts(t *testing.T) {
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
-	promptCalled := false
-	fakePrompt := func(prompt string) (string, error) {
-		promptCalled = true
-		return "", nil
-	}
 
-	err := ResolveAgentUser(&buf, cfg, fakeRun, fakePrompt)
+	err := ResolveAgentUser(&buf, cfg, fakeRun)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if promptCalled {
-		t.Error("expected no prompts when both flags are provided")
+}
+
+func TestResolveAgentUser_RepoScopePersonalAccount_ReturnsNil(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := &BootstrapConfig{
+		Owner:          "alice",
+		OwnerType:      OwnerTypeUser,
+		AgentUser:      "goose-agent",
+		AgentUserScope: AgentUserScopeRepo,
+	}
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	err := ResolveAgentUser(&buf, cfg, fakeRun)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -45,7 +55,7 @@ func TestResolveAgentUser_OrgScopePersonalAccount_ReturnsError(t *testing.T) {
 		return "", nil
 	}
 
-	err := ResolveAgentUser(&buf, cfg, fakeRun, nil)
+	err := ResolveAgentUser(&buf, cfg, fakeRun)
 	if err == nil {
 		t.Fatal("expected error for org scope on personal account")
 	}
@@ -54,133 +64,66 @@ func TestResolveAgentUser_OrgScopePersonalAccount_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestResolveAgentUser_OrgVarExists_Reuse(t *testing.T) {
+func TestResolveAgentUser_InvalidScope_ReturnsError(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := &BootstrapConfig{
-		Owner:     "acme-org",
-		OwnerType: OwnerTypeOrg,
+		Owner:          "acme-org",
+		OwnerType:      OwnerTypeOrg,
+		AgentUser:      "goose-agent",
+		AgentUserScope: "invalid",
 	}
 	fakeRun := func(name string, args ...string) (string, error) {
-		joined := strings.Join(args, " ")
-		if strings.Contains(joined, "variable list") && strings.Contains(joined, "--org") {
-			return `[{"name":"AGENT_USER","value":"existing-agent"}]`, nil
-		}
 		return "", nil
 	}
-	fakePrompt := func(prompt string) (string, error) {
-		// Reuse — answer "yes"
-		return "yes", nil
-	}
 
-	err := ResolveAgentUser(&buf, cfg, fakeRun, fakePrompt)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := ResolveAgentUser(&buf, cfg, fakeRun)
+	if err == nil {
+		t.Fatal("expected error for invalid scope")
 	}
-	if cfg.AgentUser != "existing-agent" {
-		t.Errorf("expected AgentUser=%q, got %q", "existing-agent", cfg.AgentUser)
-	}
-	if cfg.AgentUserScope != AgentUserScopeOrg {
-		t.Errorf("expected AgentUserScope=%q, got %q", AgentUserScopeOrg, cfg.AgentUserScope)
+	if !strings.Contains(err.Error(), "invalid") {
+		t.Errorf("expected invalid scope error, got: %v", err)
 	}
 }
 
-func TestResolveAgentUser_OrgVarExists_Override(t *testing.T) {
+func TestResolveAgentUser_EmptyAgentUser_ReturnsError(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := &BootstrapConfig{
-		Owner:     "acme-org",
-		OwnerType: OwnerTypeOrg,
+		Owner:          "acme-org",
+		OwnerType:      OwnerTypeOrg,
+		AgentUser:      "",
+		AgentUserScope: AgentUserScopeOrg,
 	}
 	fakeRun := func(name string, args ...string) (string, error) {
-		joined := strings.Join(args, " ")
-		if strings.Contains(joined, "variable list") && strings.Contains(joined, "--org") {
-			return `[{"name":"AGENT_USER","value":"existing-agent"}]`, nil
-		}
-		return "", nil
-	}
-	promptCount := 0
-	fakePrompt := func(prompt string) (string, error) {
-		promptCount++
-		if strings.Contains(prompt, "Reuse") {
-			return "new-agent", nil // override with new username
-		}
-		if strings.Contains(prompt, "org or repo") {
-			return "repo", nil
-		}
 		return "", nil
 	}
 
-	err := ResolveAgentUser(&buf, cfg, fakeRun, fakePrompt)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := ResolveAgentUser(&buf, cfg, fakeRun)
+	if err == nil {
+		t.Fatal("expected error for empty agent user")
 	}
-	if cfg.AgentUser != "new-agent" {
-		t.Errorf("expected AgentUser=%q, got %q", "new-agent", cfg.AgentUser)
-	}
-	if cfg.AgentUserScope != AgentUserScopeRepo {
-		t.Errorf("expected AgentUserScope=%q, got %q", AgentUserScopeRepo, cfg.AgentUserScope)
+	if !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected 'required' in error, got: %v", err)
 	}
 }
 
-func TestResolveAgentUser_NoOrgVar_PromptsForUsernameAndScope(t *testing.T) {
+func TestResolveAgentUser_EmptyScope_ReturnsError(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := &BootstrapConfig{
-		Owner:     "acme-org",
-		OwnerType: OwnerTypeOrg,
+		Owner:          "acme-org",
+		OwnerType:      OwnerTypeOrg,
+		AgentUser:      "goose-agent",
+		AgentUserScope: "",
 	}
 	fakeRun := func(name string, args ...string) (string, error) {
-		joined := strings.Join(args, " ")
-		if strings.Contains(joined, "variable list") && strings.Contains(joined, "--org") {
-			return `[]`, nil
-		}
-		return "", nil
-	}
-	fakePrompt := func(prompt string) (string, error) {
-		if strings.Contains(prompt, "username") {
-			return "my-agent", nil
-		}
-		if strings.Contains(prompt, "org or repo") {
-			return "org", nil
-		}
 		return "", nil
 	}
 
-	err := ResolveAgentUser(&buf, cfg, fakeRun, fakePrompt)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := ResolveAgentUser(&buf, cfg, fakeRun)
+	if err == nil {
+		t.Fatal("expected error for empty scope")
 	}
-	if cfg.AgentUser != "my-agent" {
-		t.Errorf("expected AgentUser=%q, got %q", "my-agent", cfg.AgentUser)
-	}
-	if cfg.AgentUserScope != AgentUserScopeOrg {
-		t.Errorf("expected AgentUserScope=%q, got %q", AgentUserScopeOrg, cfg.AgentUserScope)
-	}
-}
-
-func TestResolveAgentUser_PersonalAccount_DefaultsToRepoScope(t *testing.T) {
-	var buf bytes.Buffer
-	cfg := &BootstrapConfig{
-		Owner:     "alice",
-		OwnerType: OwnerTypeUser,
-	}
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", fmt.Errorf("not an org")
-	}
-	fakePrompt := func(prompt string) (string, error) {
-		if strings.Contains(prompt, "username") {
-			return "my-agent", nil
-		}
-		return "", nil
-	}
-
-	err := ResolveAgentUser(&buf, cfg, fakeRun, fakePrompt)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.AgentUser != "my-agent" {
-		t.Errorf("expected AgentUser=%q, got %q", "my-agent", cfg.AgentUser)
-	}
-	if cfg.AgentUserScope != AgentUserScopeRepo {
-		t.Errorf("expected AgentUserScope=%q, got %q", AgentUserScopeRepo, cfg.AgentUserScope)
+	if !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected 'required' in error, got: %v", err)
 	}
 }
 
@@ -211,26 +154,5 @@ func TestDetectOrgAgentUser_Error_ReturnsEmpty(t *testing.T) {
 	val := detectOrgAgentUser("acme-org", fakeRun)
 	if val != "" {
 		t.Errorf("expected empty, got %q", val)
-	}
-}
-
-func TestResolveAgentUser_InvalidScope_ReturnsError(t *testing.T) {
-	var buf bytes.Buffer
-	cfg := &BootstrapConfig{
-		Owner:          "acme-org",
-		OwnerType:      OwnerTypeOrg,
-		AgentUser:      "goose-agent",
-		AgentUserScope: "invalid",
-	}
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", nil
-	}
-
-	err := ResolveAgentUser(&buf, cfg, fakeRun, nil)
-	if err == nil {
-		t.Fatal("expected error for invalid scope")
-	}
-	if !strings.Contains(err.Error(), "invalid") {
-		t.Errorf("expected invalid scope error, got: %v", err)
 	}
 }
