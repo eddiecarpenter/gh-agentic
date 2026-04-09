@@ -189,7 +189,11 @@ func stripTopDir(name string) string {
 }
 
 // matchesAnyPrefix returns true if relPath starts with any of the given prefixes.
+// If prefixes is nil or empty, all paths match (extract everything).
 func matchesAnyPrefix(relPath string, prefixes []string) bool {
+	if len(prefixes) == 0 {
+		return true
+	}
 	for _, p := range prefixes {
 		if strings.HasPrefix(relPath, p) {
 			return true

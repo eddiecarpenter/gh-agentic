@@ -205,6 +205,31 @@ func TestExtractFromTemplate_Success(t *testing.T) {
 	}
 }
 
+func TestExtractFromTemplate_NilPrefixes_ExtractsAllFiles(t *testing.T) {
+	tarData := buildTarGz(t, map[string]string{
+		"repo-v1.0.0/base/standards/go.md":        "# Go Standards",
+		"repo-v1.0.0/base/skills/session-init.md": "# Session Init",
+		"repo-v1.0.0/README.md":                   "# Repo",
+	})
+
+	dest := t.TempDir()
+	err := ExtractFromTemplate("owner/repo", "v1.0.0", dest, nil, fakeFetch(tarData))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantFiles := []string{
+		"base/standards/go.md",
+		"base/skills/session-init.md",
+		"README.md",
+	}
+	for _, path := range wantFiles {
+		if _, err := os.Stat(filepath.Join(dest, path)); err != nil {
+			t.Errorf("expected file %s to be extracted, got: %v", path, err)
+		}
+	}
+}
+
 func TestExtractFromTemplate_EmptyRepo_ReturnsError(t *testing.T) {
 	err := ExtractFromTemplate("", "v1.0.0", t.TempDir(),
 		[]string{"base/"}, fakeFetch(nil))
