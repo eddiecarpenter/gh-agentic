@@ -276,6 +276,32 @@ const repoModeSelectExisting = "existing"
 // repoModeCreateNew is the value for the "Create new repo" choice.
 const repoModeCreateNew = "new"
 
+// repoBackSentinel is the sentinel value for the "← Back" option in the repo select list.
+const repoBackSentinel = "__back__"
+
+// runnerOther is the sentinel value for the "other" runner option.
+const runnerOther = "__other__"
+
+// RunnerDefaultForTopology returns the smart default runner label based on topology.
+// Single topology defaults to "ubuntu-latest"; Federated defaults to the org name.
+func RunnerDefaultForTopology(topology, owner string) string {
+	if topology == "Federated" {
+		return owner
+	}
+	return DefaultRunnerLabel
+}
+
+// buildRunnerOptions builds the runner select options with dynamic repo and org names.
+func buildRunnerOptions(projectName, owner string) []huh.Option[string] {
+	return []huh.Option[string]{
+		huh.NewOption("ubuntu-latest — GitHub-hosted runner", DefaultRunnerLabel),
+		huh.NewOption(projectName+" — Selfhosted ARC queue", projectName),
+		huh.NewOption(owner+" — Selfhosted ARC queue", owner),
+		huh.NewOption("self-hosted — Self-hosted runner (not production)", "self-hosted"),
+		huh.NewOption("other — enter a custom label", runnerOther),
+	}
+}
+
 // RunForm runs the multi-phase huh form, renders the summary box, and asks
 // for final confirmation. Returns a populated BootstrapConfig, or ErrAborted
 // if the user declines the final "Create project?" confirm.
@@ -297,6 +323,7 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 			huh.NewGroup(
 				huh.NewInput().
 					Title("Template repo").
+					Description("The upstream template that provides the agentic framework").
 					Value(&cfg.TemplateRepo),
 			),
 		)
@@ -310,6 +337,7 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Select project topology").
+				Description("How your project repos are structured").
 				Options(
 					huh.NewOption("Single      — one repo, control plane and project in one place", "Single"),
 					huh.NewOption("Federated   — separate control plane + domain/tool repos", "Federated"),
@@ -335,6 +363,7 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Where should the repo be created?").
+				Description("The GitHub account or organisation that will own the repo").
 				Options(ownerOpts...).
 				Value(&cfg.Owner),
 		),
@@ -359,74 +388,109 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 	}
 
 	// --- Phase 2: Repository selection ---
-	var repoMode string
-	repoModeForm := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Repository").
-				Options(
-					huh.NewOption("Select existing repo", repoModeSelectExisting),
-					huh.NewOption("Create new repo", repoModeCreateNew),
-				).
-				Value(&repoMode),
-		),
-	)
-	if err := repoModeForm.Run(); err != nil {
-		return BootstrapConfig{}, fmt.Errorf("repo mode form: %w", err)
-	}
-
-	if repoMode == repoModeSelectExisting {
-		cfg.ExistingRepo = true
-
-		repos, err := fetchRepos(cfg.Owner)
-		if err != nil {
-			return BootstrapConfig{}, fmt.Errorf("fetching repo list: %w", err)
-		}
-		if len(repos) == 0 {
-			return BootstrapConfig{}, fmt.Errorf("no repositories found for %s — use 'Create new repo' instead", cfg.Owner)
-		}
-
-		repoOpts := make([]huh.Option[string], len(repos))
-		for i, r := range repos {
-			repoOpts[i] = huh.NewOption(r.Name, r.Name)
-		}
-
-		repoSelectForm := huh.NewForm(
+	// Wrapped in a loop to support back-navigation from the repo select list.
+	for {
+		var repoMode string
+		repoModeForm := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
-					Title(fmt.Sprintf("Select repository (%d available)", len(repos))).
-					Options(repoOpts...).
-					Height(15).
-					Value(&cfg.ProjectName),
+					Title("Repository").
+					Description("Choose whether to bootstrap into an existing repo or create a new one").
+					Options(
+						huh.NewOption("Select existing repo", repoModeSelectExisting),
+						huh.NewOption("Create new repo", repoModeCreateNew),
+					).
+					Value(&repoMode),
 			),
 		)
-		if err := repoSelectForm.Run(); err != nil {
-			return BootstrapConfig{}, fmt.Errorf("repo select form: %w", err)
+		if err := repoModeForm.Run(); err != nil {
+			return BootstrapConfig{}, fmt.Errorf("repo mode form: %w", err)
 		}
-	} else {
-		cfg.ExistingRepo = false
 
-		repoNameForm := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Repository name").
-					Value(&cfg.ProjectName).
-					Validate(validateNewRepoName(cfg.Owner, checkRepoExists)),
-			),
-		)
-		if err := repoNameForm.Run(); err != nil {
-			return BootstrapConfig{}, fmt.Errorf("repo name form: %w", err)
+		if repoMode == repoModeSelectExisting {
+			cfg.ExistingRepo = true
+
+			repos, err := fetchRepos(cfg.Owner)
+			if err != nil {
+				return BootstrapConfig{}, fmt.Errorf("fetching repo list: %w", err)
+			}
+			if len(repos) == 0 {
+				return BootstrapConfig{}, fmt.Errorf("no repositories found for %s — use 'Create new repo' instead", cfg.Owner)
+			}
+
+			repoOpts := make([]huh.Option[string], 0, len(repos)+1)
+			for _, r := range repos {
+				repoOpts = append(repoOpts, huh.NewOption(r.Name, r.Name))
+			}
+			repoOpts = append(repoOpts, huh.NewOption("← Back", repoBackSentinel))
+
+			repoSelectForm := huh.NewForm(
+				huh.NewGroup(
+					huh.NewSelect[string]().
+						Title(fmt.Sprintf("Select repository (%d available)", len(repos))).
+						Description("Choose the repo to bootstrap into. If your repo is not listed, select ← Back to create a new one instead.").
+						Options(repoOpts...).
+						Height(15).
+						Value(&cfg.ProjectName),
+				),
+			)
+			if err := repoSelectForm.Run(); err != nil {
+				return BootstrapConfig{}, fmt.Errorf("repo select form: %w", err)
+			}
+
+			// If "← Back" was selected, loop back to repo mode choice.
+			if cfg.ProjectName == repoBackSentinel {
+				cfg.ProjectName = ""
+				continue
+			}
+		} else {
+			cfg.ExistingRepo = false
+
+			repoNameForm := huh.NewForm(
+				huh.NewGroup(
+					huh.NewInput().
+						Title("Repository name").
+						Description("Your new GitHub repository name — lowercase with hyphens only").
+						Value(&cfg.ProjectName).
+						Validate(validateNewRepoName(cfg.Owner, checkRepoExists)),
+				),
+			)
+			if err := repoNameForm.Run(); err != nil {
+				return BootstrapConfig{}, fmt.Errorf("repo name form: %w", err)
+			}
 		}
+		break // Repo selected — exit the loop.
 	}
 
 	// --- Phase 3: Remaining fields ---
 	// Build the details form group dynamically.
 	var detailFields []huh.Field
 
-	// Agent user input.
+	// Description — only shown for "Create new" path.
+	if !cfg.ExistingRepo {
+		detailFields = append(detailFields,
+			huh.NewInput().
+				Title("Description").
+				Description("A short description shown on the GitHub repo page").
+				Value(&cfg.Description),
+		)
+	}
+
+	// Stack multi-select.
+	detailFields = append(detailFields,
+		huh.NewMultiSelect[string]().
+			Title("Stack (select all that apply)").
+			Description("The primary technology stack(s) for this project").
+			Options(stackOptions...).
+			Value(&cfg.Stacks).
+			Validate(validateStackSelection),
+	)
+
+	// Agent user input — after stack per UX design.
 	detailFields = append(detailFields,
 		huh.NewInput().
 			Title("Agent GitHub username").
+			Description("The GitHub account that will act as the AI agent. This user must exist and will be granted write access to the repo.").
 			Value(&cfg.AgentUser).
 			Validate(func(s string) error {
 				if strings.TrimSpace(s) == "" {
@@ -436,12 +500,13 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 			}),
 	)
 
-	// Agent user scope — only shown when owner is an org.
+	// Agent user scope — only shown when owner is an org, after agent username.
 	if ownerType == OwnerTypeOrg {
 		cfg.AgentUserScope = AgentUserScopeOrg // default to org for orgs
 		detailFields = append(detailFields,
 			huh.NewSelect[string]().
 				Title("AGENT_USER variable scope").
+				Description("Where to store the AGENT_USER variable — org level shares it across repos").
 				Options(
 					huh.NewOption("Organisation level", AgentUserScopeOrg),
 					huh.NewOption("Repository level", AgentUserScopeRepo),
@@ -452,28 +517,11 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		cfg.AgentUserScope = AgentUserScopeRepo
 	}
 
-	// Description — only shown for "Create new" path.
-	if !cfg.ExistingRepo {
-		detailFields = append(detailFields,
-			huh.NewInput().
-				Title("Description").
-				Value(&cfg.Description),
-		)
-	}
-
-	// Stack multi-select (unchanged).
-	detailFields = append(detailFields,
-		huh.NewMultiSelect[string]().
-			Title("Stack (select all that apply)").
-			Options(stackOptions...).
-			Value(&cfg.Stacks).
-			Validate(validateStackSelection),
-	)
-
-	// Antora confirm (unchanged).
+	// Antora confirm.
 	detailFields = append(detailFields,
 		huh.NewConfirm().
 			Title("Antora documentation site?").
+			Description("Enable if this project will publish documentation via Antora").
 			Value(&cfg.Antora),
 	)
 
@@ -488,25 +536,60 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 	cfg.OwnerType = ownerType
 
 	// --- Pipeline configuration ---
-	cfg.RunnerLabel = DefaultRunnerLabel
+	cfg.RunnerLabel = RunnerDefaultForTopology(cfg.Topology, cfg.Owner)
 	cfg.GooseProvider = DefaultGooseProvider
 	cfg.GooseModel = DefaultGooseModel
 
+	runnerOpts := buildRunnerOptions(cfg.ProjectName, cfg.Owner)
+
 	pipelineForm := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().
+			huh.NewSelect[string]().
 				Title("Runner label").
+				Description("The GitHub Actions runner that will execute the agentic pipeline").
+				Options(runnerOpts...).
 				Value(&cfg.RunnerLabel),
 			huh.NewInput().
 				Title("Goose provider").
+				Description("The LLM provider the agent will use").
 				Value(&cfg.GooseProvider),
 			huh.NewInput().
 				Title("Goose model").
+				Description("The model the agent will use — leave as 'default' unless you have a specific requirement").
 				Value(&cfg.GooseModel),
+			huh.NewInput().
+				Title("GOOSE_AGENT_PAT").
+				Description("A GitHub Personal Access Token for the agent user. Requires scopes: repo, workflow, read:org. Create one at: github.com/settings/tokens").
+				Value(&cfg.GooseAgentPAT),
+			huh.NewNote().
+				Title("").
+				Description(ui.Muted.Render("Press Enter to submit ↵")),
 		),
 	)
 	if err := pipelineForm.Run(); err != nil {
 		return BootstrapConfig{}, fmt.Errorf("pipeline config form: %w", err)
+	}
+
+	// If "other" was selected, prompt for a custom runner label.
+	if cfg.RunnerLabel == runnerOther {
+		cfg.RunnerLabel = ""
+		customRunnerForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Custom runner label").
+					Description("Enter your custom GitHub Actions runner label").
+					Value(&cfg.RunnerLabel).
+					Validate(func(s string) error {
+						if strings.TrimSpace(s) == "" {
+							return errors.New("runner label cannot be empty")
+						}
+						return nil
+					}),
+			),
+		)
+		if err := customRunnerForm.Run(); err != nil {
+			return BootstrapConfig{}, fmt.Errorf("custom runner form: %w", err)
+		}
 	}
 
 	// --- Summary box ---
@@ -522,6 +605,7 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Create project?").
+				Description("Review the summary above before confirming").
 				Value(&confirmed),
 		),
 	)
@@ -552,8 +636,13 @@ func RenderSummaryBox(cfg BootstrapConfig) string {
 		repoModeVal = "existing"
 	}
 
+	patStatus := "not set"
+	if cfg.GooseAgentPAT != "" {
+		patStatus = "set"
+	}
+
 	content := fmt.Sprintf(
-		"  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s",
+		"  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s",
 		label("Topology   "), value(cfg.Topology),
 		label("Owner      "), value(cfg.Owner),
 		label("Repo       "), value(repoModeVal),
@@ -565,6 +654,7 @@ func RenderSummaryBox(cfg BootstrapConfig) string {
 		label("Runner     "), value(cfg.RunnerLabel),
 		label("Provider   "), value(cfg.GooseProvider),
 		label("Model      "), value(cfg.GooseModel),
+		label("Agent PAT  "), value(patStatus),
 	)
 
 	box := lipgloss.NewStyle().

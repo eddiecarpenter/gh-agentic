@@ -35,7 +35,6 @@ func DefaultSpinner(w io.Writer, label string, fn func() error) error {
 // workDir is the parent directory into which the repo will be cloned.
 // run is injected for all CLI/git calls.
 // graphqlDo is injected for GitHub GraphQL calls.
-// launch is injected for the Goose launch at the end.
 // spinner is injected so tests can use a plain text renderer.
 func RunSteps(
 	w io.Writer,
@@ -43,7 +42,6 @@ func RunSteps(
 	workDir string,
 	run RunCommandFunc,
 	graphqlDo GraphQLDoFunc,
-	launch LaunchFunc,
 	spinner SpinnerFunc,
 	fetchRelease FetchReleaseFunc,
 ) error {
@@ -116,8 +114,8 @@ func RunSteps(
 		}
 	}
 
-	// Step 9: print summary and offer Goose launch.
-	return PrintSummary(w, cfg, state, launch)
+	// Step 9: print summary with next-step instructions.
+	return PrintSummary(w, cfg, state)
 }
 
 // DefaultWorkDir returns the directory in which repos will be cloned.

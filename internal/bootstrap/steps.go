@@ -3,6 +3,7 @@ package bootstrap
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -120,6 +121,13 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 		// --- Existing repo path ---
 		fmt.Fprintln(w, "  "+ui.RenderInfo("Repo already exists — bootstrapping onto existing repo"))
 
+		// Detect local directory conflict before cloning.
+		resolvedPath, resolveErr := resolveCloneConflictFn(w, state.ClonePath)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		state.ClonePath = resolvedPath
+
 		// Clone the existing repo so we can inspect it.
 		sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
 		out, cloneErr := run("git", "clone", sshURL, state.ClonePath)
@@ -189,6 +197,13 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 	}
 
 	// --- New repo path ---
+
+	// Detect local directory conflict before creating the remote repo.
+	resolvedPath, resolveErr := resolveCloneConflictFn(w, state.ClonePath)
+	if resolveErr != nil {
+		return resolveErr
+	}
+	state.ClonePath = resolvedPath
 
 	// Create the blank private repo (no --template).
 	out, err := run("gh", "repo", "create", fullName, "--private")
@@ -828,25 +843,13 @@ func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run
 // Step 9 — PrintSummary + Goose launch
 // --------------------------------------------------------------------------------------
 
-// LaunchFunc is called to launch Goose in the given directory.
-// Injected so tests can substitute a fake without spawning a real process.
-type LaunchFunc func(clonePath string) error
-
-// DefaultLaunchGoose is the production LaunchFunc that runs goose session
-// with CWD set to clonePath.
-func DefaultLaunchGoose(clonePath string) error {
-	quoted := "'" + strings.ReplaceAll(clonePath, "'", "'\\''") + "'"
-	_, err := DefaultRunCommand("bash", "-c", "cd "+quoted+" && goose session")
-	return err
-}
-
-// PrintSummary renders the final "Bootstrap complete" box and offers
-// the Goose launch prompt.
-func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch LaunchFunc) error {
+// PrintSummary renders the final "Bootstrap complete" box with clear
+// next-step instructions. No interactive prompt is shown.
+func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState) error {
 	fmt.Fprintln(w)
 
 	successBold := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorSuccess))
-	fmt.Fprintln(w, successBold.Render("  ✔ Bootstrap complete"))
+	fmt.Fprintln(w, successBold.Render("  ✔ Bootstrap complete!"))
 	fmt.Fprintln(w)
 
 	var content string
@@ -889,12 +892,6 @@ func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch Lau
 	fmt.Fprintln(w, "  "+ui.Muted.Render("Credentials ")+credStatus)
 	fmt.Fprintln(w)
 
-	// --- Self-hosted runner note ---
-	if cfg.RunnerLabel != DefaultRunnerLabel {
-		fmt.Fprintln(w, "  "+infoStyle.Render("ℹ")+"  Self-hosted runner: ensure gh CLI and Claude Code CLI are pre-installed and authenticated on the runner.")
-		fmt.Fprintln(w)
-	}
-
 	// --- GOOSE_AGENT_PAT warning ---
 	if !state.AgentPATFound {
 		fullName := cfg.Owner + "/" + state.RepoName
@@ -910,42 +907,93 @@ func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch Lau
 		fmt.Fprintln(w)
 	}
 
-	// --- Goose launch prompt ---
-	fmt.Fprintln(w, ui.SectionHeading.Render("  Start Requirements Session"))
+	// --- Next steps ---
+	repoName := state.RepoName
+	if repoName == "" {
+		repoName = cfg.ProjectName
+	}
+	fmt.Fprintln(w, ui.SectionHeading.Render("  Next steps"))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  1. Open Claude Code or Goose Desktop")
+	fmt.Fprintln(w, "  2. Select '"+ui.Value.Render(repoName)+"' as your workspace")
+	fmt.Fprintln(w, "  3. Start a new session with the prompt:")
+	fmt.Fprintln(w, "     "+ui.Muted.Render("\"Assist me with defining my new AI-native developed application\""))
 	fmt.Fprintln(w)
 
+	return nil
+}
+
+// ErrCloneAborted is returned when the user chooses to abort clone conflict resolution.
+var ErrCloneAborted = errors.New("clone aborted by user")
+
+// cloneConflictRename is the value for the "rename to backup" option.
+const cloneConflictRename = "rename"
+
+// cloneConflictAbort is the value for the "abort" option.
+const cloneConflictAbort = "abort"
+
+// ResolveCloneConflictFunc checks whether the target directory exists and resolves
+// the conflict interactively. Injected so tests can substitute a no-op.
+type ResolveCloneConflictFunc func(w io.Writer, clonePath string) (string, error)
+
+// resolveCloneConflictFn is the active conflict resolver. Override in tests.
+var resolveCloneConflictFn ResolveCloneConflictFunc = DefaultResolveCloneConflict
+
+// DefaultResolveCloneConflict checks whether the target directory exists. If it does,
+// it presents the user with recovery options: rename to backup or abort.
+// Returns the resolved clone path or an error.
+func DefaultResolveCloneConflict(w io.Writer, clonePath string) (string, error) {
+	if _, err := os.Stat(clonePath); os.IsNotExist(err) {
+		return clonePath, nil // No conflict — proceed normally.
+	}
+
+	fmt.Fprintln(w, "  "+ui.RenderWarning(fmt.Sprintf("Directory %q already exists", filepath.Base(clonePath))))
+
 	var choice string
-	launchForm := huh.NewForm(
+	conflictForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("How would you like to continue?").
+				Title("Directory already exists").
+				Description("Choose how to resolve the conflict").
 				Options(
-					huh.NewOption("Terminal  — launch Goose CLI in "+cfg.ProjectName, "terminal"),
-					huh.NewOption("Skip      — I'll do it manually", "skip"),
+					huh.NewOption("Rename existing to .backup and continue", cloneConflictRename),
+					huh.NewOption("Abort", cloneConflictAbort),
 				).
 				Value(&choice),
 		),
 	)
-	if err := launchForm.Run(); err != nil {
-		return fmt.Errorf("launch prompt: %w", err)
+	if err := conflictForm.Run(); err != nil {
+		return "", fmt.Errorf("clone conflict form: %w", err)
 	}
 
 	switch choice {
-	case "terminal":
-		fmt.Fprintln(w, "  "+ui.Muted.Render("Launching Goose..."))
-		if err := launch(state.ClonePath); err != nil {
-			return fmt.Errorf("launching Goose: %w", err)
+	case cloneConflictRename:
+		backupPath := findBackupPath(clonePath)
+		if err := os.Rename(clonePath, backupPath); err != nil {
+			return "", fmt.Errorf("renaming %s to %s: %w", clonePath, backupPath, err)
 		}
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  "+ui.RenderOK("Goose launched in "+state.ClonePath))
-		fmt.Fprintln(w, "  "+ui.Muted.Render("Your agent will read context and begin the Requirements Session."))
+		fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· Renamed existing directory to %s", filepath.Base(backupPath))))
+		return clonePath, nil
+	case cloneConflictAbort:
+		return "", ErrCloneAborted
 	default:
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  "+ui.Value.Render(state.ClonePath))
-		fmt.Fprintln(w, "  "+ui.Muted.Render("cd into the repo and start a Requirements Session when ready."))
+		return "", ErrCloneAborted
 	}
+}
 
-	return nil
+// findBackupPath returns a non-conflicting backup path for the given directory.
+// It tries <path>.backup, <path>.backup.1, <path>.backup.2, etc.
+func findBackupPath(path string) string {
+	candidate := path + ".backup"
+	if _, err := os.Stat(candidate); os.IsNotExist(err) {
+		return candidate
+	}
+	for i := 1; ; i++ {
+		candidate = fmt.Sprintf("%s.backup.%d", path, i)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
 }
 
 // --------------------------------------------------------------------------------------

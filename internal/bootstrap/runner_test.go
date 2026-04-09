@@ -62,24 +62,17 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 		return errors.New("no auth in test")
 	}
 
-	// Stub launch: skip — avoids spawning goose.
-	launch := func(clonePath string) error { return nil }
-
 	// Stub spinner: plain (no TTY).
 	spinner := plainSpinnerFunc
 
 	var buf bytes.Buffer
 
-	// RunSteps will call PrintSummary, which runs a huh form requiring a TTY.
-	// In a test environment this will return an error from the form.
-	// We accept that — what we care about is that steps 3-8 ran without error.
-	// To avoid the form error propagating as a test failure we capture it.
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
-	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, spinner, fetchRelease)
+	err := RunSteps(&buf, cfg, dir, run, graphqlDo, spinner, fetchRelease)
 
-	// The only acceptable error is from the huh form (no TTY).
-	if err != nil && !strings.Contains(err.Error(), "launch prompt") {
+	// PrintSummary no longer uses huh — it should succeed.
+	if err != nil {
 		t.Errorf("RunSteps() unexpected error: %v", err)
 	}
 
@@ -116,12 +109,11 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 	}
 
 	graphqlDo := func(_ string, _ map[string]interface{}, _ interface{}) error { return nil }
-	launch := func(_ string) error { return nil }
 
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, plainSpinnerFunc, fetchRelease)
+	err := RunSteps(&buf, cfg, dir, run, graphqlDo, plainSpinnerFunc, fetchRelease)
 	if err == nil {
 		t.Fatal("RunSteps() expected error when first step fails, got nil")
 	}
@@ -171,7 +163,6 @@ func TestRunSteps_MergedConfiguringRepositoryStep_NoSeparateLabels(t *testing.T)
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
 		return errors.New("no auth in test")
 	}
-	launch := func(clonePath string) error { return nil }
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
 	// Track spinner labels.
@@ -182,7 +173,7 @@ func TestRunSteps_MergedConfiguringRepositoryStep_NoSeparateLabels(t *testing.T)
 	}
 
 	var buf bytes.Buffer
-	_ = RunSteps(&buf, cfg, dir, run, graphqlDo, launch, trackingSpinner, fetchRelease)
+	_ = RunSteps(&buf, cfg, dir, run, graphqlDo, trackingSpinner, fetchRelease)
 
 	// Verify "Configuring repository" exists and old labels do not.
 	foundMerged := false
@@ -244,7 +235,6 @@ func TestRunSteps_ConfigureRepoSucceeds_CreateProjectFails_ErrorPropagates(t *te
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
 		return nil
 	}
-	launch := func(_ string) error { return nil }
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
 	// Track spinner labels to verify subsequent steps do not execute.
@@ -255,7 +245,7 @@ func TestRunSteps_ConfigureRepoSucceeds_CreateProjectFails_ErrorPropagates(t *te
 	}
 
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, dir, run, graphqlDo, launch, trackingSpinner, fetchRelease)
+	err := RunSteps(&buf, cfg, dir, run, graphqlDo, trackingSpinner, fetchRelease)
 	if err == nil {
 		t.Fatal("expected error when CreateProject fails, got nil")
 	}

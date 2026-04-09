@@ -32,6 +32,11 @@ func TestMain(m *testing.M) {
 		return io.NopCloser(bytes.NewReader(tarBytes)), nil
 	}
 
+	// Install a no-op clone conflict resolver for tests — no TTY available.
+	resolveCloneConflictFn = func(w io.Writer, clonePath string) (string, error) {
+		return clonePath, nil
+	}
+
 	os.Exit(m.Run())
 }
 
@@ -1716,10 +1721,8 @@ func TestPrintSummary_OutputContainsAllFields(t *testing.T) {
 		CredentialsSet: true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
 	if !strings.Contains(out, "Bootstrap complete") {
@@ -1748,10 +1751,8 @@ func TestPrintSummary_OrgAccount_ShowsPATGuidance(t *testing.T) {
 		AgentPATFound: true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
 	if !strings.Contains(out, "github.com/settings/tokens") {
@@ -1774,10 +1775,8 @@ func TestPrintSummary_UserAccount_NoPATScopeGuidance(t *testing.T) {
 		AgentPATFound: true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
 	// PAT scope guidance (org-specific) should not appear for personal accounts.
@@ -1802,10 +1801,8 @@ func TestPrintSummary_PipelineConfig_ShowsRunnerProviderModel(t *testing.T) {
 		AgentPATFound:  true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
 	for _, want := range []string{"ubuntu-latest", "claude-code", "default"} {
@@ -1831,10 +1828,8 @@ func TestPrintSummary_CredentialsNotSet_ShowsWarning(t *testing.T) {
 		AgentPATFound:  true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
 	if !strings.Contains(out, "not set") {
@@ -1858,10 +1853,8 @@ func TestPrintSummary_CredentialsSet_ShowsOK(t *testing.T) {
 		AgentPATFound:  true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
 	if strings.Contains(out, "not set") {
@@ -1869,7 +1862,7 @@ func TestPrintSummary_CredentialsSet_ShowsOK(t *testing.T) {
 	}
 }
 
-func TestPrintSummary_CustomRunner_ShowsSelfHostedNote(t *testing.T) {
+func TestPrintSummary_CustomRunner_NoSelfHostedNote(t *testing.T) {
 	cfg := BootstrapConfig{
 		ProjectName:   "my-project",
 		Owner:         "alice",
@@ -1884,18 +1877,17 @@ func TestPrintSummary_CustomRunner_ShowsSelfHostedNote(t *testing.T) {
 		AgentPATFound: true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
-	if !strings.Contains(out, "Self-hosted runner") {
-		t.Errorf("expected self-hosted runner note, got: %s", out)
+	// Self-hosted runner note was removed per #361 scope item 7.
+	if strings.Contains(out, "Self-hosted runner") {
+		t.Errorf("expected no self-hosted runner note (removed), got: %s", out)
 	}
 }
 
-func TestPrintSummary_DefaultRunner_NoSelfHostedNote(t *testing.T) {
+func TestPrintSummary_ShowsNextStepInstructions(t *testing.T) {
 	cfg := BootstrapConfig{
 		ProjectName:   "my-project",
 		Owner:         "alice",
@@ -1910,14 +1902,46 @@ func TestPrintSummary_DefaultRunner_NoSelfHostedNote(t *testing.T) {
 		AgentPATFound: true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
-	if strings.Contains(out, "Self-hosted runner") {
-		t.Errorf("expected no self-hosted runner note for default runner, got: %s", out)
+	if !strings.Contains(out, "Next steps") {
+		t.Errorf("expected 'Next steps' heading, got: %s", out)
+	}
+	if !strings.Contains(out, "Claude Code or Goose Desktop") {
+		t.Errorf("expected Claude Code/Goose Desktop instruction, got: %s", out)
+	}
+	if !strings.Contains(out, "my-project") {
+		t.Errorf("expected repo name in instructions, got: %s", out)
+	}
+	if !strings.Contains(out, "Assist me with defining my new AI-native developed application") {
+		t.Errorf("expected suggested prompt, got: %s", out)
+	}
+}
+
+func TestPrintSummary_NoTerminalSkipPrompt(t *testing.T) {
+	cfg := BootstrapConfig{
+		ProjectName:   "my-project",
+		Owner:         "alice",
+		RunnerLabel:   DefaultRunnerLabel,
+		GooseProvider: DefaultGooseProvider,
+		GooseModel:    DefaultGooseModel,
+	}
+	state := &StepState{
+		RepoName:      "my-project",
+		RepoURL:       "https://github.com/alice/my-project",
+		ClonePath:     "/tmp/my-project",
+		AgentPATFound: true,
+	}
+
+	var buf bytes.Buffer
+	_ = PrintSummary(&buf, cfg, state)
+
+	out := buf.String()
+	// Terminal/Skip prompt should not exist.
+	if strings.Contains(out, "Terminal") && strings.Contains(out, "Skip") {
+		t.Errorf("expected no Terminal/Skip prompt, got: %s", out)
 	}
 }
 
@@ -1936,10 +1960,8 @@ func TestPrintSummary_PATMissing_ShowsWarning(t *testing.T) {
 		AgentPATFound: false,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
 	if !strings.Contains(out, "GOOSE_AGENT_PAT secret not found") {
@@ -1965,10 +1987,8 @@ func TestPrintSummary_PATFound_NoPATWarning(t *testing.T) {
 		AgentPATFound: true,
 	}
 
-	fakeLaunch := func(clonePath string) error { return nil }
-
 	var buf bytes.Buffer
-	_ = PrintSummary(&buf, cfg, state, fakeLaunch)
+	_ = PrintSummary(&buf, cfg, state)
 
 	out := buf.String()
 	if strings.Contains(out, "GOOSE_AGENT_PAT secret not found") {
@@ -1979,6 +1999,75 @@ func TestPrintSummary_PATFound_NoPATWarning(t *testing.T) {
 // --------------------------------------------------------------------------------------
 // Internal helpers
 // --------------------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------------------
+// resolveCloneConflict and findBackupPath tests
+// --------------------------------------------------------------------------------------
+
+func TestFindBackupPath_NoConflict_ReturnsDotBackup(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "my-project")
+	// target does not exist, so .backup should be returned
+	got := findBackupPath(target)
+	want := target + ".backup"
+	if got != want {
+		t.Errorf("findBackupPath() = %q, want %q", got, want)
+	}
+}
+
+func TestFindBackupPath_BackupExists_ReturnsNumbered(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "my-project")
+	// Create the first backup
+	if err := os.MkdirAll(target+".backup", 0o755); err != nil {
+		t.Fatalf("creating backup dir: %v", err)
+	}
+	got := findBackupPath(target)
+	want := target + ".backup.1"
+	if got != want {
+		t.Errorf("findBackupPath() = %q, want %q", got, want)
+	}
+}
+
+func TestFindBackupPath_MultipleBackups_ReturnsNextNumber(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "my-project")
+	// Create .backup and .backup.1
+	if err := os.MkdirAll(target+".backup", 0o755); err != nil {
+		t.Fatalf("creating backup dir: %v", err)
+	}
+	if err := os.MkdirAll(target+".backup.1", 0o755); err != nil {
+		t.Fatalf("creating backup.1 dir: %v", err)
+	}
+	got := findBackupPath(target)
+	want := target + ".backup.2"
+	if got != want {
+		t.Errorf("findBackupPath() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultResolveCloneConflict_NoConflict_ReturnsPathUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "does-not-exist")
+
+	var buf bytes.Buffer
+	got, err := DefaultResolveCloneConflict(&buf, target)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != target {
+		t.Errorf("DefaultResolveCloneConflict() = %q, want %q", got, target)
+	}
+}
+
+func TestErrCloneAborted_IsError(t *testing.T) {
+	if ErrCloneAborted == nil {
+		t.Error("ErrCloneAborted should not be nil")
+	}
+	if ErrCloneAborted.Error() != "clone aborted by user" {
+		t.Errorf("ErrCloneAborted.Error() = %q, want %q", ErrCloneAborted.Error(), "clone aborted by user")
+	}
+}
 
 func TestShellQuote_NoSpecialChars(t *testing.T) {
 	if got := shellQuote("hello"); got != "'hello'" {

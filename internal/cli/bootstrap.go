@@ -72,7 +72,6 @@ func newBootstrapCmd() *cobra.Command {
 				workDir,
 				bootstrap.DefaultRunCommand,
 				graphqlDo,
-				bootstrap.DefaultLaunchGoose,
 				bootstrap.DefaultSpinner,
 				sync.DefaultFetchRelease,
 			); err != nil {
