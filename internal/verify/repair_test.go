@@ -388,7 +388,7 @@ func TestRepairWorkflows_FromBase_CopiesAndStages(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun, nil)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -408,39 +408,52 @@ func TestRepairWorkflows_FromBase_CopiesAndStages(t *testing.T) {
 	}
 }
 
-func TestRepairWorkflows_Fallback_AllPresent(t *testing.T) {
+func TestRepairWorkflows_Fallback_ExtractsFromTarball(t *testing.T) {
 	root := t.TempDir()
-	workflowsDir := filepath.Join(root, ".github", "workflows")
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 
-	// No base/.github/workflows/ — fallback mode.
-	// Create all expected files.
-	if err := os.MkdirAll(workflowsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// No base/.github/workflows/ — fallback to tarball.
+	workflowFiles := make(map[string]string)
 	for _, name := range expectedWorkflowYMLs {
-		if err := os.WriteFile(filepath.Join(workflowsDir, name), []byte("content"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		workflowFiles[".github/workflows/"+name] = "on: push # " + name
 	}
+	fetch := buildTestFetchFunc(t, workflowFiles)
 
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
 
-	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun, fetch)
 	if result.Status != Pass {
-		t.Errorf("expected Pass when all files present, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// Verify workflows were extracted.
+	for _, name := range expectedWorkflowYMLs {
+		data, err := os.ReadFile(filepath.Join(root, ".github", "workflows", name))
+		if err != nil {
+			t.Errorf("expected workflow %s: %v", name, err)
+			continue
+		}
+		expected := "on: push # " + name
+		if string(data) != expected {
+			t.Errorf("%s: expected %q, got %q", name, expected, string(data))
+		}
 	}
 }
 
-func TestRepairWorkflows_MissingFiles_ReturnsFail(t *testing.T) {
+func TestRepairWorkflows_Fallback_MissingConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
+	// No base/ and no TEMPLATE_SOURCE — should fail.
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
-	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun, nil)
 	if result.Status != Fail {
-		t.Errorf("expected Fail for missing workflow files, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
+		t.Errorf("expected TEMPLATE_SOURCE in message, got: %s", result.Message)
 	}
 }
 
@@ -471,7 +484,7 @@ func TestRepairWorkflows_PersonalAccount_SkipsOrgOnlyWorkflow(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairWorkflows(root, bootstrap.OwnerTypeUser, fakeRun)
+	result := RepairWorkflows(root, bootstrap.OwnerTypeUser, fakeRun, nil)
 	if result.Status != Pass {
 		t.Errorf("expected Pass for personal account repair, got %v: %s", result.Status, result.Message)
 	}
@@ -488,6 +501,39 @@ func TestRepairWorkflows_PersonalAccount_SkipsOrgOnlyWorkflow(t *testing.T) {
 	}
 	if string(data) != "pipeline-v2" {
 		t.Errorf("expected updated pipeline content, got %q", data)
+	}
+}
+
+func TestRepairWorkflows_Fallback_PersonalAccount_SkipsOrgOnly(t *testing.T) {
+	root := t.TempDir()
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
+
+	// No base/.github/workflows/ — fallback to tarball.
+	// Include both regular and org-only workflows in tarball.
+	workflowFiles := map[string]string{
+		".github/workflows/agentic-pipeline.yml":     "on: push",
+		".github/workflows/sync-status-to-label.yml": "org-only",
+	}
+	fetch := buildTestFetchFunc(t, workflowFiles)
+
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	result := RepairWorkflows(root, bootstrap.OwnerTypeUser, fakeRun, fetch)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+
+	// org-only file must NOT have been written.
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if _, err := os.Stat(filepath.Join(wfDir, "sync-status-to-label.yml")); err == nil {
+		t.Error("org-only workflow should not be extracted for personal account")
+	}
+
+	// Regular file should be present.
+	if _, err := os.Stat(filepath.Join(wfDir, "agentic-pipeline.yml")); err != nil {
+		t.Errorf("expected regular workflow file: %v", err)
 	}
 }
 

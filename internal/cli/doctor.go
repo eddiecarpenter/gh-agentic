@@ -143,7 +143,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case ".goose/recipes/ exists and complete":
 				r = verify.RepairGooseRecipes(cfg.root, nil)
 			case ".github/workflows/ exists and complete":
-				r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run)
+				r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run, nil)
 			case "Standard labels present":
 				r = verify.RepairLabels(cfg.repoFullName, run)
 			case "GitHub Project linked":

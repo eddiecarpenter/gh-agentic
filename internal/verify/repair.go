@@ -893,12 +893,12 @@ func RepairGooseRecipes(root string, fetch tarball.FetchFunc) CheckResult {
 
 // RepairWorkflows copies workflow files from base/.github/workflows/ to
 // .github/workflows/ (overwriting existing), then stages them with git add.
-// Falls back to fetching from the template repo when base/.github/workflows/
-// is absent. run is injected for git operations.
+// Falls back to extracting from the TEMPLATE_VERSION tarball when
+// base/.github/workflows/ is absent. run is injected for git operations.
 //
 // ownerType is bootstrap.OwnerTypeUser or bootstrap.OwnerTypeOrg. Org-only
 // workflows are skipped for personal accounts.
-func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc, fetch tarball.FetchFunc) CheckResult {
 	const checkName = ".github/workflows/ exists and complete"
 
 	workflowsPath := filepath.Join(root, ".github", "workflows")
@@ -965,36 +965,72 @@ func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc) Check
 		}
 	}
 
-	// Fallback: fetch missing files from template repo.
-	sourceData, _ := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
-	templateRepo := strings.TrimSpace(string(sourceData))
-
-	var stillMissing []string
-	for _, name := range expectedWorkflowYMLs {
-		dst := filepath.Join(workflowsPath, name)
-		if _, err := os.Stat(dst); err == nil {
-			continue // already present
-		}
-
-		// Fall back to fetching from the template repo.
-		if templateRepo != "" {
-			if content, fetchErr := fetchFileFromRepo(templateRepo, ".github/workflows/"+name); fetchErr == nil {
-				if writeErr := os.WriteFile(dst, content, 0o644); writeErr == nil {
-					continue
-				}
-			}
-		}
-
-		stillMissing = append(stillMissing, name)
-	}
-
-	if len(stillMissing) > 0 {
+	// Fallback: extract from TEMPLATE_VERSION tarball.
+	repo, version, err := tarball.ReadTemplateConfig(root)
+	if err != nil {
 		return CheckResult{
 			Name:    checkName,
 			Status:  Fail,
-			Message: fmt.Sprintf("could not restore: %s", strings.Join(stillMissing, ", ")),
+			Message: fmt.Sprintf("cannot read template config: %v", err),
 		}
 	}
+
+	// Extract workflows to a temporary directory first, then selectively
+	// copy to the destination (skipping org-only workflows for personal accounts).
+	tmpDir, tmpErr := os.MkdirTemp("", "workflow-extract-*")
+	if tmpErr != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("creating temp directory: %v", tmpErr),
+		}
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := tarball.ExtractFromTemplate(repo, version, tmpDir, []string{".github/workflows/"}, fetch); err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("tarball extraction failed: %v", err),
+		}
+	}
+
+	// Copy extracted workflows to the destination, filtering org-only files.
+	extractedDir := filepath.Join(tmpDir, ".github", "workflows")
+	entries, err := os.ReadDir(extractedDir)
+	if err != nil {
+		return CheckResult{
+			Name:    checkName,
+			Status:  Fail,
+			Message: fmt.Sprintf("reading extracted workflows: %v", err),
+		}
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if orgOnlyWorkflows[name] && ownerType == bootstrap.OwnerTypeUser {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(extractedDir, name))
+		if readErr != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("reading extracted %s: %v", name, readErr),
+			}
+		}
+		if writeErr := os.WriteFile(filepath.Join(workflowsPath, name), data, 0o644); writeErr != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("writing %s: %v", name, writeErr),
+			}
+		}
+	}
+
 	return CheckResult{
 		Name:   checkName,
 		Status: Pass,
