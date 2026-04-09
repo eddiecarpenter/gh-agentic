@@ -1358,10 +1358,13 @@ func TestRepairAgenticProjectID_OrgScope_UsesOrgFlag(t *testing.T) {
 }
 
 func TestRepairRunnerLabelVar_OrgScope_UsesOrgFlag(t *testing.T) {
-	var capturedArgs []string
+	var setArgs []string
 	fakeRun := func(name string, args ...string) (string, error) {
-		capturedArgs = append([]string{name}, args...)
-		return "", nil
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			setArgs = append([]string{name}, args...)
+		}
+		return `[]`, nil
 	}
 
 	result := RepairRunnerLabelVar("acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
@@ -1369,20 +1372,23 @@ func TestRepairRunnerLabelVar_OrgScope_UsesOrgFlag(t *testing.T) {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	joined := strings.Join(capturedArgs, " ")
+	joined := strings.Join(setArgs, " ")
 	if !strings.Contains(joined, "--org acme-org") {
-		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
+		t.Errorf("expected --org acme-org in set args, got: %v", setArgs)
 	}
 	if strings.Contains(joined, "--repo") {
-		t.Errorf("expected no --repo flag for org scope, got: %v", capturedArgs)
+		t.Errorf("expected no --repo flag in set command for org scope, got: %v", setArgs)
 	}
 }
 
 func TestRepairGooseProviderVar_OrgScope_UsesOrgFlag(t *testing.T) {
-	var capturedArgs []string
+	var setArgs []string
 	fakeRun := func(name string, args ...string) (string, error) {
-		capturedArgs = append([]string{name}, args...)
-		return "", nil
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			setArgs = append([]string{name}, args...)
+		}
+		return `[]`, nil
 	}
 
 	result := RepairGooseProviderVar("acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
@@ -1390,17 +1396,20 @@ func TestRepairGooseProviderVar_OrgScope_UsesOrgFlag(t *testing.T) {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	joined := strings.Join(capturedArgs, " ")
+	joined := strings.Join(setArgs, " ")
 	if !strings.Contains(joined, "--org acme-org") {
-		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
+		t.Errorf("expected --org acme-org in set args, got: %v", setArgs)
 	}
 }
 
 func TestRepairGooseModelVar_OrgScope_UsesOrgFlag(t *testing.T) {
-	var capturedArgs []string
+	var setArgs []string
 	fakeRun := func(name string, args ...string) (string, error) {
-		capturedArgs = append([]string{name}, args...)
-		return "", nil
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			setArgs = append([]string{name}, args...)
+		}
+		return `[]`, nil
 	}
 
 	result := RepairGooseModelVar("acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
@@ -1408,9 +1417,9 @@ func TestRepairGooseModelVar_OrgScope_UsesOrgFlag(t *testing.T) {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	joined := strings.Join(capturedArgs, " ")
+	joined := strings.Join(setArgs, " ")
 	if !strings.Contains(joined, "--org acme-org") {
-		t.Errorf("expected --org acme-org in args, got: %v", capturedArgs)
+		t.Errorf("expected --org acme-org in set args, got: %v", setArgs)
 	}
 }
 
@@ -1419,7 +1428,7 @@ func TestRepairGooseModelVar_OrgScope_UsesOrgFlag(t *testing.T) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 func TestRepairGooseAgentPATSecret_ReturnsManualAction(t *testing.T) {
-	result := RepairGooseAgentPATSecret("owner", "repo")
+	result := RepairGooseAgentPATSecret("owner", "repo", bootstrap.OwnerTypeUser)
 	if result.Status != ManualAction {
 		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
 	}
@@ -1622,12 +1631,13 @@ func TestRepairClaudeCredentialsSecret_DelegatesToWithReadFile(t *testing.T) {
 }
 
 func TestRepairClaudeCredentialsSecret_OrgScope_UsesOrgFlag(t *testing.T) {
-	var ghArgs []string
+	var setArgs []string
 	fakeRun := func(name string, args ...string) (string, error) {
-		if name == "gh" {
-			ghArgs = args
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.Contains(joined, "secret set") {
+			setArgs = args
 		}
-		return "", nil
+		return `[]`, nil
 	}
 	fakeReadFile := func(path string) ([]byte, error) {
 		return []byte(`{"token":"abc123"}`), nil
@@ -1641,13 +1651,13 @@ func TestRepairClaudeCredentialsSecret_OrgScope_UsesOrgFlag(t *testing.T) {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	// Verify --org flag is used with owner only (not owner/repo).
-	joined := strings.Join(ghArgs, " ")
+	// Verify --org flag is used in the set command.
+	joined := strings.Join(setArgs, " ")
 	if !strings.Contains(joined, "--org acme-org") {
-		t.Errorf("expected --org acme-org in gh args, got: %v", ghArgs)
+		t.Errorf("expected --org acme-org in set args, got: %v", setArgs)
 	}
 	if strings.Contains(joined, "--repo") {
-		t.Errorf("expected no --repo flag for org scope, got: %v", ghArgs)
+		t.Errorf("expected no --repo flag in set command for org scope, got: %v", setArgs)
 	}
 }
 
@@ -1788,5 +1798,192 @@ func buildTestFetchFunc(t *testing.T, files map[string]string) tarball.FetchFunc
 func failingFetchFunc(msg string) tarball.FetchFunc {
 	return func(repo, version string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("%s", msg)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Topology-aware repair tests — variable move capability
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairRepoVariable_Org_DeletesMisplacedRepoVar(t *testing.T) {
+	var deleteCalled bool
+	var deleteArgs string
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			return "", nil
+		}
+		if strings.Contains(joined, "variable list") && strings.Contains(joined, "--repo") {
+			return `[{"name":"RUNNER_LABEL"}]`, nil
+		}
+		if strings.Contains(joined, "variable list") && strings.Contains(joined, "--org") {
+			return `[]`, nil
+		}
+		if strings.Contains(joined, "variable delete") {
+			deleteCalled = true
+			deleteArgs = joined
+			return "", nil
+		}
+		return `[]`, nil
+	}
+
+	result := RepairRunnerLabelVar("acme-org", "my-repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !deleteCalled {
+		t.Error("expected repo-level variable to be deleted")
+	}
+	if !strings.Contains(deleteArgs, "--repo acme-org/my-repo") {
+		t.Errorf("expected delete to target repo, got %q", deleteArgs)
+	}
+}
+
+func TestRepairRepoVariable_Org_NoDeleteWhenNoRepoVar(t *testing.T) {
+	var deleteCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			return "", nil
+		}
+		if strings.Contains(joined, "variable list") {
+			return `[]`, nil
+		}
+		if strings.Contains(joined, "variable delete") {
+			deleteCalled = true
+			return "", nil
+		}
+		return `[]`, nil
+	}
+
+	result := RepairRunnerLabelVar("acme-org", "my-repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if deleteCalled {
+		t.Error("expected no delete when variable not at repo level")
+	}
+}
+
+func TestRepairRepoVariable_User_NoDeleteAttempted(t *testing.T) {
+	var deleteCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			return "", nil
+		}
+		if strings.Contains(joined, "variable delete") {
+			deleteCalled = true
+			return "", nil
+		}
+		return `[]`, nil
+	}
+
+	result := RepairRunnerLabelVar("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if deleteCalled {
+		t.Error("expected no delete for user topology")
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Topology-aware repair tests — GooseAgentPAT org/user messages
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairGooseAgentPATSecret_Org_ReferencesOrgScope(t *testing.T) {
+	result := RepairGooseAgentPATSecret("acme-org", "my-repo", bootstrap.OwnerTypeOrg)
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "org level") {
+		t.Errorf("expected org-level reference in message, got %q", result.Message)
+	}
+	if !strings.Contains(result.Message, "https://github.com/organizations/acme-org/settings/secrets/actions") {
+		t.Errorf("expected org secrets URL, got %q", result.Message)
+	}
+}
+
+func TestRepairGooseAgentPATSecret_User_ReferencesRepoScope(t *testing.T) {
+	result := RepairGooseAgentPATSecret("alice", "my-repo", bootstrap.OwnerTypeUser)
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "https://github.com/alice/my-repo/settings/secrets/actions") {
+		t.Errorf("expected repo secrets URL, got %q", result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Topology-aware repair tests — ClaudeCredentials move capability
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairClaudeCredentialsSecret_Org_DeletesMisplacedRepoSecret(t *testing.T) {
+	var deleteCalled bool
+	var deleteArgs string
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set") {
+			return "", nil
+		}
+		if strings.Contains(joined, "secret list") && strings.Contains(joined, "--repo") {
+			return `[{"name":"CLAUDE_CREDENTIALS_JSON"}]`, nil
+		}
+		if strings.Contains(joined, "secret list") && strings.Contains(joined, "--org") {
+			return `[]`, nil
+		}
+		if strings.Contains(joined, "secret delete") {
+			deleteCalled = true
+			deleteArgs = joined
+			return "", nil
+		}
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"abc123"}`), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("acme-org", "my-repo", bootstrap.OwnerTypeOrg, fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !deleteCalled {
+		t.Error("expected repo-level secret to be deleted")
+	}
+	if !strings.Contains(deleteArgs, "--repo acme-org/my-repo") {
+		t.Errorf("expected delete to target repo, got %q", deleteArgs)
+	}
+}
+
+func TestRepairClaudeCredentialsSecret_User_NoDeleteAttempted(t *testing.T) {
+	var deleteCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set") {
+			return "", nil
+		}
+		if strings.Contains(joined, "secret delete") {
+			deleteCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+	fakeReadFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"abc123"}`), nil
+	}
+	fakeHomeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+
+	result := RepairClaudeCredentialsSecretWithReadFile("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun, fakeReadFile, fakeHomeDir)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if deleteCalled {
+		t.Error("expected no delete for user topology")
 	}
 }
