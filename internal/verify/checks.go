@@ -840,30 +840,51 @@ func CheckProjectCollaborator(owner, repoName, agentUser, ownerType string, run 
 const checkAgenticProjectIDName = "AGENTIC_PROJECT_ID is configured"
 
 // CheckAgenticProjectID verifies that the AGENTIC_PROJECT_ID GitHub Actions
-// variable is set. For org-owned repos it checks at org level; for personal
-// repos it checks at repo level. This variable is required by the
-// sync-label-to-status workflow to update the GitHub Project board status.
+// variable is set with topology-aware dual-scope logic. For Organization
+// (federated) repos the variable must exist at org level; if found only at
+// repo level it fails with a topology message. For User (single) repos it
+// may exist at either scope.
 func CheckAgenticProjectID(repoFullName, owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
-	// Use --org for org-owned repos, --repo for personal repos.
-	var scopeArgs []string
 	if ownerType == bootstrap.OwnerTypeOrg {
-		scopeArgs = []string{"--org", owner}
-	} else {
-		scopeArgs = []string{"--repo", repoFullName}
-	}
-
-	args := append([]string{"variable", "get", "AGENTIC_PROJECT_ID"}, scopeArgs...)
-	out, err := run("gh", args...)
-	if err != nil || strings.TrimSpace(out) == "" {
+		// Federated: must be at org level.
+		orgArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--org", owner}
+		out, err := run("gh", orgArgs...)
+		if err == nil && strings.TrimSpace(out) != "" {
+			return CheckResult{Name: checkAgenticProjectIDName, Status: Pass}
+		}
+		// Not at org — check repo level to detect misplacement.
+		repoArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--repo", repoFullName}
+		repoOut, repoErr := run("gh", repoArgs...)
+		if repoErr == nil && strings.TrimSpace(repoOut) != "" {
+			return CheckResult{
+				Name:    checkAgenticProjectIDName,
+				Status:  Fail,
+				Message: "AGENTIC_PROJECT_ID is set at repo level but must be at org level for federated topology",
+			}
+		}
 		return CheckResult{
 			Name:    checkAgenticProjectIDName,
 			Status:  Fail,
 			Message: "AGENTIC_PROJECT_ID variable is not set",
 		}
 	}
+
+	// Single (User): check repo level first, then org level.
+	repoArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--repo", repoFullName}
+	out, err := run("gh", repoArgs...)
+	if err == nil && strings.TrimSpace(out) != "" {
+		return CheckResult{Name: checkAgenticProjectIDName, Status: Pass}
+	}
+	// Not at repo — check org level (acceptable for single topology).
+	orgArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--org", owner}
+	orgOut, orgErr := run("gh", orgArgs...)
+	if orgErr == nil && strings.TrimSpace(orgOut) != "" {
+		return CheckResult{Name: checkAgenticProjectIDName, Status: Pass}
+	}
 	return CheckResult{
-		Name:   checkAgenticProjectIDName,
-		Status: Pass,
+		Name:    checkAgenticProjectIDName,
+		Status:  Fail,
+		Message: "AGENTIC_PROJECT_ID variable is not set",
 	}
 }
 
@@ -1013,44 +1034,55 @@ type variableEntry struct {
 }
 
 // CheckAgentUserVar verifies that AGENT_USER is configured as a GitHub Actions
-// variable at the org or repo level. Returns Pass with a message indicating the
-// level, or Fail if not found at either level.
-func CheckAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	// Try org-level first.
-	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name")
-	if err == nil {
-		var vars []variableEntry
-		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
-			for _, v := range vars {
-				if v.Name == "AGENT_USER" {
-					return CheckResult{
-						Name:    checkAgentUserVarName,
-						Status:  Pass,
-						Message: "configured at org level",
-					}
-				}
+// variable with topology-aware dual-scope logic. For Organization (federated)
+// repos the variable must exist at org level; if found only at repo level it
+// fails with a topology message. For User (single) repos it may exist at
+// either scope.
+func CheckAgentUserVar(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	if ownerType == bootstrap.OwnerTypeOrg {
+		// Federated: must be at org level.
+		found, err := variableExistsAtScope(owner, repoName, "AGENT_USER", "org", run)
+		if err == nil && found {
+			return CheckResult{
+				Name:    checkAgentUserVarName,
+				Status:  Pass,
+				Message: "configured at org level",
 			}
+		}
+		// Not at org — check repo level to detect misplacement.
+		repoFound, _ := variableExistsAtScope(owner, repoName, "AGENT_USER", "repo", run)
+		if repoFound {
+			return CheckResult{
+				Name:    checkAgentUserVarName,
+				Status:  Fail,
+				Message: "AGENT_USER is set at repo level but must be at org level for federated topology",
+			}
+		}
+		return CheckResult{
+			Name:    checkAgentUserVarName,
+			Status:  Fail,
+			Message: "AGENT_USER variable not set at org or repo level",
 		}
 	}
 
-	// Try repo-level.
-	repoFullName := owner + "/" + repoName
-	out, err = run("gh", "variable", "list", "--repo", repoFullName, "--json", "name")
-	if err == nil {
-		var vars []variableEntry
-		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
-			for _, v := range vars {
-				if v.Name == "AGENT_USER" {
-					return CheckResult{
-						Name:    checkAgentUserVarName,
-						Status:  Pass,
-						Message: "configured at repo level",
-					}
-				}
-			}
+	// Single (User): check repo level first, then org level.
+	found, err := variableExistsAtScope(owner, repoName, "AGENT_USER", "repo", run)
+	if err == nil && found {
+		return CheckResult{
+			Name:    checkAgentUserVarName,
+			Status:  Pass,
+			Message: "configured at repo level",
 		}
 	}
-
+	// Not at repo — check org level (acceptable for single topology).
+	orgFound, orgErr := variableExistsAtScope(owner, repoName, "AGENT_USER", "org", run)
+	if orgErr == nil && orgFound {
+		return CheckResult{
+			Name:    checkAgentUserVarName,
+			Status:  Pass,
+			Message: "configured at org level",
+		}
+	}
 	return CheckResult{
 		Name:    checkAgentUserVarName,
 		Status:  Fail,
@@ -1123,13 +1155,11 @@ type secretEntry struct {
 	Name string `json:"name"`
 }
 
-// checkRepoVariable checks whether a named variable exists by querying
-// `gh variable list`. When ownerType is Organization, it queries at the org
-// level (--org); otherwise it queries at the repo level (--repo).
-// Returns Pass if present, Warning if missing.
-func checkRepoVariable(owner, repoName, varName, checkName, defaultValue, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+// variableExistsAtScope checks whether varName exists in a variable list at the given scope.
+// scope is either "org" or "repo". Returns (found bool, error).
+func variableExistsAtScope(owner, repoName, varName, scope string, run bootstrap.RunCommandFunc) (bool, error) {
 	var args []string
-	if ownerType == bootstrap.OwnerTypeOrg {
+	if scope == "org" {
 		args = []string{"gh", "variable", "list", "--org", owner, "--json", "name"}
 	} else {
 		repoFullName := owner + "/" + repoName
@@ -1137,28 +1167,80 @@ func checkRepoVariable(owner, repoName, varName, checkName, defaultValue, ownerT
 	}
 	out, err := run(args[0], args[1:]...)
 	if err != nil {
+		return false, err
+	}
+	var vars []variableEntry
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr != nil {
+		return false, jsonErr
+	}
+	for _, v := range vars {
+		if v.Name == varName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// checkRepoVariable checks whether a named variable exists with topology-aware
+// dual-scope logic. For Organization (federated) repos: the variable must exist
+// at org level; if found only at repo level, it fails with a topology message.
+// For User (single) repos: the variable may exist at either repo or org level.
+// Returns Pass if found at the correct scope, Fail if misplaced, Warning if missing.
+func checkRepoVariable(owner, repoName, varName, checkName, defaultValue, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	if ownerType == bootstrap.OwnerTypeOrg {
+		// Federated: must be at org level.
+		found, err := variableExistsAtScope(owner, repoName, varName, "org", run)
+		if err != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Warning,
+				Message: fmt.Sprintf("could not list org variables: %v", err),
+			}
+		}
+		if found {
+			return CheckResult{Name: checkName, Status: Pass}
+		}
+		// Not at org — check repo level to detect misplacement.
+		repoFound, repoErr := variableExistsAtScope(owner, repoName, varName, "repo", run)
+		if repoErr != nil {
+			// Could not check repo level; report as missing from org.
+			return CheckResult{
+				Name:    checkName,
+				Status:  Warning,
+				Message: fmt.Sprintf("%s not set — repair will set to %q", varName, defaultValue),
+			}
+		}
+		if repoFound {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("%s is set at repo level but must be at org level for federated topology", varName),
+			}
+		}
+		return CheckResult{
+			Name:    checkName,
+			Status:  Warning,
+			Message: fmt.Sprintf("%s not set — repair will set to %q", varName, defaultValue),
+		}
+	}
+
+	// Single (User): check repo level first, then org level.
+	found, err := variableExistsAtScope(owner, repoName, varName, "repo", run)
+	if err != nil {
 		return CheckResult{
 			Name:    checkName,
 			Status:  Warning,
 			Message: fmt.Sprintf("could not list repo variables: %v", err),
 		}
 	}
-
-	var vars []variableEntry
-	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr != nil {
-		return CheckResult{
-			Name:    checkName,
-			Status:  Warning,
-			Message: fmt.Sprintf("failed to parse variable list: %v", jsonErr),
-		}
+	if found {
+		return CheckResult{Name: checkName, Status: Pass}
 	}
-
-	for _, v := range vars {
-		if v.Name == varName {
-			return CheckResult{Name: checkName, Status: Pass}
-		}
+	// Not at repo — check org level (acceptable for single topology).
+	orgFound, orgErr := variableExistsAtScope(owner, repoName, varName, "org", run)
+	if orgErr == nil && orgFound {
+		return CheckResult{Name: checkName, Status: Pass}
 	}
-
 	return CheckResult{
 		Name:    checkName,
 		Status:  Warning,
@@ -1166,13 +1248,11 @@ func checkRepoVariable(owner, repoName, varName, checkName, defaultValue, ownerT
 	}
 }
 
-// checkRepoSecret checks whether a named secret exists by querying
-// `gh secret list`. When ownerType is Organization, it queries at the org
-// level (--org); otherwise it queries at the repo level (--repo).
-// Returns Pass if present, Warning if missing.
-func checkRepoSecret(owner, repoName, secretName, checkName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+// secretExistsAtScope checks whether secretName exists in a secret list at the given scope.
+// scope is either "org" or "repo". Returns (found bool, error).
+func secretExistsAtScope(owner, repoName, secretName, scope string, run bootstrap.RunCommandFunc) (bool, error) {
 	var args []string
-	if ownerType == bootstrap.OwnerTypeOrg {
+	if scope == "org" {
 		args = []string{"gh", "secret", "list", "--org", owner, "--json", "name"}
 	} else {
 		repoFullName := owner + "/" + repoName
@@ -1180,28 +1260,79 @@ func checkRepoSecret(owner, repoName, secretName, checkName, ownerType string, r
 	}
 	out, err := run(args[0], args[1:]...)
 	if err != nil {
+		return false, err
+	}
+	var secrets []secretEntry
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &secrets); jsonErr != nil {
+		return false, jsonErr
+	}
+	for _, s := range secrets {
+		if s.Name == secretName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// checkRepoSecret checks whether a named secret exists with topology-aware
+// dual-scope logic. For Organization (federated) repos: the secret must exist
+// at org level; if found only at repo level, it fails with a topology message.
+// For User (single) repos: the secret may exist at either repo or org level.
+// Returns Pass if found at the correct scope, Fail if misplaced, Warning if missing.
+func checkRepoSecret(owner, repoName, secretName, checkName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	if ownerType == bootstrap.OwnerTypeOrg {
+		// Federated: must be at org level.
+		found, err := secretExistsAtScope(owner, repoName, secretName, "org", run)
+		if err != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Warning,
+				Message: fmt.Sprintf("could not list org secrets: %v", err),
+			}
+		}
+		if found {
+			return CheckResult{Name: checkName, Status: Pass}
+		}
+		// Not at org — check repo level to detect misplacement.
+		repoFound, repoErr := secretExistsAtScope(owner, repoName, secretName, "repo", run)
+		if repoErr != nil {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Warning,
+				Message: fmt.Sprintf("%s secret not set", secretName),
+			}
+		}
+		if repoFound {
+			return CheckResult{
+				Name:    checkName,
+				Status:  Fail,
+				Message: fmt.Sprintf("%s is set at repo level but must be at org level for federated topology", secretName),
+			}
+		}
+		return CheckResult{
+			Name:    checkName,
+			Status:  Warning,
+			Message: fmt.Sprintf("%s secret not set", secretName),
+		}
+	}
+
+	// Single (User): check repo level first, then org level.
+	found, err := secretExistsAtScope(owner, repoName, secretName, "repo", run)
+	if err != nil {
 		return CheckResult{
 			Name:    checkName,
 			Status:  Warning,
 			Message: fmt.Sprintf("could not list repo secrets: %v", err),
 		}
 	}
-
-	var secrets []secretEntry
-	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &secrets); jsonErr != nil {
-		return CheckResult{
-			Name:    checkName,
-			Status:  Warning,
-			Message: fmt.Sprintf("failed to parse secret list: %v", jsonErr),
-		}
+	if found {
+		return CheckResult{Name: checkName, Status: Pass}
 	}
-
-	for _, s := range secrets {
-		if s.Name == secretName {
-			return CheckResult{Name: checkName, Status: Pass}
-		}
+	// Not at repo — check org level (acceptable for single topology).
+	orgFound, orgErr := secretExistsAtScope(owner, repoName, secretName, "org", run)
+	if orgErr == nil && orgFound {
+		return CheckResult{Name: checkName, Status: Pass}
 	}
-
 	return CheckResult{
 		Name:    checkName,
 		Status:  Warning,

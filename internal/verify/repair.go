@@ -283,7 +283,8 @@ func RepairREADMEMD(root string) CheckResult {
 
 // RepairAgenticProjectID resolves the project node ID via resolveProjectEntry
 // and sets it as the AGENTIC_PROJECT_ID variable. For org-owned repos it sets
-// at org level; for personal repos it sets at repo level.
+// at org level and removes any misplaced repo-level copy; for personal repos
+// it sets at repo level.
 func RepairAgenticProjectID(repoFullName, owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
 	entry := resolveProjectEntry(owner, repoName, run)
 	if entry == nil {
@@ -309,6 +310,14 @@ func RepairAgenticProjectID(repoFullName, owner, repoName, ownerType string, run
 			Name:    checkAgenticProjectIDName,
 			Status:  Fail,
 			Message: fmt.Sprintf("failed to set variable: %v", err),
+		}
+	}
+
+	// For org topology, clean up any misplaced repo-level variable.
+	if ownerType == bootstrap.OwnerTypeOrg {
+		repoFound, _ := variableExistsAtScope(owner, repoName, "AGENTIC_PROJECT_ID", "repo", run)
+		if repoFound {
+			_, _ = run("gh", "variable", "delete", "AGENTIC_PROJECT_ID", "--repo", repoFullName)
 		}
 	}
 
@@ -1281,8 +1290,9 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 }
 
 // RepairAgentUserVar sets the AGENT_USER GitHub Actions variable at the
-// specified scope (org or repo). Prompts for missing values via textConfirm.
-// Returns Fail if scope is "org" but the owner is a personal account.
+// topology-correct scope. For Organization repos it defaults to org scope and
+// cleans up any misplaced repo-level copy. For User repos it sets at repo scope.
+// Prompts for missing values via textConfirm.
 func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run bootstrap.RunCommandFunc, textConfirm func(string) (string, error)) CheckResult {
 	// Prompt for agent user if not provided.
 	if agentUser == "" {
@@ -1311,14 +1321,21 @@ func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run b
 			Message: fmt.Sprintf("invalid scope %q — must be \"org\" or \"repo\"", agentUserScope)}
 	}
 
-	// Check owner type for org scope.
+	// Check owner type for org scope via the injected run function so tests can mock it.
 	if agentUserScope == "org" {
-		ownerType, err := bootstrap.DefaultDetectOwnerType(owner)
+		out, err := run("gh", "api", fmt.Sprintf("users/%s", owner))
 		if err != nil {
 			return CheckResult{Name: checkAgentUserVarName, Status: Fail,
 				Message: fmt.Sprintf("failed to detect owner type: %v", err)}
 		}
-		if ownerType != bootstrap.OwnerTypeOrg {
+		var ownerResp struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &ownerResp); err != nil {
+			return CheckResult{Name: checkAgentUserVarName, Status: Fail,
+				Message: fmt.Sprintf("failed to parse owner type response: %v", err)}
+		}
+		if ownerResp.Type != bootstrap.OwnerTypeOrg {
 			return CheckResult{Name: checkAgentUserVarName, Status: Fail,
 				Message: fmt.Sprintf("cannot set org-level variable — %s is a personal account, not an organisation", owner)}
 		}
@@ -1337,6 +1354,14 @@ func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run b
 			Message: fmt.Sprintf("failed to set variable: %v", setErr)}
 	}
 
+	// For org scope, clean up any misplaced repo-level variable.
+	if agentUserScope == "org" {
+		repoFound, _ := variableExistsAtScope(owner, repoName, "AGENT_USER", "repo", run)
+		if repoFound {
+			_, _ = run("gh", "variable", "delete", "AGENT_USER", "--repo", owner+"/"+repoName)
+		}
+	}
+
 	return CheckResult{Name: checkAgentUserVarName, Status: Pass,
 		Message: fmt.Sprintf("set AGENT_USER=%s at %s level", agentUser, agentUserScope)}
 }
@@ -1346,7 +1371,8 @@ func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run b
 // ──────────────────────────────────────────────────────────────────────────────
 
 // repairRepoVariable sets a variable to a given value using gh variable set.
-// For org-owned repos it sets at org level; for personal repos at repo level.
+// For org-owned repos it sets at org level and removes any misplaced repo-level
+// copy; for personal repos it sets at repo level only.
 func repairRepoVariable(owner, repoName, varName, value, checkName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
 	// Use --org for org-owned repos, --repo for personal repos.
 	var scopeArgs []string
@@ -1366,6 +1392,16 @@ func repairRepoVariable(owner, repoName, varName, value, checkName, ownerType st
 			Message: fmt.Sprintf("failed to set %s: %v", varName, err),
 		}
 	}
+
+	// For org topology, clean up any misplaced repo-level variable.
+	if ownerType == bootstrap.OwnerTypeOrg {
+		repoFullName := owner + "/" + repoName
+		repoFound, _ := variableExistsAtScope(owner, repoName, varName, "repo", run)
+		if repoFound {
+			_, _ = run("gh", "variable", "delete", varName, "--repo", repoFullName)
+		}
+	}
+
 	return CheckResult{
 		Name:    checkName,
 		Status:  Pass,
@@ -1392,8 +1428,20 @@ func RepairGooseModelVar(owner, repoName, ownerType string, run bootstrap.RunCom
 }
 
 // RepairGooseAgentPATSecret returns ManualAction — the PAT value is not knowable
-// by the tool and must be created by the user.
-func RepairGooseAgentPATSecret(owner, repoName string) CheckResult {
+// by the tool and must be created by the user. For org-owned repos, the message
+// directs the user to org-level secret settings; for personal repos, to repo-level.
+func RepairGooseAgentPATSecret(owner, repoName, ownerType string) CheckResult {
+	if ownerType == bootstrap.OwnerTypeOrg {
+		orgURL := fmt.Sprintf("https://github.com/organizations/%s/settings/secrets/actions", owner)
+		return CheckResult{
+			Name:   checkGooseAgentPATSecretName,
+			Status: ManualAction,
+			Message: fmt.Sprintf(
+				"GOOSE_AGENT_PAT must be set at org level for federated topology. Create a PAT with repo and project scopes, then add it at: %s",
+				orgURL,
+			),
+		}
+	}
 	settingsURL := fmt.Sprintf("https://github.com/%s/%s/settings/secrets/actions", owner, repoName)
 	return CheckResult{
 		Name:   checkGooseAgentPATSecretName,
@@ -1486,6 +1534,15 @@ func RepairClaudeCredentialsSecretWithReadFile(owner, repoName, ownerType string
 			Name:    checkClaudeCredentialsSecretName,
 			Status:  Fail,
 			Message: fmt.Sprintf("failed to set secret: %v", setErr),
+		}
+	}
+
+	// For org topology, clean up any misplaced repo-level secret.
+	if ownerType == bootstrap.OwnerTypeOrg {
+		repoFullName := owner + "/" + repoName
+		repoFound, _ := secretExistsAtScope(owner, repoName, "CLAUDE_CREDENTIALS_JSON", "repo", run)
+		if repoFound {
+			_, _ = run("gh", "secret", "delete", "CLAUDE_CREDENTIALS_JSON", "--repo", repoFullName)
 		}
 	}
 
