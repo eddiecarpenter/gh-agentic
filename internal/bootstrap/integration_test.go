@@ -169,6 +169,22 @@ func TestIntegrationPreflight_OptionalMissing_Goose_OfferInstall(t *testing.T) {
 	}
 }
 
+// wrapMockWithTarball wraps a MockRunner's RunCommand so that gh api calls with
+// --output (used by tarball.FetchTarball) write a valid minimal tarball to the
+// output path. All other calls are forwarded to the mock.
+func wrapMockWithTarball(t *testing.T, mock *testutil.MockRunner) RunCommandFunc {
+	t.Helper()
+	tarballData := makeMinimalTarballBytes(t)
+	return func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) > 0 && args[0] == "api" {
+			if writeTarballOnOutput(t, tarballData, args) {
+				return "", nil
+			}
+		}
+		return mock.RunCommand(name, args...)
+	}
+}
+
 // setupCloneDir creates a fake cloned repo directory pre-populated with the
 // template files that downstream steps expect to find.
 func setupCloneDir(t *testing.T, workDir, projectName string) string {
@@ -239,18 +255,22 @@ func TestIntegrationRunSteps_HappyPath_GoEmbedded(t *testing.T) {
 	}
 
 	// No-op launch — PrintSummary uses huh which requires a TTY, so the test
-	// will get a huh error. We only verify the 8 spinner steps completed.
+	// will get a huh error. We only verify the spinner steps completed.
 	launch := func(_ string) error {
 		return nil
 	}
 
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
+	wrappedRun := wrapMockWithTarball(t, mock)
+
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, mock.RunCommand, graphqlDo, launch, testutil.NoopSpinner)
+	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
 
 	output := buf.String()
 
 	// PrintSummary will fail because huh requires a TTY. That's expected.
-	// We verify all 8 steps in the loop completed by checking the output.
+	// We verify all spinner steps in the loop completed by checking the output.
 	if err != nil {
 		// The error should be from PrintSummary's huh form, not from any step.
 		if !strings.Contains(err.Error(), "launch prompt") && !strings.Contains(err.Error(), "huh") &&
@@ -305,9 +325,9 @@ func TestIntegrationRunSteps_Failure_Step3_RepoCreate(t *testing.T) {
 
 	mock := &testutil.MockRunner{}
 
-	// gh repo create fails.
+	// gh repo create fails (no --template flag in the new flow).
 	mock.Expect(
-		[]string{"gh", "repo", "create", "testowner/test-project", "--template", DefaultTemplateRepo, "--private"},
+		[]string{"gh", "repo", "create", "testowner/test-project", "--private"},
 		"",
 		fmt.Errorf("repository creation failed: quota exceeded"),
 	)
@@ -317,8 +337,10 @@ func TestIntegrationRunSteps_Failure_Step3_RepoCreate(t *testing.T) {
 	}
 	launch := func(_ string) error { return nil }
 
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, mock.RunCommand, graphqlDo, launch, testutil.NoopSpinner)
+	err := RunSteps(&buf, cfg, workDir, mock.RunCommand, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
 
 	if err == nil {
 		t.Fatal("expected error from step 3, got nil")
@@ -383,8 +405,12 @@ func TestIntegrationRunSteps_Failure_Step6_LabelCreate(t *testing.T) {
 	}
 	launch := func(_ string) error { return nil }
 
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
+	wrappedRun := wrapMockWithTarball(t, mock)
+
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, mock.RunCommand, graphqlDo, launch, testutil.NoopSpinner)
+	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
 
 	if err == nil {
 		t.Fatal("expected error from project creation, got nil")
@@ -398,7 +424,7 @@ func TestIntegrationRunSteps_Failure_Step6_LabelCreate(t *testing.T) {
 	// Verify preceding steps completed — PopulateRepo writes files.
 	clonePath := filepath.Join(workDir, projectName)
 	if _, statErr := os.Stat(filepath.Join(clonePath, "REPOS.md")); os.IsNotExist(statErr) {
-		t.Error("expected REPOS.md to exist — PopulateRepo (step 7) should have run before CreateProject (step 8)")
+		t.Error("expected REPOS.md to exist — PopulateRepo should have run before CreateProject")
 	}
 
 	// Verify the output mentions the environment creation header (steps ran).
@@ -425,10 +451,9 @@ func TestIntegrationRunSteps_Failure_RepoCreateFails(t *testing.T) {
 
 	runner := &testutil.MockRunner{}
 
-	// Step 3 — CreateRepo: gh repo create fails immediately.
+	// Step 3 — CreateRepo: gh repo create fails immediately (no --template in new flow).
 	runner.Expect(
-		[]string{"gh", "repo", "create", "testowner/test-project",
-			"--template", DefaultTemplateRepo, "--private"},
+		[]string{"gh", "repo", "create", "testowner/test-project", "--private"},
 		"repository creation failed", fmt.Errorf("gh repo create failed"),
 	)
 
@@ -439,8 +464,10 @@ func TestIntegrationRunSteps_Failure_RepoCreateFails(t *testing.T) {
 	}
 	launch := func(_ string) error { return nil }
 
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, runner.RunCommand, graphqlDo, launch, testutil.NoopSpinner)
+	err := RunSteps(&buf, cfg, workDir, runner.RunCommand, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
 
 	if err == nil {
 		t.Fatal("expected error from failing repo create")
@@ -453,7 +480,7 @@ func TestIntegrationRunSteps_Failure_RepoCreateFails(t *testing.T) {
 	runner.AssertExpectations(t)
 
 	output := buf.String()
-	if strings.Contains(output, "Removing template files") {
+	if strings.Contains(output, "Scaffolding") {
 		t.Error("subsequent steps should not appear in output after step 3 failure")
 	}
 }
@@ -490,10 +517,9 @@ func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T)
 
 	runner := &testutil.MockRunner{}
 
-	// Step 3 — CreateRepo: succeeds.
+	// Step 3 — CreateRepo: succeeds (no --template in new flow).
 	runner.Expect(
-		[]string{"gh", "repo", "create", "testowner/test-project",
-			"--template", DefaultTemplateRepo, "--private"},
+		[]string{"gh", "repo", "create", "testowner/test-project", "--private"},
 		"https://github.com/testowner/test-project", nil,
 	)
 	runner.Expect(
@@ -501,25 +527,30 @@ func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T)
 		"", nil,
 	)
 
+	// Tarball fetch, git add, git commit use runInDir → unmatched → ("", nil) → succeed.
 	// Steps 4-5 use runInDir → unmatched → ("", nil) → succeed.
 	// Step 6 — ConfigureRepo: label creates succeed (direct calls, unmatched → ("", nil)).
 	// Step 7 — PopulateRepo: runInDir → unmatched → ("", nil) → succeeds.
 
-	// Step 8 — CreateProject: fails.
+	// CreateProject: fails.
 	runner.Expect(
 		[]string{"gh", "project", "create", "--owner", "testowner", "--title", "test-project", "--format", "json"},
 		"project creation quota exceeded", fmt.Errorf("project create failed"),
 	)
 
-	// No expectations after this — steps 8b, 8c, and PrintSummary should not run.
+	// No expectations after this — subsequent steps and PrintSummary should not run.
 
 	graphqlDo := func(_ string, _ map[string]interface{}, _ interface{}) error {
 		return errors.New("no auth in test")
 	}
 	launch := func(_ string) error { return nil }
 
+	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
+
+	wrappedRun := wrapMockWithTarball(t, runner)
+
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, runner.RunCommand, graphqlDo, launch, testutil.NoopSpinner)
+	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
 
 	if err == nil {
 		t.Fatal("expected error from failing project create")

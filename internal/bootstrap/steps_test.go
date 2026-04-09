@@ -1,7 +1,9 @@
 package bootstrap
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"os"
@@ -56,6 +58,50 @@ func makeTempClone(t *testing.T) string {
 	return dir
 }
 
+// makeMinimalTarballBytes creates a minimal valid tar.gz archive in memory
+// containing a single file under a prefix directory.
+func makeMinimalTarballBytes(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	// Add top-level directory.
+	_ = tw.WriteHeader(&tar.Header{
+		Name:     "repo-v1.0.0-abc123/",
+		Typeflag: tar.TypeDir,
+		Mode:     0o755,
+	})
+	// Add a file.
+	content := []byte("# Template\n")
+	_ = tw.WriteHeader(&tar.Header{
+		Name:     "repo-v1.0.0-abc123/README.md",
+		Size:     int64(len(content)),
+		Mode:     0o644,
+		Typeflag: tar.TypeReg,
+	})
+	_, _ = tw.Write(content)
+
+	tw.Close()
+	gw.Close()
+	return buf.Bytes()
+}
+
+// writeTarballOnOutput returns true and writes tarball data if the command
+// includes --output flag (used by gh api). Returns false otherwise.
+func writeTarballOnOutput(t *testing.T, tarballData []byte, args []string) bool {
+	t.Helper()
+	for i, a := range args {
+		if a == "--output" && i+1 < len(args) {
+			if err := os.WriteFile(args[i+1], tarballData, 0o644); err != nil {
+				t.Fatalf("writing test tarball: %v", err)
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // --------------------------------------------------------------------------------------
 // repoName
 // --------------------------------------------------------------------------------------
@@ -78,13 +124,23 @@ func TestRepoName_Federated_AppendsSuffix(t *testing.T) {
 // Step 3 — CreateRepo
 // --------------------------------------------------------------------------------------
 
+// fakeFetchRelease returns a FetchReleaseFunc that always returns the given tag.
+func fakeFetchRelease(tag string) FetchReleaseFunc {
+	return func(repo string) (string, error) { return tag, nil }
+}
+
+// fakeFetchReleaseFail returns a FetchReleaseFunc that always fails.
+func fakeFetchReleaseFail(msg string) FetchReleaseFunc {
+	return func(repo string) (string, error) { return "", errors.New(msg) }
+}
+
 func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 	run := fakeRunFail("repository already exists")
 
 	var buf bytes.Buffer
-	err := CreateRepo(&buf, cfg, state, t.TempDir(), run)
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
 	if err == nil {
 		t.Fatal("CreateRepo() expected error when gh repo create fails, got nil")
 	}
@@ -94,7 +150,7 @@ func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
 }
 
 func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 
 	callCount := 0
@@ -104,12 +160,16 @@ func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
 			// gh repo create succeeds
 			return "https://github.com/alice/my-project", nil
 		}
-		// git clone fails
-		return "fatal: repository not found", errors.New("exit status 128")
+		if callCount == 2 {
+			// git clone fails
+			return "fatal: repository not found", errors.New("exit status 128")
+		}
+		// gh repo delete (cleanup) succeeds
+		return "", nil
 	}
 
 	var buf bytes.Buffer
-	err := CreateRepo(&buf, cfg, state, t.TempDir(), run)
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
 	if err == nil {
 		t.Fatal("CreateRepo() expected error when git clone fails, got nil")
 	}
@@ -119,7 +179,7 @@ func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
 }
 
 func TestCreateRepo_PopulatesStateRepoName(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project"}
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 
 	// Both gh and git succeed; API call will fail gracefully (no real gh auth in tests).
@@ -128,7 +188,7 @@ func TestCreateRepo_PopulatesStateRepoName(t *testing.T) {
 	var buf bytes.Buffer
 	// We expect an error from the REST API call (no real auth), but state.RepoName
 	// should still be set before that point.
-	_ = CreateRepo(&buf, cfg, state, t.TempDir(), run)
+	_ = CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
 
 	if state.RepoName != "my-project" {
 		t.Errorf("state.RepoName = %q, want %q", state.RepoName, "my-project")
@@ -136,15 +196,94 @@ func TestCreateRepo_PopulatesStateRepoName(t *testing.T) {
 }
 
 func TestCreateRepo_Federated_SetsAgenticSuffix(t *testing.T) {
-	cfg := BootstrapConfig{Topology: "Federated", Owner: "acme", ProjectName: "myapp"}
+	cfg := BootstrapConfig{Topology: "Federated", Owner: "acme", ProjectName: "myapp", TemplateRepo: DefaultTemplateRepo}
 	state := &StepState{}
 	run := fakeRunOK("")
 
 	var buf bytes.Buffer
-	_ = CreateRepo(&buf, cfg, state, t.TempDir(), run)
+	_ = CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
 
 	if state.RepoName != "myapp-agentic" {
 		t.Errorf("state.RepoName = %q, want %q", state.RepoName, "myapp-agentic")
+	}
+}
+
+func TestCreateRepo_EmptyTemplateRepo_ReturnsError(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: ""}
+	state := &StepState{}
+
+	var buf bytes.Buffer
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), fakeRunOK(""), fakeFetchRelease("v1.0.0"))
+	if err == nil {
+		t.Fatal("CreateRepo() expected error when template repo is empty")
+	}
+	if !strings.Contains(err.Error(), "TEMPLATE_SOURCE") {
+		t.Errorf("error should mention 'TEMPLATE_SOURCE', got: %v", err)
+	}
+}
+
+func TestCreateRepo_FetchReleaseFails_ReturnsErrorBeforeRepoCreation(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
+	state := &StepState{}
+
+	// run should never be called — error should happen before repo creation.
+	runCalled := false
+	run := func(name string, args ...string) (string, error) {
+		runCalled = true
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchReleaseFail("no releases found"))
+	if err == nil {
+		t.Fatal("CreateRepo() expected error when release fetch fails")
+	}
+	if runCalled {
+		t.Error("expected no commands to be called when release fetch fails")
+	}
+	if !strings.Contains(err.Error(), "fetching release tag") {
+		t.Errorf("error should mention 'fetching release tag', got: %v", err)
+	}
+}
+
+func TestCreateRepo_TarballFetchFails_CleansUpRepo(t *testing.T) {
+	cfg := BootstrapConfig{Topology: "Single", Owner: "alice", ProjectName: "my-project", TemplateRepo: DefaultTemplateRepo}
+	state := &StepState{}
+
+	var deleteCalled bool
+	callCount := 0
+	run := func(name string, args ...string) (string, error) {
+		callCount++
+		if name == "gh" && len(args) > 0 && args[0] == "repo" {
+			if len(args) > 1 && args[1] == "create" {
+				return "", nil // repo create succeeds
+			}
+			if len(args) > 1 && args[1] == "delete" {
+				deleteCalled = true
+				return "", nil
+			}
+		}
+		if name == "git" && len(args) > 0 && args[0] == "clone" {
+			// Create the clone directory.
+			if len(args) > 2 {
+				os.MkdirAll(args[2], 0o755)
+			}
+			return "", nil
+		}
+		if name == "gh" && len(args) > 0 && args[0] == "api" {
+			// Tarball fetch fails.
+			return "404 not found", fmt.Errorf("API error")
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := CreateRepo(&buf, cfg, state, t.TempDir(), run, fakeFetchRelease("v1.0.0"))
+	if err == nil {
+		t.Fatal("CreateRepo() expected error when tarball fetch fails")
+	}
+	if !deleteCalled {
+		t.Error("expected gh repo delete to be called to clean up after tarball failure")
 	}
 }
 

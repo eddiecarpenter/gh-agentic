@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -92,6 +93,7 @@ func newBootstrapCmd() *cobra.Command {
 				graphqlDo,
 				bootstrap.DefaultLaunchGoose,
 				bootstrap.DefaultSpinner,
+				sync.DefaultFetchRelease,
 			); err != nil {
 				return err
 			}

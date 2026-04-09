@@ -45,6 +45,7 @@ func RunSteps(
 	graphqlDo GraphQLDoFunc,
 	launch LaunchFunc,
 	spinner SpinnerFunc,
+	fetchRelease FetchReleaseFunc,
 ) error {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, ui.SectionHeading.Render("  Creating your agentic environment"))
@@ -58,7 +59,7 @@ func RunSteps(
 	}{
 		{
 			label: "Creating repository",
-			fn:    func() error { return CreateRepo(w, cfg, state, workDir, run) },
+			fn:    func() error { return CreateRepo(w, cfg, state, workDir, run, fetchRelease) },
 		},
 		{
 			label: "Removing template files",
