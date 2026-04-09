@@ -368,20 +368,10 @@ func TestIntegrationRunSteps_Failure_Step6_LabelCreate(t *testing.T) {
 		TemplateRepo: DefaultTemplateRepo,
 	}
 
-	// ConfigureRepo (step 6) calls gh label create for each label.
-	// Label failures are logged as warnings but do NOT fail the step.
-	// So to test a real failure at step 6 level, we need something else.
-	//
-	// Looking at the RunSteps code, step 6 is ConfigureRepo which only creates
-	// labels (warnings on failure, always returns nil). The actual failure
-	// needs to happen in a step that returns an error.
-	//
-	// Instead, we test step 5 (ScaffoldStack) failure by using a stack with
-	// a missing standards file — or make gh project create fail (step 6/7).
-	//
-	// Let's test: steps 3-5 succeed, step 6 (CreateProject) fails.
-	// Note: In the RunSteps code, the step labeled "Configuring labels" is
-	// index 3 (step 6 in the spec), and "Creating GitHub Project" is index 5.
+	// The merged "Configuring repository" step calls ConfigureRepo then
+	// CreateProject in sequence. ConfigureRepo always succeeds (label failures
+	// are best-effort warnings). CreateProject failing halts bootstrap before
+	// PopulateRepo runs.
 
 	mock := &testutil.MockRunner{}
 
@@ -413,10 +403,11 @@ func TestIntegrationRunSteps_Failure_Step6_LabelCreate(t *testing.T) {
 
 	output := buf.String()
 
-	// Verify preceding steps completed — PopulateRepo writes files.
+	// Verify PopulateRepo did NOT run — CreateProject failed in the merged
+	// "Configuring repository" step, which is before "Populating repository".
 	clonePath := filepath.Join(workDir, projectName)
-	if _, statErr := os.Stat(filepath.Join(clonePath, "REPOS.md")); os.IsNotExist(statErr) {
-		t.Error("expected REPOS.md to exist — PopulateRepo should have run before CreateProject")
+	if _, statErr := os.Stat(filepath.Join(clonePath, "REPOS.md")); !os.IsNotExist(statErr) {
+		t.Error("REPOS.md should not exist — PopulateRepo runs after the merged Configuring repository step")
 	}
 
 	// Verify the output mentions the environment creation header (steps ran).
@@ -514,11 +505,10 @@ func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T)
 	)
 
 	// Tarball fetch, git add, git commit use runInDir → unmatched → ("", nil) → succeed.
-	// Steps 4-5 use runInDir → unmatched → ("", nil) → succeed.
-	// Step 6 — ConfigureRepo: label creates succeed (direct calls, unmatched → ("", nil)).
-	// Step 7 — PopulateRepo: runInDir → unmatched → ("", nil) → succeeds.
+	// ScaffoldStacks runs → unmatched → ("", nil) → succeeds.
+	// ConfigureRepo (labels) → unmatched → ("", nil) → succeeds.
 
-	// CreateProject: fails.
+	// CreateProject (in merged "Configuring repository" step): fails.
 	runner.Expect(
 		[]string{"gh", "project", "create", "--owner", "testowner", "--title", "test-project", "--format", "json"},
 		"project creation quota exceeded", fmt.Errorf("project create failed"),
@@ -545,7 +535,7 @@ func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T)
 		t.Errorf("error should reference 'gh project create', got: %v", err)
 	}
 
-	// Verify all expectations were consumed (steps 3-7 ran, step 8 failed).
+	// Verify all expectations were consumed (CreateRepo + ScaffoldStacks + ConfigureRepo ran, CreateProject failed).
 	runner.AssertExpectations(t)
 
 	output := buf.String()

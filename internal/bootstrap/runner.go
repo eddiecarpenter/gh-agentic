@@ -67,16 +67,17 @@ func RunSteps(
 			fn:    func() error { return ScaffoldStacks(w, cfg, state, run) },
 		},
 		{
-			label: "Configuring labels",
-			fn:    func() error { return ConfigureRepo(w, cfg, state, run) },
+			label: "Configuring repository",
+			fn: func() error {
+				if err := ConfigureRepo(w, cfg, state, run); err != nil {
+					return err
+				}
+				return CreateProject(w, cfg, state, run, graphqlDo)
+			},
 		},
 		{
 			label: "Populating repository",
 			fn:    func() error { return PopulateRepo(w, cfg, state, run) },
-		},
-		{
-			label: "Creating GitHub Project",
-			fn:    func() error { return CreateProject(w, cfg, state, run, graphqlDo) },
 		},
 		{
 			label: "Setting agent user variable",
