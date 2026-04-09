@@ -322,13 +322,6 @@ func TestIntegrationRunSteps_Failure_Step3_RepoCreate(t *testing.T) {
 
 	mock := &testutil.MockRunner{}
 
-	// Repo existence check: return 404 so we follow the new-repo path.
-	mock.Expect(
-		[]string{"gh", "api", "repos/testowner/test-project"},
-		"Not Found",
-		fmt.Errorf("HTTP 404"),
-	)
-
 	// gh repo create fails (no --template flag in the new flow).
 	mock.Expect(
 		[]string{"gh", "repo", "create", "testowner/test-project", "--private"},
@@ -445,13 +438,6 @@ func TestIntegrationRunSteps_Failure_RepoCreateFails(t *testing.T) {
 	}
 
 	runner := &testutil.MockRunner{}
-
-	// Repo existence check: return 404 so we follow the new-repo path.
-	runner.Expect(
-		[]string{"gh", "api", "repos/testowner/test-project"},
-		"Not Found",
-		fmt.Errorf("HTTP 404"),
-	)
 
 	// Step 3 — CreateRepo: gh repo create fails immediately (no --template in new flow).
 	runner.Expect(

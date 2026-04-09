@@ -100,6 +100,9 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 
 	fullName := cfg.Owner + "/" + name
 
+	// Set state.ExistingRepo from the form-provided config value.
+	state.ExistingRepo = cfg.ExistingRepo
+
 	// Pre-validate: template repo must be set.
 	if cfg.TemplateRepo == "" {
 		return fmt.Errorf("template repo (TEMPLATE_SOURCE) is not configured")
@@ -114,11 +117,8 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 		return fmt.Errorf("no release found for template repo %s", cfg.TemplateRepo)
 	}
 
-	// --- Guard 1 & 2: Check if repo already exists ---
-	_, apiErr := run("gh", "api", "repos/"+fullName)
-	repoExists := apiErr == nil
-
-	if repoExists {
+	if cfg.ExistingRepo {
+		// --- Existing repo path ---
 		fmt.Fprintln(w, "  "+ui.RenderInfo("Repo already exists — bootstrapping onto existing repo"))
 
 		// Clone the existing repo so we can inspect it.
@@ -128,7 +128,7 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 			return fmt.Errorf("git clone (existing repo): %w\n%s", cloneErr, strings.TrimSpace(out))
 		}
 
-		// Guard 1 — Already-agentic check: look for any agentic marker files.
+		// Guard — Already-agentic check: look for any agentic marker files.
 		for _, marker := range agenticMarkers {
 			markerPath := filepath.Join(state.ClonePath, marker)
 			if _, statErr := os.Stat(markerPath); statErr == nil {
@@ -136,7 +136,7 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 			}
 		}
 
-		// Guard 2 — Check if bootstrap/init branch already exists on the remote.
+		// Guard — Check if bootstrap/init branch already exists on the remote.
 		lsOut, _ := runInDir(run, state.ClonePath, "git", "ls-remote", "--heads", "origin", "bootstrap/init")
 		if strings.TrimSpace(lsOut) != "" {
 			return fmt.Errorf("branch bootstrap/init already exists — aborting to prevent force-push")
@@ -186,11 +186,10 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 			}
 		}
 
-		state.ExistingRepo = true
 		return nil
 	}
 
-	// --- New repo path (unchanged) ---
+	// --- New repo path ---
 
 	// Create the blank private repo (no --template).
 	out, err := run("gh", "repo", "create", fullName, "--private")
