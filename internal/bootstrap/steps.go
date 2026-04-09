@@ -843,25 +843,13 @@ func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run
 // Step 9 — PrintSummary + Goose launch
 // --------------------------------------------------------------------------------------
 
-// LaunchFunc is called to launch Goose in the given directory.
-// Injected so tests can substitute a fake without spawning a real process.
-type LaunchFunc func(clonePath string) error
-
-// DefaultLaunchGoose is the production LaunchFunc that runs goose session
-// with CWD set to clonePath.
-func DefaultLaunchGoose(clonePath string) error {
-	quoted := "'" + strings.ReplaceAll(clonePath, "'", "'\\''") + "'"
-	_, err := DefaultRunCommand("bash", "-c", "cd "+quoted+" && goose session")
-	return err
-}
-
-// PrintSummary renders the final "Bootstrap complete" box and offers
-// the Goose launch prompt.
-func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch LaunchFunc) error {
+// PrintSummary renders the final "Bootstrap complete" box with clear
+// next-step instructions. No interactive prompt is shown.
+func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState) error {
 	fmt.Fprintln(w)
 
 	successBold := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorSuccess))
-	fmt.Fprintln(w, successBold.Render("  ✔ Bootstrap complete"))
+	fmt.Fprintln(w, successBold.Render("  ✔ Bootstrap complete!"))
 	fmt.Fprintln(w)
 
 	var content string
@@ -904,12 +892,6 @@ func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch Lau
 	fmt.Fprintln(w, "  "+ui.Muted.Render("Credentials ")+credStatus)
 	fmt.Fprintln(w)
 
-	// --- Self-hosted runner note ---
-	if cfg.RunnerLabel != DefaultRunnerLabel {
-		fmt.Fprintln(w, "  "+infoStyle.Render("ℹ")+"  Self-hosted runner: ensure gh CLI and Claude Code CLI are pre-installed and authenticated on the runner.")
-		fmt.Fprintln(w)
-	}
-
 	// --- GOOSE_AGENT_PAT warning ---
 	if !state.AgentPATFound {
 		fullName := cfg.Owner + "/" + state.RepoName
@@ -925,40 +907,18 @@ func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch Lau
 		fmt.Fprintln(w)
 	}
 
-	// --- Goose launch prompt ---
-	fmt.Fprintln(w, ui.SectionHeading.Render("  Start Requirements Session"))
+	// --- Next steps ---
+	repoName := state.RepoName
+	if repoName == "" {
+		repoName = cfg.ProjectName
+	}
+	fmt.Fprintln(w, ui.SectionHeading.Render("  Next steps"))
 	fmt.Fprintln(w)
-
-	var choice string
-	launchForm := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("How would you like to continue?").
-				Options(
-					huh.NewOption("Terminal  — launch Goose CLI in "+cfg.ProjectName, "terminal"),
-					huh.NewOption("Skip      — I'll do it manually", "skip"),
-				).
-				Value(&choice),
-		),
-	)
-	if err := launchForm.Run(); err != nil {
-		return fmt.Errorf("launch prompt: %w", err)
-	}
-
-	switch choice {
-	case "terminal":
-		fmt.Fprintln(w, "  "+ui.Muted.Render("Launching Goose..."))
-		if err := launch(state.ClonePath); err != nil {
-			return fmt.Errorf("launching Goose: %w", err)
-		}
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  "+ui.RenderOK("Goose launched in "+state.ClonePath))
-		fmt.Fprintln(w, "  "+ui.Muted.Render("Your agent will read context and begin the Requirements Session."))
-	default:
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  "+ui.Value.Render(state.ClonePath))
-		fmt.Fprintln(w, "  "+ui.Muted.Render("cd into the repo and start a Requirements Session when ready."))
-	}
+	fmt.Fprintln(w, "  1. Open Claude Code or Goose Desktop")
+	fmt.Fprintln(w, "  2. Select '"+ui.Value.Render(repoName)+"' as your workspace")
+	fmt.Fprintln(w, "  3. Start a new session with the prompt:")
+	fmt.Fprintln(w, "     "+ui.Muted.Render("\"Assist me with defining my new AI-native developed application\""))
+	fmt.Fprintln(w)
 
 	return nil
 }

@@ -251,30 +251,18 @@ func TestIntegrationRunSteps_HappyPath_GoEmbedded(t *testing.T) {
 		return nil
 	}
 
-	// No-op launch — PrintSummary uses huh which requires a TTY, so the test
-	// will get a huh error. We only verify the spinner steps completed.
-	launch := func(_ string) error {
-		return nil
-	}
-
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
 	wrappedRun := wrapMockWithTarball(t, mock)
 
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
+	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, testutil.NoopSpinner, fetchRelease)
 
 	output := buf.String()
 
-	// PrintSummary will fail because huh requires a TTY. That's expected.
-	// We verify all spinner steps in the loop completed by checking the output.
+	// PrintSummary no longer uses huh, so it should succeed.
 	if err != nil {
-		// The error should be from PrintSummary's huh form, not from any step.
-		if !strings.Contains(err.Error(), "launch prompt") && !strings.Contains(err.Error(), "huh") &&
-			!strings.Contains(err.Error(), "input") && !strings.Contains(err.Error(), "program") {
-			t.Fatalf("unexpected error (not from PrintSummary): %v\nOutput:\n%s", err, output)
-		}
-		t.Logf("expected PrintSummary error (no TTY): %v", err)
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", err, output)
 	}
 
 	// Verify key step indicators in the output.
@@ -332,12 +320,11 @@ func TestIntegrationRunSteps_Failure_Step3_RepoCreate(t *testing.T) {
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
 		return nil
 	}
-	launch := func(_ string) error { return nil }
 
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, mock.RunCommand, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
+	err := RunSteps(&buf, cfg, workDir, mock.RunCommand, graphqlDo, testutil.NoopSpinner, fetchRelease)
 
 	if err == nil {
 		t.Fatal("expected error from step 3, got nil")
@@ -390,14 +377,12 @@ func TestIntegrationRunSteps_Failure_Step6_LabelCreate(t *testing.T) {
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
 		return nil
 	}
-	launch := func(_ string) error { return nil }
-
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
 	wrappedRun := wrapMockWithTarball(t, mock)
 
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
+	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, testutil.NoopSpinner, fetchRelease)
 
 	if err == nil {
 		t.Fatal("expected error from project creation, got nil")
@@ -450,12 +435,11 @@ func TestIntegrationRunSteps_Failure_RepoCreateFails(t *testing.T) {
 	graphqlDo := func(_ string, _ map[string]interface{}, _ interface{}) error {
 		return errors.New("no auth in test")
 	}
-	launch := func(_ string) error { return nil }
 
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, runner.RunCommand, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
+	err := RunSteps(&buf, cfg, workDir, runner.RunCommand, graphqlDo, testutil.NoopSpinner, fetchRelease)
 
 	if err == nil {
 		t.Fatal("expected error from failing repo create")
@@ -524,14 +508,12 @@ func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T)
 	graphqlDo := func(_ string, _ map[string]interface{}, _ interface{}) error {
 		return errors.New("no auth in test")
 	}
-	launch := func(_ string) error { return nil }
-
 	fetchRelease := func(repo string) (string, error) { return "v1.0.0", nil }
 
 	wrappedRun := wrapMockWithTarball(t, runner)
 
 	var buf bytes.Buffer
-	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, launch, testutil.NoopSpinner, fetchRelease)
+	err := RunSteps(&buf, cfg, workDir, wrappedRun, graphqlDo, testutil.NoopSpinner, fetchRelease)
 
 	if err == nil {
 		t.Fatal("expected error from failing project create")
