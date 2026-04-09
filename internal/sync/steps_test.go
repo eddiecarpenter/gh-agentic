@@ -1,8 +1,11 @@
 package sync
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,25 +129,98 @@ func TestDisplayReleaseList(t *testing.T) {
 	})
 }
 
-func TestCloneTemplate(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		run := fakeRun("Cloning...", nil)
-		err := CloneTemplate("owner/repo", tmpDir, run)
+func TestFetchAndExtractTemplate(t *testing.T) {
+	t.Run("success extracts template files", func(t *testing.T) {
+		orig := fetchTarballFn
+		defer func() { fetchTarballFn = orig }()
+
+		destRoot := t.TempDir()
+		fetchTarballFn = createFakeTarballFetch(t, map[string]string{
+			"base/AGENTS.md":                    "# Agents",
+			"base/standards/go.md":              "Go standards",
+			".github/workflows/ci.yml":          "ci workflow",
+			".goose/recipes/dev.yaml":           "dev recipe",
+		})
+
+		err := FetchAndExtractTemplate("https://api.github.com/repos/owner/repo/tarball/v1.0.0", "owner/repo", "v1.0.0", destRoot)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
+		// Verify extracted files.
+		for _, check := range []struct {
+			path    string
+			content string
+		}{
+			{"base/AGENTS.md", "# Agents"},
+			{"base/standards/go.md", "Go standards"},
+			{".github/workflows/ci.yml", "ci workflow"},
+			{".goose/recipes/dev.yaml", "dev recipe"},
+		} {
+			data, err := os.ReadFile(filepath.Join(destRoot, check.path))
+			if err != nil {
+				t.Errorf("expected file %s to exist: %v", check.path, err)
+				continue
+			}
+			if string(data) != check.content {
+				t.Errorf("%s content = %q, want %q", check.path, string(data), check.content)
+			}
+		}
 	})
 
-	t.Run("git clone error", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		run := fakeRun("fatal: not found", fmt.Errorf("exit 128"))
-		err := CloneTemplate("owner/repo", tmpDir, run)
-		if err == nil {
-			t.Fatal("expected error")
+	t.Run("empty tarball URL returns error before fetch", func(t *testing.T) {
+		orig := fetchTarballFn
+		defer func() { fetchTarballFn = orig }()
+
+		fetchCalled := false
+		fetchTarballFn = func(_, _ string) (io.ReadCloser, error) {
+			fetchCalled = true
+			return nil, fmt.Errorf("should not be called")
 		}
-		if !strings.Contains(err.Error(), "git clone template") {
-			t.Errorf("error should mention git clone: %v", err)
+
+		err := FetchAndExtractTemplate("", "owner/repo", "v1.0.0", t.TempDir())
+		if err == nil {
+			t.Fatal("expected error for empty tarball URL")
+		}
+		if !strings.Contains(err.Error(), "tarball URL is empty") {
+			t.Errorf("error should mention empty tarball URL: %v", err)
+		}
+		if fetchCalled {
+			t.Error("fetch function should not have been called for empty tarball URL")
+		}
+	})
+
+	t.Run("fetch failure returns descriptive error and leaves repo unchanged", func(t *testing.T) {
+		orig := fetchTarballFn
+		defer func() { fetchTarballFn = orig }()
+
+		destRoot := t.TempDir()
+
+		// Create a pre-existing file to verify it's not modified.
+		existingFile := filepath.Join(destRoot, "existing.txt")
+		if err := os.WriteFile(existingFile, []byte("original"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		fetchTarballFn = func(_, _ string) (io.ReadCloser, error) {
+			return nil, fmt.Errorf("network timeout")
+		}
+
+		err := FetchAndExtractTemplate("https://api.github.com/repos/owner/repo/tarball/v1.0.0", "owner/repo", "v1.0.0", destRoot)
+		if err == nil {
+			t.Fatal("expected error for fetch failure")
+		}
+		if !strings.Contains(err.Error(), "network timeout") {
+			t.Errorf("error should contain fetch error detail: %v", err)
+		}
+
+		// Verify pre-existing file is unchanged.
+		data, readErr := os.ReadFile(existingFile)
+		if readErr != nil {
+			t.Fatalf("pre-existing file should still exist: %v", readErr)
+		}
+		if string(data) != "original" {
+			t.Errorf("pre-existing file content changed: %q", string(data))
 		}
 	})
 }
@@ -1242,4 +1318,61 @@ func TestCleanupTemp(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
+}
+
+// createFakeTarballFetch returns a tarball.FetchFunc that produces a gzipped tar
+// archive containing the given files. The archive includes a top-level prefix
+// directory ("repo-v1.0.0/") to simulate GitHub's tarball format.
+func createFakeTarballFetch(t *testing.T, files map[string]string) func(repo, version string) (io.ReadCloser, error) {
+	t.Helper()
+	return func(repo, version string) (io.ReadCloser, error) {
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gw)
+
+		// Add top-level prefix directory.
+		prefix := "repo-" + version + "/"
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     prefix,
+			Typeflag: tar.TypeDir,
+			Mode:     0o755,
+		}); err != nil {
+			t.Fatalf("writing prefix dir header: %v", err)
+		}
+
+		for path, content := range files {
+			fullPath := prefix + path
+
+			// Create parent directories.
+			dir := filepath.Dir(fullPath)
+			if dir != prefix && dir != "." {
+				_ = tw.WriteHeader(&tar.Header{
+					Name:     dir + "/",
+					Typeflag: tar.TypeDir,
+					Mode:     0o755,
+				})
+			}
+
+			if err := tw.WriteHeader(&tar.Header{
+				Name:     fullPath,
+				Size:     int64(len(content)),
+				Mode:     0o644,
+				Typeflag: tar.TypeReg,
+			}); err != nil {
+				t.Fatalf("writing header for %s: %v", path, err)
+			}
+			if _, err := tw.Write([]byte(content)); err != nil {
+				t.Fatalf("writing content for %s: %v", path, err)
+			}
+		}
+
+		if err := tw.Close(); err != nil {
+			t.Fatalf("closing tar writer: %v", err)
+		}
+		if err := gw.Close(); err != nil {
+			t.Fatalf("closing gzip writer: %v", err)
+		}
+
+		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+	}
 }

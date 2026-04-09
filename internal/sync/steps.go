@@ -9,13 +9,20 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/fsutil"
+	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // backupSuffix is the directory name suffix used for the base/ backup.
 const backupSuffix = ".agentic-sync-backup"
 
+// syncPathPrefixes defines the path prefixes extracted from the template tarball
+// during sync. These correspond to the directories that are managed by the template.
+var syncPathPrefixes = []string{"base/", ".github/workflows/", ".goose/recipes/"}
+
 // CloneTemplate clones the upstream template repo into tmpDir.
+// Deprecated: Use FetchAndExtractTemplate instead. This function remains until
+// RunSync is updated to use the tarball-based approach (task #332).
 func CloneTemplate(repo, tmpDir string, run bootstrap.RunCommandFunc) error {
 	url := fmt.Sprintf("https://github.com/%s.git", repo)
 	out, err := run("git", "clone", "--depth", "1", url, tmpDir)
@@ -23,6 +30,22 @@ func CloneTemplate(repo, tmpDir string, run bootstrap.RunCommandFunc) error {
 		return fmt.Errorf("git clone template: %w\n%s", err, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// fetchTarballFn is the tarball fetch function used by FetchAndExtractTemplate.
+// Tests override this to inject fakes without making real HTTP requests.
+var fetchTarballFn = tarball.DefaultFetch
+
+// FetchAndExtractTemplate fetches the release tarball for the given repo and version,
+// then extracts the template-managed directories (base/, .github/workflows/, .goose/recipes/)
+// into the destination root. The tarballURL is validated before any fetch is attempted.
+// Extraction is atomic: on failure, no partial extraction remains in destRoot.
+func FetchAndExtractTemplate(tarballURL, repo, version, destRoot string) error {
+	if tarballURL == "" {
+		return fmt.Errorf("tarball URL is empty for release %s — cannot fetch template", version)
+	}
+
+	return tarball.ExtractFromTemplate(repo, version, destRoot, syncPathPrefixes, fetchTarballFn)
 }
 
 // BackupBase copies existing base/ and .github/workflows/ to a temp backup
