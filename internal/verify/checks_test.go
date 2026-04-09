@@ -1268,8 +1268,8 @@ func TestCheckRunnerLabelVar_ParseError_ReturnsWarning(t *testing.T) {
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
-	if !strings.Contains(result.Message, "parse") {
-		t.Errorf("expected parse error message, got %q", result.Message)
+	if !strings.Contains(result.Message, "variables") {
+		t.Errorf("expected variable error message, got %q", result.Message)
 	}
 }
 
@@ -1453,7 +1453,7 @@ func TestCheckRepoVariable_OrgOwnerType_UsesOrgFlag(t *testing.T) {
 			wantStatus: Pass,
 		},
 		{
-			name:       "org owner queries with --org flag and variable missing",
+			name:       "org owner queries with --org flag and variable missing at both scopes",
 			ownerType:  bootstrap.OwnerTypeOrg,
 			wantFlag:   "--org",
 			wantValue:  "acme-org",
@@ -1469,7 +1469,7 @@ func TestCheckRepoVariable_OrgOwnerType_UsesOrgFlag(t *testing.T) {
 			wantStatus: Pass,
 		},
 		{
-			name:       "user owner queries with --repo flag and variable missing",
+			name:       "user owner queries with --repo flag and variable missing at both scopes",
 			ownerType:  bootstrap.OwnerTypeUser,
 			wantFlag:   "--repo",
 			wantValue:  "alice/my-repo",
@@ -1481,19 +1481,14 @@ func TestCheckRepoVariable_OrgOwnerType_UsesOrgFlag(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeRun := func(name string, args ...string) (string, error) {
-				// Verify the correct flag is used.
-				foundFlag := false
-				for i, a := range args {
-					if a == tc.wantFlag && i+1 < len(args) && args[i+1] == tc.wantValue {
-						foundFlag = true
+				if tc.varPresent {
+					// Return present for the primary scope query.
+					joined := strings.Join(args, " ")
+					if strings.Contains(joined, tc.wantFlag) {
+						return `[{"name":"RUNNER_LABEL"}]`, nil
 					}
 				}
-				if !foundFlag {
-					t.Errorf("expected %s %s in args, got %v", tc.wantFlag, tc.wantValue, args)
-				}
-				if tc.varPresent {
-					return `[{"name":"RUNNER_LABEL"}]`, nil
-				}
+				// Return empty for all scopes when not present.
 				return `[]`, nil
 			}
 
@@ -1529,7 +1524,7 @@ func TestCheckRepoSecret_OrgOwnerType_UsesOrgFlag(t *testing.T) {
 			wantStatus:    Pass,
 		},
 		{
-			name:          "org owner queries with --org flag and secret missing",
+			name:          "org owner queries with --org flag and secret missing at both scopes",
 			ownerType:     bootstrap.OwnerTypeOrg,
 			wantFlag:      "--org",
 			wantValue:     "acme-org",
@@ -1545,7 +1540,7 @@ func TestCheckRepoSecret_OrgOwnerType_UsesOrgFlag(t *testing.T) {
 			wantStatus:    Pass,
 		},
 		{
-			name:          "user owner queries with --repo flag and secret missing",
+			name:          "user owner queries with --repo flag and secret missing at both scopes",
 			ownerType:     bootstrap.OwnerTypeUser,
 			wantFlag:      "--repo",
 			wantValue:     "alice/my-repo",
@@ -1557,18 +1552,11 @@ func TestCheckRepoSecret_OrgOwnerType_UsesOrgFlag(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeRun := func(name string, args ...string) (string, error) {
-				// Verify the correct flag is used.
-				foundFlag := false
-				for i, a := range args {
-					if a == tc.wantFlag && i+1 < len(args) && args[i+1] == tc.wantValue {
-						foundFlag = true
-					}
-				}
-				if !foundFlag {
-					t.Errorf("expected %s %s in args, got %v", tc.wantFlag, tc.wantValue, args)
-				}
 				if tc.secretPresent {
-					return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+					joined := strings.Join(args, " ")
+					if strings.Contains(joined, tc.wantFlag) {
+						return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+					}
 				}
 				return `[]`, nil
 			}
@@ -1625,5 +1613,316 @@ func TestCheckAllVarAndSecretFunctions_OrgPath(t *testing.T) {
 	result = CheckClaudeCredentialsSecret("acme-org", "my-repo", bootstrap.OwnerTypeOrg, orgRun)
 	if result.Status != Pass {
 		t.Errorf("CheckClaudeCredentialsSecret org: expected Pass, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Topology-aware dual-scope variable check tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckRepoVariable_DualScope_OrgTopology(t *testing.T) {
+	tests := []struct {
+		name        string
+		atOrg       bool
+		atRepo      bool
+		wantStatus  CheckStatus
+		wantMessage string
+	}{
+		{
+			name:       "org: variable at org level returns Pass",
+			atOrg:      true,
+			atRepo:     false,
+			wantStatus: Pass,
+		},
+		{
+			name:        "org: variable only at repo level returns Fail with topology message",
+			atOrg:       false,
+			atRepo:      true,
+			wantStatus:  Fail,
+			wantMessage: "RUNNER_LABEL is set at repo level but must be at org level for federated topology",
+		},
+		{
+			name:        "org: variable missing at both levels returns Warning",
+			atOrg:       false,
+			atRepo:      false,
+			wantStatus:  Warning,
+			wantMessage: "not set",
+		},
+		{
+			name:       "org: variable at both levels returns Pass (org takes precedence)",
+			atOrg:      true,
+			atRepo:     true,
+			wantStatus: Pass,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "--org") {
+					if tc.atOrg {
+						return `[{"name":"RUNNER_LABEL"}]`, nil
+					}
+					return `[]`, nil
+				}
+				if strings.Contains(joined, "--repo") {
+					if tc.atRepo {
+						return `[{"name":"RUNNER_LABEL"}]`, nil
+					}
+					return `[]`, nil
+				}
+				return `[]`, nil
+			}
+
+			result := CheckRunnerLabelVar("acme-org", "my-repo", bootstrap.OwnerTypeOrg, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+			if tc.wantMessage != "" && !strings.Contains(result.Message, tc.wantMessage) {
+				t.Errorf("expected message containing %q, got %q", tc.wantMessage, result.Message)
+			}
+		})
+	}
+}
+
+func TestCheckRepoVariable_DualScope_UserTopology(t *testing.T) {
+	tests := []struct {
+		name        string
+		atRepo      bool
+		atOrg       bool
+		wantStatus  CheckStatus
+		wantMessage string
+	}{
+		{
+			name:       "user: variable at repo level returns Pass",
+			atRepo:     true,
+			atOrg:      false,
+			wantStatus: Pass,
+		},
+		{
+			name:       "user: variable only at org level returns Pass (acceptable)",
+			atRepo:     false,
+			atOrg:      true,
+			wantStatus: Pass,
+		},
+		{
+			name:        "user: variable missing at both levels returns Warning",
+			atRepo:      false,
+			atOrg:       false,
+			wantStatus:  Warning,
+			wantMessage: "not set",
+		},
+		{
+			name:       "user: variable at both levels returns Pass",
+			atRepo:     true,
+			atOrg:      true,
+			wantStatus: Pass,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "--repo") {
+					if tc.atRepo {
+						return `[{"name":"RUNNER_LABEL"}]`, nil
+					}
+					return `[]`, nil
+				}
+				if strings.Contains(joined, "--org") {
+					if tc.atOrg {
+						return `[{"name":"RUNNER_LABEL"}]`, nil
+					}
+					return `[]`, nil
+				}
+				return `[]`, nil
+			}
+
+			result := CheckRunnerLabelVar("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+			if tc.wantMessage != "" && !strings.Contains(result.Message, tc.wantMessage) {
+				t.Errorf("expected message containing %q, got %q", tc.wantMessage, result.Message)
+			}
+		})
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Topology-aware dual-scope secret check tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckRepoSecret_DualScope_OrgTopology(t *testing.T) {
+	tests := []struct {
+		name        string
+		atOrg       bool
+		atRepo      bool
+		wantStatus  CheckStatus
+		wantMessage string
+	}{
+		{
+			name:       "org: secret at org level returns Pass",
+			atOrg:      true,
+			atRepo:     false,
+			wantStatus: Pass,
+		},
+		{
+			name:        "org: secret only at repo level returns Fail with topology message",
+			atOrg:       false,
+			atRepo:      true,
+			wantStatus:  Fail,
+			wantMessage: "GOOSE_AGENT_PAT is set at repo level but must be at org level for federated topology",
+		},
+		{
+			name:        "org: secret missing at both levels returns Warning",
+			atOrg:       false,
+			atRepo:      false,
+			wantStatus:  Warning,
+			wantMessage: "secret not set",
+		},
+		{
+			name:       "org: secret at both levels returns Pass (org takes precedence)",
+			atOrg:      true,
+			atRepo:     true,
+			wantStatus: Pass,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "--org") {
+					if tc.atOrg {
+						return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+					}
+					return `[]`, nil
+				}
+				if strings.Contains(joined, "--repo") {
+					if tc.atRepo {
+						return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+					}
+					return `[]`, nil
+				}
+				return `[]`, nil
+			}
+
+			result := CheckGooseAgentPATSecret("acme-org", "my-repo", bootstrap.OwnerTypeOrg, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+			if tc.wantMessage != "" && !strings.Contains(result.Message, tc.wantMessage) {
+				t.Errorf("expected message containing %q, got %q", tc.wantMessage, result.Message)
+			}
+		})
+	}
+}
+
+func TestCheckRepoSecret_DualScope_UserTopology(t *testing.T) {
+	tests := []struct {
+		name        string
+		atRepo      bool
+		atOrg       bool
+		wantStatus  CheckStatus
+		wantMessage string
+	}{
+		{
+			name:       "user: secret at repo level returns Pass",
+			atRepo:     true,
+			atOrg:      false,
+			wantStatus: Pass,
+		},
+		{
+			name:       "user: secret only at org level returns Pass (acceptable)",
+			atRepo:     false,
+			atOrg:      true,
+			wantStatus: Pass,
+		},
+		{
+			name:        "user: secret missing at both levels returns Warning",
+			atRepo:      false,
+			atOrg:       false,
+			wantStatus:  Warning,
+			wantMessage: "secret not set",
+		},
+		{
+			name:       "user: secret at both levels returns Pass",
+			atRepo:     true,
+			atOrg:      true,
+			wantStatus: Pass,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "--repo") {
+					if tc.atRepo {
+						return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+					}
+					return `[]`, nil
+				}
+				if strings.Contains(joined, "--org") {
+					if tc.atOrg {
+						return `[{"name":"GOOSE_AGENT_PAT"}]`, nil
+					}
+					return `[]`, nil
+				}
+				return `[]`, nil
+			}
+
+			result := CheckGooseAgentPATSecret("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+			if tc.wantMessage != "" && !strings.Contains(result.Message, tc.wantMessage) {
+				t.Errorf("expected message containing %q, got %q", tc.wantMessage, result.Message)
+			}
+		})
+	}
+}
+
+func TestCheckRepoVariable_DualScope_ClaudeCredentials_OrgAtRepoOnly_Fails(t *testing.T) {
+	// Verify the dual-scope logic propagates through CheckClaudeCredentialsSecret.
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--org") {
+			return `[]`, nil
+		}
+		if strings.Contains(joined, "--repo") {
+			return `[{"name":"CLAUDE_CREDENTIALS_JSON"}]`, nil
+		}
+		return `[]`, nil
+	}
+
+	result := CheckClaudeCredentialsSecret("acme-org", "my-repo", bootstrap.OwnerTypeOrg, fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "must be at org level") {
+		t.Errorf("expected topology message, got %q", result.Message)
+	}
+}
+
+func TestCheckRepoVariable_DualScope_GooseProvider_UserAtOrgOnly_Passes(t *testing.T) {
+	// Verify user topology passes when variable is only at org level.
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--repo") {
+			return `[]`, nil
+		}
+		if strings.Contains(joined, "--org") {
+			return `[{"name":"GOOSE_PROVIDER"}]`, nil
+		}
+		return `[]`, nil
+	}
+
+	result := CheckGooseProviderVar("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
