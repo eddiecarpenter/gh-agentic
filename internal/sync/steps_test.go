@@ -1138,6 +1138,61 @@ func TestUpdateVersion(t *testing.T) {
 	})
 }
 
+func TestWritePostSyncMD(t *testing.T) {
+	t.Run("writes release body to POST_SYNC.md", func(t *testing.T) {
+		root := t.TempDir()
+		body := "## What's Changed\n\n- Fixed sync runner\n- Added tarball support"
+
+		err := WritePostSyncMD(root, body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, readErr := os.ReadFile(filepath.Join(root, "POST_SYNC.md"))
+		if readErr != nil {
+			t.Fatalf("POST_SYNC.md should exist: %v", readErr)
+		}
+		if string(data) != body {
+			t.Errorf("content = %q, want %q", string(data), body)
+		}
+	})
+
+	t.Run("writes file with empty body", func(t *testing.T) {
+		root := t.TempDir()
+
+		err := WritePostSyncMD(root, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, readErr := os.ReadFile(filepath.Join(root, "POST_SYNC.md"))
+		if readErr != nil {
+			t.Fatalf("POST_SYNC.md should exist even with empty body: %v", readErr)
+		}
+		if string(data) != "" {
+			t.Errorf("content should be empty, got %q", string(data))
+		}
+	})
+
+	t.Run("overwrites existing file", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, "POST_SYNC.md")
+		if err := os.WriteFile(path, []byte("old content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := WritePostSyncMD(root, "new content")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(path)
+		if string(data) != "new content" {
+			t.Errorf("content = %q, want %q", string(data), "new content")
+		}
+	})
+}
+
 func TestStageSync(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		var calls []string
@@ -1171,6 +1226,9 @@ func TestStageSync(t *testing.T) {
 		}
 		if !strings.Contains(calls[0], ".goose/recipes/") {
 			t.Errorf("expected .goose/recipes/ in git add: %s", calls[0])
+		}
+		if !strings.Contains(calls[0], "POST_SYNC.md") {
+			t.Errorf("expected POST_SYNC.md in git add: %s", calls[0])
 		}
 	})
 

@@ -303,9 +303,19 @@ func UpdateVersion(repoRoot, version string) error {
 	return nil
 }
 
-// StageSync stages base/, .github/workflows/, and TEMPLATE_VERSION for commit.
+// WritePostSyncMD writes the release body to POST_SYNC.md in the repo root.
+// An empty releaseBody is valid — the file is still created (a release may have no notes).
+func WritePostSyncMD(repoRoot string, releaseBody string) error {
+	path := filepath.Join(repoRoot, "POST_SYNC.md")
+	if err := os.WriteFile(path, []byte(releaseBody), 0o644); err != nil {
+		return fmt.Errorf("writing POST_SYNC.md: %w", err)
+	}
+	return nil
+}
+
+// StageSync stages base/, .github/workflows/, TEMPLATE_VERSION, and POST_SYNC.md for commit.
 func StageSync(repoRoot string, run bootstrap.RunCommandFunc) error {
-	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION", ".github/workflows/", ".goose/recipes/"); err != nil {
+	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION", ".github/workflows/", ".goose/recipes/", "POST_SYNC.md"); err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
 	}
 	return nil
