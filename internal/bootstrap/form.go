@@ -276,6 +276,9 @@ const repoModeSelectExisting = "existing"
 // repoModeCreateNew is the value for the "Create new repo" choice.
 const repoModeCreateNew = "new"
 
+// repoBackSentinel is the sentinel value for the "← Back" option in the repo select list.
+const repoBackSentinel = "__back__"
+
 // runnerOther is the sentinel value for the "other" runner option.
 const runnerOther = "__other__"
 
@@ -385,67 +388,78 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 	}
 
 	// --- Phase 2: Repository selection ---
-	var repoMode string
-	repoModeForm := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Repository").
-				Description("Choose whether to bootstrap into an existing repo or create a new one").
-				Options(
-					huh.NewOption("Select existing repo", repoModeSelectExisting),
-					huh.NewOption("Create new repo", repoModeCreateNew),
-				).
-				Value(&repoMode),
-		),
-	)
-	if err := repoModeForm.Run(); err != nil {
-		return BootstrapConfig{}, fmt.Errorf("repo mode form: %w", err)
-	}
-
-	if repoMode == repoModeSelectExisting {
-		cfg.ExistingRepo = true
-
-		repos, err := fetchRepos(cfg.Owner)
-		if err != nil {
-			return BootstrapConfig{}, fmt.Errorf("fetching repo list: %w", err)
-		}
-		if len(repos) == 0 {
-			return BootstrapConfig{}, fmt.Errorf("no repositories found for %s — use 'Create new repo' instead", cfg.Owner)
-		}
-
-		repoOpts := make([]huh.Option[string], len(repos))
-		for i, r := range repos {
-			repoOpts[i] = huh.NewOption(r.Name, r.Name)
-		}
-
-		repoSelectForm := huh.NewForm(
+	// Wrapped in a loop to support back-navigation from the repo select list.
+	for {
+		var repoMode string
+		repoModeForm := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
-					Title(fmt.Sprintf("Select repository (%d available)", len(repos))).
-					Description("Choose the repo to bootstrap into. If your repo is not listed, select ← Back to create a new one instead.").
-					Options(repoOpts...).
-					Height(15).
-					Value(&cfg.ProjectName),
+					Title("Repository").
+					Description("Choose whether to bootstrap into an existing repo or create a new one").
+					Options(
+						huh.NewOption("Select existing repo", repoModeSelectExisting),
+						huh.NewOption("Create new repo", repoModeCreateNew),
+					).
+					Value(&repoMode),
 			),
 		)
-		if err := repoSelectForm.Run(); err != nil {
-			return BootstrapConfig{}, fmt.Errorf("repo select form: %w", err)
+		if err := repoModeForm.Run(); err != nil {
+			return BootstrapConfig{}, fmt.Errorf("repo mode form: %w", err)
 		}
-	} else {
-		cfg.ExistingRepo = false
 
-		repoNameForm := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Repository name").
-					Description("Your new GitHub repository name — lowercase with hyphens only").
-					Value(&cfg.ProjectName).
-					Validate(validateNewRepoName(cfg.Owner, checkRepoExists)),
-			),
-		)
-		if err := repoNameForm.Run(); err != nil {
-			return BootstrapConfig{}, fmt.Errorf("repo name form: %w", err)
+		if repoMode == repoModeSelectExisting {
+			cfg.ExistingRepo = true
+
+			repos, err := fetchRepos(cfg.Owner)
+			if err != nil {
+				return BootstrapConfig{}, fmt.Errorf("fetching repo list: %w", err)
+			}
+			if len(repos) == 0 {
+				return BootstrapConfig{}, fmt.Errorf("no repositories found for %s — use 'Create new repo' instead", cfg.Owner)
+			}
+
+			repoOpts := make([]huh.Option[string], 0, len(repos)+1)
+			for _, r := range repos {
+				repoOpts = append(repoOpts, huh.NewOption(r.Name, r.Name))
+			}
+			repoOpts = append(repoOpts, huh.NewOption("← Back", repoBackSentinel))
+
+			repoSelectForm := huh.NewForm(
+				huh.NewGroup(
+					huh.NewSelect[string]().
+						Title(fmt.Sprintf("Select repository (%d available)", len(repos))).
+						Description("Choose the repo to bootstrap into. If your repo is not listed, select ← Back to create a new one instead.").
+						Options(repoOpts...).
+						Height(15).
+						Value(&cfg.ProjectName),
+				),
+			)
+			if err := repoSelectForm.Run(); err != nil {
+				return BootstrapConfig{}, fmt.Errorf("repo select form: %w", err)
+			}
+
+			// If "← Back" was selected, loop back to repo mode choice.
+			if cfg.ProjectName == repoBackSentinel {
+				cfg.ProjectName = ""
+				continue
+			}
+		} else {
+			cfg.ExistingRepo = false
+
+			repoNameForm := huh.NewForm(
+				huh.NewGroup(
+					huh.NewInput().
+						Title("Repository name").
+						Description("Your new GitHub repository name — lowercase with hyphens only").
+						Value(&cfg.ProjectName).
+						Validate(validateNewRepoName(cfg.Owner, checkRepoExists)),
+				),
+			)
+			if err := repoNameForm.Run(); err != nil {
+				return BootstrapConfig{}, fmt.Errorf("repo name form: %w", err)
+			}
 		}
+		break // Repo selected — exit the loop.
 	}
 
 	// --- Phase 3: Remaining fields ---

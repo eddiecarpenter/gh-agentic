@@ -724,3 +724,21 @@ func TestRunnerOtherConstant(t *testing.T) {
 	}
 }
 
+// --- repoBackSentinel constant test ---
+
+func TestRepoBackSentinelConstant(t *testing.T) {
+	if repoBackSentinel != "__back__" {
+		t.Errorf("repoBackSentinel = %q, want %q", repoBackSentinel, "__back__")
+	}
+}
+
+// --- Back navigation logic tests ---
+
+func TestBackNavigation_SentinelIsNotValidProjectName(t *testing.T) {
+	// The back sentinel should not pass project name validation.
+	err := validateProjectName(repoBackSentinel)
+	if err == nil {
+		t.Error("back sentinel should not pass project name validation")
+	}
+}
+
