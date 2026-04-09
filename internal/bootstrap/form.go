@@ -260,10 +260,16 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 			huh.NewInput().
 				Title("Description").
 				Value(&cfg.Description),
-			huh.NewSelect[string]().
-				Title("Stack").
+			huh.NewMultiSelect[string]().
+				Title("Stack (select all that apply)").
 				Options(stackOptions...).
-				Value(&cfg.Stack),
+				Value(&cfg.Stacks).
+				Validate(func(selected []string) error {
+					if len(selected) == 0 {
+						return errors.New("at least one stack must be selected")
+					}
+					return nil
+				}),
 			huh.NewConfirm().
 				Title("Antora documentation site?").
 				Value(&cfg.Antora),
@@ -340,7 +346,7 @@ func RenderSummaryBox(cfg BootstrapConfig) string {
 		label("Owner      "), value(cfg.Owner),
 		label("Name       "), value(cfg.ProjectName),
 		label("Description"), value(cfg.Description),
-		label("Stack      "), value(cfg.Stack),
+		label("Stack      "), value(strings.Join(cfg.Stacks, ", ")),
 		label("Antora     "), value(antoraVal),
 		label("Runner     "), value(cfg.RunnerLabel),
 		label("Provider   "), value(cfg.GooseProvider),

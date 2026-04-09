@@ -78,7 +78,7 @@ func TestRenderSummaryBox_ContainsAllFields(t *testing.T) {
 		Owner:       "newopenbss",
 		ProjectName: "my-project",
 		Description: "A test bench for OCS diameter testing",
-		Stack:       "Go",
+		Stacks:      []string{"Go"},
 		Antora:      false,
 	}
 
@@ -121,7 +121,7 @@ func TestRenderSummaryBox_ContainsPipelineFields(t *testing.T) {
 		Owner:         "alice",
 		ProjectName:   "my-project",
 		Description:   "test",
-		Stack:         "Go",
+		Stacks:        []string{"Go"},
 		Antora:        false,
 		RunnerLabel:   "ubuntu-latest",
 		GooseProvider: "claude-code",
@@ -158,6 +158,22 @@ func TestRenderSummaryBox_CustomRunnerLabel_ShowsCustomValue(t *testing.T) {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("RenderSummaryBox() expected %q in output, got:\n%s", want, rendered)
 		}
+	}
+}
+
+func TestRenderSummaryBox_MultipleStacks_ShowsCommaJoined(t *testing.T) {
+	cfg := BootstrapConfig{
+		Topology:    "Single",
+		Owner:       "alice",
+		ProjectName: "my-project",
+		Description: "test",
+		Stacks:      []string{"Go", "TypeScript Node.js"},
+	}
+
+	rendered := RenderSummaryBox(cfg)
+
+	if !strings.Contains(rendered, "Go, TypeScript Node.js") {
+		t.Errorf("RenderSummaryBox() expected comma-joined stacks, got:\n%s", rendered)
 	}
 }
 

@@ -25,7 +25,7 @@ func TestRunSteps_AllStepsSucceed_ReturnsNilAfterSummary(t *testing.T) {
 		Topology:     "Single",
 		Owner:        "alice",
 		ProjectName:  "my-project",
-		Stack:        "Other", // "Other" skips ScaffoldStack so we don't need base/standards/
+		Stacks:      []string{"Other"}, // "Other" skips ScaffoldStacks so we don't need base/standards/
 		Description:  "Test project",
 		Antora:       false,
 		OwnerType:    OwnerTypeUser,
@@ -90,7 +90,7 @@ func TestRunSteps_StepFails_StopsImmediately(t *testing.T) {
 		Topology:     "Single",
 		Owner:        "alice",
 		ProjectName:  "my-project",
-		Stack:        "Other",
+		Stacks:      []string{"Other"},
 		Description:  "Test project",
 		OwnerType:    OwnerTypeUser,
 		TemplateRepo: DefaultTemplateRepo,

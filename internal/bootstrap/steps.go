@@ -179,32 +179,42 @@ var stackFileName = map[string]string{
 	"Rust":               "rust.md",
 }
 
-// ScaffoldStack reads the Project Initialisation section from the stack standards file
-// in the cloned repo and executes each bash code block sequentially.
+// ScaffoldStacks reads the Project Initialisation section from each selected stack's
+// standards file in the cloned repo and executes each bash code block sequentially.
+// Stacks with no entry in stackFileName (e.g. "Other") are skipped with a logged message.
+// If a command fails, execution halts immediately and the error identifies the failing track.
 //
 // run is injected so tests can substitute a fake implementation.
-func ScaffoldStack(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
-	filename, ok := stackFileName[cfg.Stack]
-	if !ok {
-		fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+cfg.Stack+" has no initialisation template — skipping scaffold"))
-		return nil
-	}
+func ScaffoldStacks(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
+	for _, stack := range cfg.Stacks {
+		filename, ok := stackFileName[stack]
+		if !ok {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no initialisation template — skipping scaffold"))
+			continue
+		}
 
-	standardsPath := filepath.Join(state.ClonePath, "base", "standards", filename)
-	data, err := os.ReadFile(standardsPath)
-	if err != nil {
-		return fmt.Errorf("reading standards file %s: %w", standardsPath, err)
-	}
-
-	commands, err := extractInitCommands(string(data))
-	if err != nil {
-		return fmt.Errorf("parsing Project Initialisation section: %w", err)
-	}
-
-	for _, cmd := range commands {
-		out, err := runInDir(run, state.ClonePath, "bash", "-c", cmd)
+		standardsPath := filepath.Join(state.ClonePath, "base", "standards", filename)
+		data, err := os.ReadFile(standardsPath)
 		if err != nil {
-			return fmt.Errorf("scaffold command %q: %w\n%s", cmd, err, strings.TrimSpace(out))
+			return fmt.Errorf("reading standards file %s: %w", standardsPath, err)
+		}
+
+		commands, err := extractInitCommands(string(data))
+		if err != nil {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no Project Initialisation section — skipping"))
+			continue
+		}
+
+		if len(commands) == 0 {
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· Stack "+stack+" has no Project Initialisation section — skipping"))
+			continue
+		}
+
+		for _, cmd := range commands {
+			out, err := runInDir(run, state.ClonePath, "bash", "-c", cmd)
+			if err != nil {
+				return fmt.Errorf("[%s] scaffold command %q: %w\n%s", stack, cmd, err, strings.TrimSpace(out))
+			}
 		}
 	}
 
@@ -299,7 +309,7 @@ func ConfigureRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCo
 func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
 	// Write REPOS.md.
 	reposMD := fmt.Sprintf("# REPOS.md\n\n## %s\n\n- **Repo:** git@github.com:%s/%s.git\n- **Stack:** %s\n- **Type:** agentic\n- **Status:** active\n- **Description:** %s\n",
-		state.RepoName, cfg.Owner, state.RepoName, cfg.Stack, cfg.Description)
+		state.RepoName, cfg.Owner, state.RepoName, strings.Join(cfg.Stacks, ", "), cfg.Description)
 	if err := os.WriteFile(filepath.Join(state.ClonePath, "REPOS.md"), []byte(reposMD), 0644); err != nil {
 		return fmt.Errorf("writing REPOS.md: %w", err)
 	}
@@ -322,7 +332,7 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 			"## Skills\n\n"+
 			"The `skills/` directory is for local project-specific skills that extend\n"+
 			"or override template skills in `base/skills/`.\n",
-		cfg.TemplateRepo, cfg.ProjectName, cfg.Topology, cfg.Stack, cfg.Description, state.RepoURL, cfg.Owner)
+		cfg.TemplateRepo, cfg.ProjectName, cfg.Topology, strings.Join(cfg.Stacks, ", "), cfg.Description, state.RepoURL, cfg.Owner)
 	if err := os.WriteFile(filepath.Join(state.ClonePath, "AGENTS.local.md"), []byte(agentsLocal), 0644); err != nil {
 		return fmt.Errorf("writing AGENTS.local.md: %w", err)
 	}

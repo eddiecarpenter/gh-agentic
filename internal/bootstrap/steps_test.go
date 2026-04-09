@@ -309,7 +309,7 @@ func TestCreateRepo_TarballFetchFails_CleansUpRepo(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------------------
-// Step 4 — ScaffoldStack / extractInitCommands
+// Step 4 — ScaffoldStacks / extractInitCommands
 // --------------------------------------------------------------------------------------
 
 func TestExtractInitCommands_FindsGoSection(t *testing.T) {
@@ -363,31 +363,31 @@ func TestExtractInitCommands_NoCodeBlocks_ReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestScaffoldStack_OtherStack_SkipsWithWarning(t *testing.T) {
-	cfg := BootstrapConfig{Stack: "Other"}
+func TestScaffoldStacks_OtherStack_SkipsWithWarning(t *testing.T) {
+	cfg := BootstrapConfig{Stacks: []string{"Other"}}
 	state := &StepState{ClonePath: t.TempDir()}
 	run := fakeRunFail("should not be called")
 
 	var buf bytes.Buffer
-	if err := ScaffoldStack(&buf, cfg, state, run); err != nil {
-		t.Fatalf("ScaffoldStack() expected nil for 'Other' stack, got: %v", err)
+	if err := ScaffoldStacks(&buf, cfg, state, run); err != nil {
+		t.Fatalf("ScaffoldStacks() expected nil for 'Other' stack, got: %v", err)
 	}
 	if !strings.Contains(buf.String(), "skipping scaffold") {
 		t.Errorf("expected skip message in output, got: %s", buf.String())
 	}
 }
 
-func TestScaffoldStack_MissingStandardsFile_ReturnsError(t *testing.T) {
-	cfg := BootstrapConfig{Stack: "Go"}
+func TestScaffoldStacks_MissingStandardsFile_ReturnsError(t *testing.T) {
+	cfg := BootstrapConfig{Stacks: []string{"Go"}}
 	state := &StepState{ClonePath: t.TempDir()} // No base/standards/go.md
 
 	var buf bytes.Buffer
-	if err := ScaffoldStack(&buf, cfg, state, fakeRunOK("")); err == nil {
-		t.Error("ScaffoldStack() expected error when standards file missing, got nil")
+	if err := ScaffoldStacks(&buf, cfg, state, fakeRunOK("")); err == nil {
+		t.Error("ScaffoldStacks() expected error when standards file missing, got nil")
 	}
 }
 
-func TestScaffoldStack_ExecutesCommandsFromFile(t *testing.T) {
+func TestScaffoldStacks_ExecutesCommandsFromFile(t *testing.T) {
 	dir := t.TempDir()
 	// Create the standards file with a Project Initialisation section.
 	stdDir := filepath.Join(dir, "base", "standards")
@@ -399,7 +399,7 @@ func TestScaffoldStack_ExecutesCommandsFromFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := BootstrapConfig{Stack: "Go"}
+	cfg := BootstrapConfig{Stacks: []string{"Go"}}
 	state := &StepState{ClonePath: dir}
 
 	var executed []string
@@ -411,11 +411,159 @@ func TestScaffoldStack_ExecutesCommandsFromFile(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := ScaffoldStack(&buf, cfg, state, run); err != nil {
-		t.Fatalf("ScaffoldStack() unexpected error: %v", err)
+	if err := ScaffoldStacks(&buf, cfg, state, run); err != nil {
+		t.Fatalf("ScaffoldStacks() unexpected error: %v", err)
 	}
 	if len(executed) == 0 {
 		t.Error("expected at least one bash command to be executed")
+	}
+}
+
+func TestScaffoldStacks_MultipleStacks_ExecutesAll(t *testing.T) {
+	dir := t.TempDir()
+	stdDir := filepath.Join(dir, "base", "standards")
+	if err := os.MkdirAll(stdDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	goContent := "## Project Initialisation\n\n```bash\necho go-init\n```\n\n## Other\n"
+	if err := os.WriteFile(filepath.Join(stdDir, "go.md"), []byte(goContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rustContent := "## Project Initialisation\n\n```bash\necho rust-init\n```\n\n## Other\n"
+	if err := os.WriteFile(filepath.Join(stdDir, "rust.md"), []byte(rustContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{Stacks: []string{"Go", "Rust"}}
+	state := &StepState{ClonePath: dir}
+
+	var executed []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" {
+			executed = append(executed, strings.Join(args, " "))
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	if err := ScaffoldStacks(&buf, cfg, state, run); err != nil {
+		t.Fatalf("ScaffoldStacks() unexpected error: %v", err)
+	}
+	if len(executed) != 2 {
+		t.Errorf("expected 2 commands executed (one per stack), got %d", len(executed))
+	}
+}
+
+func TestScaffoldStacks_SkipsTrackWithNoInitSection(t *testing.T) {
+	dir := t.TempDir()
+	stdDir := filepath.Join(dir, "base", "standards")
+	if err := os.MkdirAll(stdDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Go has init section, Python has no init section.
+	goContent := "## Project Initialisation\n\n```bash\necho go-init\n```\n\n## Other\n"
+	if err := os.WriteFile(filepath.Join(stdDir, "go.md"), []byte(goContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	pyContent := "## Build Verification\n\nSome build info.\n"
+	if err := os.WriteFile(filepath.Join(stdDir, "python.md"), []byte(pyContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{Stacks: []string{"Go", "Python"}}
+	state := &StepState{ClonePath: dir}
+
+	var executed []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" {
+			executed = append(executed, strings.Join(args, " "))
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	if err := ScaffoldStacks(&buf, cfg, state, run); err != nil {
+		t.Fatalf("ScaffoldStacks() unexpected error: %v", err)
+	}
+	if len(executed) != 1 {
+		t.Errorf("expected 1 command executed (Python skipped), got %d", len(executed))
+	}
+	if !strings.Contains(buf.String(), "skipping") {
+		t.Errorf("expected skip message in output, got: %s", buf.String())
+	}
+}
+
+func TestScaffoldStacks_HaltsOnFailure_ReportsTrack(t *testing.T) {
+	dir := t.TempDir()
+	stdDir := filepath.Join(dir, "base", "standards")
+	if err := os.MkdirAll(stdDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	goContent := "## Project Initialisation\n\n```bash\necho go-init\n```\n\n## Other\n"
+	if err := os.WriteFile(filepath.Join(stdDir, "go.md"), []byte(goContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rustContent := "## Project Initialisation\n\n```bash\necho rust-init\n```\n\n## Other\n"
+	if err := os.WriteFile(filepath.Join(stdDir, "rust.md"), []byte(rustContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{Stacks: []string{"Go", "Rust"}}
+	state := &StepState{ClonePath: dir}
+
+	callCount := 0
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" {
+			callCount++
+			if callCount == 2 {
+				return "command failed", errors.New("exit status 1")
+			}
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	err := ScaffoldStacks(&buf, cfg, state, run)
+	if err == nil {
+		t.Fatal("expected error when command fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "[Rust]") {
+		t.Errorf("error should mention the failing track 'Rust', got: %v", err)
+	}
+}
+
+func TestScaffoldStacks_SingleStack_BehaviourUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	stdDir := filepath.Join(dir, "base", "standards")
+	if err := os.MkdirAll(stdDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := "## Project Initialisation\n\n```bash\necho hello\n```\n\n## Other\n"
+	if err := os.WriteFile(filepath.Join(stdDir, "go.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{Stacks: []string{"Go"}}
+	state := &StepState{ClonePath: dir}
+
+	var executed []string
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" {
+			executed = append(executed, strings.Join(args, " "))
+		}
+		return "", nil
+	}
+
+	var buf bytes.Buffer
+	if err := ScaffoldStacks(&buf, cfg, state, run); err != nil {
+		t.Fatalf("ScaffoldStacks() unexpected error: %v", err)
+	}
+	if len(executed) != 1 {
+		t.Errorf("expected exactly 1 command executed for single stack, got %d", len(executed))
 	}
 }
 
@@ -488,7 +636,7 @@ func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 		Owner:        "alice",
 		ProjectName:  "my-project",
 		Topology:     "Single",
-		Stack:        "Go",
+		Stacks:      []string{"Go"},
 		Description:  "A test project",
 		Antora:       false,
 		TemplateRepo: DefaultTemplateRepo,
@@ -527,7 +675,7 @@ func TestPopulateRepo_CreatesSkillsGitkeep(t *testing.T) {
 		Owner:        "alice",
 		ProjectName:  "my-project",
 		Topology:     "Single",
-		Stack:        "Go",
+		Stacks:      []string{"Go"},
 		Description:  "A test project",
 		Antora:       false,
 		TemplateRepo: DefaultTemplateRepo,
@@ -571,7 +719,7 @@ func TestPopulateRepo_AntoraTrue_ScaffoldsExtraFiles(t *testing.T) {
 		Owner:        "alice",
 		ProjectName:  "my-project",
 		Topology:     "Single",
-		Stack:        "Go",
+		Stacks:      []string{"Go"},
 		Description:  "A test project",
 		Antora:       true,
 		TemplateRepo: DefaultTemplateRepo,
@@ -600,7 +748,7 @@ func TestPopulateRepo_PushFails_ReturnsError(t *testing.T) {
 	cfg := BootstrapConfig{
 		Owner:        "alice",
 		ProjectName:  "my-project",
-		Stack:        "Go",
+		Stacks:      []string{"Go"},
 		Description:  "A test project",
 		TemplateRepo: DefaultTemplateRepo,
 	}
@@ -633,7 +781,7 @@ func TestPopulateRepo_ReposMDContainsDescription(t *testing.T) {
 	cfg := BootstrapConfig{
 		Owner:        "alice",
 		ProjectName:  "my-project",
-		Stack:        "Go",
+		Stacks:      []string{"Go"},
 		Description:  "unique-description-12345",
 		TemplateRepo: DefaultTemplateRepo,
 	}
@@ -666,7 +814,7 @@ func TestPopulateRepo_DeploysPublishReleaseYml(t *testing.T) {
 	cfg := BootstrapConfig{
 		Owner:        "alice",
 		ProjectName:  "my-project",
-		Stack:        "Go",
+		Stacks:      []string{"Go"},
 		Description:  "A test project",
 		TemplateRepo: DefaultTemplateRepo,
 	}
@@ -702,7 +850,7 @@ func TestPopulateRepo_SkipsPublishReleaseYml_WhenMissing(t *testing.T) {
 	cfg := BootstrapConfig{
 		Owner:        "alice",
 		ProjectName:  "my-project",
-		Stack:        "Go",
+		Stacks:      []string{"Go"},
 		Description:  "A test project",
 		TemplateRepo: DefaultTemplateRepo,
 	}

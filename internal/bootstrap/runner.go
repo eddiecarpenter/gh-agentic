@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -62,8 +63,8 @@ func RunSteps(
 			fn:    func() error { return CreateRepo(w, cfg, state, workDir, run, fetchRelease) },
 		},
 		{
-			label: "Scaffolding " + cfg.Stack + " project",
-			fn:    func() error { return ScaffoldStack(w, cfg, state, run) },
+			label: "Scaffolding " + strings.Join(cfg.Stacks, ", ") + " project",
+			fn:    func() error { return ScaffoldStacks(w, cfg, state, run) },
 		},
 		{
 			label: "Configuring labels",
