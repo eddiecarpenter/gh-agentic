@@ -742,3 +742,28 @@ func TestBackNavigation_SentinelIsNotValidProjectName(t *testing.T) {
 	}
 }
 
+// --- GOOSE_AGENT_PAT summary box tests ---
+
+func TestRenderSummaryBox_PATProvided_ShowsSet(t *testing.T) {
+	cfg := BootstrapConfig{
+		GooseAgentPAT: "ghp_abc123",
+	}
+	rendered := RenderSummaryBox(cfg)
+	if !strings.Contains(rendered, "Agent PAT") {
+		t.Errorf("RenderSummaryBox() expected 'Agent PAT' label, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "set") {
+		t.Errorf("RenderSummaryBox() expected 'set' for provided PAT, got:\n%s", rendered)
+	}
+}
+
+func TestRenderSummaryBox_PATEmpty_ShowsNotSet(t *testing.T) {
+	cfg := BootstrapConfig{
+		GooseAgentPAT: "",
+	}
+	rendered := RenderSummaryBox(cfg)
+	if !strings.Contains(rendered, "not set") {
+		t.Errorf("RenderSummaryBox() expected 'not set' for empty PAT, got:\n%s", rendered)
+	}
+}
+

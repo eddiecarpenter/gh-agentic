@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -672,5 +673,71 @@ func TestValidateAgentPAT_UserScope_PATMissing_ShowsRepoSettingsURL(t *testing.T
 	out := buf.String()
 	if !strings.Contains(out, "alice/my-project/settings/secrets/actions") {
 		t.Errorf("expected repo settings URL in output, got: %s", out)
+	}
+}
+
+func TestValidateAgentPAT_PATProvidedInConfig_SetsSecret(t *testing.T) {
+	cfg := BootstrapConfig{
+		Owner:         "alice",
+		OwnerType:     OwnerTypeUser,
+		GooseAgentPAT: "ghp_testtoken123",
+	}
+	state := &StepState{RepoName: "my-project"}
+
+	var setCalled bool
+	run := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set GOOSE_AGENT_PAT") {
+			setCalled = true
+			return "", nil
+		}
+		return `[{"name":"OTHER_SECRET"}]`, nil
+	}
+
+	var buf bytes.Buffer
+	err := ValidateAgentPAT(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !setCalled {
+		t.Error("expected gh secret set to be called for GOOSE_AGENT_PAT")
+	}
+	if !state.AgentPATFound {
+		t.Error("expected AgentPATFound to be true after setting secret")
+	}
+	if !strings.Contains(buf.String(), "GOOSE_AGENT_PAT secret set from form input") {
+		t.Errorf("expected success message, got: %s", buf.String())
+	}
+}
+
+func TestValidateAgentPAT_PATProvidedButSetFails_FallsThrough(t *testing.T) {
+	cfg := BootstrapConfig{
+		Owner:         "alice",
+		OwnerType:     OwnerTypeUser,
+		GooseAgentPAT: "ghp_testtoken123",
+	}
+	state := &StepState{RepoName: "my-project"}
+
+	run := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "secret set GOOSE_AGENT_PAT") {
+			return "permission denied", fmt.Errorf("exit 1")
+		}
+		// Return empty secret list — so PAT not found after set failure.
+		return `[{"name":"OTHER_SECRET"}]`, nil
+	}
+
+	var buf bytes.Buffer
+	err := ValidateAgentPAT(&buf, cfg, state, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should warn about set failure and then about missing PAT.
+	out := buf.String()
+	if !strings.Contains(out, "Could not set GOOSE_AGENT_PAT") {
+		t.Errorf("expected set failure warning, got: %s", out)
+	}
+	if !strings.Contains(out, "GOOSE_AGENT_PAT secret not found") {
+		t.Errorf("expected PAT not found warning after set failure, got: %s", out)
 	}
 }

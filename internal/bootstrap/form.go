@@ -557,6 +557,10 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 				Title("Goose model").
 				Description("The model the agent will use — leave as 'default' unless you have a specific requirement").
 				Value(&cfg.GooseModel),
+			huh.NewInput().
+				Title("GOOSE_AGENT_PAT").
+				Description("A GitHub Personal Access Token for the agent user. Requires scopes: repo, workflow, read:org. Create one at: github.com/settings/tokens").
+				Value(&cfg.GooseAgentPAT),
 			huh.NewNote().
 				Title("").
 				Description(ui.Muted.Render("Press Enter to submit ↵")),
@@ -632,8 +636,13 @@ func RenderSummaryBox(cfg BootstrapConfig) string {
 		repoModeVal = "existing"
 	}
 
+	patStatus := "not set"
+	if cfg.GooseAgentPAT != "" {
+		patStatus = "set"
+	}
+
 	content := fmt.Sprintf(
-		"  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s",
+		"  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s\n  %s  %s",
 		label("Topology   "), value(cfg.Topology),
 		label("Owner      "), value(cfg.Owner),
 		label("Repo       "), value(repoModeVal),
@@ -645,6 +654,7 @@ func RenderSummaryBox(cfg BootstrapConfig) string {
 		label("Runner     "), value(cfg.RunnerLabel),
 		label("Provider   "), value(cfg.GooseProvider),
 		label("Model      "), value(cfg.GooseModel),
+		label("Agent PAT  "), value(patStatus),
 	)
 
 	box := lipgloss.NewStyle().

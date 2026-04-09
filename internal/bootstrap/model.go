@@ -59,6 +59,10 @@ type BootstrapConfig struct {
 
 	// GooseModel is the Goose model override (e.g. "default" to use the provider's default).
 	GooseModel string
+
+	// GooseAgentPAT is an optional GitHub Personal Access Token for the agent user.
+	// If provided during bootstrap, it is stored as a repo secret (GOOSE_AGENT_PAT).
+	GooseAgentPAT string
 }
 
 const (

@@ -155,18 +155,34 @@ func ValidateClaudeAuth(run RunCommandFunc) error {
 }
 
 // ValidateAgentPAT checks whether the GOOSE_AGENT_PAT secret exists.
+// If GooseAgentPAT is provided in the config, it is set as a secret first.
 // For org-owned repos it checks at org level; for personal repos it checks at
 // repo level. If missing, a warning is printed with the URL to add it. This is
 // purely informational — the function always returns nil.
 func ValidateAgentPAT(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
-	// Use --org for org-owned repos, --repo for personal repos.
+	// Use --repo for setting the secret (always repo-level for the PAT value).
+	fullName := cfg.Owner + "/" + state.RepoName
+
+	// If the user provided a PAT during the form, set it as a repo secret now.
+	if cfg.GooseAgentPAT != "" {
+		setArgs := []string{"secret", "set", "GOOSE_AGENT_PAT", "--repo", fullName, "--body", cfg.GooseAgentPAT}
+		out, err := run("gh", setArgs...)
+		if err != nil {
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Could not set GOOSE_AGENT_PAT secret: "+strings.TrimSpace(out)))
+		} else {
+			state.AgentPATFound = true
+			fmt.Fprintln(w, "  "+ui.Muted.Render("· GOOSE_AGENT_PAT secret set from form input"))
+			return nil
+		}
+	}
+
+	// Check whether the secret already exists.
 	var scopeArgs []string
 	var settingsURL string
 	if cfg.OwnerType == OwnerTypeOrg {
 		scopeArgs = []string{"--org", cfg.Owner}
 		settingsURL = fmt.Sprintf("https://github.com/organizations/%s/settings/secrets/actions", cfg.Owner)
 	} else {
-		fullName := cfg.Owner + "/" + state.RepoName
 		scopeArgs = []string{"--repo", fullName}
 		settingsURL = fmt.Sprintf("https://github.com/%s/settings/secrets/actions", fullName)
 	}
