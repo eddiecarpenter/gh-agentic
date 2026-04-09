@@ -85,7 +85,7 @@ func TestRenderSummaryBox_ContainsAllFields(t *testing.T) {
 		RepoType:    "domain",
 		RepoName:    "charging",
 		Description: "OCS charging engine",
-		Stack:       "Go",
+		Stacks:     []string{"Go"},
 		Owner:       "acme-org",
 	}
 
