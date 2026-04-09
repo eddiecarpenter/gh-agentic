@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,12 +16,55 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
+// setupFakeTarball overrides the sync package's fetch function with a fake
+// that returns a gzipped tar containing base/AGENTS.md with the given content.
+// Returns a cleanup function that restores the original fetch function.
+func setupFakeTarball(t *testing.T, baseContent string) func() {
+	t.Helper()
+	files := map[string]string{
+		"base/AGENTS.md": baseContent,
+	}
+
+	prev := sync.SetFetchTarballFn(func(repo, version string) (io.ReadCloser, error) {
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gw)
+
+		prefix := "repo-" + version + "/"
+		_ = tw.WriteHeader(&tar.Header{
+			Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755,
+		})
+
+		for path, content := range files {
+			fullPath := prefix + path
+			// Create parent dirs.
+			dir := filepath.Dir(path)
+			if dir != "." {
+				_ = tw.WriteHeader(&tar.Header{
+					Name: prefix + dir + "/", Typeflag: tar.TypeDir, Mode: 0o755,
+				})
+			}
+			_ = tw.WriteHeader(&tar.Header{
+				Name: fullPath, Size: int64(len(content)),
+				Mode: 0o644, Typeflag: tar.TypeReg,
+			})
+			_, _ = tw.Write([]byte(content))
+		}
+
+		_ = tw.Close()
+		_ = gw.Close()
+		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+	})
+
+	return func() { sync.SetFetchTarballFn(prev) }
+}
+
 // fakeCLIReleases returns a FetchReleasesFunc that returns a single release
 // with the given tag. Used by CLI-level tests.
 func fakeCLIReleases(tag string) sync.FetchReleasesFunc {
 	return func(_ string) ([]sync.Release, error) {
 		return []sync.Release{
-			{TagName: tag, Name: "Release " + tag, Body: "Release notes for " + tag},
+			{TagName: tag, Name: "Release " + tag, Body: "Release notes for " + tag, TarballURL: "https://api.github.com/repos/owner/repo/tarball/" + tag},
 		}, nil
 	}
 }
@@ -90,6 +136,7 @@ func syncCloneRunner(mock *testutil.MockRunner, baseContent string) func(string,
 
 func TestSyncCmd_YesFlagAutoConfirms(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer setupFakeTarball(t, "updated content")()
 
 	origDir, err := os.Getwd()
 	if err != nil {
@@ -102,7 +149,7 @@ func TestSyncCmd_YesFlagAutoConfirms(t *testing.T) {
 
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
-		run:          syncCloneRunner(mock, "updated content"),
+		run:          mock.RunCommand,
 		fetchReleases: fakeCLIReleases("v2.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
@@ -134,6 +181,7 @@ func TestSyncCmd_YesFlagAutoConfirms(t *testing.T) {
 
 func TestSyncCmd_CommitFlagCommits(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer setupFakeTarball(t, "committed content")()
 
 	origDir, err := os.Getwd()
 	if err != nil {
@@ -146,7 +194,7 @@ func TestSyncCmd_CommitFlagCommits(t *testing.T) {
 
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
-		run:          syncCloneRunner(mock, "committed content"),
+		run:          mock.RunCommand,
 		fetchReleases: fakeCLIReleases("v2.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
@@ -200,6 +248,7 @@ func TestSyncCmd_CommitFlagRegistration(t *testing.T) {
 
 func TestSyncCmd_ForceFlagResyncs(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer setupFakeTarball(t, "force-synced content")()
 	// FakeRepo has TEMPLATE_VERSION=v1.0.0, FakeRelease also returns v1.0.0.
 
 	origDir, err := os.Getwd()
@@ -213,7 +262,7 @@ func TestSyncCmd_ForceFlagResyncs(t *testing.T) {
 
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
-		run:          syncCloneRunner(mock, "force-synced content"),
+		run:          mock.RunCommand,
 		fetchReleases: fakeCLIReleases("v1.0.0"),
 		spinner:      testutil.NoopSpinner,
 	}
@@ -318,8 +367,8 @@ func TestSyncCmd_ListDisplaysReleases(t *testing.T) {
 		run: mock.RunCommand,
 		fetchReleases: func(_ string) ([]sync.Release, error) {
 			return []sync.Release{
-				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
-				{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
+				{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.5.0"},
 			}, nil
 		},
 		spinner: testutil.NoopSpinner,
@@ -408,6 +457,7 @@ func TestSyncCmd_ReleaseFlagRegistration(t *testing.T) {
 
 func TestSyncCmd_ReleaseSyncsToSpecificVersion(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
+	defer setupFakeTarball(t, "targeted content")()
 
 	origDir, err := os.Getwd()
 	if err != nil {
@@ -420,11 +470,11 @@ func TestSyncCmd_ReleaseSyncsToSpecificVersion(t *testing.T) {
 
 	mock := &testutil.MockRunner{}
 	deps := syncDeps{
-		run: syncCloneRunner(mock, "targeted content"),
+		run: mock.RunCommand,
 		fetchReleases: func(_ string) ([]sync.Release, error) {
 			return []sync.Release{
-				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
-				{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes"},
+				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
+				{TagName: "v1.5.0", Name: "Middle", Body: "Middle notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v1.5.0"},
 			}, nil
 		},
 		spinner: testutil.NoopSpinner,
@@ -466,7 +516,7 @@ func TestSyncCmd_ReleaseNotFound(t *testing.T) {
 		run: mock.RunCommand,
 		fetchReleases: func(_ string) ([]sync.Release, error) {
 			return []sync.Release{
-				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes"},
+				{TagName: "v2.0.0", Name: "Latest", Body: "Latest notes", TarballURL: "https://api.github.com/repos/owner/repo/tarball/v2.0.0"},
 			}, nil
 		},
 		spinner: testutil.NoopSpinner,

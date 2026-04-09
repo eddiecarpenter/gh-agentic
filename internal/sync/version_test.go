@@ -1,9 +1,68 @@
 package sync
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 )
+
+func TestRelease_JSONUnmarshal_PopulatesTarballURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantURL    string
+		wantTag    string
+		wantName   string
+		wantBody   string
+	}{
+		{
+			name:     "full GitHub release response populates TarballURL",
+			input:    `{"tag_name":"v1.0.0","name":"Release 1.0.0","body":"Release notes here","tarball_url":"https://api.github.com/repos/owner/repo/tarball/v1.0.0"}`,
+			wantURL:  "https://api.github.com/repos/owner/repo/tarball/v1.0.0",
+			wantTag:  "v1.0.0",
+			wantName: "Release 1.0.0",
+			wantBody: "Release notes here",
+		},
+		{
+			name:     "missing tarball_url leaves field empty",
+			input:    `{"tag_name":"v0.9.0","name":"Old release","body":"Notes"}`,
+			wantURL:  "",
+			wantTag:  "v0.9.0",
+			wantName: "Old release",
+			wantBody: "Notes",
+		},
+		{
+			name:     "empty tarball_url",
+			input:    `{"tag_name":"v2.0.0","name":"Release 2","body":"","tarball_url":""}`,
+			wantURL:  "",
+			wantTag:  "v2.0.0",
+			wantName: "Release 2",
+			wantBody: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var r Release
+			if err := json.Unmarshal([]byte(tc.input), &r); err != nil {
+				t.Fatalf("unexpected unmarshal error: %v", err)
+			}
+
+			if r.TarballURL != tc.wantURL {
+				t.Errorf("TarballURL = %q, want %q", r.TarballURL, tc.wantURL)
+			}
+			if r.TagName != tc.wantTag {
+				t.Errorf("TagName = %q, want %q", r.TagName, tc.wantTag)
+			}
+			if r.Name != tc.wantName {
+				t.Errorf("Name = %q, want %q", r.Name, tc.wantName)
+			}
+			if r.Body != tc.wantBody {
+				t.Errorf("Body = %q, want %q", r.Body, tc.wantBody)
+			}
+		})
+	}
+}
 
 func TestFetchLatestRelease(t *testing.T) {
 	tests := []struct {
