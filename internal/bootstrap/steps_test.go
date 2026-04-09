@@ -731,6 +731,45 @@ func TestScaffoldStacks_ExecutesCommandsFromFile(t *testing.T) {
 	}
 }
 
+func TestScaffoldStacks_SubstitutesOwnerAndRepoName(t *testing.T) {
+	dir := t.TempDir()
+	stdDir := filepath.Join(dir, "base", "standards")
+	if err := os.MkdirAll(stdDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "## Project Initialisation\n\n```bash\ngo mod init github.com/<owner>/<repo-name>\nmkdir -p cmd/<repo-name>\n```\n"
+	if err := os.WriteFile(filepath.Join(stdDir, "go.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{Stacks: []string{"Go"}, Owner: "acme-org"}
+	state := &StepState{ClonePath: dir, RepoName: "my-service"}
+
+	var capturedCmd string
+	run := func(name string, args ...string) (string, error) {
+		if name == "bash" {
+			capturedCmd = strings.Join(args, " ")
+		}
+		return "", nil
+	}
+
+	if err := ScaffoldStacks(nil, cfg, state, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(capturedCmd, "<owner>") {
+		t.Error("expected <owner> to be substituted, but found it in command")
+	}
+	if strings.Contains(capturedCmd, "<repo-name>") {
+		t.Error("expected <repo-name> to be substituted, but found it in command")
+	}
+	if !strings.Contains(capturedCmd, "acme-org") {
+		t.Error("expected owner 'acme-org' in command")
+	}
+	if !strings.Contains(capturedCmd, "my-service") {
+		t.Error("expected repo name 'my-service' in command")
+	}
+}
+
 func TestScaffoldStacks_MultipleStacks_ExecutesAll(t *testing.T) {
 	dir := t.TempDir()
 	stdDir := filepath.Join(dir, "base", "standards")

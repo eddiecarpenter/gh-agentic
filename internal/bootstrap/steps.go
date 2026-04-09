@@ -302,6 +302,9 @@ func ScaffoldStacks(w io.Writer, cfg BootstrapConfig, state *StepState, run RunC
 		}
 
 		for _, cmd := range commands {
+			// Substitute standards-file placeholders with actual project values.
+			cmd = strings.ReplaceAll(cmd, "<owner>", cfg.Owner)
+			cmd = strings.ReplaceAll(cmd, "<repo-name>", state.RepoName)
 			out, err := runInDir(run, state.ClonePath, "bash", "-c", cmd)
 			if err != nil {
 				return fmt.Errorf("[%s] scaffold command %q: %w\n%s", stack, cmd, err, strings.TrimSpace(out))
