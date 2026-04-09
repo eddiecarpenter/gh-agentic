@@ -13,6 +13,28 @@ import (
 	"testing"
 )
 
+// TestMain installs a fake tarball fetcher for the whole bootstrap package test run.
+// This prevents CreateRepo from making real HTTP requests during tests.
+func TestMain(m *testing.M) {
+	// Build a minimal valid tarball once and reuse it across all tests.
+	var tarBuf bytes.Buffer
+	gw := gzip.NewWriter(&tarBuf)
+	tw := tar.NewWriter(gw)
+	_ = tw.WriteHeader(&tar.Header{Name: "repo-v1.0.0-abc123/", Typeflag: tar.TypeDir, Mode: 0o755})
+	content := []byte("# Template\n")
+	_ = tw.WriteHeader(&tar.Header{Name: "repo-v1.0.0-abc123/README.md", Size: int64(len(content)), Mode: 0o644, Typeflag: tar.TypeReg})
+	_, _ = tw.Write(content)
+	tw.Close()
+	gw.Close()
+	tarBytes := tarBuf.Bytes()
+
+	fetchTarballFn = func(repo, version string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(tarBytes)), nil
+	}
+
+	os.Exit(m.Run())
+}
+
 // --------------------------------------------------------------------------------------
 // Helpers shared across tests
 // --------------------------------------------------------------------------------------
@@ -253,7 +275,7 @@ func TestCreateRepo_TarballFetchFails_CleansUpRepo(t *testing.T) {
 
 	// Override the package-level tarball fetch to simulate a failure.
 	orig := fetchTarballFn
-	fetchTarballFn = func(repo, version string) (io.ReadCloser, error) {
+	fetchTarballFn = func(_, _ string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("404 not found")
 	}
 	defer func() { fetchTarballFn = orig }()
