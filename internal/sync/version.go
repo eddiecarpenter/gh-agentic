@@ -8,11 +8,12 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// Release represents a single GitHub release with its tag, name, and body.
+// Release represents a single GitHub release with its tag, name, body, and tarball URL.
 type Release struct {
-	TagName string `json:"tag_name"`
-	Name    string `json:"name"`
-	Body    string `json:"body"`
+	TagName    string `json:"tag_name"`
+	Name       string `json:"name"`
+	Body       string `json:"body"`
+	TarballURL string `json:"tarball_url"`
 }
 
 // FetchReleaseFunc fetches the latest release tag for a given repo slug.
