@@ -737,7 +737,7 @@ func TestRepairProjectCollaborator_Success_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", "User", fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -749,7 +749,7 @@ func TestRepairProjectCollaborator_EmptyAgentUser_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectCollaborator("owner", "my-repo", "", fakeRun)
+	result := RepairProjectCollaborator("owner", "my-repo", "", "User", fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -765,7 +765,7 @@ func TestRepairProjectCollaborator_UserResolutionFails_ReturnsFail(t *testing.T)
 		return "", fmt.Errorf("user not found")
 	}
 
-	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", "User", fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -786,7 +786,81 @@ func TestRepairProjectCollaborator_MutationFails_ReturnsFail(t *testing.T) {
 		return "", nil
 	}
 
-	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", fakeRun)
+	result := RepairProjectCollaborator("owner", "my-repo", "goose-agent", "User", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectCollaborator_Org_Success_ReturnsPass(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return "12345", nil // resolve user numeric ID
+		case 2:
+			return `{"id": 1}`, nil // invitation success
+		}
+		return "", nil
+	}
+
+	result := RepairProjectCollaborator("acme-org", "my-repo", "goose-agent", "Organization", fakeRun)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "invitation sent") {
+		t.Errorf("expected message to mention invitation, got: %s", result.Message)
+	}
+}
+
+func TestRepairProjectCollaborator_Org_PermissionDenied_ReturnsManualAction(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return "12345", nil // resolve user numeric ID
+		case 2:
+			return "403 Forbidden", fmt.Errorf("HTTP 403") // permission denied
+		}
+		return "", nil
+	}
+
+	result := RepairProjectCollaborator("acme-org", "my-repo", "goose-agent", "Organization", fakeRun)
+	if result.Status != ManualAction {
+		t.Errorf("expected ManualAction, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "orgs/acme-org/people") {
+		t.Errorf("expected manual action URL, got: %s", result.Message)
+	}
+}
+
+func TestRepairProjectCollaborator_Org_APIFailure_ReturnsFail(t *testing.T) {
+	callCount := 0
+	fakeRun := func(name string, args ...string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return "12345", nil // resolve user numeric ID
+		case 2:
+			return "server error", fmt.Errorf("HTTP 500") // generic failure
+		}
+		return "", nil
+	}
+
+	result := RepairProjectCollaborator("acme-org", "my-repo", "goose-agent", "Organization", fakeRun)
+	if result.Status != Fail {
+		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestRepairProjectCollaborator_Org_UserResolutionFails_ReturnsFail(t *testing.T) {
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("user not found")
+	}
+
+	result := RepairProjectCollaborator("acme-org", "my-repo", "goose-agent", "Organization", fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
