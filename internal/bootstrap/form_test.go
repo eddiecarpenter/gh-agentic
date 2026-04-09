@@ -459,3 +459,115 @@ func TestRepoStruct_Fields(t *testing.T) {
 	}
 }
 
+// --- CheckRepoExistsFunc and validateNewRepoName tests ---
+
+func TestValidateNewRepoName_NameAvailable_ReturnsNil(t *testing.T) {
+	fakeCheck := func(owner, name string) (bool, error) {
+		return false, nil // repo does not exist
+	}
+
+	validate := validateNewRepoName("alice", fakeCheck)
+	err := validate("my-new-repo")
+	if err != nil {
+		t.Errorf("expected nil for available repo name, got: %v", err)
+	}
+}
+
+func TestValidateNewRepoName_NameTaken_ReturnsError(t *testing.T) {
+	fakeCheck := func(owner, name string) (bool, error) {
+		return true, nil // repo exists
+	}
+
+	validate := validateNewRepoName("alice", fakeCheck)
+	err := validate("existing-repo")
+	if err == nil {
+		t.Fatal("expected error for taken repo name, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("expected 'already exists' in error, got: %v", err)
+	}
+}
+
+func TestValidateNewRepoName_InvalidFormat_ReturnsError(t *testing.T) {
+	fakeCheck := func(owner, name string) (bool, error) {
+		return false, nil
+	}
+
+	validate := validateNewRepoName("alice", fakeCheck)
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "empty string", input: ""},
+		{name: "uppercase", input: "MyRepo"},
+		{name: "spaces", input: "my repo"},
+		{name: "underscores", input: "my_repo"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validate(tc.input)
+			if err == nil {
+				t.Errorf("expected error for invalid name %q, got nil", tc.input)
+			}
+		})
+	}
+}
+
+func TestValidateNewRepoName_APIError_ReturnsError(t *testing.T) {
+	fakeCheck := func(owner, name string) (bool, error) {
+		return false, errors.New("network timeout")
+	}
+
+	validate := validateNewRepoName("alice", fakeCheck)
+	err := validate("my-repo")
+	if err == nil {
+		t.Fatal("expected error for API failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "unable to verify") {
+		t.Errorf("expected 'unable to verify' in error, got: %v", err)
+	}
+}
+
+func TestValidateNewRepoName_FormatCheckedBeforeExistence(t *testing.T) {
+	// If format is invalid, the existence check should not be called.
+	checkCalled := false
+	fakeCheck := func(owner, name string) (bool, error) {
+		checkCalled = true
+		return false, nil
+	}
+
+	validate := validateNewRepoName("alice", fakeCheck)
+	_ = validate("INVALID")
+	if checkCalled {
+		t.Error("expected existence check NOT to be called when format is invalid")
+	}
+}
+
+func TestCheckRepoExistsFunc_InjectionPattern(t *testing.T) {
+	// Verify the type is usable as an injectable function.
+	var fn CheckRepoExistsFunc = func(owner, name string) (bool, error) {
+		if name == "exists" {
+			return true, nil
+		}
+		return false, nil
+	}
+
+	exists, err := fn("alice", "exists")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exists {
+		t.Error("expected true for 'exists' repo")
+	}
+
+	exists, err = fn("alice", "new-repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exists {
+		t.Error("expected false for 'new-repo'")
+	}
+}
+

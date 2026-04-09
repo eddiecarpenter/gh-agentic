@@ -119,6 +119,55 @@ func DefaultFetchRepos(owner string) ([]Repo, error) {
 	return allRepos, nil
 }
 
+// CheckRepoExistsFunc checks whether a repository exists under a given owner.
+// Returns true if the repo exists, false if it does not.
+// Injected so tests can substitute a fake implementation without real gh auth.
+type CheckRepoExistsFunc func(owner, name string) (bool, error)
+
+// DefaultCheckRepoExists calls GET repos/{owner}/{name} via the authenticated
+// go-gh/v2 REST client and returns whether the repository exists.
+func DefaultCheckRepoExists(owner, name string) (bool, error) {
+	client, err := api.DefaultRESTClient()
+	if err != nil {
+		return false, fmt.Errorf("creating GitHub API client: %w", err)
+	}
+
+	var resp struct{}
+	if err := client.Get(fmt.Sprintf("repos/%s/%s", owner, name), &resp); err != nil {
+		// A 404 means the repo does not exist — that's the expected "available" case.
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "Not Found") {
+			return false, nil
+		}
+		return false, fmt.Errorf("checking repo existence for %s/%s: %w", owner, name, err)
+	}
+
+	return true, nil
+}
+
+// validateNewRepoName combines format validation (via validateProjectName) and
+// existence checking (via CheckRepoExistsFunc). It returns an error if the name
+// format is invalid or if the repo already exists under the given owner.
+// This is used as the Validate func on the "Create new repo" input field.
+func validateNewRepoName(owner string, checkExists CheckRepoExistsFunc) func(string) error {
+	return func(name string) error {
+		// First validate the name format.
+		if err := validateProjectName(name); err != nil {
+			return err
+		}
+
+		// Then check whether the repo already exists.
+		exists, err := checkExists(owner, name)
+		if err != nil {
+			return fmt.Errorf("unable to verify repo name: %w", err)
+		}
+		if exists {
+			return fmt.Errorf("repository %s/%s already exists", owner, name)
+		}
+
+		return nil
+	}
+}
+
 // DefaultFetchOwners fetches owners using the authenticated go-gh/v2 REST client.
 // It returns the personal account first, followed by orgs sorted alphabetically.
 // Each org is annotated with "✔ clean" or "⚠ has repos".
