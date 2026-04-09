@@ -211,14 +211,6 @@ mkdir -p cmd/test-project internal
 		t.Fatal(err)
 	}
 
-	// Create bootstrap.sh so RemoveTemplateFiles finds it.
-	if err := os.WriteFile(filepath.Join(clonePath, "bootstrap.sh"), []byte("#!/bin/sh\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(clonePath, "bootstrap.sh.md5"), []byte("abc123"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	return clonePath
 }
 
@@ -491,12 +483,6 @@ func TestIntegrationRunSteps_Failure_MidPipelineProjectCreateFails(t *testing.T)
 
 	// Pre-create clone directory with required files (steps 3-5 need these).
 	if err := os.MkdirAll(filepath.Join(clonePath, "base", "standards"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(clonePath, "bootstrap.sh"), []byte("#!/bin/bash"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(clonePath, "bootstrap.sh.md5"), []byte("abc123"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	goMD := "# Go Standards\n\n## Project Initialisation\n\n```bash\necho scaffold-ok\n```\n\n## Build Verification\n"

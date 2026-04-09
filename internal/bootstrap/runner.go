@@ -62,10 +62,6 @@ func RunSteps(
 			fn:    func() error { return CreateRepo(w, cfg, state, workDir, run, fetchRelease) },
 		},
 		{
-			label: "Removing template files",
-			fn:    func() error { return RemoveTemplateFiles(w, state, run) },
-		},
-		{
 			label: "Scaffolding " + cfg.Stack + " project",
 			fn:    func() error { return ScaffoldStack(w, cfg, state, run) },
 		},

@@ -163,47 +163,7 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 }
 
 // --------------------------------------------------------------------------------------
-// Step 4 — RemoveTemplateFiles
-// --------------------------------------------------------------------------------------
-
-// RemoveTemplateFiles deletes bootstrap.sh and bootstrap.sh.md5 from the cloned repo
-// and commits the removal. If either file is absent it logs a warning and continues.
-//
-// run is injected so tests can substitute a fake implementation.
-func RemoveTemplateFiles(w io.Writer, state *StepState, run RunCommandFunc) error {
-	files := []string{"bootstrap.sh", "bootstrap.sh.md5"}
-
-	// Determine which files actually exist.
-	var toRemove []string
-	for _, f := range files {
-		if _, err := os.Stat(filepath.Join(state.ClonePath, f)); err == nil {
-			toRemove = append(toRemove, f)
-		} else {
-			fmt.Fprintln(w, "  "+ui.Muted.Render("· "+f+" not present — skipping"))
-		}
-	}
-
-	if len(toRemove) == 0 {
-		// Nothing to remove — template was already clean.
-		return nil
-	}
-
-	rmArgs := append([]string{"rm"}, toRemove...)
-	out, err := runInDir(run, state.ClonePath, "git", rmArgs...)
-	if err != nil {
-		return fmt.Errorf("git rm: %w\n%s", err, strings.TrimSpace(out))
-	}
-
-	out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", "chore: remove template bootstrap files")
-	if err != nil {
-		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
-	}
-
-	return nil
-}
-
-// --------------------------------------------------------------------------------------
-// Step 5 — ScaffoldStack
+// Step 4 — ScaffoldStack
 // --------------------------------------------------------------------------------------
 
 // stackFileName maps a stack name to its standards file basename.
