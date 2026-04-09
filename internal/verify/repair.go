@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -1037,31 +1036,6 @@ func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc, fetch
 	}
 }
 
-// fetchFileFn is the function used to fetch files from a GitHub repo.
-// It defaults to fetchFileFromRepo but can be overridden in tests.
-var fetchFileFn = fetchFileFromRepo
-
-// fetchFileFromRepo fetches the raw content of a file from a GitHub repo
-// using the gh API. Returns the decoded file bytes.
-func fetchFileFromRepo(repo, path string) ([]byte, error) {
-	cmd := exec.Command("gh", "api",
-		fmt.Sprintf("repos/%s/contents/%s", repo, path),
-		"--jq", ".content",
-	)
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("gh api failed: %w", err)
-	}
-	// The API returns base64-encoded content with embedded newlines.
-	raw := strings.ReplaceAll(strings.TrimSpace(string(out)), "\\n", "\n")
-	// Strip surrounding quotes if jq returned a JSON string.
-	raw = strings.Trim(raw, `"`)
-	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(raw, "\n", ""))
-	if err != nil {
-		return nil, fmt.Errorf("decoding content: %w", err)
-	}
-	return decoded, nil
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // GitHub remote repairs
