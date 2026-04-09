@@ -1024,7 +1024,7 @@ func TestCheckAgentUserVar_PresentAtOrgLevel_ReturnsPass(t *testing.T) {
 		return `[]`, nil
 	}
 
-	result := CheckAgentUserVar("acme-org", "my-repo", fakeRun)
+	result := CheckAgentUserVar("acme-org", "my-repo", bootstrap.OwnerTypeOrg, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1045,7 +1045,7 @@ func TestCheckAgentUserVar_PresentAtRepoLevel_ReturnsPass(t *testing.T) {
 		return `[]`, nil
 	}
 
-	result := CheckAgentUserVar("alice", "my-repo", fakeRun)
+	result := CheckAgentUserVar("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1066,7 +1066,7 @@ func TestCheckAgentUserVar_MissingAtBothLevels_ReturnsFail(t *testing.T) {
 		return `[]`, nil
 	}
 
-	result := CheckAgentUserVar("alice", "my-repo", fakeRun)
+	result := CheckAgentUserVar("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
@@ -1075,24 +1075,149 @@ func TestCheckAgentUserVar_MissingAtBothLevels_ReturnsFail(t *testing.T) {
 	}
 }
 
-func TestCheckAgentUserVar_OrgSucceedsButNoAgentUser_FallsToRepo(t *testing.T) {
+func TestCheckAgentUserVar_UserScope_OrgSucceedsButNoAgentUser_FallsToRepo(t *testing.T) {
+	// For User topology: not at repo, but found at org → Pass (acceptable).
 	fakeRun := func(name string, args ...string) (string, error) {
 		joined := strings.Join(args, " ")
-		if strings.Contains(joined, "--org") {
+		if strings.Contains(joined, "--repo") {
 			return `[{"name":"OTHER_VAR"}]`, nil
 		}
-		if strings.Contains(joined, "--repo") {
+		if strings.Contains(joined, "--org") {
 			return `[{"name":"AGENT_USER"}]`, nil
 		}
 		return `[]`, nil
 	}
 
-	result := CheckAgentUserVar("acme-org", "my-repo", fakeRun)
+	result := CheckAgentUserVar("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
-	if !strings.Contains(result.Message, "repo level") {
-		t.Errorf("expected message about repo level, got %q", result.Message)
+	if !strings.Contains(result.Message, "org level") {
+		t.Errorf("expected message about org level, got %q", result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Topology-aware dual-scope AGENT_USER check tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckAgentUserVar_DualScope_OrgTopology(t *testing.T) {
+	tests := []struct {
+		name        string
+		atOrg       bool
+		atRepo      bool
+		wantStatus  CheckStatus
+		wantMessage string
+	}{
+		{
+			name:       "org: AGENT_USER at org level returns Pass",
+			atOrg:      true,
+			atRepo:     false,
+			wantStatus: Pass,
+		},
+		{
+			name:        "org: AGENT_USER only at repo level returns Fail with topology message",
+			atOrg:       false,
+			atRepo:      true,
+			wantStatus:  Fail,
+			wantMessage: "must be at org level for federated topology",
+		},
+		{
+			name:        "org: AGENT_USER missing at both levels returns Fail",
+			atOrg:       false,
+			atRepo:      false,
+			wantStatus:  Fail,
+			wantMessage: "not set",
+		},
+		{
+			name:       "org: AGENT_USER at both levels returns Pass (org takes precedence)",
+			atOrg:      true,
+			atRepo:     true,
+			wantStatus: Pass,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "--org") {
+					if tc.atOrg {
+						return `[{"name":"AGENT_USER"}]`, nil
+					}
+					return `[]`, nil
+				}
+				if strings.Contains(joined, "--repo") {
+					if tc.atRepo {
+						return `[{"name":"AGENT_USER"}]`, nil
+					}
+					return `[]`, nil
+				}
+				return `[]`, nil
+			}
+
+			result := CheckAgentUserVar("acme-org", "my-repo", bootstrap.OwnerTypeOrg, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+			if tc.wantMessage != "" && !strings.Contains(result.Message, tc.wantMessage) {
+				t.Errorf("expected message containing %q, got %q", tc.wantMessage, result.Message)
+			}
+		})
+	}
+}
+
+func TestCheckAgentUserVar_DualScope_UserTopology(t *testing.T) {
+	tests := []struct {
+		name       string
+		atRepo     bool
+		atOrg      bool
+		wantStatus CheckStatus
+	}{
+		{
+			name:       "user: AGENT_USER at repo level returns Pass",
+			atRepo:     true,
+			atOrg:      false,
+			wantStatus: Pass,
+		},
+		{
+			name:       "user: AGENT_USER only at org level returns Pass (acceptable)",
+			atRepo:     false,
+			atOrg:      true,
+			wantStatus: Pass,
+		},
+		{
+			name:       "user: AGENT_USER missing at both levels returns Fail",
+			atRepo:     false,
+			atOrg:      false,
+			wantStatus: Fail,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeRun := func(name string, args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "--repo") {
+					if tc.atRepo {
+						return `[{"name":"AGENT_USER"}]`, nil
+					}
+					return `[]`, nil
+				}
+				if strings.Contains(joined, "--org") {
+					if tc.atOrg {
+						return `[{"name":"AGENT_USER"}]`, nil
+					}
+					return `[]`, nil
+				}
+				return `[]`, nil
+			}
+
+			result := CheckAgentUserVar("alice", "my-repo", bootstrap.OwnerTypeUser, fakeRun)
+			if result.Status != tc.wantStatus {
+				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
+			}
+		})
 	}
 }
 

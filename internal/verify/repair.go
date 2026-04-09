@@ -1290,8 +1290,9 @@ func RepairProjectViews(owner, repoName, root string, run bootstrap.RunCommandFu
 }
 
 // RepairAgentUserVar sets the AGENT_USER GitHub Actions variable at the
-// specified scope (org or repo). Prompts for missing values via textConfirm.
-// Returns Fail if scope is "org" but the owner is a personal account.
+// topology-correct scope. For Organization repos it defaults to org scope and
+// cleans up any misplaced repo-level copy. For User repos it sets at repo scope.
+// Prompts for missing values via textConfirm.
 func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run bootstrap.RunCommandFunc, textConfirm func(string) (string, error)) CheckResult {
 	// Prompt for agent user if not provided.
 	if agentUser == "" {
@@ -1344,6 +1345,14 @@ func RepairAgentUserVar(owner, repoName, agentUser, agentUserScope string, run b
 	if setErr != nil {
 		return CheckResult{Name: checkAgentUserVarName, Status: Fail,
 			Message: fmt.Sprintf("failed to set variable: %v", setErr)}
+	}
+
+	// For org scope, clean up any misplaced repo-level variable.
+	if agentUserScope == "org" {
+		repoFound, _ := variableExistsAtScope(owner, repoName, "AGENT_USER", "repo", run)
+		if repoFound {
+			_, _ = run("gh", "variable", "delete", "AGENT_USER", "--repo", owner+"/"+repoName)
+		}
 	}
 
 	return CheckResult{Name: checkAgentUserVarName, Status: Pass,

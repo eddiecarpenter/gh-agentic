@@ -2052,3 +2052,68 @@ func TestRepairClaudeCredentialsSecret_User_NoDeleteAttempted(t *testing.T) {
 		t.Error("expected no delete for user topology")
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Topology-aware RepairAgentUserVar tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestRepairAgentUserVar_OrgScope_DeletesMisplacedRepoVar(t *testing.T) {
+	var deleteCalled bool
+	var deleteArgs string
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			return "", nil
+		}
+		if strings.Contains(joined, "variable list") && strings.Contains(joined, "--repo") {
+			return `[{"name":"AGENT_USER"}]`, nil
+		}
+		if strings.Contains(joined, "variable list") && strings.Contains(joined, "--org") {
+			return `[]`, nil
+		}
+		if strings.Contains(joined, "variable delete") {
+			deleteCalled = true
+			deleteArgs = joined
+			return "", nil
+		}
+		// DefaultDetectOwnerType call — return org type.
+		if strings.Contains(joined, "api users") || strings.Contains(joined, "/users/") {
+			return `{"type":"Organization"}`, nil
+		}
+		return "", nil
+	}
+
+	result := RepairAgentUserVar("acme-org", "my-repo", "goose-agent", "org", fakeRun, nil)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if !deleteCalled {
+		t.Error("expected repo-level AGENT_USER to be deleted")
+	}
+	if !strings.Contains(deleteArgs, "--repo acme-org/my-repo") {
+		t.Errorf("expected delete to target repo, got %q", deleteArgs)
+	}
+}
+
+func TestRepairAgentUserVar_RepoScope_NoDeleteAttempted(t *testing.T) {
+	var deleteCalled bool
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "variable set") {
+			return "", nil
+		}
+		if strings.Contains(joined, "variable delete") {
+			deleteCalled = true
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result := RepairAgentUserVar("alice", "my-repo", "goose-agent", "repo", fakeRun, nil)
+	if result.Status != Pass {
+		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
+	}
+	if deleteCalled {
+		t.Error("expected no delete for repo scope")
+	}
+}

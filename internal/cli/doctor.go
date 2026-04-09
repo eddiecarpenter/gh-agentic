@@ -103,7 +103,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult {
 			return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
 		},
-		func() verify.CheckResult { return verify.CheckAgentUserVar(cfg.owner, cfg.repoName, run) },
+		func() verify.CheckResult { return verify.CheckAgentUserVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },
 		func() verify.CheckResult { return verify.CheckRunnerLabelVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },
 		func() verify.CheckResult { return verify.CheckGooseProviderVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },
 		func() verify.CheckResult { return verify.CheckGooseModelVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },

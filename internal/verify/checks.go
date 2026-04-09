@@ -1034,44 +1034,55 @@ type variableEntry struct {
 }
 
 // CheckAgentUserVar verifies that AGENT_USER is configured as a GitHub Actions
-// variable at the org or repo level. Returns Pass with a message indicating the
-// level, or Fail if not found at either level.
-func CheckAgentUserVar(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
-	// Try org-level first.
-	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name")
-	if err == nil {
-		var vars []variableEntry
-		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
-			for _, v := range vars {
-				if v.Name == "AGENT_USER" {
-					return CheckResult{
-						Name:    checkAgentUserVarName,
-						Status:  Pass,
-						Message: "configured at org level",
-					}
-				}
+// variable with topology-aware dual-scope logic. For Organization (federated)
+// repos the variable must exist at org level; if found only at repo level it
+// fails with a topology message. For User (single) repos it may exist at
+// either scope.
+func CheckAgentUserVar(owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+	if ownerType == bootstrap.OwnerTypeOrg {
+		// Federated: must be at org level.
+		found, err := variableExistsAtScope(owner, repoName, "AGENT_USER", "org", run)
+		if err == nil && found {
+			return CheckResult{
+				Name:    checkAgentUserVarName,
+				Status:  Pass,
+				Message: "configured at org level",
 			}
+		}
+		// Not at org — check repo level to detect misplacement.
+		repoFound, _ := variableExistsAtScope(owner, repoName, "AGENT_USER", "repo", run)
+		if repoFound {
+			return CheckResult{
+				Name:    checkAgentUserVarName,
+				Status:  Fail,
+				Message: "AGENT_USER is set at repo level but must be at org level for federated topology",
+			}
+		}
+		return CheckResult{
+			Name:    checkAgentUserVarName,
+			Status:  Fail,
+			Message: "AGENT_USER variable not set at org or repo level",
 		}
 	}
 
-	// Try repo-level.
-	repoFullName := owner + "/" + repoName
-	out, err = run("gh", "variable", "list", "--repo", repoFullName, "--json", "name")
-	if err == nil {
-		var vars []variableEntry
-		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr == nil {
-			for _, v := range vars {
-				if v.Name == "AGENT_USER" {
-					return CheckResult{
-						Name:    checkAgentUserVarName,
-						Status:  Pass,
-						Message: "configured at repo level",
-					}
-				}
-			}
+	// Single (User): check repo level first, then org level.
+	found, err := variableExistsAtScope(owner, repoName, "AGENT_USER", "repo", run)
+	if err == nil && found {
+		return CheckResult{
+			Name:    checkAgentUserVarName,
+			Status:  Pass,
+			Message: "configured at repo level",
 		}
 	}
-
+	// Not at repo — check org level (acceptable for single topology).
+	orgFound, orgErr := variableExistsAtScope(owner, repoName, "AGENT_USER", "org", run)
+	if orgErr == nil && orgFound {
+		return CheckResult{
+			Name:    checkAgentUserVarName,
+			Status:  Pass,
+			Message: "configured at org level",
+		}
+	}
 	return CheckResult{
 		Name:    checkAgentUserVarName,
 		Status:  Fail,
