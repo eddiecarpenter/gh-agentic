@@ -863,54 +863,30 @@ func RepairBaseRecipes(root string, confirmFn BoolConfirmFunc, fetch tarball.Fet
 	}
 }
 
-// RepairGooseRecipes fetches missing recipe YAML files from the template repo
-// and writes them into .goose/recipes/. Reads TEMPLATE_SOURCE to know which
-// repo to fetch from. Uses run to shell out to `gh api`.
-func RepairGooseRecipes(root string) CheckResult {
-	recipesPath := filepath.Join(root, ".goose", "recipes")
-	if err := os.MkdirAll(recipesPath, 0o755); err != nil {
-		return CheckResult{
-			Name:    ".goose/recipes/ exists and complete",
-			Status:  Fail,
-			Message: fmt.Sprintf("could not create directory: %v", err),
-		}
-	}
+// RepairGooseRecipes extracts recipe YAML files from the TEMPLATE_VERSION
+// tarball into .goose/recipes/.
+func RepairGooseRecipes(root string, fetch tarball.FetchFunc) CheckResult {
+	const checkName = ".goose/recipes/ exists and complete"
 
-	// Read TEMPLATE_SOURCE to know which repo to fetch from.
-	sourceData, err := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
+	repo, version, err := tarball.ReadTemplateConfig(root)
 	if err != nil {
 		return CheckResult{
-			Name:    ".goose/recipes/ exists and complete",
+			Name:    checkName,
 			Status:  Fail,
-			Message: "TEMPLATE_SOURCE missing — cannot fetch recipes from template",
-		}
-	}
-	templateRepo := strings.TrimSpace(string(sourceData))
-
-	var stillMissing []string
-	for _, name := range expectedRecipeYAMLs {
-		dst := filepath.Join(recipesPath, name)
-		// Always fetch and overwrite — recipe updates from the template must
-		// flow through to deployed repos (see issue #127).
-		content, fetchErr := fetchFileFn(templateRepo, ".goose/recipes/"+name)
-		if fetchErr != nil {
-			stillMissing = append(stillMissing, name)
-			continue
-		}
-		if writeErr := os.WriteFile(dst, content, 0o644); writeErr != nil {
-			stillMissing = append(stillMissing, name)
+			Message: fmt.Sprintf("cannot read template config: %v", err),
 		}
 	}
 
-	if len(stillMissing) > 0 {
+	if err := tarball.ExtractFromTemplate(repo, version, root, []string{".goose/recipes/"}, fetch); err != nil {
 		return CheckResult{
-			Name:    ".goose/recipes/ exists and complete",
+			Name:    checkName,
 			Status:  Fail,
-			Message: fmt.Sprintf("could not restore: %s", strings.Join(stillMissing, ", ")),
+			Message: fmt.Sprintf("tarball extraction failed: %v", err),
 		}
 	}
+
 	return CheckResult{
-		Name:   ".goose/recipes/ exists and complete",
+		Name:   checkName,
 		Status: Pass,
 	}
 }

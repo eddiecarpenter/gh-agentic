@@ -305,57 +305,57 @@ func TestRepairBaseRecipes_MissingTemplateConfig_ReturnsFail(t *testing.T) {
 	}
 }
 
-func TestRepairGooseRecipes_AlwaysOverwrites(t *testing.T) {
+func TestRepairGooseRecipes_ExtractsFromTarball(t *testing.T) {
 	root := t.TempDir()
-	// Write TEMPLATE_SOURCE so the repair doesn't fail early.
-	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("owner/template"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	recipesDir := filepath.Join(root, ".goose", "recipes")
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 
-	// Create all expected files with old content.
-	if err := os.MkdirAll(recipesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// Build a tarball with recipe files.
+	recipeFiles := make(map[string]string)
 	for _, name := range expectedRecipeYAMLs {
-		if err := os.WriteFile(filepath.Join(recipesDir, name), []byte("old-content"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		recipeFiles[".goose/recipes/"+name] = "name: " + name
 	}
+	fetch := buildTestFetchFunc(t, recipeFiles)
 
-	// Stub fetchFileFn to return updated content.
-	origFetch := fetchFileFn
-	defer func() { fetchFileFn = origFetch }()
-	fetchFileFn = func(repo, path string) ([]byte, error) {
-		return []byte("updated-content"), nil
-	}
-
-	result := RepairGooseRecipes(root)
+	result := RepairGooseRecipes(root, fetch)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	// Verify every recipe was overwritten with the new content.
+	// Verify every recipe was extracted.
 	for _, name := range expectedRecipeYAMLs {
-		data, err := os.ReadFile(filepath.Join(recipesDir, name))
+		data, err := os.ReadFile(filepath.Join(root, ".goose", "recipes", name))
 		if err != nil {
 			t.Fatalf("failed to read %s: %v", name, err)
 		}
-		if string(data) != "updated-content" {
-			t.Errorf("%s: expected 'updated-content', got %q", name, string(data))
+		expected := "name: " + name
+		if string(data) != expected {
+			t.Errorf("%s: expected %q, got %q", name, expected, string(data))
 		}
 	}
 }
 
-func TestRepairGooseRecipes_MissingSource_ReturnsFail(t *testing.T) {
+func TestRepairGooseRecipes_MissingConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
 	// No TEMPLATE_SOURCE — repair should fail with a clear message.
-	result := RepairGooseRecipes(root)
+	result := RepairGooseRecipes(root, nil)
 	if result.Status != Fail {
-		t.Errorf("expected Fail when TEMPLATE_SOURCE missing, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
 	}
 	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
 		t.Error("message should mention TEMPLATE_SOURCE")
+	}
+}
+
+func TestRepairGooseRecipes_TarballError_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
+
+	result := RepairGooseRecipes(root, failingFetchFunc("download failed"))
+	if result.Status != Fail {
+		t.Errorf("expected Fail on tarball error, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "tarball extraction failed") {
+		t.Errorf("expected tarball error in message, got: %s", result.Message)
 	}
 }
 

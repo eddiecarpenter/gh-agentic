@@ -141,7 +141,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "base/skills/*.md unmodified":
 				r = verify.RepairBaseRecipes(cfg.root, boolConfirm, nil)
 			case ".goose/recipes/ exists and complete":
-				r = verify.RepairGooseRecipes(cfg.root)
+				r = verify.RepairGooseRecipes(cfg.root, nil)
 			case ".github/workflows/ exists and complete":
 				r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run)
 			case "Standard labels present":
