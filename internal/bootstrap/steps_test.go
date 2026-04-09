@@ -32,6 +32,11 @@ func TestMain(m *testing.M) {
 		return io.NopCloser(bytes.NewReader(tarBytes)), nil
 	}
 
+	// Install a no-op clone conflict resolver for tests — no TTY available.
+	resolveCloneConflictFn = func(w io.Writer, clonePath string) (string, error) {
+		return clonePath, nil
+	}
+
 	os.Exit(m.Run())
 }
 
@@ -1979,6 +1984,75 @@ func TestPrintSummary_PATFound_NoPATWarning(t *testing.T) {
 // --------------------------------------------------------------------------------------
 // Internal helpers
 // --------------------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------------------
+// resolveCloneConflict and findBackupPath tests
+// --------------------------------------------------------------------------------------
+
+func TestFindBackupPath_NoConflict_ReturnsDotBackup(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "my-project")
+	// target does not exist, so .backup should be returned
+	got := findBackupPath(target)
+	want := target + ".backup"
+	if got != want {
+		t.Errorf("findBackupPath() = %q, want %q", got, want)
+	}
+}
+
+func TestFindBackupPath_BackupExists_ReturnsNumbered(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "my-project")
+	// Create the first backup
+	if err := os.MkdirAll(target+".backup", 0o755); err != nil {
+		t.Fatalf("creating backup dir: %v", err)
+	}
+	got := findBackupPath(target)
+	want := target + ".backup.1"
+	if got != want {
+		t.Errorf("findBackupPath() = %q, want %q", got, want)
+	}
+}
+
+func TestFindBackupPath_MultipleBackups_ReturnsNextNumber(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "my-project")
+	// Create .backup and .backup.1
+	if err := os.MkdirAll(target+".backup", 0o755); err != nil {
+		t.Fatalf("creating backup dir: %v", err)
+	}
+	if err := os.MkdirAll(target+".backup.1", 0o755); err != nil {
+		t.Fatalf("creating backup.1 dir: %v", err)
+	}
+	got := findBackupPath(target)
+	want := target + ".backup.2"
+	if got != want {
+		t.Errorf("findBackupPath() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultResolveCloneConflict_NoConflict_ReturnsPathUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "does-not-exist")
+
+	var buf bytes.Buffer
+	got, err := DefaultResolveCloneConflict(&buf, target)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != target {
+		t.Errorf("DefaultResolveCloneConflict() = %q, want %q", got, target)
+	}
+}
+
+func TestErrCloneAborted_IsError(t *testing.T) {
+	if ErrCloneAborted == nil {
+		t.Error("ErrCloneAborted should not be nil")
+	}
+	if ErrCloneAborted.Error() != "clone aborted by user" {
+		t.Errorf("ErrCloneAborted.Error() = %q, want %q", ErrCloneAborted.Error(), "clone aborted by user")
+	}
+}
 
 func TestShellQuote_NoSpecialChars(t *testing.T) {
 	if got := shellQuote("hello"); got != "'hello'" {

@@ -3,6 +3,7 @@ package bootstrap
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -120,6 +121,13 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 		// --- Existing repo path ---
 		fmt.Fprintln(w, "  "+ui.RenderInfo("Repo already exists — bootstrapping onto existing repo"))
 
+		// Detect local directory conflict before cloning.
+		resolvedPath, resolveErr := resolveCloneConflictFn(w, state.ClonePath)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		state.ClonePath = resolvedPath
+
 		// Clone the existing repo so we can inspect it.
 		sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
 		out, cloneErr := run("git", "clone", sshURL, state.ClonePath)
@@ -189,6 +197,13 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 	}
 
 	// --- New repo path ---
+
+	// Detect local directory conflict before creating the remote repo.
+	resolvedPath, resolveErr := resolveCloneConflictFn(w, state.ClonePath)
+	if resolveErr != nil {
+		return resolveErr
+	}
+	state.ClonePath = resolvedPath
 
 	// Create the blank private repo (no --template).
 	out, err := run("gh", "repo", "create", fullName, "--private")
@@ -946,6 +961,79 @@ func PrintSummary(w io.Writer, cfg BootstrapConfig, state *StepState, launch Lau
 	}
 
 	return nil
+}
+
+// ErrCloneAborted is returned when the user chooses to abort clone conflict resolution.
+var ErrCloneAborted = errors.New("clone aborted by user")
+
+// cloneConflictRename is the value for the "rename to backup" option.
+const cloneConflictRename = "rename"
+
+// cloneConflictAbort is the value for the "abort" option.
+const cloneConflictAbort = "abort"
+
+// ResolveCloneConflictFunc checks whether the target directory exists and resolves
+// the conflict interactively. Injected so tests can substitute a no-op.
+type ResolveCloneConflictFunc func(w io.Writer, clonePath string) (string, error)
+
+// resolveCloneConflictFn is the active conflict resolver. Override in tests.
+var resolveCloneConflictFn ResolveCloneConflictFunc = DefaultResolveCloneConflict
+
+// DefaultResolveCloneConflict checks whether the target directory exists. If it does,
+// it presents the user with recovery options: rename to backup or abort.
+// Returns the resolved clone path or an error.
+func DefaultResolveCloneConflict(w io.Writer, clonePath string) (string, error) {
+	if _, err := os.Stat(clonePath); os.IsNotExist(err) {
+		return clonePath, nil // No conflict — proceed normally.
+	}
+
+	fmt.Fprintln(w, "  "+ui.RenderWarning(fmt.Sprintf("Directory %q already exists", filepath.Base(clonePath))))
+
+	var choice string
+	conflictForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Directory already exists").
+				Description("Choose how to resolve the conflict").
+				Options(
+					huh.NewOption("Rename existing to .backup and continue", cloneConflictRename),
+					huh.NewOption("Abort", cloneConflictAbort),
+				).
+				Value(&choice),
+		),
+	)
+	if err := conflictForm.Run(); err != nil {
+		return "", fmt.Errorf("clone conflict form: %w", err)
+	}
+
+	switch choice {
+	case cloneConflictRename:
+		backupPath := findBackupPath(clonePath)
+		if err := os.Rename(clonePath, backupPath); err != nil {
+			return "", fmt.Errorf("renaming %s to %s: %w", clonePath, backupPath, err)
+		}
+		fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· Renamed existing directory to %s", filepath.Base(backupPath))))
+		return clonePath, nil
+	case cloneConflictAbort:
+		return "", ErrCloneAborted
+	default:
+		return "", ErrCloneAborted
+	}
+}
+
+// findBackupPath returns a non-conflicting backup path for the given directory.
+// It tries <path>.backup, <path>.backup.1, <path>.backup.2, etc.
+func findBackupPath(path string) string {
+	candidate := path + ".backup"
+	if _, err := os.Stat(candidate); os.IsNotExist(err) {
+		return candidate
+	}
+	for i := 1; ; i++ {
+		candidate = fmt.Sprintf("%s.backup.%d", path, i)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
 }
 
 // --------------------------------------------------------------------------------------
