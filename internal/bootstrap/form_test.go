@@ -177,6 +177,39 @@ func TestRenderSummaryBox_MultipleStacks_ShowsCommaJoined(t *testing.T) {
 	}
 }
 
+// --- validateStackSelection tests ---
+
+func TestValidateStackSelection_Empty_ReturnsError(t *testing.T) {
+	err := validateStackSelection([]string{})
+	if err == nil {
+		t.Error("validateStackSelection([]) expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "at least one stack") {
+		t.Errorf("expected 'at least one stack' in error, got: %v", err)
+	}
+}
+
+func TestValidateStackSelection_Nil_ReturnsError(t *testing.T) {
+	err := validateStackSelection(nil)
+	if err == nil {
+		t.Error("validateStackSelection(nil) expected error, got nil")
+	}
+}
+
+func TestValidateStackSelection_OneStack_ReturnsNil(t *testing.T) {
+	err := validateStackSelection([]string{"Go"})
+	if err != nil {
+		t.Errorf("validateStackSelection([Go]) expected nil, got: %v", err)
+	}
+}
+
+func TestValidateStackSelection_MultipleStacks_ReturnsNil(t *testing.T) {
+	err := validateStackSelection([]string{"Go", "Rust"})
+	if err != nil {
+		t.Errorf("validateStackSelection([Go, Rust]) expected nil, got: %v", err)
+	}
+}
+
 // --- FetchOwnersFunc injection tests ---
 
 func TestFetchOwners_PersonalAccountFirst(t *testing.T) {

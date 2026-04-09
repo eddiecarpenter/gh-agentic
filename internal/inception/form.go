@@ -33,6 +33,14 @@ var stackOptions = []huh.Option[string]{
 	huh.NewOption("Other", "Other"),
 }
 
+// validateStackSelection returns an error if no stacks are selected.
+func validateStackSelection(selected []string) error {
+	if len(selected) == 0 {
+		return errors.New("at least one stack must be selected")
+	}
+	return nil
+}
+
 // validateRepoName returns an error if s is not a valid repo name.
 // Valid names are non-empty, lowercase, and contain only letters, digits, and hyphens.
 func validateRepoName(s string) error {
@@ -95,12 +103,7 @@ func RunForm(w io.Writer, ctx EnvContext) (*InceptionConfig, error) {
 				Title("Stack (select all that apply)").
 				Options(stackOptions...).
 				Value(&cfg.Stacks).
-				Validate(func(selected []string) error {
-					if len(selected) == 0 {
-						return errors.New("at least one stack must be selected")
-					}
-					return nil
-				}),
+				Validate(validateStackSelection),
 		),
 	)
 	if err := detailsForm.Run(); err != nil {

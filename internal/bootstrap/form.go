@@ -130,6 +130,14 @@ var stackOptions = []huh.Option[string]{
 	huh.NewOption("Other", "Other"),
 }
 
+// validateStackSelection returns an error if no stacks are selected.
+func validateStackSelection(selected []string) error {
+	if len(selected) == 0 {
+		return errors.New("at least one stack must be selected")
+	}
+	return nil
+}
+
 // validateTopologyOwner checks whether the selected topology is valid for the given owner type.
 // Returns ErrFederatedRequiresOrg if a personal account selects Federated topology.
 // Returns nil for all other combinations (including personal + Single, which is valid but triggers a warning).
@@ -264,12 +272,7 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 				Title("Stack (select all that apply)").
 				Options(stackOptions...).
 				Value(&cfg.Stacks).
-				Validate(func(selected []string) error {
-					if len(selected) == 0 {
-						return errors.New("at least one stack must be selected")
-					}
-					return nil
-				}),
+				Validate(validateStackSelection),
 			huh.NewConfirm().
 				Title("Antora documentation site?").
 				Value(&cfg.Antora),
