@@ -48,7 +48,16 @@ type StepState struct {
 	// AgentPATFound is true when GOOSE_AGENT_PAT was found in the repo secrets
 	// by ValidateAgentPAT.
 	AgentPATFound bool
+
+	// ExistingRepo is true when the target repository already existed before
+	// bootstrap ran. When set, downstream steps use a branch-based flow
+	// instead of committing directly to main.
+	ExistingRepo bool
 }
+
+// agenticMarkers are the files and directories whose presence indicates
+// a repository has already been bootstrapped with the agentic framework.
+var agenticMarkers = []string{"TEMPLATE_SOURCE", "TEMPLATE_VERSION", "base"}
 
 // repoName derives the repository name from the config.
 // Single: <project-name>, Federated: <project-name>-agentic.
@@ -100,6 +109,33 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 	if releaseTag == "" {
 		return fmt.Errorf("no release found for template repo %s", cfg.TemplateRepo)
 	}
+
+	// --- Guard 1 & 2: Check if repo already exists ---
+	_, apiErr := run("gh", "api", "repos/"+fullName)
+	repoExists := apiErr == nil
+
+	if repoExists {
+		// Clone the existing repo so we can inspect it.
+		sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
+		out, cloneErr := run("git", "clone", sshURL, state.ClonePath)
+		if cloneErr != nil {
+			return fmt.Errorf("git clone (existing repo): %w\n%s", cloneErr, strings.TrimSpace(out))
+		}
+
+		// Guard 1 — Already-agentic check: look for any agentic marker files.
+		for _, marker := range agenticMarkers {
+			markerPath := filepath.Join(state.ClonePath, marker)
+			if _, statErr := os.Stat(markerPath); statErr == nil {
+				return fmt.Errorf("this repo has already been bootstrapped — aborting to prevent overwrite")
+			}
+		}
+
+		// Repo exists but is not agentic — flag for branch-based flow.
+		state.ExistingRepo = true
+		return fmt.Errorf("existing repo bootstrap not yet implemented")
+	}
+
+	// --- New repo path (unchanged) ---
 
 	// Create the blank private repo (no --template).
 	out, err := run("gh", "repo", "create", fullName, "--private")
