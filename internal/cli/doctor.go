@@ -169,7 +169,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "CLAUDE_CREDENTIALS_JSON secret configured":
 				r = verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, cfg.ownerType, run)
 			case "Agent user is a project collaborator":
-				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, run)
+				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, cfg.ownerType, run)
 			case "No stale open requirements":
 				r = verify.RepairStaleOpenRequirements(cfg.repoFullName, run)
 			case "No stale open features":

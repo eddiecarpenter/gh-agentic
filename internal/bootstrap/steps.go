@@ -961,5 +961,47 @@ func SetAgentUserVariable(w io.Writer, cfg BootstrapConfig, state *StepState, ru
 	}
 
 	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· AGENT_USER=%s set at %s level", cfg.AgentUser, cfg.AgentUserScope)))
+
+	// For org-scoped agent users, verify org membership and invite if needed.
+	if cfg.AgentUserScope == AgentUserScopeOrg {
+		verifyAndInviteOrgMember(w, cfg.Owner, cfg.AgentUser, run)
+	}
+
 	return nil
+}
+
+// verifyAndInviteOrgMember checks whether agentUser is an org member and
+// attempts to send an invitation if not. Failures are logged as warnings
+// (non-fatal) to avoid blocking bootstrap.
+func verifyAndInviteOrgMember(w io.Writer, owner, agentUser string, run RunCommandFunc) {
+	// Check if already an org member (204 = member, 404 = not a member).
+	_, err := run("gh", "api", "orgs/"+owner+"/members/"+agentUser)
+	if err == nil {
+		fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· %s is already an org member of %s", agentUser, owner)))
+		return
+	}
+
+	// Not a member — resolve numeric user ID for the invitation.
+	idOut, err := run("gh", "api", "users/"+agentUser, "--jq", ".id")
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning(fmt.Sprintf("Could not resolve GitHub user ID for %s: %v", agentUser, err)))
+		return
+	}
+
+	userID := strings.TrimSpace(idOut)
+	if userID == "" || userID == "null" {
+		fmt.Fprintln(w, "  "+ui.RenderWarning(fmt.Sprintf("GitHub user %s not found — cannot invite to org", agentUser)))
+		return
+	}
+
+	// Attempt org invitation.
+	_, err = run("gh", "api", "-X", "POST", "orgs/"+owner+"/invitations", "-f", "invitee_id="+userID)
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning(fmt.Sprintf(
+			"Could not invite %s to org %s. An org admin must invite them at https://github.com/orgs/%s/people",
+			agentUser, owner, owner)))
+		return
+	}
+
+	fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· Invited %s to org %s", agentUser, owner)))
 }

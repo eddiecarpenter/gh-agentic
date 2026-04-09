@@ -718,8 +718,10 @@ func RepairProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCo
 // ──────────────────────────────────────────────────────────────────────────────
 
 // RepairProjectCollaborator adds the configured agent user as a WRITER on the
-// GitHub Project. Uses run to shell out to gh api graphql.
-func RepairProjectCollaborator(owner, repoName, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+// GitHub Project (for user-owned repos) or invites the agent user as an org
+// member (for org-owned repos). Uses run to shell out to gh CLI commands.
+// ownerType should be bootstrap.OwnerTypeOrg or bootstrap.OwnerTypeUser.
+func RepairProjectCollaborator(owner, repoName, agentUser, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
 	if agentUser == "" {
 		return CheckResult{
 			Name:    checkProjectCollaboratorName,
@@ -728,6 +730,77 @@ func RepairProjectCollaborator(owner, repoName, agentUser string, run bootstrap.
 		}
 	}
 
+	if ownerType == bootstrap.OwnerTypeOrg {
+		return repairOrgMembership(owner, agentUser, run)
+	}
+
+	return repairProjectCollaboratorUser(owner, repoName, agentUser, run)
+}
+
+// repairOrgMembership checks whether the agent user is already an org member
+// and, if not, invites them via the REST API. Returns ManualAction if the
+// running user lacks admin rights.
+func repairOrgMembership(owner, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
+	// Check if already an org member (204 = member, 404 = not).
+	_, err := run("gh", "api", "orgs/"+owner+"/members/"+agentUser)
+	if err == nil {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Pass,
+			Message: agentUser + " is already an org member of " + owner,
+		}
+	}
+
+	// Resolve the agent user's numeric GitHub user ID.
+	out, err := run("gh", "api", "users/"+agentUser, "--jq", ".id")
+	if err != nil {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to resolve user %s: %v", agentUser, err),
+		}
+	}
+
+	userID := strings.TrimSpace(out)
+	if userID == "" || userID == "null" {
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: "user " + agentUser + " not found on GitHub",
+		}
+	}
+
+	// Attempt org invitation.
+	out, err = run("gh", "api", "-X", "POST", "orgs/"+owner+"/invitations", "-f", "invitee_id="+userID)
+	if err != nil {
+		errMsg := strings.TrimSpace(out)
+		// 403 or permission-related errors → ManualAction
+		if strings.Contains(errMsg, "403") || strings.Contains(strings.ToLower(errMsg), "permission") ||
+			strings.Contains(strings.ToLower(errMsg), "forbidden") {
+			return CheckResult{
+				Name:   checkProjectCollaboratorName,
+				Status: ManualAction,
+				Message: fmt.Sprintf("Invite %s to org %s at https://github.com/orgs/%s/people — requires org admin rights",
+					agentUser, owner, owner),
+			}
+		}
+		return CheckResult{
+			Name:    checkProjectCollaboratorName,
+			Status:  Fail,
+			Message: fmt.Sprintf("failed to invite %s to org %s: %v — %s", agentUser, owner, err, errMsg),
+		}
+	}
+
+	return CheckResult{
+		Name:    checkProjectCollaboratorName,
+		Status:  Pass,
+		Message: fmt.Sprintf("invitation sent to %s for org %s", agentUser, owner),
+	}
+}
+
+// repairProjectCollaboratorUser adds the agent user as a WRITER on the GitHub
+// Project for user-owned repos via GraphQL.
+func repairProjectCollaboratorUser(owner, repoName, agentUser string, run bootstrap.RunCommandFunc) CheckResult {
 	// Find the project node ID.
 	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
