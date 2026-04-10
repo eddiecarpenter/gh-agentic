@@ -31,10 +31,11 @@ func SetFetchTarballFn(fn tarball.FetchFunc) tarball.FetchFunc {
 
 // FetchAndExtractTemplate fetches the release tarball for the given repo and version,
 // extracts it to a temporary directory, and then deploys the template-managed
-// directories (base/, .github/workflows/, .goose/recipes/) into the repo root.
+// directories (.ai/, .github/workflows/, .goose/recipes/) and root files
+// (CLAUDE.md, AGENTS.md) into the repo root.
 // The tarballURL is validated before any fetch is attempted.
 //
-// This replaces the old CloneTemplate + CopyBase + DeployWorkflows + DeployRecipes
+// This replaces the old CloneTemplate + CopyAI + DeployWorkflows + DeployRecipes
 // pipeline with a single atomic operation. On failure, no partial extraction
 // remains in repoRoot (the backup/restore flow in RunSync handles rollback).
 //
@@ -53,16 +54,21 @@ func FetchAndExtractTemplate(tarballURL, repo, version, repoRoot string, workflo
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Extract base/ (includes base/.github/workflows/) and .goose/ (recipes)
-	// so the subsequent CopyBase, DeployWorkflows, and DeployRecipes steps
-	// can operate on the extracted content just as they did on the old git clone.
-	extractPrefixes := []string{"base/", ".goose/"}
+	// Extract .ai/ (includes .ai/.github/workflows/), .goose/ (recipes),
+	// and root files (CLAUDE.md, AGENTS.md) so the subsequent deploy steps
+	// can operate on the extracted content.
+	extractPrefixes := []string{".ai/", ".goose/", "CLAUDE.md", "AGENTS.md"}
 	if err := tarball.ExtractFromTemplate(repo, version, tmpDir, extractPrefixes, fetchTarballFn); err != nil {
 		return err
 	}
 
-	// Deploy base/ from extracted tarball.
-	if err := CopyBase(tmpDir, repoRoot); err != nil {
+	// Deploy .ai/ from extracted tarball (full replace).
+	if err := CopyAI(tmpDir, repoRoot); err != nil {
+		return err
+	}
+
+	// Deploy root files (CLAUDE.md, AGENTS.md) from extracted tarball.
+	if err := DeployRootFiles(tmpDir, repoRoot); err != nil {
 		return err
 	}
 
@@ -79,17 +85,17 @@ func FetchAndExtractTemplate(tarballURL, repo, version, repoRoot string, workflo
 	return nil
 }
 
-// BackupBase copies existing base/ and .github/workflows/ to a temp backup
+// BackupAI copies existing .ai/ and .github/workflows/ to a temp backup
 // location. Returns the backup directory path. The caller is responsible for
 // cleanup.
-func BackupBase(repoRoot string) (string, error) {
-	baseSrc := filepath.Join(repoRoot, "base")
+func BackupAI(repoRoot string) (string, error) {
+	aiSrc := filepath.Join(repoRoot, ".ai")
 	workflowsSrc := filepath.Join(repoRoot, ".github", "workflows")
 	recipesSrc := filepath.Join(repoRoot, ".goose", "recipes")
 
-	baseExists := false
-	if _, err := os.Stat(baseSrc); err == nil {
-		baseExists = true
+	aiExists := false
+	if _, err := os.Stat(aiSrc); err == nil {
+		aiExists = true
 	}
 
 	workflowsExist := false
@@ -103,19 +109,19 @@ func BackupBase(repoRoot string) (string, error) {
 	}
 
 	// Nothing to back up on first sync.
-	if !baseExists && !workflowsExist && !recipesExist {
+	if !aiExists && !workflowsExist && !recipesExist {
 		return "", nil
 	}
 
-	backupDir, err := os.MkdirTemp("", "agentic-base"+backupSuffix)
+	backupDir, err := os.MkdirTemp("", "agentic-ai"+backupSuffix)
 	if err != nil {
 		return "", fmt.Errorf("creating backup directory: %w", err)
 	}
 
-	if baseExists {
-		if err := fsutil.CopyDir(baseSrc, filepath.Join(backupDir, "base")); err != nil {
+	if aiExists {
+		if err := fsutil.CopyDir(aiSrc, filepath.Join(backupDir, "ai")); err != nil {
 			_ = os.RemoveAll(backupDir)
-			return "", fmt.Errorf("backing up base/: %w", err)
+			return "", fmt.Errorf("backing up .ai/: %w", err)
 		}
 	}
 
@@ -136,13 +142,13 @@ func BackupBase(repoRoot string) (string, error) {
 	return backupDir, nil
 }
 
-// DeployWorkflows copies workflow files from the cloned template's
-// base/.github/workflows/ into the local repo's .github/workflows/.
+// DeployWorkflows copies workflow files from the extracted template's
+// .ai/.github/workflows/ into the local repo's .github/workflows/.
 // Files in excludeFiles are skipped during copy and removed from the
 // destination if they already exist (retroactive cleanup).
 // Returns nil if the source directory does not exist (template has no workflows).
 func DeployWorkflows(tmpDir, repoRoot string, excludeFiles []string) error {
-	src := filepath.Join(tmpDir, "base", ".github", "workflows")
+	src := filepath.Join(tmpDir, ".ai", ".github", "workflows")
 	if _, err := os.Stat(src); os.IsNotExist(err) {
 		return nil
 	}
@@ -208,7 +214,7 @@ func DeployRecipes(tmpDir, repoRoot string) error {
 
 	dst := filepath.Join(repoRoot, ".goose", "recipes")
 
-	// Remove existing destination before copying, matching CopyBase pattern.
+	// Remove existing destination before copying, matching CopyAI pattern.
 	if err := os.RemoveAll(dst); err != nil {
 		return fmt.Errorf("removing existing .goose/recipes/: %w", err)
 	}
@@ -263,37 +269,56 @@ func extractOwnerFromAgentsLocal(root string) string {
 	return ""
 }
 
-// CopyBase copies base/ from the cloned template into the local repo,
-// replacing the existing base/ directory.
-func CopyBase(tmpDir, repoRoot string) error {
-	src := filepath.Join(tmpDir, "base")
-	dst := filepath.Join(repoRoot, "base")
+// CopyAI copies .ai/ from the extracted template into the local repo,
+// replacing the existing .ai/ directory (full replace semantics).
+func CopyAI(tmpDir, repoRoot string) error {
+	src := filepath.Join(tmpDir, ".ai")
+	dst := filepath.Join(repoRoot, ".ai")
 
 	if _, err := os.Stat(src); os.IsNotExist(err) {
-		return fmt.Errorf("template does not contain a base/ directory")
+		return fmt.Errorf("template does not contain a .ai/ directory")
 	}
 
-	// Remove existing base/ so we get a clean copy.
+	// Remove existing .ai/ so we get a clean copy.
 	if err := os.RemoveAll(dst); err != nil {
-		return fmt.Errorf("removing existing base/: %w", err)
+		return fmt.Errorf("removing existing .ai/: %w", err)
 	}
 
 	if err := fsutil.CopyDir(src, dst); err != nil {
-		return fmt.Errorf("copying base/: %w", err)
+		return fmt.Errorf("copying .ai/: %w", err)
 	}
 
 	return nil
 }
 
-// ShowDiff runs git diff on base/ and .github/workflows/ and returns the output.
+// DeployRootFiles copies CLAUDE.md and AGENTS.md from the extracted template
+// root into the local repo root, overwriting any existing copies.
+func DeployRootFiles(tmpDir, repoRoot string) error {
+	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+		src := filepath.Join(tmpDir, name)
+		if _, err := os.Stat(src); os.IsNotExist(err) {
+			continue // File not in template — skip silently.
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return fmt.Errorf("reading %s from template: %w", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(repoRoot, name), data, 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// ShowDiff runs git diff on .ai/ and .github/workflows/ and returns the output.
 func ShowDiff(repoRoot string, run bootstrap.RunCommandFunc) (string, error) {
-	out, err := runInDir(run, repoRoot, "git", "diff", "base/")
+	out, err := runInDir(run, repoRoot, "git", "diff", ".ai/")
 	if err != nil {
 		return "", fmt.Errorf("git diff: %w\n%s", err, strings.TrimSpace(out))
 	}
 
-	// Also check for untracked files in base/.
-	untrackedOut, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", "base/")
+	// Also check for untracked files in .ai/.
+	untrackedOut, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", ".ai/")
 	if strings.TrimSpace(untrackedOut) != "" {
 		out += "\n--- New files ---\n" + untrackedOut
 	}
@@ -344,9 +369,10 @@ func WritePostSyncMD(repoRoot string, releaseBody string) error {
 	return nil
 }
 
-// StageSync stages base/, .github/workflows/, TEMPLATE_VERSION, and POST_SYNC.md for commit.
+// StageSync stages .ai/, .github/workflows/, CLAUDE.md, AGENTS.md, TEMPLATE_VERSION,
+// .goose/recipes/, and POST_SYNC.md for commit.
 func StageSync(repoRoot string, run bootstrap.RunCommandFunc) error {
-	if out, err := runInDir(run, repoRoot, "git", "add", "base/", "TEMPLATE_VERSION", ".github/workflows/", ".goose/recipes/", "POST_SYNC.md"); err != nil {
+	if out, err := runInDir(run, repoRoot, "git", "add", ".ai/", "CLAUDE.md", "AGENTS.md", "TEMPLATE_VERSION", ".github/workflows/", ".goose/recipes/", "POST_SYNC.md"); err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
 	}
 	return nil
@@ -367,7 +393,7 @@ func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) er
 	}
 
 	// Commit.
-	msg := fmt.Sprintf("chore: sync base/, workflows, and recipes from %s %s", repo, version)
+	msg := fmt.Sprintf("chore: sync .ai/, workflows, and recipes from %s %s", repo, version)
 	if out, err := runInDir(run, repoRoot, "git", "commit", "-m", msg); err != nil {
 		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
 	}
@@ -375,22 +401,22 @@ func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) er
 	return nil
 }
 
-// RestoreBase restores base/ and .github/workflows/ from a backup created by
-// BackupBase. If backupDir is empty, there was nothing to restore.
-func RestoreBase(repoRoot, backupDir string) error {
+// RestoreAI restores .ai/ and .github/workflows/ from a backup created by
+// BackupAI. If backupDir is empty, there was nothing to restore.
+func RestoreAI(repoRoot, backupDir string) error {
 	if backupDir == "" {
 		return nil
 	}
 
-	// Restore base/ if it was backed up.
-	baseSrc := filepath.Join(backupDir, "base")
-	if _, err := os.Stat(baseSrc); err == nil {
-		baseDst := filepath.Join(repoRoot, "base")
-		if err := os.RemoveAll(baseDst); err != nil {
-			return fmt.Errorf("removing base/ for restore: %w", err)
+	// Restore .ai/ if it was backed up.
+	aiSrc := filepath.Join(backupDir, "ai")
+	if _, err := os.Stat(aiSrc); err == nil {
+		aiDst := filepath.Join(repoRoot, ".ai")
+		if err := os.RemoveAll(aiDst); err != nil {
+			return fmt.Errorf("removing .ai/ for restore: %w", err)
 		}
-		if err := fsutil.CopyDir(baseSrc, baseDst); err != nil {
-			return fmt.Errorf("restoring base/: %w", err)
+		if err := fsutil.CopyDir(aiSrc, aiDst); err != nil {
+			return fmt.Errorf("restoring .ai/: %w", err)
 		}
 	}
 

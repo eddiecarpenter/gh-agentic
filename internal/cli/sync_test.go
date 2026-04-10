@@ -17,12 +17,12 @@ import (
 )
 
 // setupFakeTarball overrides the sync package's fetch function with a fake
-// that returns a gzipped tar containing base/AGENTS.md with the given content.
+// that returns a gzipped tar containing .ai/RULEBOOK.md with the given content.
 // Returns a cleanup function that restores the original fetch function.
 func setupFakeTarball(t *testing.T, baseContent string) func() {
 	t.Helper()
 	files := map[string]string{
-		"base/AGENTS.md": baseContent,
+		".ai/RULEBOOK.md": baseContent,
 	}
 
 	prev := sync.SetFetchTarballFn(func(repo, version string) (io.ReadCloser, error) {
@@ -100,8 +100,8 @@ func TestSyncCmd_HelpText(t *testing.T) {
 		t.Errorf("help should mention 'Sync', got: %s", output)
 	}
 
-	if !strings.Contains(output, "base/") {
-		t.Errorf("help should mention 'base/', got: %s", output)
+	if !strings.Contains(output, ".ai/") {
+		t.Errorf("help should mention '.ai/', got: %s", output)
 	}
 
 	if !strings.Contains(output, "TEMPLATE_SOURCE") {
@@ -121,13 +121,13 @@ func newTestSyncRoot(syncCmd *cobra.Command) *cobra.Command {
 }
 
 // syncCloneRunner wraps a MockRunner with a side-effect for git clone commands,
-// populating the target dir with a fake template base/.
+// populating the target dir with a fake template .ai/.
 func syncCloneRunner(mock *testutil.MockRunner, baseContent string) func(string, ...string) (string, error) {
 	return func(name string, args ...string) (string, error) {
 		if name == "git" && len(args) >= 1 && args[0] == "clone" {
 			targetDir := args[len(args)-1]
-			_ = os.MkdirAll(filepath.Join(targetDir, "base"), 0o755)
-			_ = os.WriteFile(filepath.Join(targetDir, "base", "AGENTS.md"), []byte(baseContent), 0o644)
+			_ = os.MkdirAll(filepath.Join(targetDir, ".ai"), 0o755)
+			_ = os.WriteFile(filepath.Join(targetDir, ".ai", "RULEBOOK.md"), []byte(baseContent), 0o644)
 			return "", nil
 		}
 		return mock.RunCommand(name, args...)

@@ -135,16 +135,18 @@ func TestFetchAndExtractTemplate(t *testing.T) {
 		defer func() { fetchTarballFn = orig }()
 
 		destRoot := t.TempDir()
-		// Create existing base/ so CopyBase can replace it.
-		if err := os.MkdirAll(filepath.Join(destRoot, "base"), 0o755); err != nil {
+		// Create existing .ai/ so CopyAI can replace it.
+		if err := os.MkdirAll(filepath.Join(destRoot, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 
 		fetchTarballFn = createFakeTarballFetch(t, map[string]string{
-			"base/AGENTS.md":                         "# Agents",
-			"base/standards/go.md":                   "Go standards",
-			"base/.github/workflows/ci.yml":          "ci workflow",
+			".ai/RULEBOOK.md":                        "# Rulebook",
+			".ai/standards/go.md":                    "Go standards",
+			".ai/.github/workflows/ci.yml":           "ci workflow",
 			".goose/recipes/dev.yaml":                "dev recipe",
+			"CLAUDE.md":                              "# CLAUDE",
+			"AGENTS.md":                              "# AGENTS",
 		})
 
 		err := FetchAndExtractTemplate("https://api.github.com/repos/owner/repo/tarball/v1.0.0", "owner/repo", "v1.0.0", destRoot, nil)
@@ -157,10 +159,12 @@ func TestFetchAndExtractTemplate(t *testing.T) {
 			path    string
 			content string
 		}{
-			{"base/AGENTS.md", "# Agents"},
-			{"base/standards/go.md", "Go standards"},
+			{".ai/RULEBOOK.md", "# Rulebook"},
+			{".ai/standards/go.md", "Go standards"},
 			{".github/workflows/ci.yml", "ci workflow"},
 			{".goose/recipes/dev.yaml", "dev recipe"},
+			{"CLAUDE.md", "# CLAUDE"},
+			{"AGENTS.md", "# AGENTS"},
 		} {
 			data, err := os.ReadFile(filepath.Join(destRoot, check.path))
 			if err != nil {
@@ -230,10 +234,10 @@ func TestFetchAndExtractTemplate(t *testing.T) {
 	})
 }
 
-func TestBackupBase(t *testing.T) {
+func TestBackupAI(t *testing.T) {
 	t.Run("existing base directory", func(t *testing.T) {
 		root := t.TempDir()
-		baseDir := filepath.Join(root, "base")
+		baseDir := filepath.Join(root, ".ai")
 		if err := os.MkdirAll(filepath.Join(baseDir, "standards"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -244,7 +248,7 @@ func TestBackupBase(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		backupDir, err := BackupBase(root)
+		backupDir, err := BackupAI(root)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -255,7 +259,7 @@ func TestBackupBase(t *testing.T) {
 		}
 
 		// Verify files were copied.
-		data, err := os.ReadFile(filepath.Join(backupDir, "base", "AGENTS.md"))
+		data, err := os.ReadFile(filepath.Join(backupDir, "ai", "AGENTS.md"))
 		if err != nil {
 			t.Fatalf("backup file missing: %v", err)
 		}
@@ -263,7 +267,7 @@ func TestBackupBase(t *testing.T) {
 			t.Errorf("backup content mismatch: %s", data)
 		}
 
-		data, err = os.ReadFile(filepath.Join(backupDir, "base", "standards", "go.md"))
+		data, err = os.ReadFile(filepath.Join(backupDir, "ai", "standards", "go.md"))
 		if err != nil {
 			t.Fatalf("nested backup file missing: %v", err)
 		}
@@ -274,7 +278,7 @@ func TestBackupBase(t *testing.T) {
 
 	t.Run("no base directory", func(t *testing.T) {
 		root := t.TempDir()
-		backupDir, err := BackupBase(root)
+		backupDir, err := BackupAI(root)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -284,14 +288,14 @@ func TestBackupBase(t *testing.T) {
 	})
 }
 
-func TestBackupBase_WithWorkflows(t *testing.T) {
+func TestBackupAI_WithWorkflows(t *testing.T) {
 	t.Run("backs up both base and workflows", func(t *testing.T) {
 		root := t.TempDir()
-		// Create base/.
-		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		// Create .ai/.
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".ai", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		// Create .github/workflows/.
@@ -303,14 +307,14 @@ func TestBackupBase_WithWorkflows(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		backupDir, err := BackupBase(root)
+		backupDir, err := BackupAI(root)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		defer os.RemoveAll(backupDir)
 
 		// Verify base backup.
-		data, err := os.ReadFile(filepath.Join(backupDir, "base", "AGENTS.md"))
+		data, err := os.ReadFile(filepath.Join(backupDir, "ai", "AGENTS.md"))
 		if err != nil {
 			t.Fatalf("base backup missing: %v", err)
 		}
@@ -330,15 +334,15 @@ func TestBackupBase_WithWorkflows(t *testing.T) {
 
 	t.Run("no workflows directory is not an error", func(t *testing.T) {
 		root := t.TempDir()
-		// Create only base/.
-		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		// Create only .ai/.
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".ai", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		backupDir, err := BackupBase(root)
+		backupDir, err := BackupAI(root)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -364,7 +368,7 @@ func TestBackupBase_WithWorkflows(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		backupDir, err := BackupBase(root)
+		backupDir, err := BackupAI(root)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -385,16 +389,16 @@ func TestBackupBase_WithWorkflows(t *testing.T) {
 	})
 }
 
-func TestRestoreBase_WithWorkflows(t *testing.T) {
+func TestRestoreAI_WithWorkflows(t *testing.T) {
 	t.Run("restores both base and workflows", func(t *testing.T) {
 		root := t.TempDir()
 		backupDir := t.TempDir()
 
 		// Create backup content.
-		if err := os.MkdirAll(filepath.Join(backupDir, "base"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(backupDir, "ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(backupDir, "base", "AGENTS.md"), []byte("original"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(backupDir, "ai", "AGENTS.md"), []byte("original"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.MkdirAll(filepath.Join(backupDir, "workflows"), 0o755); err != nil {
@@ -405,10 +409,10 @@ func TestRestoreBase_WithWorkflows(t *testing.T) {
 		}
 
 		// Create modified content in repo.
-		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".ai", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		wfDir := filepath.Join(root, ".github", "workflows")
@@ -419,13 +423,13 @@ func TestRestoreBase_WithWorkflows(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		err := RestoreBase(root, backupDir)
+		err := RestoreAI(root, backupDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		// Verify base restored.
-		data, err := os.ReadFile(filepath.Join(root, "base", "AGENTS.md"))
+		data, err := os.ReadFile(filepath.Join(root, ".ai", "AGENTS.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -448,27 +452,27 @@ func TestRestoreBase_WithWorkflows(t *testing.T) {
 		backupDir := t.TempDir()
 
 		// Only base backup.
-		if err := os.MkdirAll(filepath.Join(backupDir, "base"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(backupDir, "ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(backupDir, "base", "AGENTS.md"), []byte("original"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(backupDir, "ai", "AGENTS.md"), []byte("original"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
 		// Create modified base in repo.
-		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".ai", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		err := RestoreBase(root, backupDir)
+		err := RestoreAI(root, backupDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		data, err := os.ReadFile(filepath.Join(root, "base", "AGENTS.md"))
+		data, err := os.ReadFile(filepath.Join(root, ".ai", "AGENTS.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -478,7 +482,7 @@ func TestRestoreBase_WithWorkflows(t *testing.T) {
 	})
 }
 
-func TestBackupBase_WithRecipes(t *testing.T) {
+func TestBackupAI_WithRecipes(t *testing.T) {
 	t.Run("backs up recipes when they exist", func(t *testing.T) {
 		root := t.TempDir()
 		// Create .goose/recipes/.
@@ -490,7 +494,7 @@ func TestBackupBase_WithRecipes(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		backupDir, err := BackupBase(root)
+		backupDir, err := BackupAI(root)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -512,15 +516,15 @@ func TestBackupBase_WithRecipes(t *testing.T) {
 
 	t.Run("no recipes directory is not an error", func(t *testing.T) {
 		root := t.TempDir()
-		// Create only base/.
-		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		// Create only .ai/.
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".ai", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		backupDir, err := BackupBase(root)
+		backupDir, err := BackupAI(root)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -534,11 +538,11 @@ func TestBackupBase_WithRecipes(t *testing.T) {
 
 	t.Run("backs up all three directories", func(t *testing.T) {
 		root := t.TempDir()
-		// Create base/.
-		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		// Create .ai/.
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".ai", "AGENTS.md"), []byte("agents"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		// Create .github/workflows/.
@@ -558,14 +562,14 @@ func TestBackupBase_WithRecipes(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		backupDir, err := BackupBase(root)
+		backupDir, err := BackupAI(root)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		defer os.RemoveAll(backupDir)
 
 		// Verify all three backed up.
-		if _, err := os.Stat(filepath.Join(backupDir, "base", "AGENTS.md")); err != nil {
+		if _, err := os.Stat(filepath.Join(backupDir, "ai", "AGENTS.md")); err != nil {
 			t.Error("base backup missing")
 		}
 		if _, err := os.Stat(filepath.Join(backupDir, "workflows", "ci.yml")); err != nil {
@@ -577,7 +581,7 @@ func TestBackupBase_WithRecipes(t *testing.T) {
 	})
 }
 
-func TestRestoreBase_WithRecipes(t *testing.T) {
+func TestRestoreAI_WithRecipes(t *testing.T) {
 	t.Run("restores recipes from backup", func(t *testing.T) {
 		root := t.TempDir()
 		backupDir := t.TempDir()
@@ -599,7 +603,7 @@ func TestRestoreBase_WithRecipes(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		err := RestoreBase(root, backupDir)
+		err := RestoreAI(root, backupDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -619,28 +623,28 @@ func TestRestoreBase_WithRecipes(t *testing.T) {
 		backupDir := t.TempDir()
 
 		// Only base backup.
-		if err := os.MkdirAll(filepath.Join(backupDir, "base"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(backupDir, "ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(backupDir, "base", "AGENTS.md"), []byte("original"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(backupDir, "ai", "AGENTS.md"), []byte("original"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
 		// Create modified base in repo.
-		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".ai", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		err := RestoreBase(root, backupDir)
+		err := RestoreAI(root, backupDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		// base should be restored.
-		data, err := os.ReadFile(filepath.Join(root, "base", "AGENTS.md"))
+		data, err := os.ReadFile(filepath.Join(root, ".ai", "AGENTS.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -739,13 +743,13 @@ func TestDeployRecipes(t *testing.T) {
 	})
 }
 
-func TestCopyBase(t *testing.T) {
+func TestCopyAI(t *testing.T) {
 	t.Run("success with nested dirs", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		repoRoot := t.TempDir()
 
-		// Create source base/ in tmpDir.
-		srcBase := filepath.Join(tmpDir, "base")
+		// Create source .ai/ in tmpDir.
+		srcBase := filepath.Join(tmpDir, ".ai")
 		if err := os.MkdirAll(filepath.Join(srcBase, "standards"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -756,21 +760,21 @@ func TestCopyBase(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Create existing base/ in repoRoot.
-		if err := os.MkdirAll(filepath.Join(repoRoot, "base"), 0o755); err != nil {
+		// Create existing .ai/ in repoRoot.
+		if err := os.MkdirAll(filepath.Join(repoRoot, ".ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(repoRoot, "base", "old.md"), []byte("old"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(repoRoot, ".ai", "old.md"), []byte("old"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		err := CopyBase(tmpDir, repoRoot)
+		err := CopyAI(tmpDir, repoRoot)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		// Verify new content.
-		data, err := os.ReadFile(filepath.Join(repoRoot, "base", "AGENTS.md"))
+		data, err := os.ReadFile(filepath.Join(repoRoot, ".ai", "AGENTS.md"))
 		if err != nil {
 			t.Fatalf("file missing: %v", err)
 		}
@@ -779,7 +783,7 @@ func TestCopyBase(t *testing.T) {
 		}
 
 		// Verify old file was removed.
-		if _, err := os.Stat(filepath.Join(repoRoot, "base", "old.md")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(repoRoot, ".ai", "old.md")); !os.IsNotExist(err) {
 			t.Error("old file should have been removed")
 		}
 	})
@@ -788,11 +792,11 @@ func TestCopyBase(t *testing.T) {
 		tmpDir := t.TempDir()
 		repoRoot := t.TempDir()
 
-		err := CopyBase(tmpDir, repoRoot)
+		err := CopyAI(tmpDir, repoRoot)
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !strings.Contains(err.Error(), "does not contain a base/") {
+		if !strings.Contains(err.Error(), "does not contain a .ai/") {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
@@ -804,7 +808,7 @@ func TestDeployWorkflows(t *testing.T) {
 		repoRoot := t.TempDir()
 
 		// Create source workflows in template.
-		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		srcWf := filepath.Join(tmpDir, ".ai", ".github", "workflows")
 		if err := os.MkdirAll(srcWf, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -852,7 +856,7 @@ func TestDeployWorkflows(t *testing.T) {
 		tmpDir := t.TempDir()
 		repoRoot := t.TempDir()
 
-		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		srcWf := filepath.Join(tmpDir, ".ai", ".github", "workflows")
 		if err := os.MkdirAll(srcWf, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -878,7 +882,7 @@ func TestDeployWorkflows(t *testing.T) {
 		tmpDir := t.TempDir()
 		repoRoot := t.TempDir()
 
-		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		srcWf := filepath.Join(tmpDir, ".ai", ".github", "workflows")
 		if err := os.MkdirAll(srcWf, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -909,7 +913,7 @@ func TestDeployWorkflows(t *testing.T) {
 		tmpDir := t.TempDir()
 		repoRoot := t.TempDir()
 
-		srcWf := filepath.Join(tmpDir, "base", ".github", "workflows")
+		srcWf := filepath.Join(tmpDir, ".ai", ".github", "workflows")
 		if err := os.MkdirAll(srcWf, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -983,8 +987,8 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "diff --git a/base/AGENTS.md", err: nil}, // git diff base/
-			{output: "", err: nil},                             // ls-files base/
+			{output: "diff --git a/.ai/RULEBOOK.md", err: nil}, // git diff .ai/
+			{output: "", err: nil},                              // ls-files .ai/
 			{output: "", err: nil},                             // git diff .github/workflows/
 			{output: "", err: nil},                             // ls-files .github/workflows/
 			{output: "", err: nil},                             // git diff .goose/recipes/
@@ -1006,8 +1010,8 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                   // git diff base/
-			{output: "base/new-file.md\n", err: nil}, // ls-files base/
+			{output: "", err: nil},                   // git diff .ai/
+			{output: ".ai/new-file.md\n", err: nil},  // ls-files .ai/
 			{output: "", err: nil},                   // git diff .github/workflows/
 			{output: "", err: nil},                   // ls-files .github/workflows/
 			{output: "", err: nil},                   // git diff .goose/recipes/
@@ -1029,8 +1033,8 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                                      // git diff base/
-			{output: "", err: nil},                                      // ls-files base/
+			{output: "", err: nil},                                      // git diff .ai/
+			{output: "", err: nil},                                      // ls-files .ai/
 			{output: "diff --git a/.github/workflows/ci.yml", err: nil}, // git diff .github/workflows/
 			{output: "", err: nil},                                      // ls-files .github/workflows/
 			{output: "", err: nil},                                      // git diff .goose/recipes/
@@ -1052,8 +1056,8 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                                     // git diff base/
-			{output: "", err: nil},                                     // ls-files base/
+			{output: "", err: nil},                                     // git diff .ai/
+			{output: "", err: nil},                                     // ls-files .ai/
 			{output: "", err: nil},                                     // git diff .github/workflows/
 			{output: ".github/workflows/new-pipeline.yml\n", err: nil}, // ls-files .github/workflows/
 			{output: "", err: nil},                                     // git diff .goose/recipes/
@@ -1075,8 +1079,8 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                                              // git diff base/
-			{output: "", err: nil},                                              // ls-files base/
+			{output: "", err: nil},                                              // git diff .ai/
+			{output: "", err: nil},                                              // ls-files .ai/
 			{output: "", err: nil},                                              // git diff .github/workflows/
 			{output: "", err: nil},                                              // ls-files .github/workflows/
 			{output: "diff --git a/.goose/recipes/dev.yaml", err: nil},          // git diff .goose/recipes/
@@ -1098,8 +1102,8 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                                  // git diff base/
-			{output: "", err: nil},                                  // ls-files base/
+			{output: "", err: nil},                                  // git diff .ai/
+			{output: "", err: nil},                                  // ls-files .ai/
 			{output: "", err: nil},                                  // git diff .github/workflows/
 			{output: "", err: nil},                                  // ls-files .github/workflows/
 			{output: "", err: nil},                                  // git diff .goose/recipes/
@@ -1220,8 +1224,14 @@ func TestStageSync(t *testing.T) {
 		if !strings.Contains(calls[0], "git") || !strings.Contains(calls[0], "add") {
 			t.Errorf("expected git add call: %s", calls[0])
 		}
-		if !strings.Contains(calls[0], "base/") {
-			t.Errorf("expected base/ in git add: %s", calls[0])
+		if !strings.Contains(calls[0], ".ai/") {
+			t.Errorf("expected .ai/ in git add: %s", calls[0])
+		}
+		if !strings.Contains(calls[0], "CLAUDE.md") {
+			t.Errorf("expected CLAUDE.md in git add: %s", calls[0])
+		}
+		if !strings.Contains(calls[0], "AGENTS.md") {
+			t.Errorf("expected AGENTS.md in git add: %s", calls[0])
 		}
 		if !strings.Contains(calls[0], "TEMPLATE_VERSION") {
 			t.Errorf("expected TEMPLATE_VERSION in git add: %s", calls[0])
@@ -1282,7 +1292,7 @@ func TestCommitSync(t *testing.T) {
 		}
 
 		// Verify git commit was called with correct message.
-		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync base/, workflows, and recipes") {
+		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync .ai/, workflows, and recipes") {
 			t.Errorf("third call should be git commit with updated message: %s", calls[2])
 		}
 	})
@@ -1315,33 +1325,33 @@ func TestCommitSync(t *testing.T) {
 	})
 }
 
-func TestRestoreBase(t *testing.T) {
+func TestRestoreAI(t *testing.T) {
 	t.Run("restores from backup", func(t *testing.T) {
 		root := t.TempDir()
 		backupDir := t.TempDir()
 
 		// Create backup content.
-		if err := os.MkdirAll(filepath.Join(backupDir, "base"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(backupDir, "ai"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(backupDir, "base", "AGENTS.md"), []byte("original"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-
-		// Create modified base/ in repo.
-		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, "base", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(backupDir, "ai", "AGENTS.md"), []byte("original"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		err := RestoreBase(root, backupDir)
+		// Create modified .ai/ in repo.
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".ai", "AGENTS.md"), []byte("modified"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := RestoreAI(root, backupDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		data, err := os.ReadFile(filepath.Join(root, "base", "AGENTS.md"))
+		data, err := os.ReadFile(filepath.Join(root, ".ai", "AGENTS.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1351,7 +1361,7 @@ func TestRestoreBase(t *testing.T) {
 	})
 
 	t.Run("empty backup dir is no-op", func(t *testing.T) {
-		err := RestoreBase("/repo", "")
+		err := RestoreAI("/repo", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

@@ -44,8 +44,8 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Sync base/ from the upstream template",
-		Long: "Syncs the base/ directory from the upstream agentic-development template.\n" +
+		Short: "Sync .ai/ from the upstream template",
+		Long: "Syncs the .ai/ directory from the upstream agentic-development template.\n" +
 			"Reads TEMPLATE_SOURCE and TEMPLATE_VERSION to determine what to sync.\n" +
 			"Shows release notes and asks for confirmation before staging.\n" +
 			"By default, changes are staged but not committed.\n" +

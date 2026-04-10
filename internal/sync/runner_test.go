@@ -37,7 +37,7 @@ func singleRelease(tag string) FetchReleasesFunc {
 
 // tarballFetchSetup overrides the package-level fetchTarballFn with a fake that
 // returns a gzipped tar containing the given files. The file map keys use the
-// template repo layout (e.g. "base/AGENTS.md", "base/.github/workflows/ci.yml",
+// template repo layout (e.g. ".ai/RULEBOOK.md", ".ai/.github/workflows/ci.yml",
 // ".goose/recipes/dev.yaml"). Returns a cleanup function that restores the
 // original fetchTarballFn.
 func tarballFetchSetup(t *testing.T, files map[string]string) func() {
@@ -101,36 +101,36 @@ func tarballRunner(mock *testutil.MockRunner) func(string, ...string) (string, e
 }
 
 // defaultTarballSetup sets up fetchTarballFn with a tarball containing
-// base/AGENTS.md with the given content. Returns a cleanup function.
+// .ai/RULEBOOK.md with the given content. Returns a cleanup function.
 func defaultTarballSetup(t *testing.T, baseContent string) func() {
 	t.Helper()
 	return tarballFetchSetup(t, map[string]string{
-		"base/AGENTS.md": baseContent,
+		".ai/RULEBOOK.md": baseContent,
 	})
 }
 
 // workflowTarballSetup sets up fetchTarballFn with a tarball containing
-// base/AGENTS.md and workflow files under base/.github/workflows/.
+// .ai/RULEBOOK.md and workflow files under .ai/.github/workflows/.
 func workflowTarballSetup(t *testing.T, baseContent string, workflows []string) func() {
 	t.Helper()
 	files := map[string]string{
-		"base/AGENTS.md": baseContent,
+		".ai/RULEBOOK.md": baseContent,
 	}
 	for _, wf := range workflows {
-		files["base/.github/workflows/"+wf] = "workflow: " + wf
+		files[".ai/.github/workflows/"+wf] = "workflow: " + wf
 	}
 	return tarballFetchSetup(t, files)
 }
 
 // recipeTarballSetup sets up fetchTarballFn with a tarball containing
-// base/AGENTS.md, optional workflows, and recipe files under .goose/recipes/.
+// .ai/RULEBOOK.md, optional workflows, and recipe files under .goose/recipes/.
 func recipeTarballSetup(t *testing.T, baseContent string, workflows []string, recipes []string) func() {
 	t.Helper()
 	files := map[string]string{
-		"base/AGENTS.md": baseContent,
+		".ai/RULEBOOK.md": baseContent,
 	}
 	for _, wf := range workflows {
-		files["base/.github/workflows/"+wf] = "workflow: " + wf
+		files[".ai/.github/workflows/"+wf] = "workflow: " + wf
 	}
 	for _, r := range recipes {
 		files[".goose/recipes/"+r] = "recipe: " + r
@@ -221,12 +221,12 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
 	}
 
-	data, err = os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	data, err = os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != "updated content" {
-		t.Errorf("base/AGENTS.md = %q, want 'updated content'", data)
+		t.Errorf(".ai/RULEBOOK.md = %q, want 'updated content'", data)
 	}
 
 	output := buf.String()
@@ -275,12 +275,12 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
 	}
 
-	data, err = os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	data, err = os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != "updated content" {
-		t.Errorf("base/AGENTS.md = %q, want 'updated content'", data)
+		t.Errorf(".ai/RULEBOOK.md = %q, want 'updated content'", data)
 	}
 
 	output := buf.String()
@@ -517,12 +517,12 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		t.Errorf("expected force/re-sync warning in output, got: %s", output)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	data, err := os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != "re-synced content" {
-		t.Errorf("base/AGENTS.md = %q, want 're-synced content'", data)
+		t.Errorf(".ai/RULEBOOK.md = %q, want 're-synced content'", data)
 	}
 
 	data, err = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
@@ -540,7 +540,7 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 	defer defaultTarballSetup(t, "restored content")()
 
-	if err := os.RemoveAll(filepath.Join(repo.Root, "base")); err != nil {
+	if err := os.RemoveAll(filepath.Join(repo.Root, ".ai")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -572,12 +572,12 @@ func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 		t.Errorf("expected 'missing' warning in output, got: %s", output)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	data, err := os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != "restored content" {
-		t.Errorf("base/AGENTS.md = %q, want 'restored content'", data)
+		t.Errorf(".ai/RULEBOOK.md = %q, want 'restored content'", data)
 	}
 
 	mock.AssertExpectations(t)
@@ -1392,13 +1392,13 @@ func TestRunSync_EmptyTarballURL_FailsBeforeModification(t *testing.T) {
 		t.Errorf("TEMPLATE_VERSION should be unchanged: %q", string(data))
 	}
 
-	// Verify base/AGENTS.md is unchanged.
-	data, readErr = os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	// Verify .ai/RULEBOOK.md is unchanged.
+	data, readErr = os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	if string(data) != "# AGENTS.md\n" {
-		t.Errorf("base/AGENTS.md should be unchanged: %q", string(data))
+	if string(data) != "# RULEBOOK.md\n" {
+		t.Errorf(".ai/RULEBOOK.md should be unchanged: %q", string(data))
 	}
 
 	mock.AssertExpectations(t)
@@ -1440,13 +1440,13 @@ func TestRunSync_TarballFetchFailure_RestoresBackup(t *testing.T) {
 		t.Errorf("error should contain fetch error detail: %v", err)
 	}
 
-	// Verify base/ was restored from backup.
-	data, readErr := os.ReadFile(filepath.Join(repo.Root, "base", "AGENTS.md"))
+	// Verify .ai/ was restored from backup.
+	data, readErr := os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if readErr != nil {
-		t.Fatalf("base/AGENTS.md should exist after restore: %v", readErr)
+		t.Fatalf(".ai/RULEBOOK.md should exist after restore: %v", readErr)
 	}
-	if string(data) != "# AGENTS.md\n" {
-		t.Errorf("base/AGENTS.md should be restored to original: %q", string(data))
+	if string(data) != "# RULEBOOK.md\n" {
+		t.Errorf(".ai/RULEBOOK.md should be restored to original: %q", string(data))
 	}
 
 	// Verify TEMPLATE_VERSION is unchanged.

@@ -118,7 +118,7 @@ func RunSync(
 	detectOwnerType bootstrap.DetectOwnerTypeFunc,
 ) error {
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, ui.SectionHeading.Render("  Sync — update base/ from upstream template"))
+	fmt.Fprintln(w, ui.SectionHeading.Render("  Sync — update .ai/ from upstream template"))
 	fmt.Fprintln(w)
 
 	// Step 1: Read config files.
@@ -177,11 +177,11 @@ func RunSync(
 		available = []Release{found}
 	}
 
-	// Step 3: Check if up to date — bypass when base/ is missing or --force is set.
-	baseDir := filepath.Join(repoRoot, "base")
-	_, statErr := os.Stat(baseDir)
-	baseMissing := os.IsNotExist(statErr)
-	if len(available) == 0 && !baseMissing && !force {
+	// Step 3: Check if up to date — bypass when .ai/ is missing or --force is set.
+	aiDir := filepath.Join(repoRoot, ".ai")
+	_, statErr := os.Stat(aiDir)
+	aiMissing := os.IsNotExist(statErr)
+	if len(available) == 0 && !aiMissing && !force {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "  "+ui.RenderOK("Already up to date ("+cfg.CurrentVersion+")"))
 		return nil
@@ -190,8 +190,8 @@ func RunSync(
 	// Determine the target version.
 	var targetRelease Release
 	switch {
-	case baseMissing:
-		fmt.Fprintln(w, "  "+ui.RenderWarning("base/ is missing — restoring from "+cfg.CurrentVersion))
+	case aiMissing:
+		fmt.Fprintln(w, "  "+ui.RenderWarning(".ai/ is missing — restoring from "+cfg.CurrentVersion))
 		// When base is missing, target the latest available or current version.
 		if len(available) > 0 {
 			targetRelease = available[0]
@@ -266,11 +266,11 @@ func RunSync(
 		return fmt.Errorf("selected release %s has no tarball URL — cannot sync", targetRelease.TagName)
 	}
 
-	// Step 6: Backup existing base/.
+	// Step 6: Backup existing .ai/.
 	var backupDir string
-	if err := spinner(w, "Backing up base/", func() error {
+	if err := spinner(w, "Backing up .ai/", func() error {
 		var backupErr error
-		backupDir, backupErr = BackupBase(repoRoot)
+		backupDir, backupErr = BackupAI(repoRoot)
 		return backupErr
 	}); err != nil {
 		return err
@@ -294,7 +294,7 @@ func RunSync(
 	if err := spinner(w, "Fetching and extracting template", func() error {
 		return FetchAndExtractTemplate(targetRelease.TarballURL, cfg.TemplateRepo, cfg.LatestVersion, repoRoot, workflowExcludes)
 	}); err != nil {
-		_ = RestoreBase(repoRoot, backupDir)
+		_ = RestoreAI(repoRoot, backupDir)
 		return err
 	}
 
@@ -312,7 +312,7 @@ func RunSync(
 		return err
 	}
 
-	commitMsg := fmt.Sprintf("chore: sync base/, workflows, and recipes from %s %s", cfg.TemplateRepo, cfg.LatestVersion)
+	commitMsg := fmt.Sprintf("chore: sync .ai/, workflows, and recipes from %s %s", cfg.TemplateRepo, cfg.LatestVersion)
 
 	// Clear screen before showing results summary (install → results transition).
 	clearScreen(w)

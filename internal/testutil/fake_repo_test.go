@@ -17,7 +17,7 @@ func TestNewFakeRepo_CreatesStandardFiles(t *testing.T) {
 		"AGENTS.local.md",
 		"REPOS.md",
 		"README.md",
-		"base/AGENTS.md",
+		".ai/RULEBOOK.md",
 	}
 
 	for _, f := range expectedFiles {
