@@ -241,9 +241,10 @@ func DeployWorkflows(tmpDir, repoRoot string, excludeFiles []string) error {
 	return nil
 }
 
-// DeployRecipes copies .goose/recipes/ from the cloned template into the local
-// repo's .goose/recipes/. Returns nil if the source directory does not exist
-// (template has no recipes).
+// DeployRecipes copies .goose/recipes/ from the extracted template into the local
+// repo's .goose/recipes/ using merge semantics: template files overwrite existing
+// copies, project-owned files are preserved, no files are deleted.
+// Returns nil if the source directory does not exist (template has no recipes).
 func DeployRecipes(tmpDir, repoRoot string) error {
 	src := filepath.Join(tmpDir, ".goose", "recipes")
 	if _, err := os.Stat(src); os.IsNotExist(err) {
@@ -252,18 +253,33 @@ func DeployRecipes(tmpDir, repoRoot string) error {
 
 	dst := filepath.Join(repoRoot, ".goose", "recipes")
 
-	// Remove existing destination before copying, matching CopyAI pattern.
-	if err := os.RemoveAll(dst); err != nil {
-		return fmt.Errorf("removing existing .goose/recipes/: %w", err)
+	// Ensure destination directory exists.
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return fmt.Errorf("creating .goose/recipes/: %w", err)
 	}
 
-	// Ensure parent directory exists.
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return fmt.Errorf("creating .goose/: %w", err)
+	// Copy each template recipe individually, overwriting if it exists
+	// but preserving project-owned files that are not in the template.
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("reading template recipes: %w", err)
 	}
 
-	if err := fsutil.CopyDir(src, dst); err != nil {
-		return fmt.Errorf("copying .goose/recipes/: %w", err)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(src, entry.Name()))
+		if readErr != nil {
+			return fmt.Errorf("reading recipe %s: %w", entry.Name(), readErr)
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return fmt.Errorf("getting info for %s: %w", entry.Name(), infoErr)
+		}
+		if writeErr := os.WriteFile(filepath.Join(dst, entry.Name()), data, info.Mode()); writeErr != nil {
+			return fmt.Errorf("writing recipe %s: %w", entry.Name(), writeErr)
+		}
 	}
 
 	return nil

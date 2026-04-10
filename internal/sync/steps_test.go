@@ -704,25 +704,25 @@ func TestDeployRecipes(t *testing.T) {
 		}
 	})
 
-	t.Run("replaces existing recipes", func(t *testing.T) {
+	t.Run("merge semantics — template overwrites, project files preserved", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		repoRoot := t.TempDir()
 
-		// Create source recipes.
+		// Create source recipes (template).
 		srcRecipes := filepath.Join(tmpDir, ".goose", "recipes")
 		if err := os.MkdirAll(srcRecipes, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(srcRecipes, "new.yaml"), []byte("new-content"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(srcRecipes, "template.yaml"), []byte("new-content"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		// Create existing recipes in repo.
+		// Create existing project-owned recipe in repo.
 		dstRecipes := filepath.Join(repoRoot, ".goose", "recipes")
 		if err := os.MkdirAll(dstRecipes, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dstRecipes, "old.yaml"), []byte("old-content"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dstRecipes, "my-custom.yaml"), []byte("custom-content"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -731,14 +731,153 @@ func TestDeployRecipes(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// Verify new file exists.
-		if _, err := os.Stat(filepath.Join(dstRecipes, "new.yaml")); os.IsNotExist(err) {
-			t.Error("new.yaml should exist")
+		// Verify template file exists.
+		if _, err := os.Stat(filepath.Join(dstRecipes, "template.yaml")); os.IsNotExist(err) {
+			t.Error("template.yaml should exist")
 		}
 
-		// Verify old file was removed.
-		if _, err := os.Stat(filepath.Join(dstRecipes, "old.yaml")); !os.IsNotExist(err) {
-			t.Error("old.yaml should have been removed")
+		// Verify project-owned file is preserved (merge semantics).
+		if _, err := os.Stat(filepath.Join(dstRecipes, "my-custom.yaml")); os.IsNotExist(err) {
+			t.Error("my-custom.yaml should be preserved (merge semantics)")
+		}
+		data, _ := os.ReadFile(filepath.Join(dstRecipes, "my-custom.yaml"))
+		if string(data) != "custom-content" {
+			t.Errorf("my-custom.yaml content changed: %q", data)
+		}
+	})
+
+	t.Run("template recipe overwrites existing version", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Create source recipe (template) with updated content.
+		srcRecipes := filepath.Join(tmpDir, ".goose", "recipes")
+		if err := os.MkdirAll(srcRecipes, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcRecipes, "dev.yaml"), []byte("updated-dev"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create existing dev.yaml in repo with old content.
+		dstRecipes := filepath.Join(repoRoot, ".goose", "recipes")
+		if err := os.MkdirAll(dstRecipes, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dstRecipes, "dev.yaml"), []byte("old-dev"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployRecipes(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(dstRecipes, "dev.yaml"))
+		if string(data) != "updated-dev" {
+			t.Errorf("template recipe should overwrite existing: got %q", data)
+		}
+	})
+
+	t.Run("template removal does not delete repo copy", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Empty template recipes directory (template removed a recipe).
+		srcRecipes := filepath.Join(tmpDir, ".goose", "recipes")
+		if err := os.MkdirAll(srcRecipes, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Repo has a recipe that used to be in the template.
+		dstRecipes := filepath.Join(repoRoot, ".goose", "recipes")
+		if err := os.MkdirAll(dstRecipes, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dstRecipes, "removed.yaml"), []byte("still-here"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployRecipes(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify file still exists — merge does not delete.
+		if _, err := os.Stat(filepath.Join(dstRecipes, "removed.yaml")); os.IsNotExist(err) {
+			t.Error("removed.yaml should be preserved — merge does not delete")
+		}
+	})
+}
+
+func TestDeployWorkflows_MergeSemantics(t *testing.T) {
+	t.Run("project-owned workflow preserved", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Template provides one workflow.
+		srcWf := filepath.Join(tmpDir, ".ai", ".github", "workflows")
+		if err := os.MkdirAll(srcWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(srcWf, "agentic-pipeline.yml"), []byte("template"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Repo has a project-owned workflow.
+		dstWf := filepath.Join(repoRoot, ".github", "workflows")
+		if err := os.MkdirAll(dstWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dstWf, "publish-release.yml"), []byte("project-owned"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployWorkflows(tmpDir, repoRoot, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Template workflow deployed.
+		data, _ := os.ReadFile(filepath.Join(dstWf, "agentic-pipeline.yml"))
+		if string(data) != "template" {
+			t.Errorf("template workflow should be deployed: got %q", data)
+		}
+
+		// Project-owned workflow preserved.
+		data, _ = os.ReadFile(filepath.Join(dstWf, "publish-release.yml"))
+		if string(data) != "project-owned" {
+			t.Errorf("project-owned workflow should be preserved: got %q", data)
+		}
+	})
+
+	t.Run("template removal does not delete repo workflow", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Empty template workflows (template removed a workflow).
+		srcWf := filepath.Join(tmpDir, ".ai", ".github", "workflows")
+		if err := os.MkdirAll(srcWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Repo has a workflow that used to be in the template.
+		dstWf := filepath.Join(repoRoot, ".github", "workflows")
+		if err := os.MkdirAll(dstWf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dstWf, "old-template.yml"), []byte("still-here"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployWorkflows(tmpDir, repoRoot, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// File should still exist — merge does not delete.
+		if _, err := os.Stat(filepath.Join(dstWf, "old-template.yml")); os.IsNotExist(err) {
+			t.Error("old-template.yml should be preserved — merge does not delete")
 		}
 	})
 }
