@@ -13,8 +13,46 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
-// backupSuffix is the directory name suffix used for the base/ backup.
+// backupSuffix is the directory name suffix used for the .ai/ backup.
 const backupSuffix = ".agentic-sync-backup"
+
+// MigrateBaseToAI detects repos still using the old base/ layout and renames
+// base/ to .ai/ using git mv to preserve history. Returns (true, nil) when
+// migration occurred, (false, nil) when no migration was needed.
+//
+// Logic:
+//   - .ai/ exists → no migration needed
+//   - base/ exists and .ai/ does not → rename via git mv, return migrated=true
+//   - Both exist → use .ai/, ignore base/
+//   - Rename fails → return clear error
+func MigrateBaseToAI(repoRoot string, run bootstrap.RunCommandFunc) (bool, error) {
+	aiDir := filepath.Join(repoRoot, ".ai")
+	baseDir := filepath.Join(repoRoot, "base")
+
+	_, aiErr := os.Stat(aiDir)
+	aiExists := aiErr == nil
+
+	_, baseErr := os.Stat(baseDir)
+	baseExists := baseErr == nil
+
+	// .ai/ already exists — no migration needed regardless of base/.
+	if aiExists {
+		return false, nil
+	}
+
+	// Neither exists — nothing to migrate.
+	if !baseExists {
+		return false, nil
+	}
+
+	// base/ exists but .ai/ does not — rename via git mv.
+	out, err := runInDir(run, repoRoot, "git", "mv", "base", ".ai")
+	if err != nil {
+		return false, fmt.Errorf("migrating base/ to .ai/: %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	return true, nil
+}
 
 // fetchTarballFn is the tarball fetch function used by FetchAndExtractTemplate.
 // Tests override this to inject fakes without making real HTTP requests.

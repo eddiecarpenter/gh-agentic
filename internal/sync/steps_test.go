@@ -1393,6 +1393,95 @@ func TestCleanupTemp(t *testing.T) {
 	})
 }
 
+func TestMigrateBaseToAI(t *testing.T) {
+	t.Run("base only — migrates to .ai/", func(t *testing.T) {
+		root := t.TempDir()
+		// Create base/ directory.
+		if err := os.MkdirAll(filepath.Join(root, "base", "skills"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "RULEBOOK.md"), []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		run := fakeRun("", nil)
+		migrated, err := MigrateBaseToAI(root, run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !migrated {
+			t.Error("expected migration to occur")
+		}
+	})
+
+	t.Run(".ai/ exists — no migration", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		run := fakeRun("", nil)
+		migrated, err := MigrateBaseToAI(root, run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if migrated {
+			t.Error("expected no migration when .ai/ exists")
+		}
+	})
+
+	t.Run("both exist — no migration", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		run := fakeRun("", nil)
+		migrated, err := MigrateBaseToAI(root, run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if migrated {
+			t.Error("expected no migration when both exist")
+		}
+	})
+
+	t.Run("neither exists — no migration", func(t *testing.T) {
+		root := t.TempDir()
+
+		run := fakeRun("", nil)
+		migrated, err := MigrateBaseToAI(root, run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if migrated {
+			t.Error("expected no migration when neither exists")
+		}
+	})
+
+	t.Run("git mv failure — returns error", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		run := fakeRun("fatal: not a git repository", fmt.Errorf("exit 128"))
+		migrated, err := MigrateBaseToAI(root, run)
+		if err == nil {
+			t.Fatal("expected error when git mv fails")
+		}
+		if migrated {
+			t.Error("expected no migration on failure")
+		}
+		if !strings.Contains(err.Error(), "migrating base/ to .ai/") {
+			t.Errorf("error should mention migration: %v", err)
+		}
+	})
+}
+
 // createFakeTarballFetch returns a tarball.FetchFunc that produces a gzipped tar
 // archive containing the given files. The archive includes a top-level prefix
 // directory ("repo-v1.0.0/") to simulate GitHub's tarball format.

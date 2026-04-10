@@ -137,6 +137,15 @@ func RunSync(
 
 	fmt.Fprintln(w, "  "+ui.RenderOK("Template: "+cfg.TemplateRepo+" (current: "+cfg.CurrentVersion+")"))
 
+	// Step 1b: Migrate base/ → .ai/ if needed (old layout detection).
+	migrated, migrateErr := MigrateBaseToAI(repoRoot, run)
+	if migrateErr != nil {
+		return migrateErr
+	}
+	if migrated {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Migrated base/ → .ai/ (git history preserved)"))
+	}
+
 	// Step 2: Fetch all releases and filter to those newer than current version.
 	var available []Release
 	if err := spinner(w, "Checking for updates", func() error {
