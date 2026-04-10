@@ -668,24 +668,6 @@ func resolveProjectNodeIDViaRun(owner, repoName string, run bootstrap.RunCommand
 	return resp.Projects[0].ID
 }
 
-// resolveProjectURL resolves the URL of the GitHub Project matching repoName.
-// Falls back to the first project's URL. Returns "" if no projects exist.
-func resolveProjectURL(owner, repoName string, run bootstrap.RunCommandFunc) string {
-	out, err := run("gh", "project", "list", "--owner", owner, "--format", "json", "--limit", "100")
-	if err != nil {
-		return ""
-	}
-	var resp projectListResponse
-	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &resp); jsonErr != nil || len(resp.Projects) == 0 {
-		return ""
-	}
-	for _, p := range resp.Projects {
-		if p.Title == repoName {
-			return p.URL
-		}
-	}
-	return resp.Projects[0].URL
-}
 
 // checkProjectItemStatusesName is the check name used for project item status verification.
 const checkProjectItemStatusesName = "Project items have status assigned"
@@ -693,7 +675,7 @@ const checkProjectItemStatusesName = "Project items have status assigned"
 // CheckProjectItemStatuses verifies that all project items have a status
 // field value assigned. Returns Warning if any items have no status, Pass
 // otherwise. Uses the same project resolution pattern as CheckProjectStatus.
-func CheckProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
+func CheckProjectItemStatuses(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
 	// Resolve project node ID.
 	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
@@ -844,7 +826,7 @@ const checkAgenticProjectIDName = "AGENTIC_PROJECT_ID is configured"
 // (federated) repos the variable must exist at org level; if found only at
 // repo level it fails with a topology message. For User (single) repos it
 // may exist at either scope.
-func CheckAgenticProjectID(repoFullName, owner, repoName, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
+func CheckAgenticProjectID(repoFullName, owner, ownerType string, run bootstrap.RunCommandFunc) CheckResult {
 	if ownerType == bootstrap.OwnerTypeOrg {
 		// Federated: must be at org level.
 		orgArgs := []string{"variable", "get", "AGENTIC_PROJECT_ID", "--org", owner}

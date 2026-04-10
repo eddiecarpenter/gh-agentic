@@ -91,7 +91,7 @@ func RunSteps(
 		},
 		{
 			label: "Configuring project status columns",
-			fn:    func() error { return ConfigureProjectStatus(w, cfg, state, graphqlDo) },
+			fn:    func() error { return ConfigureProjectStatus(w, state, graphqlDo) },
 		},
 		{
 			label: "Deploying sync workflows",
@@ -108,7 +108,7 @@ func RunSteps(
 	// For existing repos: push branch and open PR as a final step.
 	if state.ExistingRepo {
 		if err := spinner(w, "Opening bootstrap pull request", func() error {
-			return OpenBootstrapPR(w, cfg, state, run)
+			return OpenBootstrapPR(cfg, state, run)
 		}); err != nil {
 			return err
 		}
@@ -116,12 +116,6 @@ func RunSteps(
 
 	// Step 9: print summary with next-step instructions.
 	return PrintSummary(w, cfg, state)
-}
-
-// DefaultWorkDir returns the directory in which repos will be cloned.
-// It uses the current working directory.
-func DefaultWorkDir() (string, error) {
-	return os.Getwd()
 }
 
 // DefaultWorkDirOrHome returns the working directory, falling back to the user's

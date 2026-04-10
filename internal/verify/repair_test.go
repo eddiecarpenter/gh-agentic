@@ -931,10 +931,6 @@ type testItem struct {
 }
 
 func TestResyncProjectItemStatuses_Success(t *testing.T) {
-	root := t.TempDir()
-	writeTestProjectTemplate(t, root)
-	tmpl, _ := loadTestTemplate(t, root)
-
 	items := []testItem{
 		{id: "ITEM_1", state: "OPEN", labels: []string{"in-development"}, currentStatus: "Backlog", fieldID: "FIELD_1"},
 		{id: "ITEM_2", state: "CLOSED", labels: []string{"done"}, currentStatus: "Done", fieldID: "FIELD_1"},
@@ -966,7 +962,7 @@ func TestResyncProjectItemStatuses_Success(t *testing.T) {
 		}
 	}
 
-	updated, correct, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	updated, correct, err := resyncProjectItemStatuses("PVT_123", "FIELD_1", fakeRun)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -983,10 +979,6 @@ func TestResyncProjectItemStatuses_Success(t *testing.T) {
 }
 
 func TestResyncProjectItemStatuses_Pagination(t *testing.T) {
-	root := t.TempDir()
-	writeTestProjectTemplate(t, root)
-	tmpl, _ := loadTestTemplate(t, root)
-
 	page1Items := []testItem{
 		{id: "ITEM_1", state: "OPEN", labels: []string{"backlog"}, currentStatus: "Backlog", fieldID: "FIELD_1"},
 	}
@@ -1012,7 +1004,7 @@ func TestResyncProjectItemStatuses_Pagination(t *testing.T) {
 		}
 	}
 
-	updated, correct, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	updated, correct, err := resyncProjectItemStatuses("PVT_123", "FIELD_1", fakeRun)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1030,10 +1022,6 @@ func TestResyncProjectItemStatuses_Pagination(t *testing.T) {
 }
 
 func TestResyncProjectItemStatuses_ClosedBeforeBacklog(t *testing.T) {
-	root := t.TempDir()
-	writeTestProjectTemplate(t, root)
-	tmpl, _ := loadTestTemplate(t, root)
-
 	// Critical edge case: item is CLOSED with backlog label but NO pipeline label.
 	// Rule 7 (CLOSED → Done) must take priority over rule 8 (backlog → Backlog).
 	items := []testItem{
@@ -1065,7 +1053,7 @@ func TestResyncProjectItemStatuses_ClosedBeforeBacklog(t *testing.T) {
 		}
 	}
 
-	updated, _, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	updated, _, err := resyncProjectItemStatuses("PVT_123", "FIELD_1", fakeRun)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1078,10 +1066,6 @@ func TestResyncProjectItemStatuses_ClosedBeforeBacklog(t *testing.T) {
 }
 
 func TestResyncProjectItemStatuses_AlreadyCorrect(t *testing.T) {
-	root := t.TempDir()
-	writeTestProjectTemplate(t, root)
-	tmpl, _ := loadTestTemplate(t, root)
-
 	items := []testItem{
 		{id: "ITEM_1", state: "OPEN", labels: []string{"in-development"}, currentStatus: "In Development", fieldID: "FIELD_1"},
 		{id: "ITEM_2", state: "OPEN", labels: []string{"backlog"}, currentStatus: "Backlog", fieldID: "FIELD_1"},
@@ -1102,7 +1086,7 @@ func TestResyncProjectItemStatuses_AlreadyCorrect(t *testing.T) {
 		}
 	}
 
-	updated, correct, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	updated, correct, err := resyncProjectItemStatuses("PVT_123", "FIELD_1", fakeRun)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1115,10 +1099,6 @@ func TestResyncProjectItemStatuses_AlreadyCorrect(t *testing.T) {
 }
 
 func TestResyncProjectItemStatuses_NoItems(t *testing.T) {
-	root := t.TempDir()
-	writeTestProjectTemplate(t, root)
-	tmpl, _ := loadTestTemplate(t, root)
-
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
@@ -1131,7 +1111,7 @@ func TestResyncProjectItemStatuses_NoItems(t *testing.T) {
 		return "", nil
 	}
 
-	updated, correct, err := resyncProjectItemStatuses("owner", "PVT_123", "FIELD_1", tmpl, fakeRun)
+	updated, correct, err := resyncProjectItemStatuses("PVT_123", "FIELD_1", fakeRun)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1141,12 +1121,6 @@ func TestResyncProjectItemStatuses_NoItems(t *testing.T) {
 	if correct != 0 {
 		t.Errorf("expected 0 correct, got %d", correct)
 	}
-}
-
-// loadTestTemplate is a test helper that loads the project template from root.
-func loadTestTemplate(t *testing.T, root string) (*bootstrap.ProjectTemplate, error) {
-	t.Helper()
-	return bootstrap.LoadProjectTemplate(root)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

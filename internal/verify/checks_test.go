@@ -924,8 +924,6 @@ func TestCheckProjectCollaborator_OrgEmptyAgentUser_ReturnsPass(t *testing.T) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 func TestCheckProjectItemStatuses_AllHaveStatus_ReturnsPass(t *testing.T) {
-	root := t.TempDir()
-	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
@@ -943,15 +941,13 @@ func TestCheckProjectItemStatuses_AllHaveStatus_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectItemStatuses("owner", "my-repo", root, fakeRun)
+	result := CheckProjectItemStatuses("owner", "my-repo", fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
 
 func TestCheckProjectItemStatuses_SomeMissing_ReturnsWarning(t *testing.T) {
-	root := t.TempDir()
-	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
@@ -967,7 +963,7 @@ func TestCheckProjectItemStatuses_SomeMissing_ReturnsWarning(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectItemStatuses("owner", "my-repo", root, fakeRun)
+	result := CheckProjectItemStatuses("owner", "my-repo", fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
@@ -977,8 +973,6 @@ func TestCheckProjectItemStatuses_SomeMissing_ReturnsWarning(t *testing.T) {
 }
 
 func TestCheckProjectItemStatuses_NoItems_ReturnsPass(t *testing.T) {
-	root := t.TempDir()
-	writeTestProjectTemplate(t, root)
 	callCount := 0
 	fakeRun := func(name string, args ...string) (string, error) {
 		callCount++
@@ -993,7 +987,7 @@ func TestCheckProjectItemStatuses_NoItems_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckProjectItemStatuses("owner", "my-repo", root, fakeRun)
+	result := CheckProjectItemStatuses("owner", "my-repo", fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass for empty project, got %v: %s", result.Status, result.Message)
 	}
@@ -1309,7 +1303,7 @@ func TestCheckAgenticProjectID(t *testing.T) {
 			fakeRun := func(name string, args ...string) (string, error) {
 				return tc.runOut, tc.runErr
 			}
-			result := CheckAgenticProjectID("owner/repo", "owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
+			result := CheckAgenticProjectID("owner/repo", "owner", bootstrap.OwnerTypeUser, fakeRun)
 			if result.Status != tc.wantStatus {
 				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
 			}
@@ -1326,7 +1320,7 @@ func TestCheckAgenticProjectID_OrgScope_UsesOrgFlag(t *testing.T) {
 		capturedArgs = append([]string{name}, args...)
 		return "PVT_kwDOBtest", nil
 	}
-	result := CheckAgenticProjectID("owner/repo", "owner", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+	result := CheckAgenticProjectID("owner/repo", "owner", bootstrap.OwnerTypeOrg, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1345,7 +1339,7 @@ func TestCheckAgenticProjectID_UserScope_UsesRepoFlag(t *testing.T) {
 		capturedArgs = append([]string{name}, args...)
 		return "PVT_kwDOBtest", nil
 	}
-	result := CheckAgenticProjectID("owner/repo", "owner", "repo", bootstrap.OwnerTypeUser, fakeRun)
+	result := CheckAgenticProjectID("owner/repo", "owner", bootstrap.OwnerTypeUser, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
@@ -1413,7 +1407,7 @@ func TestCheckAgenticProjectID_DualScope_OrgTopology(t *testing.T) {
 				return "", fmt.Errorf("unexpected")
 			}
 
-			result := CheckAgenticProjectID("acme-org/repo", "acme-org", "repo", bootstrap.OwnerTypeOrg, fakeRun)
+			result := CheckAgenticProjectID("acme-org/repo", "acme-org", bootstrap.OwnerTypeOrg, fakeRun)
 			if result.Status != tc.wantStatus {
 				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
 			}
@@ -1470,7 +1464,7 @@ func TestCheckAgenticProjectID_DualScope_UserTopology(t *testing.T) {
 				return "", fmt.Errorf("unexpected")
 			}
 
-			result := CheckAgenticProjectID("alice/repo", "alice", "repo", bootstrap.OwnerTypeUser, fakeRun)
+			result := CheckAgenticProjectID("alice/repo", "alice", bootstrap.OwnerTypeUser, fakeRun)
 			if result.Status != tc.wantStatus {
 				t.Errorf("expected %v, got %v: %s", tc.wantStatus, result.Status, result.Message)
 			}

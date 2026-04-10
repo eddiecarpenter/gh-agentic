@@ -411,7 +411,7 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 // state.ExistingRepo is true. The PR URL is stored in state.PRURL.
 //
 // run is injected so tests can substitute a fake implementation.
-func OpenBootstrapPR(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
+func OpenBootstrapPR(cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
 	if !state.ExistingRepo {
 		return nil
 	}
@@ -687,7 +687,7 @@ func fetchStatusFieldID(graphqlDo GraphQLDoFunc, projectNodeID string) (string, 
 // ConfigureProjectStatus customises the GitHub Project Status field options.
 // It reads canonical options from base/project-template.json in the cloned repo.
 // This is best-effort — failures are logged as warnings, not returned as errors.
-func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, graphqlDo GraphQLDoFunc) error {
+func ConfigureProjectStatus(w io.Writer, state *StepState, graphqlDo GraphQLDoFunc) error {
 	if state.ProjectNodeID == "" {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Skipping status column customisation (no project node ID)"))
 		return nil

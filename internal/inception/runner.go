@@ -54,7 +54,7 @@ func RunSteps(
 	}{
 		{
 			label: "Creating repository",
-			fn:    func() error { return CreateRepo(w, cfg, state, env, run) },
+			fn:    func() error { return CreateRepo(cfg, state, env, run) },
 		},
 		{
 			label: "Configuring labels",
@@ -66,11 +66,11 @@ func RunSteps(
 		},
 		{
 			label: "Populating repository",
-			fn:    func() error { return PopulateRepo(w, cfg, state, env, run) },
+			fn:    func() error { return PopulateRepo(cfg, state, env, run) },
 		},
 		{
 			label: "Registering in REPOS.md",
-			fn:    func() error { return RegisterInREPOS(w, cfg, state, env, run) },
+			fn:    func() error { return RegisterInREPOS(cfg, state, env, run) },
 		},
 	}
 

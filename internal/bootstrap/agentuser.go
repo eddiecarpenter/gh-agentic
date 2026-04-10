@@ -2,14 +2,13 @@ package bootstrap
 
 import (
 	"fmt"
-	"io"
 )
 
 // ResolveAgentUser validates the agent user configuration. Both AgentUser and
 // AgentUserScope must already be set (from the form or CLI flags). This function
 // only validates — it does not prompt interactively. All interactive input
 // collection is handled by the form (RunForm).
-func ResolveAgentUser(w io.Writer, cfg *BootstrapConfig, run RunCommandFunc) error {
+func ResolveAgentUser(cfg *BootstrapConfig) error {
 	// Validate that agent user is set.
 	if cfg.AgentUser == "" {
 		return fmt.Errorf("agent username is required")
