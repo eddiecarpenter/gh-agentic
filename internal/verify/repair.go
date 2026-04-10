@@ -20,15 +20,11 @@ type ConfirmFunc func(prompt string) (string, error)
 // standardCLAUDEMD is the standard content for CLAUDE.md.
 const standardCLAUDEMD = `# CLAUDE.md
 
-This project uses AGENTS.md as the single source of truth for agent instructions.
-All development rules, workflows, and session protocols are defined there.
-
-@.ai/RULEBOOK.md
-@AGENTS.local.md
+@AGENTS.md
 `
 
-// skeletonAGENTSLocalMD is the minimal skeleton for AGENTS.local.md.
-const skeletonAGENTSLocalMD = `# AGENTS.local.md — Local Overrides
+// skeletonLOCALRULESMD is the minimal skeleton for LOCALRULES.md.
+const skeletonLOCALRULESMD = `# LOCALRULES.md — Local Overrides
 
 This file contains project-specific rules and overrides that extend or
 supersede the global protocol defined in ` + "`.ai/RULEBOOK.md`" + `.
@@ -36,10 +32,6 @@ supersede the global protocol defined in ` + "`.ai/RULEBOOK.md`" + `.
 This file is never overwritten by a template sync.
 
 ---
-
-## Template Source
-
-<!-- TODO: Add template source -->
 
 ## Project
 
@@ -71,7 +63,7 @@ See ` + "`docs/PROJECT_BRIEF.md`" + ` for project context.
 ## Agent sessions
 
 This repo uses the [agentic development framework](https://github.com/eddiecarpenter/ai-native-delivery).
-See ` + "`.ai/RULEBOOK.md`" + ` and ` + "`AGENTS.local.md`" + ` for session protocols.
+See ` + "`.ai/RULEBOOK.md`" + ` and ` + "`LOCALRULES.md`" + ` for session protocols.
 `
 
 // RepairCLAUDEMD restores CLAUDE.md with standard content.
@@ -90,18 +82,18 @@ func RepairCLAUDEMD(root string) CheckResult {
 	}
 }
 
-// RepairAGENTSLocalMD restores AGENTS.local.md with a minimal skeleton.
-func RepairAGENTSLocalMD(root string) CheckResult {
-	path := filepath.Join(root, "AGENTS.local.md")
-	if err := os.WriteFile(path, []byte(skeletonAGENTSLocalMD), 0o644); err != nil {
+// RepairLOCALRULESMD restores LOCALRULES.md with a minimal skeleton.
+func RepairLOCALRULESMD(root string) CheckResult {
+	path := filepath.Join(root, "LOCALRULES.md")
+	if err := os.WriteFile(path, []byte(skeletonLOCALRULESMD), 0o644); err != nil {
 		return CheckResult{
-			Name:    "AGENTS.local.md exists",
+			Name:    "LOCALRULES.md exists",
 			Status:  Warning,
 			Message: fmt.Sprintf("repair failed: %v", err),
 		}
 	}
 	return CheckResult{
-		Name:   "AGENTS.local.md exists",
+		Name:   "LOCALRULES.md exists",
 		Status: Pass,
 	}
 }
@@ -143,77 +135,40 @@ func RepairSkillsDir(root string, run bootstrap.RunCommandFunc) CheckResult {
 	}
 }
 
-// RepairTEMPLATESOURCE prompts the user for the template source value and writes it.
-// confirmFn is injected so tests can substitute a fake implementation.
-func RepairTEMPLATESOURCE(root string, confirmFn ConfirmFunc) CheckResult {
-	if confirmFn == nil {
-		return CheckResult{
-			Name:    "TEMPLATE_SOURCE exists",
-			Status:  Warning,
-			Message: "cannot prompt for value — no confirm function provided",
-		}
-	}
-
-	value, err := confirmFn("Enter template source repo (e.g. eddiecarpenter/ai-native-delivery)")
-	if err != nil {
-		return CheckResult{
-			Name:    "TEMPLATE_SOURCE exists",
-			Status:  Warning,
-			Message: fmt.Sprintf("prompt failed: %v", err),
-		}
-	}
-
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return CheckResult{
-			Name:    "TEMPLATE_SOURCE exists",
-			Status:  Warning,
-			Message: "no value provided",
-		}
-	}
-
-	path := filepath.Join(root, "TEMPLATE_SOURCE")
-	if err := os.WriteFile(path, []byte(value+"\n"), 0o644); err != nil {
-		return CheckResult{
-			Name:    "TEMPLATE_SOURCE exists",
-			Status:  Warning,
-			Message: fmt.Sprintf("repair failed: %v", err),
-		}
-	}
-	return CheckResult{
-		Name:   "TEMPLATE_SOURCE exists",
-		Status: Pass,
-	}
-}
-
-// RepairTEMPLATEVERSION fetches the latest tag from the template repo and writes it.
+// RepairAIConfigYML fetches the latest tag from the template repo and writes .ai/config.yml.
 // run is injected so tests can substitute a fake implementation.
-func RepairTEMPLATEVERSION(root string, run bootstrap.RunCommandFunc) CheckResult {
-	// First check if TEMPLATE_SOURCE exists — we need it to fetch the version.
-	sourcePath := filepath.Join(root, "TEMPLATE_SOURCE")
-	data, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return CheckResult{
-			Name:    "TEMPLATE_VERSION exists",
-			Status:  Fail,
-			Message: "cannot determine version — TEMPLATE_SOURCE is missing",
+func RepairAIConfigYML(root string, run bootstrap.RunCommandFunc) CheckResult {
+	// Read existing config to get the template repo slug if available.
+	templateRepo := ""
+	if data, err := os.ReadFile(filepath.Join(root, ".ai", "config.yml")); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if after, ok := strings.CutPrefix(line, "template:"); ok {
+				templateRepo = strings.TrimSpace(after)
+			}
 		}
 	}
 
-	repo := strings.TrimSpace(string(data))
-	if repo == "" {
+	// Fallback: check TEMPLATE_SOURCE (deprecated).
+	// TODO(deprecated): remove in next major version.
+	if templateRepo == "" {
+		if data, err := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE")); err == nil {
+			templateRepo = strings.TrimSpace(string(data))
+		}
+	}
+
+	if templateRepo == "" {
 		return CheckResult{
-			Name:    "TEMPLATE_VERSION exists",
+			Name:    ".ai/config.yml exists",
 			Status:  Fail,
-			Message: "TEMPLATE_SOURCE is empty",
+			Message: "cannot determine template repo — repair manually by running 'gh agentic sync'",
 		}
 	}
 
 	// Fetch latest release tag.
-	out, err := run("gh", "release", "list", "--repo", repo, "--limit", "1", "--json", "tagName", "--jq", ".[0].tagName")
+	out, err := run("gh", "release", "list", "--repo", templateRepo, "--limit", "1", "--json", "tagName", "--jq", ".[0].tagName")
 	if err != nil {
 		return CheckResult{
-			Name:    "TEMPLATE_VERSION exists",
+			Name:    ".ai/config.yml exists",
 			Status:  Fail,
 			Message: fmt.Sprintf("failed to fetch latest tag: %v", err),
 		}
@@ -222,23 +177,24 @@ func RepairTEMPLATEVERSION(root string, run bootstrap.RunCommandFunc) CheckResul
 	tag := strings.TrimSpace(out)
 	if tag == "" {
 		return CheckResult{
-			Name:    "TEMPLATE_VERSION exists",
+			Name:    ".ai/config.yml exists",
 			Status:  Fail,
 			Message: "no releases found in template repo",
 		}
 	}
 
-	path := filepath.Join(root, "TEMPLATE_VERSION")
-	if err := os.WriteFile(path, []byte(tag+"\n"), 0o644); err != nil {
+	configPath := filepath.Join(root, ".ai", "config.yml")
+	content := fmt.Sprintf("template: %s\nversion: %s\n", templateRepo, tag)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return CheckResult{
-			Name:    "TEMPLATE_VERSION exists",
+			Name:    ".ai/config.yml exists",
 			Status:  Fail,
 			Message: fmt.Sprintf("repair failed: %v", err),
 		}
 	}
 
 	return CheckResult{
-		Name:   "TEMPLATE_VERSION exists",
+		Name:   ".ai/config.yml exists",
 		Status: Pass,
 	}
 }

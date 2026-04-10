@@ -83,10 +83,9 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 	// All checks in pipeline order.
 	checks := []verify.CheckFunc{
 		func() verify.CheckResult { return verify.CheckCLAUDEMD(cfg.root) },
-		func() verify.CheckResult { return verify.CheckAGENTSLocalMD(cfg.root) },
+		func() verify.CheckResult { return verify.CheckLOCALRULESMD(cfg.root) },
 		func() verify.CheckResult { return verify.CheckSkillsDir(cfg.root) },
-		func() verify.CheckResult { return verify.CheckTEMPLATESOURCE(cfg.root) },
-		func() verify.CheckResult { return verify.CheckTEMPLATEVERSION(cfg.root) },
+		func() verify.CheckResult { return verify.CheckAIConfigYML(cfg.root) },
 		func() verify.CheckResult { return verify.CheckREPOSMD(cfg.root) },
 		func() verify.CheckResult { return verify.CheckREADMEMD(cfg.root) },
 		func() verify.CheckResult { return verify.CheckOldLayout(cfg.root) },
@@ -125,14 +124,12 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			switch result.Name {
 			case "CLAUDE.md exists":
 				r = verify.RepairCLAUDEMD(cfg.root)
-			case "AGENTS.local.md exists":
-				r = verify.RepairAGENTSLocalMD(cfg.root)
+			case "LOCALRULES.md exists":
+				r = verify.RepairLOCALRULESMD(cfg.root)
 			case "skills/ directory exists":
 				r = verify.RepairSkillsDir(cfg.root, run)
-			case "TEMPLATE_SOURCE exists":
-				r = verify.RepairTEMPLATESOURCE(cfg.root, textConfirm)
-			case "TEMPLATE_VERSION exists":
-				r = verify.RepairTEMPLATEVERSION(cfg.root, run)
+			case ".ai/config.yml exists":
+				r = verify.RepairAIConfigYML(cfg.root, run)
 			case "REPOS.md exists":
 				r = verify.RepairREPOSMD(cfg.root)
 			case "README.md exists":
@@ -229,16 +226,16 @@ func newDoctorCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
-			// Resolve repo root. If TEMPLATE_SOURCE is not found (repo predates
-			// the extension), fall back to cwd — TEMPLATE_SOURCE missing will
-			// surface as a failed check that --repair can fix.
+			// Resolve repo root. If .ai/config.yml is not found (repo predates
+			// the extension or has not been synced), fall back to cwd — the
+			// missing config will surface as a failed check that --repair can fix.
 			root, err := findRepoRoot()
 			if err != nil {
 				root, err = os.Getwd()
 				if err != nil {
 					return fmt.Errorf("resolving working directory: %w", err)
 				}
-				fmt.Fprintln(w, "  "+ui.RenderWarning("TEMPLATE_SOURCE not found — using current directory as root"))
+				fmt.Fprintln(w, "  "+ui.RenderWarning(".ai/config.yml not found — using current directory as root"))
 				fmt.Fprintln(w)
 			}
 

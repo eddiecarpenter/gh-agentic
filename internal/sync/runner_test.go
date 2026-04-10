@@ -101,20 +101,32 @@ func tarballRunner(mock *testutil.MockRunner) func(string, ...string) (string, e
 }
 
 // defaultTarballSetup sets up fetchTarballFn with a tarball containing
-// .ai/RULEBOOK.md with the given content. Returns a cleanup function.
+// .ai/RULEBOOK.md and .ai/config.yml with the given content. Returns a cleanup function.
 func defaultTarballSetup(t *testing.T, baseContent string) func() {
 	t.Helper()
 	return tarballFetchSetup(t, map[string]string{
 		".ai/RULEBOOK.md": baseContent,
+		".ai/config.yml":  "template: eddiecarpenter/ai-native-delivery\nversion: v0.0.0\n",
 	})
 }
 
+// readConfigVersion reads the version field from .ai/config.yml in the given root.
+func readConfigVersion(t *testing.T, root string) string {
+	t.Helper()
+	cfg, err := ReadAIConfig(root)
+	if err != nil {
+		t.Fatalf("reading .ai/config.yml: %v", err)
+	}
+	return strings.TrimSpace(cfg.Version)
+}
+
 // workflowTarballSetup sets up fetchTarballFn with a tarball containing
-// .ai/RULEBOOK.md and workflow files under .ai/.github/workflows/.
+// .ai/RULEBOOK.md, .ai/config.yml, and workflow files under .ai/.github/workflows/.
 func workflowTarballSetup(t *testing.T, baseContent string, workflows []string) func() {
 	t.Helper()
 	files := map[string]string{
 		".ai/RULEBOOK.md": baseContent,
+		".ai/config.yml":  "template: eddiecarpenter/ai-native-delivery\nversion: v0.0.0\n",
 	}
 	for _, wf := range workflows {
 		files[".ai/.github/workflows/"+wf] = "workflow: " + wf
@@ -123,11 +135,12 @@ func workflowTarballSetup(t *testing.T, baseContent string, workflows []string) 
 }
 
 // recipeTarballSetup sets up fetchTarballFn with a tarball containing
-// .ai/RULEBOOK.md, optional workflows, and recipe files under .goose/recipes/.
+// .ai/RULEBOOK.md, .ai/config.yml, optional workflows, and recipe files under .goose/recipes/.
 func recipeTarballSetup(t *testing.T, baseContent string, workflows []string, recipes []string) func() {
 	t.Helper()
 	files := map[string]string{
 		".ai/RULEBOOK.md": baseContent,
+		".ai/config.yml":  "template: eddiecarpenter/ai-native-delivery\nversion: v0.0.0\n",
 	}
 	for _, wf := range workflows {
 		files[".ai/.github/workflows/"+wf] = "workflow: " + wf
@@ -213,20 +226,17 @@ func TestRunSync_ConfirmAndStageOnly(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v2.0.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
+	got := readConfigVersion(t, repo.Root)
+	if got != "v2.0.0" {
+		t.Errorf(".ai/config.yml version = %q, want v2.0.0", got)
 	}
 
-	data, err = os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
+	rulebook, err := os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "updated content" {
-		t.Errorf(".ai/RULEBOOK.md = %q, want 'updated content'", data)
+	if string(rulebook) != "updated content" {
+		t.Errorf(".ai/RULEBOOK.md = %q, want 'updated content'", rulebook)
 	}
 
 	output := buf.String()
@@ -267,20 +277,17 @@ func TestRunSync_ConfirmAndCommit(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v2.0.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
+	got := readConfigVersion(t, repo.Root)
+	if got != "v2.0.0" {
+		t.Errorf(".ai/config.yml version = %q, want v2.0.0", got)
 	}
 
-	data, err = os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
+	rulebook, err := os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "updated content" {
-		t.Errorf(".ai/RULEBOOK.md = %q, want 'updated content'", data)
+	if string(rulebook) != "updated content" {
+		t.Errorf(".ai/RULEBOOK.md = %q, want 'updated content'", rulebook)
 	}
 
 	output := buf.String()
@@ -348,13 +355,10 @@ func TestRunSync_DeclineThenAccept(t *testing.T) {
 		t.Errorf("expected clearScreen called 4 times (notes+decline+notes+results), got %d", clearCalls)
 	}
 
-	// Install still completed — TEMPLATE_VERSION updated.
-	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v2.0.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
+	// Install still completed — .ai/config.yml updated.
+	got := readConfigVersion(t, repo.Root)
+	if got != "v2.0.0" {
+		t.Errorf(".ai/config.yml version = %q, want v2.0.0", got)
 	}
 
 	mock.AssertExpectations(t)
@@ -525,12 +529,9 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 		t.Errorf(".ai/RULEBOOK.md = %q, want 're-synced content'", data)
 	}
 
-	data, err = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v1.0.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v1.0.0", string(data))
+	got := readConfigVersion(t, repo.Root)
+	if got != "v1.0.0" {
+		t.Errorf(".ai/config.yml version = %q, want v1.0.0", got)
 	}
 
 	mock.AssertExpectations(t)
@@ -539,6 +540,19 @@ func TestRunSync_ForceResyncsWhenUpToDate(t *testing.T) {
 func TestRunSync_BaseMissing_RestoresOnConfirm(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 	defer defaultTarballSetup(t, "restored content")()
+
+	// Write legacy TEMPLATE_SOURCE and TEMPLATE_VERSION at root before removing .ai/ —
+	// simulates a pre-v1.5.0 repo where metadata was stored in root-level files rather
+	// than .ai/config.yml. After removing .ai/, ReadTemplateSource/ReadTemplateVersion
+	// fall back to these files via the deprecated path.
+	if err := os.WriteFile(filepath.Join(repo.Root, "TEMPLATE_SOURCE"),
+		[]byte("eddiecarpenter/ai-native-delivery\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"),
+		[]byte("v1.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := os.RemoveAll(filepath.Join(repo.Root, ".ai")); err != nil {
 		t.Fatal(err)
@@ -627,12 +641,9 @@ func TestRunSync_YesAutoConfirms(t *testing.T) {
 		t.Errorf("expected confirm prompt %q, got %q", "Install v2.0.0?", confirmPrompt)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v2.0.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v2.0.0", string(data))
+	got := readConfigVersion(t, repo.Root)
+	if got != "v2.0.0" {
+		t.Errorf(".ai/config.yml version = %q, want v2.0.0", got)
 	}
 
 	output := buf.String()
@@ -878,12 +889,9 @@ func TestRunSync_MultipleReleases_CallsSelectFunc(t *testing.T) {
 	}
 
 	// Verify the selected version (v1.5.0) was used.
-	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v1.5.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v1.5.0", string(data))
+	got := readConfigVersion(t, repo.Root)
+	if got != "v1.5.0" {
+		t.Errorf(".ai/config.yml version = %q, want v1.5.0", got)
 	}
 
 	output := buf.String()
@@ -981,13 +989,10 @@ func TestRunSync_ListMode_DisplaysReleases(t *testing.T) {
 		t.Errorf("expected release notes in output, got: %s", output)
 	}
 
-	// Verify no sync was performed — TEMPLATE_VERSION unchanged.
-	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v1.0.0" {
-		t.Errorf("TEMPLATE_VERSION changed during --list: %q", string(data))
+	// Verify no sync was performed — .ai/config.yml version unchanged.
+	got := readConfigVersion(t, repo.Root)
+	if got != "v1.0.0" {
+		t.Errorf(".ai/config.yml changed during --list: %q", got)
 	}
 
 	mock.AssertExpectations(t)
@@ -1061,12 +1066,9 @@ func TestRunSync_ReleaseTag_SyncsToSpecificVersion(t *testing.T) {
 	}
 
 	// Verify the specified version was used.
-	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v1.5.0" {
-		t.Errorf("TEMPLATE_VERSION = %q, want v1.5.0", string(data))
+	got := readConfigVersion(t, repo.Root)
+	if got != "v1.5.0" {
+		t.Errorf(".ai/config.yml version = %q, want v1.5.0", got)
 	}
 
 	output := buf.String()
@@ -1114,12 +1116,9 @@ func TestRunSync_ReleaseTag_NotFound(t *testing.T) {
 	}
 
 	// Verify no sync was performed.
-	data, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "v1.0.0" {
-		t.Errorf("TEMPLATE_VERSION should be unchanged: %q", string(data))
+	got := readConfigVersion(t, repo.Root)
+	if got != "v1.0.0" {
+		t.Errorf(".ai/config.yml version should be unchanged: %q", got)
 	}
 
 	mock.AssertExpectations(t)
@@ -1383,22 +1382,19 @@ func TestRunSync_EmptyTarballURL_FailsBeforeModification(t *testing.T) {
 		t.Errorf("error should mention missing tarball URL: %v", err)
 	}
 
-	// Verify no files were modified — TEMPLATE_VERSION should still be v1.0.0.
-	data, readErr := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	if strings.TrimSpace(string(data)) != "v1.0.0" {
-		t.Errorf("TEMPLATE_VERSION should be unchanged: %q", string(data))
+	// Verify no files were modified — .ai/config.yml version should still be v1.0.0.
+	got := readConfigVersion(t, repo.Root)
+	if got != "v1.0.0" {
+		t.Errorf(".ai/config.yml version should be unchanged: %q", got)
 	}
 
 	// Verify .ai/RULEBOOK.md is unchanged.
-	data, readErr = os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
+	rulebook, readErr := os.ReadFile(filepath.Join(repo.Root, ".ai", "RULEBOOK.md"))
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	if string(data) != "# RULEBOOK.md\n" {
-		t.Errorf(".ai/RULEBOOK.md should be unchanged: %q", string(data))
+	if string(rulebook) != "# RULEBOOK.md\n" {
+		t.Errorf(".ai/RULEBOOK.md should be unchanged: %q", string(rulebook))
 	}
 
 	mock.AssertExpectations(t)
@@ -1449,13 +1445,10 @@ func TestRunSync_TarballFetchFailure_RestoresBackup(t *testing.T) {
 		t.Errorf(".ai/RULEBOOK.md should be restored to original: %q", string(data))
 	}
 
-	// Verify TEMPLATE_VERSION is unchanged.
-	data, readErr = os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_VERSION"))
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	if strings.TrimSpace(string(data)) != "v1.0.0" {
-		t.Errorf("TEMPLATE_VERSION should be unchanged: %q", string(data))
+	// Verify .ai/config.yml version is unchanged.
+	got := readConfigVersion(t, repo.Root)
+	if got != "v1.0.0" {
+		t.Errorf(".ai/config.yml version should be unchanged: %q", got)
 	}
 
 	mock.AssertExpectations(t)

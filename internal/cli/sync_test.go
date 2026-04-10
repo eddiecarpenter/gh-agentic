@@ -23,6 +23,7 @@ func setupFakeTarball(t *testing.T, baseContent string) func() {
 	t.Helper()
 	files := map[string]string{
 		".ai/RULEBOOK.md": baseContent,
+		".ai/config.yml":  "template: eddiecarpenter/ai-native-delivery\nversion: v0.0.0\n",
 	}
 
 	prev := sync.SetFetchTarballFn(func(repo, version string) (io.ReadCloser, error) {
@@ -104,8 +105,8 @@ func TestSyncCmd_HelpText(t *testing.T) {
 		t.Errorf("help should mention '.ai/', got: %s", output)
 	}
 
-	if !strings.Contains(output, "TEMPLATE_SOURCE") {
-		t.Errorf("help should mention 'TEMPLATE_SOURCE', got: %s", output)
+	if !strings.Contains(output, "config.yml") {
+		t.Errorf("help should mention 'config.yml', got: %s", output)
 	}
 }
 
@@ -249,7 +250,7 @@ func TestSyncCmd_CommitFlagRegistration(t *testing.T) {
 func TestSyncCmd_ForceFlagResyncs(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 	defer setupFakeTarball(t, "force-synced content")()
-	// FakeRepo has TEMPLATE_VERSION=v1.0.0, FakeRelease also returns v1.0.0.
+	// FakeRepo has .ai/config.yml version=v1.0.0, FakeRelease also returns v1.0.0.
 
 	origDir, err := os.Getwd()
 	if err != nil {

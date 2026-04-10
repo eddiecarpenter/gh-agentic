@@ -1269,19 +1269,65 @@ func TestShowDiff(t *testing.T) {
 }
 
 func TestUpdateVersion(t *testing.T) {
-	t.Run("writes version", func(t *testing.T) {
+	t.Run("writes version to config.yml", func(t *testing.T) {
 		root := t.TempDir()
+		// Pre-create .ai/config.yml so UpdateVersion can read the template field.
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".ai", "config.yml"),
+			[]byte("template: owner/template\nversion: v0.1.0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
 		err := UpdateVersion(root, "v0.2.0")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		data, err := os.ReadFile(filepath.Join(root, "TEMPLATE_VERSION"))
+		// Verify .ai/config.yml was updated.
+		data, err := os.ReadFile(filepath.Join(root, ".ai", "config.yml"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.TrimSpace(string(data)) != "v0.2.0" {
-			t.Errorf("got %q, want %q", string(data), "v0.2.0\n")
+		cfg, parseErr := ReadAIConfig(root)
+		if parseErr != nil {
+			t.Fatalf("re-reading config.yml: %v (raw: %s)", parseErr, data)
+		}
+		if cfg.Version != "v0.2.0" {
+			t.Errorf("version = %q, want %q", cfg.Version, "v0.2.0")
+		}
+		if cfg.Template != "owner/template" {
+			t.Errorf("template = %q, want %q", cfg.Template, "owner/template")
+		}
+	})
+
+	t.Run("falls back to TEMPLATE_SOURCE when config.yml absent", func(t *testing.T) {
+		root := t.TempDir()
+		// Only TEMPLATE_SOURCE exists — no .ai/config.yml yet.
+		if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"),
+			[]byte("owner/fallback\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// .ai/ dir must exist for WriteFile to succeed.
+		if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		err := UpdateVersion(root, "v0.3.0")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		cfg, parseErr := ReadAIConfig(root)
+		if parseErr != nil {
+			t.Fatalf("reading config.yml after update: %v", parseErr)
+		}
+		if cfg.Version != "v0.3.0" {
+			t.Errorf("version = %q, want %q", cfg.Version, "v0.3.0")
+		}
+		if cfg.Template != "owner/fallback" {
+			t.Errorf("template = %q, want %q", cfg.Template, "owner/fallback")
 		}
 	})
 }
@@ -1355,39 +1401,66 @@ func TestStageSync(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(calls) != 1 {
-			t.Fatalf("expected 1 call, got %d: %v", len(calls), calls)
+		// Expect 2 calls: git rm (legacy files) + git add.
+		if len(calls) != 2 {
+			t.Fatalf("expected 2 calls, got %d: %v", len(calls), calls)
+		}
+
+		// Verify git rm was called to remove legacy files.
+		if !strings.Contains(calls[0], "git") || !strings.Contains(calls[0], "rm") {
+			t.Errorf("expected git rm call: %s", calls[0])
+		}
+		if !strings.Contains(calls[0], "TEMPLATE_SOURCE") {
+			t.Errorf("expected TEMPLATE_SOURCE in git rm: %s", calls[0])
+		}
+		if !strings.Contains(calls[0], "TEMPLATE_VERSION") {
+			t.Errorf("expected TEMPLATE_VERSION in git rm: %s", calls[0])
 		}
 
 		// Verify git add was called with the right paths.
-		if !strings.Contains(calls[0], "git") || !strings.Contains(calls[0], "add") {
-			t.Errorf("expected git add call: %s", calls[0])
+		if !strings.Contains(calls[1], "git") || !strings.Contains(calls[1], "add") {
+			t.Errorf("expected git add call: %s", calls[1])
 		}
-		if !strings.Contains(calls[0], ".ai/") {
-			t.Errorf("expected .ai/ in git add: %s", calls[0])
+		if !strings.Contains(calls[1], ".ai/") {
+			t.Errorf("expected .ai/ in git add: %s", calls[1])
 		}
-		if !strings.Contains(calls[0], "CLAUDE.md") {
-			t.Errorf("expected CLAUDE.md in git add: %s", calls[0])
+		if !strings.Contains(calls[1], "CLAUDE.md") {
+			t.Errorf("expected CLAUDE.md in git add: %s", calls[1])
 		}
-		if !strings.Contains(calls[0], "AGENTS.md") {
-			t.Errorf("expected AGENTS.md in git add: %s", calls[0])
+		if !strings.Contains(calls[1], "AGENTS.md") {
+			t.Errorf("expected AGENTS.md in git add: %s", calls[1])
 		}
-		if !strings.Contains(calls[0], "TEMPLATE_VERSION") {
-			t.Errorf("expected TEMPLATE_VERSION in git add: %s", calls[0])
+		if !strings.Contains(calls[1], ".github/workflows/") {
+			t.Errorf("expected .github/workflows/ in git add: %s", calls[1])
 		}
-		if !strings.Contains(calls[0], ".github/workflows/") {
-			t.Errorf("expected .github/workflows/ in git add: %s", calls[0])
+		if !strings.Contains(calls[1], ".goose/recipes/") {
+			t.Errorf("expected .goose/recipes/ in git add: %s", calls[1])
 		}
-		if !strings.Contains(calls[0], ".goose/recipes/") {
-			t.Errorf("expected .goose/recipes/ in git add: %s", calls[0])
-		}
-		if !strings.Contains(calls[0], "POST_SYNC.md") {
-			t.Errorf("expected POST_SYNC.md in git add: %s", calls[0])
+		if !strings.Contains(calls[1], "POST_SYNC.md") {
+			t.Errorf("expected POST_SYNC.md in git add: %s", calls[1])
 		}
 	})
 
-	t.Run("add error", func(t *testing.T) {
+	t.Run("git rm error", func(t *testing.T) {
 		run := fakeRun("error", fmt.Errorf("exit 1"))
+		err := StageSync("/repo", run)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "git rm") {
+			t.Errorf("error should mention git rm: %v", err)
+		}
+	})
+
+	t.Run("git add error", func(t *testing.T) {
+		callCount := 0
+		run := func(name string, args ...string) (string, error) {
+			callCount++
+			if callCount == 1 {
+				return "", nil // git rm succeeds
+			}
+			return "error", fmt.Errorf("exit 1") // git add fails
+		}
 		err := StageSync("/repo", run)
 		if err == nil {
 			t.Fatal("expected error")
@@ -1416,23 +1489,28 @@ func TestCommitSync(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(calls) != 3 {
-			t.Fatalf("expected 3 calls, got %d: %v", len(calls), calls)
+		if len(calls) != 4 {
+			t.Fatalf("expected 4 calls, got %d: %v", len(calls), calls)
+		}
+
+		// Verify git rm was called to remove legacy files.
+		if !strings.Contains(calls[0], "git") || !strings.Contains(calls[0], "rm") {
+			t.Errorf("first call should be git rm: %s", calls[0])
 		}
 
 		// Verify git add was called.
-		if !strings.Contains(calls[0], "git") || !strings.Contains(calls[0], "add") {
-			t.Errorf("first call should be git add: %s", calls[0])
+		if !strings.Contains(calls[1], "git") || !strings.Contains(calls[1], "add") {
+			t.Errorf("second call should be git add: %s", calls[1])
 		}
 
 		// Verify git diff --cached --quiet was called.
-		if !strings.Contains(calls[1], "diff") || !strings.Contains(calls[1], "--cached") {
-			t.Errorf("second call should be git diff --cached: %s", calls[1])
+		if !strings.Contains(calls[2], "diff") || !strings.Contains(calls[2], "--cached") {
+			t.Errorf("third call should be git diff --cached: %s", calls[2])
 		}
 
 		// Verify git commit was called with correct message.
-		if !strings.Contains(calls[2], "commit") || !strings.Contains(calls[2], "sync .ai/, workflows, and recipes") {
-			t.Errorf("third call should be git commit with updated message: %s", calls[2])
+		if !strings.Contains(calls[3], "commit") || !strings.Contains(calls[3], "sync .ai/, workflows, and recipes") {
+			t.Errorf("fourth call should be git commit with updated message: %s", calls[3])
 		}
 	})
 
@@ -1450,8 +1528,8 @@ func TestCommitSync(t *testing.T) {
 			t.Fatalf("expected nil when nothing to commit, got: %v", err)
 		}
 
-		if len(calls) != 2 {
-			t.Fatalf("expected 2 calls (add + diff check), got %d: %v", len(calls), calls)
+		if len(calls) != 3 {
+			t.Fatalf("expected 3 calls (git rm + add + diff check), got %d: %v", len(calls), calls)
 		}
 	})
 

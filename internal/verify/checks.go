@@ -28,19 +28,19 @@ func CheckCLAUDEMD(root string) CheckResult {
 	}
 }
 
-// CheckAGENTSLocalMD verifies that AGENTS.local.md exists in the repo root.
+// CheckLOCALRULESMD verifies that LOCALRULES.md exists in the repo root.
 // Returns Warning if the file is missing (it can be restored as a skeleton).
-func CheckAGENTSLocalMD(root string) CheckResult {
-	path := filepath.Join(root, "AGENTS.local.md")
+func CheckLOCALRULESMD(root string) CheckResult {
+	path := filepath.Join(root, "LOCALRULES.md")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return CheckResult{
-			Name:    "AGENTS.local.md exists",
+			Name:    "LOCALRULES.md exists",
 			Status:  Warning,
 			Message: "file not found — will restore minimal skeleton",
 		}
 	}
 	return CheckResult{
-		Name:   "AGENTS.local.md exists",
+		Name:   "LOCALRULES.md exists",
 		Status: Pass,
 	}
 }
@@ -64,42 +64,35 @@ func CheckSkillsDir(root string) CheckResult {
 	}
 }
 
-// CheckTEMPLATESOURCE verifies that TEMPLATE_SOURCE exists in the repo root.
-// Returns Warning if the file is missing (requires user input to repair).
-//
-// Deprecated: TEMPLATE_SOURCE is replaced by .ai/config.yml.
-// TODO(deprecated): remove in next major version
-func CheckTEMPLATESOURCE(root string) CheckResult {
-	path := filepath.Join(root, "TEMPLATE_SOURCE")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+// CheckAIConfigYML verifies that .ai/config.yml exists and contains a non-empty
+// template and version field. Returns Fail if the file is missing or malformed.
+func CheckAIConfigYML(root string) CheckResult {
+	path := filepath.Join(root, ".ai", "config.yml")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
 		return CheckResult{
-			Name:    "TEMPLATE_SOURCE exists",
-			Status:  Warning,
-			Message: "file not found — value must be provided",
-		}
-	}
-	return CheckResult{
-		Name:   "TEMPLATE_SOURCE exists",
-		Status: Pass,
-	}
-}
-
-// CheckTEMPLATEVERSION verifies that TEMPLATE_VERSION exists in the repo root.
-// Returns Fail if the file is missing.
-//
-// Deprecated: TEMPLATE_VERSION is replaced by .ai/config.yml.
-// TODO(deprecated): remove in next major version
-func CheckTEMPLATEVERSION(root string) CheckResult {
-	path := filepath.Join(root, "TEMPLATE_VERSION")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return CheckResult{
-			Name:    "TEMPLATE_VERSION exists",
+			Name:    ".ai/config.yml exists",
 			Status:  Fail,
-			Message: "file not found",
+			Message: "file not found — run 'gh agentic sync' to restore",
+		}
+	}
+	if err != nil {
+		return CheckResult{
+			Name:    ".ai/config.yml exists",
+			Status:  Fail,
+			Message: "could not read file: " + err.Error(),
+		}
+	}
+	content := string(data)
+	if !strings.Contains(content, "template:") || !strings.Contains(content, "version:") {
+		return CheckResult{
+			Name:    ".ai/config.yml exists",
+			Status:  Fail,
+			Message: "missing template or version field",
 		}
 	}
 	return CheckResult{
-		Name:   "TEMPLATE_VERSION exists",
+		Name:   ".ai/config.yml exists",
 		Status: Pass,
 	}
 }

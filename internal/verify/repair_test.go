@@ -70,105 +70,60 @@ func TestRepairCLAUDEMD_CreatesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "@.ai/RULEBOOK.md") {
-		t.Error("CLAUDE.md should reference @.ai/RULEBOOK.md")
-	}
-	if !strings.Contains(content, "@AGENTS.local.md") {
-		t.Error("CLAUDE.md should reference @AGENTS.local.md")
+	// In v1.5.0+, CLAUDE.md references AGENTS.md which in turn references .ai/RULEBOOK.md.
+	// CLAUDE.md itself only needs the top-level @AGENTS.md reference.
+	if !strings.Contains(content, "@AGENTS.md") {
+		t.Error("CLAUDE.md should reference @AGENTS.md")
 	}
 }
 
-func TestRepairAGENTSLocalMD_CreatesFile(t *testing.T) {
+func TestRepairLOCALRULESMD_CreatesFile(t *testing.T) {
 	root := t.TempDir()
-	result := RepairAGENTSLocalMD(root)
+	result := RepairLOCALRULESMD(root)
 	if result.Status != Pass {
 		t.Fatalf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	data, err := os.ReadFile(filepath.Join(root, "AGENTS.local.md"))
+	data, err := os.ReadFile(filepath.Join(root, "LOCALRULES.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "Local Overrides") {
-		t.Error("AGENTS.local.md should contain 'Local Overrides'")
-	}
-	if !strings.Contains(content, "TODO") {
-		t.Error("AGENTS.local.md should contain TODO markers")
+		t.Error("LOCALRULES.md should contain 'Local Overrides'")
 	}
 }
 
-func TestRepairTEMPLATESOURCE_WithConfirm_CreatesFile(t *testing.T) {
+func TestRepairAIConfigYML_Success(t *testing.T) {
 	root := t.TempDir()
-	confirmFn := func(prompt string) (string, error) {
-		return "eddiecarpenter/ai-native-delivery", nil
-	}
-	result := RepairTEMPLATESOURCE(root, confirmFn)
-	if result.Status != Pass {
-		t.Fatalf("expected Pass, got %v: %s", result.Status, result.Message)
-	}
-
-	data, err := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "eddiecarpenter/ai-native-delivery" {
-		t.Errorf("unexpected content: %s", string(data))
-	}
-}
-
-func TestRepairTEMPLATESOURCE_NilConfirm_ReturnsWarning(t *testing.T) {
-	root := t.TempDir()
-	result := RepairTEMPLATESOURCE(root, nil)
-	if result.Status != Warning {
-		t.Errorf("expected Warning with nil confirm, got %v", result.Status)
-	}
-}
-
-func TestRepairTEMPLATESOURCE_EmptyInput_ReturnsWarning(t *testing.T) {
-	root := t.TempDir()
-	confirmFn := func(prompt string) (string, error) {
-		return "", nil
-	}
-	result := RepairTEMPLATESOURCE(root, confirmFn)
-	if result.Status != Warning {
-		t.Errorf("expected Warning for empty input, got %v", result.Status)
-	}
-}
-
-func TestRepairTEMPLATEVERSION_Success(t *testing.T) {
-	root := t.TempDir()
-	// Write TEMPLATE_SOURCE first — required by the repair.
-	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("owner/repo\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeTemplateConfig(t, root, "owner/repo", "v0.0.0")
 
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "v1.2.3\n", nil
 	}
 
-	result := RepairTEMPLATEVERSION(root, fakeRun)
+	result := RepairAIConfigYML(root, fakeRun)
 	if result.Status != Pass {
 		t.Fatalf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 
-	data, err := os.ReadFile(filepath.Join(root, "TEMPLATE_VERSION"))
+	data, err := os.ReadFile(filepath.Join(root, ".ai", "config.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(data)) != "v1.2.3" {
-		t.Errorf("unexpected version: %s", string(data))
+	if !strings.Contains(string(data), "v1.2.3") {
+		t.Errorf("config.yml should contain new version, got: %s", string(data))
 	}
 }
 
-func TestRepairTEMPLATEVERSION_MissingSource_ReturnsFail(t *testing.T) {
+func TestRepairAIConfigYML_MissingConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
-	result := RepairTEMPLATEVERSION(root, fakeRun)
+	result := RepairAIConfigYML(root, fakeRun)
 	if result.Status != Fail {
-		t.Errorf("expected Fail without TEMPLATE_SOURCE, got %v", result.Status)
+		t.Errorf("expected Fail without config, got %v", result.Status)
 	}
 }
 
@@ -291,7 +246,7 @@ func TestRepairAISkills_UserDeclines_ReturnsWarning(t *testing.T) {
 
 func TestRepairAISkills_MissingTemplateConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	// No TEMPLATE_SOURCE or TEMPLATE_VERSION — should fail.
+	// No .ai/config.yml — should fail.
 	confirmFn := func(prompt string) (bool, error) {
 		return true, nil
 	}
@@ -299,9 +254,6 @@ func TestRepairAISkills_MissingTemplateConfig_ReturnsFail(t *testing.T) {
 	result := RepairAISkills(root, confirmFn, nil)
 	if result.Status != Fail {
 		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
-	}
-	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
-		t.Errorf("message should mention TEMPLATE_SOURCE, got: %s", result.Message)
 	}
 }
 
@@ -336,13 +288,10 @@ func TestRepairGooseRecipes_ExtractsFromTarball(t *testing.T) {
 
 func TestRepairGooseRecipes_MissingConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	// No TEMPLATE_SOURCE — repair should fail with a clear message.
+	// No .ai/config.yml — repair should fail with a clear message.
 	result := RepairGooseRecipes(root, nil)
 	if result.Status != Fail {
 		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
-	}
-	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
-		t.Error("message should mention TEMPLATE_SOURCE")
 	}
 }
 
@@ -444,16 +393,13 @@ func TestRepairWorkflows_Fallback_ExtractsFromTarball(t *testing.T) {
 
 func TestRepairWorkflows_Fallback_MissingConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	// No .ai/ and no TEMPLATE_SOURCE — should fail.
+	// No .ai/config.yml — should fail.
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
 	result := RepairWorkflows(root, bootstrap.OwnerTypeOrg, fakeRun, nil)
 	if result.Status != Fail {
 		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
-	}
-	if !strings.Contains(result.Message, "TEMPLATE_SOURCE") {
-		t.Errorf("expected TEMPLATE_SOURCE in message, got: %s", result.Message)
 	}
 }
 
@@ -1872,13 +1818,15 @@ func TestRepairClaudeCredentialsManualAction_UserScope_ShowsRepoInstructions(t *
 // Test helpers for tarball-based repairs
 // ──────────────────────────────────────────────────────────────────────────────
 
-// writeTemplateConfig writes TEMPLATE_SOURCE and TEMPLATE_VERSION files.
+// writeTemplateConfig writes .ai/config.yml with template source and version.
 func writeTemplateConfig(t *testing.T, root, source, version string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte(source), 0o644); err != nil {
+	aiDir := filepath.Join(root, ".ai")
+	if err := os.MkdirAll(aiDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_VERSION"), []byte(version), 0o644); err != nil {
+	content := "template: " + source + "\nversion: " + version + "\n"
+	if err := os.WriteFile(filepath.Join(aiDir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
