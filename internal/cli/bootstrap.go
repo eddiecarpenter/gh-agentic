@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -78,8 +76,7 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			clonePath := filepath.Join(workDir, cfg.ProjectName)
-			return PromptGhNotify(w, runtime.GOOS, clonePath, bootstrap.DefaultRunCommand, confirm)
+			return nil
 		},
 	}
 

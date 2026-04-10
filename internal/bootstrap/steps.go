@@ -84,10 +84,136 @@ type FetchReleaseFunc func(repo string) (string, error)
 // Overridden in tests to simulate fetch failures.
 var fetchTarballFn = tarball.DefaultFetch
 
-// CreateRepo creates a blank private GitHub repository, clones it locally,
-// fetches the template tarball for the current release tag, extracts it into
-// the cloned repo, and commits the initial state. It populates state with
-// the repo name, clone path, URL, and node ID.
+// commitTemplateFiles stages all files in the cloned repo and commits with the
+// standard template initialisation message.
+func commitTemplateFiles(state *StepState, run RunCommandFunc, releaseTag string) error {
+	out, err := runInDir(run, state.ClonePath, "git", "add", "-A")
+	if err != nil {
+		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
+	}
+	commitMsg := fmt.Sprintf("chore: initialise from template %s", releaseTag)
+	out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", commitMsg)
+	if err != nil {
+		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// fetchRepoNodeID fetches the GitHub node ID for the repository via the REST API
+// and stores it in state.RepoNodeID. Best-effort — failures are logged as warnings.
+func fetchRepoNodeID(w io.Writer, fullName string, state *StepState) {
+	client, err := api.DefaultRESTClient()
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not create GitHub API client: "+err.Error()))
+		return
+	}
+	var repoResp struct {
+		NodeID string `json:"node_id"`
+	}
+	if err := client.Get(fmt.Sprintf("repos/%s", fullName), &repoResp); err != nil {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not fetch repo node ID: "+err.Error()))
+		return
+	}
+	state.RepoNodeID = repoResp.NodeID
+}
+
+// cleanupRemoteRepo deletes the named GitHub repo during error recovery.
+// Best-effort — failures are logged as warnings.
+func cleanupRemoteRepo(w io.Writer, fullName string, run RunCommandFunc) {
+	out, err := run("gh", "repo", "delete", fullName, "--yes")
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not clean up remote repo: "+strings.TrimSpace(out)))
+	}
+}
+
+// bootstrapExistingRepo clones an existing repo, guards against double-bootstrap
+// and branch conflicts, creates the bootstrap/init branch, applies the template
+// tarball, and commits the initial template state.
+func bootstrapExistingRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc, releaseTag string) error {
+	fmt.Fprintln(w, "  "+ui.RenderInfo("Repo already exists — bootstrapping onto existing repo"))
+
+	resolvedPath, err := resolveCloneConflictFn(w, state.ClonePath)
+	if err != nil {
+		return err
+	}
+	state.ClonePath = resolvedPath
+
+	fullName := cfg.Owner + "/" + state.RepoName
+	sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
+	out, err := run("git", "clone", sshURL, state.ClonePath)
+	if err != nil {
+		return fmt.Errorf("git clone (existing repo): %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	for _, marker := range agenticMarkers {
+		if _, statErr := os.Stat(filepath.Join(state.ClonePath, marker)); statErr == nil {
+			return fmt.Errorf("this repo has already been bootstrapped — aborting to prevent overwrite")
+		}
+	}
+
+	// Only treat non-empty ls-remote output as "branch exists" when the command
+	// succeeded — a failure (network/auth issue) is not the same as the branch existing.
+	lsOut, lsErr := runInDir(run, state.ClonePath, "git", "ls-remote", "--heads", "origin", "bootstrap/init")
+	if lsErr == nil && strings.TrimSpace(lsOut) != "" {
+		return fmt.Errorf("branch bootstrap/init already exists — aborting to prevent force-push")
+	}
+
+	out, err = runInDir(run, state.ClonePath, "git", "checkout", "-b", "bootstrap/init")
+	if err != nil {
+		return fmt.Errorf("git checkout -b bootstrap/init: %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	if err := tarball.ExtractFromTemplate(cfg.TemplateRepo, releaseTag, state.ClonePath, nil, fetchTarballFn); err != nil {
+		return fmt.Errorf("populating from template tarball: %w", err)
+	}
+
+	versionPath := filepath.Join(state.ClonePath, "TEMPLATE_VERSION")
+	if err := os.WriteFile(versionPath, []byte(releaseTag+"\n"), 0o644); err != nil {
+		return fmt.Errorf("writing TEMPLATE_VERSION: %w", err)
+	}
+
+	return commitTemplateFiles(state, run, releaseTag)
+}
+
+// createNewRepo creates a blank private GitHub repo, clones it locally, applies
+// the template tarball, and commits. Cleans up the remote repo on clone or
+// tarball failure to avoid leaving orphaned repos.
+func createNewRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc, releaseTag string) error {
+	resolvedPath, err := resolveCloneConflictFn(w, state.ClonePath)
+	if err != nil {
+		return err
+	}
+	state.ClonePath = resolvedPath
+
+	fullName := cfg.Owner + "/" + state.RepoName
+	out, err := run("gh", "repo", "create", fullName, "--private")
+	if err != nil {
+		return fmt.Errorf("gh repo create: %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
+	out, err = run("git", "clone", sshURL, state.ClonePath)
+	if err != nil {
+		cleanupRemoteRepo(w, fullName, run)
+		return fmt.Errorf("git clone: %w\n%s", err, strings.TrimSpace(out))
+	}
+
+	if err := tarball.ExtractFromTemplate(cfg.TemplateRepo, releaseTag, state.ClonePath, nil, fetchTarballFn); err != nil {
+		cleanupRemoteRepo(w, fullName, run)
+		return fmt.Errorf("populating from template tarball: %w", err)
+	}
+
+	versionPath := filepath.Join(state.ClonePath, "TEMPLATE_VERSION")
+	if err := os.WriteFile(versionPath, []byte(releaseTag+"\n"), 0o644); err != nil {
+		return fmt.Errorf("writing TEMPLATE_VERSION: %w", err)
+	}
+
+	return commitTemplateFiles(state, run, releaseTag)
+}
+
+// CreateRepo initialises state, validates preconditions, fetches the release tag,
+// and delegates to bootstrapExistingRepo or createNewRepo depending on cfg.ExistingRepo.
+// On success it fetches the repo node ID (best-effort) for use by downstream steps.
 //
 // workDir is the parent directory into which the repo will be cloned.
 // run is injected so tests can substitute a fake implementation without spawning real processes.
@@ -97,18 +223,12 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 	state.RepoName = name
 	state.ClonePath = filepath.Join(workDir, name)
 	state.RepoURL = fmt.Sprintf("https://github.com/%s/%s", cfg.Owner, name)
-
-	fullName := cfg.Owner + "/" + name
-
-	// Set state.ExistingRepo from the form-provided config value.
 	state.ExistingRepo = cfg.ExistingRepo
 
-	// Pre-validate: template repo must be set.
 	if cfg.TemplateRepo == "" {
 		return fmt.Errorf("template repo (TEMPLATE_SOURCE) is not configured")
 	}
 
-	// Pre-validate: fetch the latest release tag before creating the repo.
 	releaseTag, err := fetchRelease(cfg.TemplateRepo)
 	if err != nil {
 		return fmt.Errorf("fetching release tag for %s: %w", cfg.TemplateRepo, err)
@@ -118,154 +238,16 @@ func CreateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, workDir stri
 	}
 
 	if cfg.ExistingRepo {
-		// --- Existing repo path ---
-		fmt.Fprintln(w, "  "+ui.RenderInfo("Repo already exists — bootstrapping onto existing repo"))
-
-		// Detect local directory conflict before cloning.
-		resolvedPath, resolveErr := resolveCloneConflictFn(w, state.ClonePath)
-		if resolveErr != nil {
-			return resolveErr
+		if err := bootstrapExistingRepo(w, cfg, state, run, releaseTag); err != nil {
+			return err
 		}
-		state.ClonePath = resolvedPath
-
-		// Clone the existing repo so we can inspect it.
-		sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
-		out, cloneErr := run("git", "clone", sshURL, state.ClonePath)
-		if cloneErr != nil {
-			return fmt.Errorf("git clone (existing repo): %w\n%s", cloneErr, strings.TrimSpace(out))
+	} else {
+		if err := createNewRepo(w, cfg, state, run, releaseTag); err != nil {
+			return err
 		}
-
-		// Guard — Already-agentic check: look for any agentic marker files.
-		for _, marker := range agenticMarkers {
-			markerPath := filepath.Join(state.ClonePath, marker)
-			if _, statErr := os.Stat(markerPath); statErr == nil {
-				return fmt.Errorf("this repo has already been bootstrapped — aborting to prevent overwrite")
-			}
-		}
-
-		// Guard — Check if bootstrap/init branch already exists on the remote.
-		lsOut, _ := runInDir(run, state.ClonePath, "git", "ls-remote", "--heads", "origin", "bootstrap/init")
-		if strings.TrimSpace(lsOut) != "" {
-			return fmt.Errorf("branch bootstrap/init already exists — aborting to prevent force-push")
-		}
-
-		// Create the bootstrap/init branch.
-		out, err = runInDir(run, state.ClonePath, "git", "checkout", "-b", "bootstrap/init")
-		if err != nil {
-			return fmt.Errorf("git checkout -b bootstrap/init: %w\n%s", err, strings.TrimSpace(out))
-		}
-
-		// Fetch and extract the template tarball.
-		if err := tarball.ExtractFromTemplate(cfg.TemplateRepo, releaseTag, state.ClonePath, nil, fetchTarballFn); err != nil {
-			return fmt.Errorf("populating from template tarball: %w", err)
-		}
-
-		// Write TEMPLATE_VERSION.
-		versionPath := filepath.Join(state.ClonePath, "TEMPLATE_VERSION")
-		if err := os.WriteFile(versionPath, []byte(releaseTag+"\n"), 0o644); err != nil {
-			return fmt.Errorf("writing TEMPLATE_VERSION: %w", err)
-		}
-
-		// Stage and commit.
-		out, err = runInDir(run, state.ClonePath, "git", "add", "-A")
-		if err != nil {
-			return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
-		}
-
-		commitMsg := fmt.Sprintf("chore: initialise from template %s", releaseTag)
-		out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", commitMsg)
-		if err != nil {
-			return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
-		}
-
-		// Fetch the repo node ID via REST API (best-effort).
-		client, apiClientErr := api.DefaultRESTClient()
-		if apiClientErr != nil {
-			fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not create GitHub API client: "+apiClientErr.Error()))
-		} else {
-			var repoResp struct {
-				NodeID string `json:"node_id"`
-			}
-			if getErr := client.Get(fmt.Sprintf("repos/%s", fullName), &repoResp); getErr != nil {
-				fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not fetch repo node ID: "+getErr.Error()))
-			} else {
-				state.RepoNodeID = repoResp.NodeID
-			}
-		}
-
-		return nil
 	}
 
-	// --- New repo path ---
-
-	// Detect local directory conflict before creating the remote repo.
-	resolvedPath, resolveErr := resolveCloneConflictFn(w, state.ClonePath)
-	if resolveErr != nil {
-		return resolveErr
-	}
-	state.ClonePath = resolvedPath
-
-	// Create the blank private repo (no --template).
-	out, err := run("gh", "repo", "create", fullName, "--private")
-	if err != nil {
-		return fmt.Errorf("gh repo create: %w\n%s", err, strings.TrimSpace(out))
-	}
-
-	// Clone the blank repo.
-	sshURL := fmt.Sprintf("git@github.com:%s.git", fullName)
-	out, err = run("git", "clone", sshURL, state.ClonePath)
-	if err != nil {
-		// Clean up the remote repo on clone failure.
-		cleanupOut, cleanupErr := run("gh", "repo", "delete", fullName, "--yes")
-		if cleanupErr != nil {
-			fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not clean up remote repo: "+strings.TrimSpace(cleanupOut)))
-		}
-		return fmt.Errorf("git clone: %w\n%s", err, strings.TrimSpace(out))
-	}
-
-	// Fetch and extract the tarball into the cloned repo.
-	if err := tarball.ExtractFromTemplate(cfg.TemplateRepo, releaseTag, state.ClonePath, nil, fetchTarballFn); err != nil {
-		// Clean up the remote repo on tarball failure.
-		cleanupOut, cleanupErr := run("gh", "repo", "delete", fullName, "--yes")
-		if cleanupErr != nil {
-			fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not clean up remote repo: "+strings.TrimSpace(cleanupOut)))
-		}
-		return fmt.Errorf("populating from template tarball: %w", err)
-	}
-
-	// Write TEMPLATE_VERSION so downstream steps know which version was used.
-	versionPath := filepath.Join(state.ClonePath, "TEMPLATE_VERSION")
-	if err := os.WriteFile(versionPath, []byte(releaseTag+"\n"), 0o644); err != nil {
-		return fmt.Errorf("writing TEMPLATE_VERSION: %w", err)
-	}
-
-	// Stage and commit the initial template content.
-	out, err = runInDir(run, state.ClonePath, "git", "add", "-A")
-	if err != nil {
-		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
-	}
-
-	commitMsg := fmt.Sprintf("chore: initialise from template %s", releaseTag)
-	out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", commitMsg)
-	if err != nil {
-		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
-	}
-
-	// Fetch the repo node ID via REST API (best-effort).
-	client, err := api.DefaultRESTClient()
-	if err != nil {
-		fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not create GitHub API client: "+err.Error()))
-		return nil
-	}
-
-	var repoResp struct {
-		NodeID string `json:"node_id"`
-	}
-	if err := client.Get(fmt.Sprintf("repos/%s", fullName), &repoResp); err != nil {
-		fmt.Fprintln(w, "  "+ui.Muted.Render("· Could not fetch repo node ID: "+err.Error()))
-		return nil
-	}
-	state.RepoNodeID = repoResp.NodeID
+	fetchRepoNodeID(w, cfg.Owner+"/"+name, state)
 	return nil
 }
 
@@ -302,19 +284,16 @@ func ConfigureRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCo
 // Step 7 — PopulateRepo
 // --------------------------------------------------------------------------------------
 
-// PopulateRepo writes REPOS.md, AGENTS.local.md, and README.md into the cloned repo,
-// optionally scaffolds Antora, then commits and pushes.
-//
-// run is injected so tests can substitute a fake implementation.
-func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
-	// Write REPOS.md.
+// writeProjectFiles writes the standard project configuration files into the
+// cloned repo: REPOS.md, AGENTS.local.md, TEMPLATE_SOURCE, skills/.gitkeep,
+// and README.md.
+func writeProjectFiles(cfg BootstrapConfig, state *StepState) error {
 	reposMD := fmt.Sprintf("# REPOS.md\n\n## %s\n\n- **Repo:** git@github.com:%s/%s.git\n- **Stack:** %s\n- **Type:** agentic\n- **Status:** active\n- **Description:** %s\n",
 		state.RepoName, cfg.Owner, state.RepoName, strings.Join(cfg.Stacks, ", "), cfg.Description)
 	if err := os.WriteFile(filepath.Join(state.ClonePath, "REPOS.md"), []byte(reposMD), 0644); err != nil {
 		return fmt.Errorf("writing REPOS.md: %w", err)
 	}
 
-	// Write AGENTS.local.md.
 	agentsLocal := fmt.Sprintf(
 		"# AGENTS.local.md — Local Overrides\n\n"+
 			"This file contains project-specific rules and overrides that extend or\n"+
@@ -337,12 +316,10 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 		return fmt.Errorf("writing AGENTS.local.md: %w", err)
 	}
 
-	// Write TEMPLATE_SOURCE with the configured template repo.
 	if err := os.WriteFile(filepath.Join(state.ClonePath, "TEMPLATE_SOURCE"), []byte(cfg.TemplateRepo+"\n"), 0644); err != nil {
 		return fmt.Errorf("writing TEMPLATE_SOURCE: %w", err)
 	}
 
-	// Create skills/.gitkeep for local project-specific skills.
 	skillsDir := filepath.Join(state.ClonePath, "skills")
 	if err := os.MkdirAll(skillsDir, 0755); err != nil {
 		return fmt.Errorf("creating skills/: %w", err)
@@ -351,7 +328,6 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 		return fmt.Errorf("writing skills/.gitkeep: %w", err)
 	}
 
-	// Write README.md.
 	readmeMD := fmt.Sprintf(
 		"# %s\n\n%s\n\n## Setup\n\n"+
 			"See [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) for project context.\n\n"+
@@ -363,38 +339,58 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 		return fmt.Errorf("writing README.md: %w", err)
 	}
 
-	// Scaffold Antora if requested.
+	return nil
+}
+
+// deployPublishWorkflow copies publish-release.yml from the template examples
+// into the repo's .github/workflows/ directory. Skipped silently if the source
+// file does not exist. Returns an error only on unexpected read/write failures.
+func deployPublishWorkflow(w io.Writer, state *StepState) error {
+	publishReleaseSrc := filepath.Join(state.ClonePath, "base", "docs", "examples", "publish-release.yml")
+	publishReleaseDst := filepath.Join(state.ClonePath, ".github", "workflows", "publish-release.yml")
+	srcData, err := os.ReadFile(publishReleaseSrc)
+	if os.IsNotExist(err) {
+		fmt.Fprintf(w, "· publish-release.yml example not found in template — skipping\n")
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading publish-release.yml example: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(publishReleaseDst), 0755); err != nil {
+		return fmt.Errorf("creating .github/workflows/: %w", err)
+	}
+	if err := os.WriteFile(publishReleaseDst, srcData, 0644); err != nil {
+		return fmt.Errorf("writing publish-release.yml: %w", err)
+	}
+	fmt.Fprintf(w, "· publish-release.yml deployed\n")
+	return nil
+}
+
+// PopulateRepo writes project configuration files into the cloned repo,
+// optionally scaffolds Antora, deploys publish-release.yml, then commits and pushes.
+//
+// run is injected so tests can substitute a fake implementation.
+func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
+	if err := writeProjectFiles(cfg, state); err != nil {
+		return err
+	}
+
 	if cfg.Antora {
 		if err := scaffoldAntora(state.ClonePath, cfg.ProjectName); err != nil {
 			return fmt.Errorf("scaffolding Antora: %w", err)
 		}
 	}
 
-	// Deploy publish-release.yml if the example exists in the template.
-	publishReleaseSrc := filepath.Join(state.ClonePath, "base", "docs", "examples", "publish-release.yml")
-	publishReleaseDst := filepath.Join(state.ClonePath, ".github", "workflows", "publish-release.yml")
-	if srcData, err := os.ReadFile(publishReleaseSrc); err == nil {
-		if err := os.MkdirAll(filepath.Dir(publishReleaseDst), 0755); err != nil {
-			return fmt.Errorf("creating .github/workflows/: %w", err)
-		}
-		if err := os.WriteFile(publishReleaseDst, srcData, 0644); err != nil {
-			return fmt.Errorf("writing publish-release.yml: %w", err)
-		}
-		fmt.Fprintf(w, "· publish-release.yml deployed\n")
-	} else if os.IsNotExist(err) {
-		fmt.Fprintf(w, "· publish-release.yml example not found in template — skipping\n")
-	} else {
-		return fmt.Errorf("reading publish-release.yml example: %w", err)
+	if err := deployPublishWorkflow(w, state); err != nil {
+		return err
 	}
 
-	// Stage and commit.
 	out, err := runInDir(run, state.ClonePath, "git", "add", "-A")
 	if err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
 	}
 
-	commitMsg := "chore: bootstrap " + cfg.ProjectName
-	out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", commitMsg)
+	out, err = runInDir(run, state.ClonePath, "git", "commit", "-m", "chore: bootstrap "+cfg.ProjectName)
 	if err != nil {
 		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(out))
 	}
@@ -415,7 +411,7 @@ func PopulateRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCom
 // state.ExistingRepo is true. The PR URL is stored in state.PRURL.
 //
 // run is injected so tests can substitute a fake implementation.
-func OpenBootstrapPR(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
+func OpenBootstrapPR(cfg BootstrapConfig, state *StepState, run RunCommandFunc) error {
 	if !state.ExistingRepo {
 		return nil
 	}
@@ -654,34 +650,10 @@ type StatusOption struct {
 	Description string `json:"description"`
 }
 
-// StatusOptionNames returns the canonical status option names from the given slice.
-// Deprecated: callers should use LoadProjectTemplate and extract names directly.
-func StatusOptionNames(options []StatusOption) []string {
-	names := make([]string, len(options))
-	for i, opt := range options {
-		names[i] = opt.Name
-	}
-	return names
-}
-
-// ConfigureProjectStatus customises the GitHub Project Status field options.
-// It reads canonical options from base/project-template.json in the cloned repo.
-// This is best-effort — failures are logged as warnings, not returned as errors.
-func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, graphqlDo GraphQLDoFunc) error {
-	if state.ProjectNodeID == "" {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Skipping status column customisation (no project node ID)"))
-		return nil
-	}
-
-	// Load canonical status options from the template JSON.
-	tmpl, err := LoadProjectTemplate(state.ClonePath)
-	if err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not load project template: "+err.Error()))
-		return nil
-	}
-
-	// Fetch the Status field ID.
-	statusQuery := `query($projectId: ID!) {
+// fetchStatusFieldID fetches the GraphQL node ID of the Status single-select field
+// on the given project. Returns an empty string if the field is not found.
+func fetchStatusFieldID(graphqlDo GraphQLDoFunc, projectNodeID string) (string, error) {
+	query := `query($projectId: ID!) {
 		node(id: $projectId) {
 			... on ProjectV2 {
 				field(name: "Status") {
@@ -694,7 +666,7 @@ func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, 
 		}
 	}`
 
-	var statusResp struct {
+	var resp struct {
 		Node struct {
 			Field struct {
 				ID      string `json:"id"`
@@ -706,20 +678,37 @@ func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, 
 		} `json:"node"`
 	}
 
-	if err := graphqlDo(statusQuery, map[string]interface{}{
-		"projectId": state.ProjectNodeID,
-	}, &statusResp); err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not fetch Status field: "+err.Error()))
+	if err := graphqlDo(query, map[string]interface{}{"projectId": projectNodeID}, &resp); err != nil {
+		return "", err
+	}
+	return resp.Node.Field.ID, nil
+}
+
+// ConfigureProjectStatus customises the GitHub Project Status field options.
+// It reads canonical options from base/project-template.json in the cloned repo.
+// This is best-effort — failures are logged as warnings, not returned as errors.
+func ConfigureProjectStatus(w io.Writer, state *StepState, graphqlDo GraphQLDoFunc) error {
+	if state.ProjectNodeID == "" {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Skipping status column customisation (no project node ID)"))
 		return nil
 	}
 
-	fieldID := statusResp.Node.Field.ID
+	tmpl, err := LoadProjectTemplate(state.ClonePath)
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not load project template: "+err.Error()))
+		return nil
+	}
+
+	fieldID, err := fetchStatusFieldID(graphqlDo, state.ProjectNodeID)
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not fetch Status field: "+err.Error()))
+		return nil
+	}
 	if fieldID == "" {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Status field not found on project — skipping"))
 		return nil
 	}
 
-	// Build the singleSelectOptions input.
 	var optionInputs []map[string]string
 	for _, opt := range tmpl.ResolvedStatusOptions() {
 		optionInputs = append(optionInputs, map[string]string{
@@ -748,7 +737,6 @@ func ConfigureProjectStatus(w io.Writer, cfg BootstrapConfig, state *StepState, 
 		"options":   optionInputs,
 	}, &updateResp); err != nil {
 		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not update Status columns: "+err.Error()))
-		return nil
 	}
 
 	return nil
@@ -807,11 +795,11 @@ func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run
 		data, err := os.ReadFile(srcPath)
 		if err != nil {
 			fmt.Fprintln(w, "  "+ui.RenderWarning("Could not read "+f+": "+err.Error()))
-			return nil
+			continue
 		}
 		if err := os.WriteFile(dstPath, data, 0644); err != nil {
 			fmt.Fprintln(w, "  "+ui.RenderWarning("Could not write "+f+": "+err.Error()))
-			return nil
+			continue
 		}
 	}
 

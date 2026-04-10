@@ -699,10 +699,10 @@ func TestBuildRunnerOptions_ContainsRepoAndOrgNames(t *testing.T) {
 
 	found := map[string]bool{
 		DefaultRunnerLabel: false,
-		"my-project":      false,
-		"acme-org":        false,
-		"self-hosted":     false,
-		runnerOther:       false,
+		"my-project":       false,
+		"acme-org":         false,
+		"self-hosted":      false,
+		runnerOther:        false,
 	}
 	for _, k := range keys {
 		if _, ok := found[k]; ok {
@@ -721,24 +721,6 @@ func TestBuildRunnerOptions_ContainsRepoAndOrgNames(t *testing.T) {
 func TestRunnerOtherConstant(t *testing.T) {
 	if runnerOther != "__other__" {
 		t.Errorf("runnerOther = %q, want %q", runnerOther, "__other__")
-	}
-}
-
-// --- repoBackSentinel constant test ---
-
-func TestRepoBackSentinelConstant(t *testing.T) {
-	if repoBackSentinel != "__back__" {
-		t.Errorf("repoBackSentinel = %q, want %q", repoBackSentinel, "__back__")
-	}
-}
-
-// --- Back navigation logic tests ---
-
-func TestBackNavigation_SentinelIsNotValidProjectName(t *testing.T) {
-	// The back sentinel should not pass project name validation.
-	err := validateProjectName(repoBackSentinel)
-	if err == nil {
-		t.Error("back sentinel should not pass project name validation")
 	}
 }
 
@@ -766,4 +748,3 @@ func TestRenderSummaryBox_PATEmpty_ShowsNotSet(t *testing.T) {
 		t.Errorf("RenderSummaryBox() expected 'not set' for empty PAT, got:\n%s", rendered)
 	}
 }
-

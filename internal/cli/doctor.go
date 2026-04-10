@@ -96,12 +96,12 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
 		func() verify.CheckResult { return verify.CheckProject(cfg.owner, run) },
 		func() verify.CheckResult {
-			return verify.CheckAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, cfg.ownerType, run)
+			return verify.CheckAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.ownerType, run)
 		},
 		func() verify.CheckResult { return verify.CheckProjectStatus(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckProjectViews(cfg.owner, cfg.repoName, cfg.root, run) },
 		func() verify.CheckResult {
-			return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
+			return verify.CheckProjectItemStatuses(cfg.owner, cfg.repoName, run)
 		},
 		func() verify.CheckResult { return verify.CheckAgentUserVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },
 		func() verify.CheckResult { return verify.CheckRunnerLabelVar(cfg.owner, cfg.repoName, cfg.ownerType, run) },
@@ -155,7 +155,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "GitHub Project has required views":
 				r = verify.RepairProjectViews(cfg.owner, cfg.repoName, cfg.root, run)
 			case "Project items have status assigned":
-				r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
+				r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, run)
 			case "AGENT_USER variable configured":
 				r = verify.RepairAgentUserVar(cfg.owner, cfg.repoName, cfg.agentUser, cfg.agentUserScope, run, textConfirm)
 			case "RUNNER_LABEL variable configured":

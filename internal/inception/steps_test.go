@@ -45,8 +45,7 @@ func TestCreateRepo_Success_PopulatesState(t *testing.T) {
 
 	run := fakeRunOK("")
 
-	var buf bytes.Buffer
-	err := CreateRepo(&buf, cfg, state, env, run)
+	err := CreateRepo(cfg, state, env, run)
 	if err != nil {
 		t.Fatalf("CreateRepo() unexpected error: %v", err)
 	}
@@ -70,8 +69,7 @@ func TestCreateRepo_GhCreateFails_ReturnsError(t *testing.T) {
 
 	run := fakeRunFail("already exists")
 
-	var buf bytes.Buffer
-	err := CreateRepo(&buf, cfg, state, env, run)
+	err := CreateRepo(cfg, state, env, run)
 	if err == nil {
 		t.Fatal("CreateRepo() expected error when gh repo create fails, got nil")
 	}
@@ -94,8 +92,7 @@ func TestCreateRepo_CloneFails_ReturnsError(t *testing.T) {
 		return "fatal: repository not found", errors.New("exit status 128")
 	}
 
-	var buf bytes.Buffer
-	err := CreateRepo(&buf, cfg, state, env, run)
+	err := CreateRepo(cfg, state, env, run)
 	if err == nil {
 		t.Fatal("CreateRepo() expected error when git clone fails, got nil")
 	}
@@ -110,8 +107,7 @@ func TestCreateRepo_OtherType_UsesOthersDir(t *testing.T) {
 	state := &StepState{}
 	env := &EnvContext{AgenticRepoRoot: dir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	_ = CreateRepo(&buf, cfg, state, env, fakeRunOK(""))
+	_ = CreateRepo(cfg, state, env, fakeRunOK(""))
 
 	expectedClone := filepath.Join(dir, "others", "my-service")
 	if state.ClonePath != expectedClone {
@@ -362,8 +358,7 @@ func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 	}
 	env := &EnvContext{AgenticRepoRoot: t.TempDir(), Owner: "acme-org", TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := PopulateRepo(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
@@ -385,8 +380,7 @@ func TestPopulateRepo_CLAUDEMDReferencesAGENTSMD(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain", ClonePath: dir}
 	env := &EnvContext{AgenticRepoRoot: t.TempDir(), TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	_ = PopulateRepo(&buf, cfg, state, env, fakeRunOK(""))
+	_ = PopulateRepo(cfg, state, env, fakeRunOK(""))
 
 	data, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
 	if !strings.Contains(string(data), "AGENTS.md") {
@@ -410,8 +404,7 @@ func TestPopulateRepo_PushFails_ReturnsError(t *testing.T) {
 		return "", nil
 	}
 
-	var buf bytes.Buffer
-	err := PopulateRepo(&buf, cfg, state, env, run)
+	err := PopulateRepo(cfg, state, env, run)
 	if err == nil {
 		t.Fatal("PopulateRepo() expected error when git push fails, got nil")
 	}
@@ -437,8 +430,7 @@ func TestPopulateRepo_CopiesBase(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := PopulateRepo(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
@@ -476,8 +468,7 @@ func TestPopulateRepo_CopiesGooseRecipes(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := PopulateRepo(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
@@ -514,8 +505,7 @@ func TestPopulateRepo_CopiesWorkflows_ExcludesCIYml(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo, OwnerType: bootstrap.OwnerTypeOrg}
 
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := PopulateRepo(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
@@ -558,8 +548,7 @@ func TestPopulateRepo_UserOwner_SkipsSyncStatusToLabel(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo, OwnerType: bootstrap.OwnerTypeUser}
 
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := PopulateRepo(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
@@ -607,8 +596,7 @@ func TestPopulateRepo_OrgOwner_IncludesSyncStatusToLabel(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo, OwnerType: bootstrap.OwnerTypeOrg}
 
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := PopulateRepo(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
@@ -627,8 +615,7 @@ func TestPopulateRepo_UpdatesGitignore(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := PopulateRepo(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
@@ -658,8 +645,7 @@ func TestPopulateRepo_GitignoreIdempotent(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain", ClonePath: cloneDir}
 	env := &EnvContext{AgenticRepoRoot: agenticDir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	if err := PopulateRepo(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := PopulateRepo(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
@@ -692,8 +678,7 @@ func TestRegisterInREPOS_AppendsEntry(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain"}
 	env := &EnvContext{AgenticRepoRoot: dir, TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	if err := RegisterInREPOS(&buf, cfg, state, env, fakeRunOK("")); err != nil {
+	if err := RegisterInREPOS(cfg, state, env, fakeRunOK("")); err != nil {
 		t.Fatalf("RegisterInREPOS() unexpected error: %v", err)
 	}
 
@@ -723,8 +708,7 @@ func TestRegisterInREPOS_ReadFails_ReturnsError(t *testing.T) {
 	state := &StepState{RepoName: "charging-domain"}
 	env := &EnvContext{AgenticRepoRoot: "/nonexistent", TemplateRepo: bootstrap.DefaultTemplateRepo}
 
-	var buf bytes.Buffer
-	err := RegisterInREPOS(&buf, cfg, state, env, fakeRunOK(""))
+	err := RegisterInREPOS(cfg, state, env, fakeRunOK(""))
 	if err == nil {
 		t.Fatal("RegisterInREPOS() expected error when REPOS.md missing, got nil")
 	}

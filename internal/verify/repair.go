@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -394,7 +393,7 @@ func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandF
 	}
 
 	// Phase 2: resync individual item statuses.
-	resyncUpdated, _, resyncErr := resyncProjectItemStatuses(owner, projectNodeID, fieldID, tmpl, run)
+	resyncUpdated, _, resyncErr := resyncProjectItemStatuses(projectNodeID, fieldID, run)
 	if resyncErr != nil {
 		return CheckResult{
 			Name:    checkProjectStatusName,
@@ -481,9 +480,9 @@ type projectItem struct {
 // resyncProjectItemStatuses fetches all project items (paginated) and updates
 // each item's status field to match the canonical status derived from its issue
 // labels and state. Returns counts of updated and already-correct items.
-func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap.ProjectTemplate, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
+func resyncProjectItemStatuses(projectID, fieldID string, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
 	// Build option name → ID map by fetching status field options.
-	optionMap, optErr := fetchStatusOptionMap(projectID, fieldID, run)
+	optionMap, optErr := fetchStatusOptionMap(projectID, run)
 	if optErr != nil {
 		return 0, 0, optErr
 	}
@@ -554,7 +553,7 @@ func resyncProjectItemStatuses(owner, projectID, fieldID string, tmpl *bootstrap
 
 // fetchStatusOptionMap fetches the Status field options and returns a map of
 // option name → option ID.
-func fetchStatusOptionMap(projectID, fieldID string, run bootstrap.RunCommandFunc) (map[string]string, error) {
+func fetchStatusOptionMap(projectID string, run bootstrap.RunCommandFunc) (map[string]string, error) {
 	query := fmt.Sprintf(`{ node(id: "%s") { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { options { id name } } } } } }`, projectID)
 	out, err := run("gh", "api", "graphql", "-f", "query="+query, "--jq", `.data.node.field.options[] | "\(.id)|\(.name)"`)
 	if err != nil {
@@ -669,12 +668,7 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 // ResyncProjectItemStatuses is the exported entry point for resyncing all project
 // item statuses. It resolves the project node ID, fetches the status field ID and
 // options, and calls resyncProjectItemStatuses.
-func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
-	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
-	if loadErr != nil {
-		return 0, 0, fmt.Errorf("loading project template: %w", loadErr)
-	}
-
+func ResyncProjectItemStatuses(owner, repoName string, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
 	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return 0, 0, fmt.Errorf("no GitHub Project found for owner %s", owner)
@@ -689,16 +683,16 @@ func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCo
 
 	fieldID := strings.TrimSpace(out)
 	if fieldID == "" || fieldID == "null" {
-		return 0, 0, fmt.Errorf("Status field not found on project")
+		return 0, 0, fmt.Errorf("status field not found on project")
 	}
 
-	return resyncProjectItemStatuses(owner, projectNodeID, fieldID, tmpl, run)
+	return resyncProjectItemStatuses(projectNodeID, fieldID, run)
 }
 
 // RepairProjectItemStatuses resyncs all project item statuses from issue labels
 // and state. It wraps ResyncProjectItemStatuses as a repair action.
-func RepairProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
-	updated, correct, err := ResyncProjectItemStatuses(owner, repoName, root, run)
+func RepairProjectItemStatuses(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	updated, correct, err := ResyncProjectItemStatuses(owner, repoName, run)
 	if err != nil {
 		return CheckResult{
 			Name:    checkProjectItemStatusesName,
@@ -1175,37 +1169,6 @@ func RepairProject(owner string, repoName string, run bootstrap.RunCommandFunc) 
 	}
 }
 
-// copyDir recursively copies src to dst, preserving file permissions.
-func copyDir(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-
-		target := filepath.Join(dst, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		return os.WriteFile(target, data, info.Mode())
-	})
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Stale open issue repair

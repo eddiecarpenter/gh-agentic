@@ -65,7 +65,7 @@ func typeDirName(repoType string) string {
 // appropriate type directory (e.g. domains/charging-domain).
 //
 // run is injected so tests can substitute a fake implementation.
-func CreateRepo(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvContext, run bootstrap.RunCommandFunc) error {
+func CreateRepo(cfg *InceptionConfig, state *StepState, env *EnvContext, run bootstrap.RunCommandFunc) error {
 	name := FullRepoName(*cfg)
 	state.RepoName = name
 	state.RepoURL = fmt.Sprintf("https://github.com/%s/%s", cfg.Owner, name)
@@ -216,7 +216,7 @@ func extractInitCommands(content string) ([]string, error) {
 // then commits and pushes.
 //
 // run is injected so tests can substitute a fake implementation.
-func PopulateRepo(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvContext, run bootstrap.RunCommandFunc) error {
+func PopulateRepo(cfg *InceptionConfig, state *StepState, env *EnvContext, run bootstrap.RunCommandFunc) error {
 	// Write CLAUDE.md referencing the agentic repo's AGENTS.md.
 	claudeMD := "# CLAUDE.md\n\n" +
 		"This project uses AGENTS.md as the single source of truth for agent instructions.\n" +
@@ -330,7 +330,7 @@ func PopulateRepo(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvC
 // and commits the change.
 //
 // run is injected so tests can substitute a fake implementation.
-func RegisterInREPOS(w io.Writer, cfg *InceptionConfig, state *StepState, env *EnvContext, run bootstrap.RunCommandFunc) error {
+func RegisterInREPOS(cfg *InceptionConfig, state *StepState, env *EnvContext, run bootstrap.RunCommandFunc) error {
 	reposPath := filepath.Join(env.AgenticRepoRoot, "REPOS.md")
 
 	existing, err := os.ReadFile(reposPath)

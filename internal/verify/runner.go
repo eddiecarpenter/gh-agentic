@@ -29,6 +29,8 @@ func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 			warnings++
 		case Fail:
 			failures++
+		case Pass, ManualAction:
+			// not counted as actionable issues
 		}
 	}
 
@@ -88,6 +90,8 @@ func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 			warnings++
 		case Fail:
 			failures++
+		case Pass, ManualAction:
+			// not counted as actionable issues
 		}
 	}
 

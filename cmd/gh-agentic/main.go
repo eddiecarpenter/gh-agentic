@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -17,7 +18,7 @@ var date = ""
 
 func main() {
 	if err := cli.Execute(version, date); err != nil {
-		if err != cli.ErrSilent {
+		if !errors.Is(err, cli.ErrSilent) {
 			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(1)

@@ -942,8 +942,7 @@ func TestOpenBootstrapPR_NotExistingRepo_Noop(t *testing.T) {
 	state := &StepState{ExistingRepo: false}
 	cfg := BootstrapConfig{Owner: "alice", ProjectName: "my-project"}
 
-	var buf bytes.Buffer
-	err := OpenBootstrapPR(&buf, cfg, state, fakeRunOK(""))
+	err := OpenBootstrapPR(cfg, state, fakeRunOK(""))
 	if err != nil {
 		t.Fatalf("OpenBootstrapPR() unexpected error: %v", err)
 	}
@@ -975,8 +974,7 @@ func TestOpenBootstrapPR_PushesBranchAndCreatesPR(t *testing.T) {
 		return "", nil
 	}
 
-	var buf bytes.Buffer
-	err := OpenBootstrapPR(&buf, cfg, state, run)
+	err := OpenBootstrapPR(cfg, state, run)
 	if err != nil {
 		t.Fatalf("OpenBootstrapPR() unexpected error: %v", err)
 	}
@@ -1007,8 +1005,7 @@ func TestOpenBootstrapPR_PushFails_ReturnsError(t *testing.T) {
 		return "", nil
 	}
 
-	var buf bytes.Buffer
-	err := OpenBootstrapPR(&buf, cfg, state, run)
+	err := OpenBootstrapPR(cfg, state, run)
 	if err == nil {
 		t.Fatal("expected error when push fails, got nil")
 	}
@@ -1033,8 +1030,7 @@ func TestOpenBootstrapPR_PRCreateFails_ReturnsError(t *testing.T) {
 		return "", nil
 	}
 
-	var buf bytes.Buffer
-	err := OpenBootstrapPR(&buf, cfg, state, run)
+	err := OpenBootstrapPR(cfg, state, run)
 	if err == nil {
 		t.Fatal("expected error when PR creation fails, got nil")
 	}
@@ -1168,7 +1164,6 @@ func writeTestProjectTemplate(t *testing.T, root string) {
 }
 
 func TestConfigureProjectStatus_UserAccount_ProceedsNormally(t *testing.T) {
-	cfg := BootstrapConfig{Owner: "alice", OwnerType: OwnerTypeUser}
 	clonePath := t.TempDir()
 	writeTestProjectTemplate(t, clonePath)
 	state := &StepState{ProjectNodeID: "PVT_123", ClonePath: clonePath}
@@ -1196,7 +1191,7 @@ func TestConfigureProjectStatus_UserAccount_ProceedsNormally(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo); err != nil {
+	if err := ConfigureProjectStatus(&buf, state, graphqlDo); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(queries) < 2 {
@@ -1205,7 +1200,6 @@ func TestConfigureProjectStatus_UserAccount_ProceedsNormally(t *testing.T) {
 }
 
 func TestConfigureProjectStatus_MissingProjectNodeID_SkipsWithWarning(t *testing.T) {
-	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
 	state := &StepState{ProjectNodeID: ""}
 
 	graphqlDo := func(query string, variables map[string]interface{}, response interface{}) error {
@@ -1214,7 +1208,7 @@ func TestConfigureProjectStatus_MissingProjectNodeID_SkipsWithWarning(t *testing
 	}
 
 	var buf bytes.Buffer
-	if err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo); err != nil {
+	if err := ConfigureProjectStatus(&buf, state, graphqlDo); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.Contains(buf.String(), "no project node ID") {
@@ -1223,7 +1217,6 @@ func TestConfigureProjectStatus_MissingProjectNodeID_SkipsWithWarning(t *testing
 }
 
 func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *testing.T) {
-	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
 	clonePath := t.TempDir()
 	writeTestProjectTemplate(t, clonePath)
 	state := &StepState{ProjectNodeID: "PVT_123", ClonePath: clonePath}
@@ -1263,7 +1256,7 @@ func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *t
 	}
 
 	var buf bytes.Buffer
-	if err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo); err != nil {
+	if err := ConfigureProjectStatus(&buf, state, graphqlDo); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1300,7 +1293,6 @@ func TestConfigureProjectStatus_Success_CallsUpdateMutationWithDescriptions(t *t
 }
 
 func TestConfigureProjectStatus_GraphQLFetchFails_LogsWarning(t *testing.T) {
-	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
 	clonePath := t.TempDir()
 	writeTestProjectTemplate(t, clonePath)
 	state := &StepState{ProjectNodeID: "PVT_123", ClonePath: clonePath}
@@ -1310,7 +1302,7 @@ func TestConfigureProjectStatus_GraphQLFetchFails_LogsWarning(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo)
+	err := ConfigureProjectStatus(&buf, state, graphqlDo)
 	if err != nil {
 		t.Fatalf("expected nil error (best-effort), got: %v", err)
 	}
@@ -1320,7 +1312,6 @@ func TestConfigureProjectStatus_GraphQLFetchFails_LogsWarning(t *testing.T) {
 }
 
 func TestConfigureProjectStatus_UpdateFails_LogsWarning(t *testing.T) {
-	cfg := BootstrapConfig{Owner: "acme-org", OwnerType: OwnerTypeOrg}
 	clonePath := t.TempDir()
 	writeTestProjectTemplate(t, clonePath)
 	state := &StepState{ProjectNodeID: "PVT_123", ClonePath: clonePath}
@@ -1350,7 +1341,7 @@ func TestConfigureProjectStatus_UpdateFails_LogsWarning(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := ConfigureProjectStatus(&buf, cfg, state, graphqlDo)
+	err := ConfigureProjectStatus(&buf, state, graphqlDo)
 	if err != nil {
 		t.Fatalf("expected nil error (best-effort), got: %v", err)
 	}
