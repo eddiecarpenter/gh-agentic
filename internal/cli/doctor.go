@@ -89,8 +89,9 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckTEMPLATEVERSION(cfg.root) },
 		func() verify.CheckResult { return verify.CheckREPOSMD(cfg.root) },
 		func() verify.CheckResult { return verify.CheckREADMEMD(cfg.root) },
-		func() verify.CheckResult { return verify.CheckBaseDir(cfg.root, run) },
-		func() verify.CheckResult { return verify.CheckBaseRecipes(cfg.root, run) },
+		func() verify.CheckResult { return verify.CheckOldLayout(cfg.root) },
+		func() verify.CheckResult { return verify.CheckAIDir(cfg.root, run) },
+		func() verify.CheckResult { return verify.CheckAISkills(cfg.root, run) },
 		func() verify.CheckResult { return verify.CheckGooseRecipes(cfg.root) },
 		func() verify.CheckResult { return verify.CheckWorkflows(cfg.root, cfg.ownerType) },
 		func() verify.CheckResult { return verify.CheckLabels(cfg.repoFullName, run) },
@@ -136,10 +137,10 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 				r = verify.RepairREPOSMD(cfg.root)
 			case "README.md exists":
 				r = verify.RepairREADMEMD(cfg.root)
-			case "base/ exists and is unmodified":
-				r = verify.RepairBaseDirWithWriter(w, cfg.root, run, boolConfirm)
-			case "base/skills/*.md unmodified":
-				r = verify.RepairBaseRecipes(cfg.root, boolConfirm, nil)
+			case ".ai/ exists and is unmodified":
+				r = verify.RepairAIDirWithWriter(w, cfg.root, run, boolConfirm)
+			case ".ai/skills/*.md unmodified":
+				r = verify.RepairAISkills(cfg.root, boolConfirm, nil)
 			case ".goose/recipes/ exists and complete":
 				r = verify.RepairGooseRecipes(cfg.root, nil)
 			case ".github/workflows/ exists and complete":

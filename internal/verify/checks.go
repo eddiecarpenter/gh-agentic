@@ -66,6 +66,9 @@ func CheckSkillsDir(root string) CheckResult {
 
 // CheckTEMPLATESOURCE verifies that TEMPLATE_SOURCE exists in the repo root.
 // Returns Warning if the file is missing (requires user input to repair).
+//
+// Deprecated: TEMPLATE_SOURCE is replaced by .ai/config.yml.
+// TODO(deprecated): remove in next major version
 func CheckTEMPLATESOURCE(root string) CheckResult {
 	path := filepath.Join(root, "TEMPLATE_SOURCE")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -83,6 +86,9 @@ func CheckTEMPLATESOURCE(root string) CheckResult {
 
 // CheckTEMPLATEVERSION verifies that TEMPLATE_VERSION exists in the repo root.
 // Returns Fail if the file is missing.
+//
+// Deprecated: TEMPLATE_VERSION is replaced by .ai/config.yml.
+// TODO(deprecated): remove in next major version
 func CheckTEMPLATEVERSION(root string) CheckResult {
 	path := filepath.Join(root, "TEMPLATE_VERSION")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -160,24 +166,24 @@ var orgOnlyWorkflows = map[string]bool{
 	"sync-status-to-label.yml": true,
 }
 
-// CheckBaseDir verifies that the base/ directory exists and has no uncommitted
+// CheckAIDir verifies that the .ai/ directory exists and has no uncommitted
 // modifications. Uses RunCommandFunc for git operations.
-func CheckBaseDir(root string, run bootstrap.RunCommandFunc) CheckResult {
-	basePath := filepath.Join(root, "base")
-	if _, err := os.Stat(basePath); os.IsNotExist(err) {
+func CheckAIDir(root string, run bootstrap.RunCommandFunc) CheckResult {
+	aiPath := filepath.Join(root, ".ai")
+	if _, err := os.Stat(aiPath); os.IsNotExist(err) {
 		return CheckResult{
-			Name:    "base/ exists and is unmodified",
+			Name:    ".ai/ exists and is unmodified",
 			Status:  Fail,
-			Message: "base/ directory not found",
+			Message: ".ai/ directory not found",
 		}
 	}
 
 	// Check for uncommitted modifications via git diff.
-	out, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git diff HEAD -- base/", strings.ReplaceAll(root, "'", "'\\''")))
+	out, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git diff HEAD -- .ai/", strings.ReplaceAll(root, "'", "'\\''")))
 	if err != nil {
 		// If git fails (e.g. not a git repo), treat as warning.
 		return CheckResult{
-			Name:    "base/ exists and is unmodified",
+			Name:    ".ai/ exists and is unmodified",
 			Status:  Warning,
 			Message: "could not check git status: " + strings.TrimSpace(fmt.Sprintf("%v", err)),
 		}
@@ -185,35 +191,62 @@ func CheckBaseDir(root string, run bootstrap.RunCommandFunc) CheckResult {
 
 	if strings.TrimSpace(out) != "" {
 		return CheckResult{
-			Name:    "base/ exists and is unmodified",
+			Name:    ".ai/ exists and is unmodified",
 			Status:  Fail,
-			Message: "base/ has uncommitted modifications",
+			Message: ".ai/ has uncommitted modifications",
 		}
 	}
 
 	return CheckResult{
-		Name:   "base/ exists and is unmodified",
+		Name:   ".ai/ exists and is unmodified",
 		Status: Pass,
 	}
 }
 
-// CheckBaseRecipes verifies that base/skills/*.md files exist and are unmodified.
-// Uses RunCommandFunc for git operations.
-func CheckBaseRecipes(root string, run bootstrap.RunCommandFunc) CheckResult {
-	recipesPath := filepath.Join(root, "base", "skills")
-	if _, err := os.Stat(recipesPath); os.IsNotExist(err) {
+// CheckOldLayout detects repos still using the old base/ directory layout.
+// Returns Warning if base/ exists without .ai/ (needs migration).
+func CheckOldLayout(root string) CheckResult {
+	const checkName = "no legacy base/ layout"
+	aiPath := filepath.Join(root, ".ai")
+	basePath := filepath.Join(root, "base")
+
+	_, aiErr := os.Stat(aiPath)
+	aiExists := aiErr == nil
+
+	_, baseErr := os.Stat(basePath)
+	baseExists := baseErr == nil
+
+	if baseExists && !aiExists {
 		return CheckResult{
-			Name:    "base/skills/*.md unmodified",
+			Name:    checkName,
 			Status:  Warning,
-			Message: "base/skills/ directory not found",
+			Message: "base/ directory found without .ai/ — run gh agentic sync to migrate",
 		}
 	}
 
-	// Check for modifications via git diff on base/skills/.
-	out, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git diff HEAD -- base/skills/", strings.ReplaceAll(root, "'", "'\\''")))
+	return CheckResult{
+		Name:   checkName,
+		Status: Pass,
+	}
+}
+
+// CheckAISkills verifies that .ai/skills/*.md files exist and are unmodified.
+// Uses RunCommandFunc for git operations.
+func CheckAISkills(root string, run bootstrap.RunCommandFunc) CheckResult {
+	recipesPath := filepath.Join(root, ".ai", "skills")
+	if _, err := os.Stat(recipesPath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    ".ai/skills/*.md unmodified",
+			Status:  Warning,
+			Message: ".ai/skills/ directory not found",
+		}
+	}
+
+	// Check for modifications via git diff on .ai/skills/.
+	out, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git diff HEAD -- .ai/skills/", strings.ReplaceAll(root, "'", "'\\''")))
 	if err != nil {
 		return CheckResult{
-			Name:    "base/skills/*.md unmodified",
+			Name:    ".ai/skills/*.md unmodified",
 			Status:  Warning,
 			Message: "could not check git status: " + strings.TrimSpace(fmt.Sprintf("%v", err)),
 		}
@@ -221,14 +254,14 @@ func CheckBaseRecipes(root string, run bootstrap.RunCommandFunc) CheckResult {
 
 	if strings.TrimSpace(out) != "" {
 		return CheckResult{
-			Name:    "base/skills/*.md unmodified",
+			Name:    ".ai/skills/*.md unmodified",
 			Status:  Warning,
-			Message: "base/skills/ has local modifications",
+			Message: ".ai/skills/ has local modifications",
 		}
 	}
 
 	return CheckResult{
-		Name:   "base/skills/*.md unmodified",
+		Name:   ".ai/skills/*.md unmodified",
 		Status: Pass,
 	}
 }
@@ -267,7 +300,7 @@ func CheckGooseRecipes(root string) CheckResult {
 }
 
 // CheckWorkflows verifies that .github/workflows/ contains all expected pipeline
-// files. If base/.github/workflows/ exists, it verifies content matches
+// files. If .ai/.github/workflows/ exists, it verifies content matches
 // byte-for-byte. Otherwise falls back to existence-only checks using
 // expectedWorkflowYMLs.
 //
@@ -277,16 +310,16 @@ func CheckWorkflows(root, ownerType string) CheckResult {
 	const checkName = ".github/workflows/ exists and complete"
 
 	workflowsPath := filepath.Join(root, ".github", "workflows")
-	baseWorkflowsPath := filepath.Join(root, "base", ".github", "workflows")
+	aiWorkflowsPath := filepath.Join(root, ".ai", ".github", "workflows")
 
-	// If base/.github/workflows/ exists, use content comparison.
-	if info, err := os.Stat(baseWorkflowsPath); err == nil && info.IsDir() {
-		entries, err := os.ReadDir(baseWorkflowsPath)
+	// If .ai/.github/workflows/ exists, use content comparison.
+	if info, err := os.Stat(aiWorkflowsPath); err == nil && info.IsDir() {
+		entries, err := os.ReadDir(aiWorkflowsPath)
 		if err != nil {
 			return CheckResult{
 				Name:    checkName,
 				Status:  Fail,
-				Message: fmt.Sprintf("reading base workflows: %v", err),
+				Message: fmt.Sprintf("reading .ai workflows: %v", err),
 			}
 		}
 
@@ -302,10 +335,10 @@ func CheckWorkflows(root, ownerType string) CheckResult {
 			if orgOnlyWorkflows[name] && ownerType == bootstrap.OwnerTypeUser {
 				continue
 			}
-			basePath := filepath.Join(baseWorkflowsPath, name)
+			aiPath := filepath.Join(aiWorkflowsPath, name)
 			deployedPath := filepath.Join(workflowsPath, name)
 
-			baseContent, err := os.ReadFile(basePath)
+			aiContent, err := os.ReadFile(aiPath)
 			if err != nil {
 				missing = append(missing, name)
 				continue
@@ -317,7 +350,7 @@ func CheckWorkflows(root, ownerType string) CheckResult {
 				continue
 			}
 
-			if !bytes.Equal(baseContent, deployedContent) {
+			if !bytes.Equal(aiContent, deployedContent) {
 				differs = append(differs, name)
 			}
 		}
@@ -469,7 +502,7 @@ func MissingLabels(repoFullName string, run bootstrap.RunCommandFunc) []string {
 const checkProjectStatusName = "GitHub Project status options are standard"
 
 // CheckProjectStatus verifies that the GitHub Project has the canonical status
-// options in the correct order. Loads canonical options from base/project-template.json.
+// options in the correct order. Loads canonical options from .ai/project-template.json.
 // Mismatch is reported as Warning (not Fail) — local customisation is permitted.
 func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
 	// Step 1: Find the project node ID.
@@ -507,7 +540,7 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 		}
 	}
 
-	// Step 3: Load canonical set from base/project-template.json.
+	// Step 3: Load canonical set from .ai/project-template.json.
 	tmpl, loadErr := bootstrap.LoadProjectTemplate(root)
 	if loadErr != nil {
 		return CheckResult{
@@ -545,7 +578,7 @@ func CheckProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFu
 const checkProjectViewsName = "GitHub Project has required views"
 
 // CheckProjectViews verifies that the GitHub Project contains all required views
-// defined in base/project-template.json. Only checks for presence — existing
+// defined in .ai/project-template.json. Only checks for presence — existing
 // views are never flagged for layout or filter differences (user customisation
 // is intentional).
 func CheckProjectViews(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {

@@ -185,9 +185,9 @@ func TestFileChecks_TableDriven(t *testing.T) {
 // Directory integrity check tests
 // ──────────────────────────────────────────────────────────────────────────────
 
-func TestCheckBaseDir_Present_NoModifications_ReturnsPass(t *testing.T) {
+func TestCheckAIDir_Present_NoModifications_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -195,43 +195,43 @@ func TestCheckBaseDir_Present_NoModifications_ReturnsPass(t *testing.T) {
 		return "", nil // No diff output means no modifications.
 	}
 
-	result := CheckBaseDir(root, fakeRun)
+	result := CheckAIDir(root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckBaseDir_Missing_ReturnsFail(t *testing.T) {
+func TestCheckAIDir_Missing_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
 
-	result := CheckBaseDir(root, fakeRun)
+	result := CheckAIDir(root, fakeRun)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckBaseDir_Modified_ReturnsFail(t *testing.T) {
+func TestCheckAIDir_Modified_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	fakeRun := func(name string, args ...string) (string, error) {
-		return "diff --git a/base/file.md b/base/file.md\n+modified", nil
+		return "diff --git a/.ai/file.md b/.ai/file.md\n+modified", nil
 	}
 
-	result := CheckBaseDir(root, fakeRun)
+	result := CheckAIDir(root, fakeRun)
 	if result.Status != Fail {
-		t.Errorf("expected Fail for modified base/, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected Fail for modified .ai/, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckBaseRecipes_Present_NoModifications_ReturnsPass(t *testing.T) {
+func TestCheckAISkills_Present_NoModifications_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "base", "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".ai", "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,27 +239,27 @@ func TestCheckBaseRecipes_Present_NoModifications_ReturnsPass(t *testing.T) {
 		return "", nil
 	}
 
-	result := CheckBaseRecipes(root, fakeRun)
+	result := CheckAISkills(root, fakeRun)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckBaseRecipes_Missing_ReturnsWarning(t *testing.T) {
+func TestCheckAISkills_Missing_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
 
-	result := CheckBaseRecipes(root, fakeRun)
+	result := CheckAISkills(root, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckBaseRecipes_Modified_ReturnsWarning(t *testing.T) {
+func TestCheckAISkills_Modified_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "base", "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".ai", "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -267,7 +267,7 @@ func TestCheckBaseRecipes_Modified_ReturnsWarning(t *testing.T) {
 		return "diff output", nil
 	}
 
-	result := CheckBaseRecipes(root, fakeRun)
+	result := CheckAISkills(root, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning for modified recipes, got %v: %s", result.Status, result.Message)
 	}
@@ -362,17 +362,17 @@ func TestCheckWorkflows_SomeMissing_ReturnsFail(t *testing.T) {
 	}
 }
 
-func TestCheckWorkflows_WithBase_ContentMatches_ReturnsPass(t *testing.T) {
+func TestCheckWorkflows_WithAI_ContentMatches_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	aiWfDir := filepath.Join(root, ".ai", ".github", "workflows")
 	wfDir := filepath.Join(root, ".github", "workflows")
-	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+	if err := os.MkdirAll(aiWfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(wfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(baseWfDir, "pipeline.yml"), []byte("same"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(aiWfDir, "pipeline.yml"), []byte("same"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(wfDir, "pipeline.yml"), []byte("same"), 0o644); err != nil {
@@ -385,17 +385,17 @@ func TestCheckWorkflows_WithBase_ContentMatches_ReturnsPass(t *testing.T) {
 	}
 }
 
-func TestCheckWorkflows_WithBase_ContentDiffers_ReturnsFail(t *testing.T) {
+func TestCheckWorkflows_WithAI_ContentDiffers_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	aiWfDir := filepath.Join(root, ".ai", ".github", "workflows")
 	wfDir := filepath.Join(root, ".github", "workflows")
-	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+	if err := os.MkdirAll(aiWfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(wfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(baseWfDir, "pipeline.yml"), []byte("new-content"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(aiWfDir, "pipeline.yml"), []byte("new-content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(wfDir, "pipeline.yml"), []byte("old-content"), 0o644); err != nil {
@@ -411,13 +411,13 @@ func TestCheckWorkflows_WithBase_ContentDiffers_ReturnsFail(t *testing.T) {
 	}
 }
 
-func TestCheckWorkflows_WithBase_FileMissing_ReturnsFail(t *testing.T) {
+func TestCheckWorkflows_WithAI_FileMissing_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
-	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+	aiWfDir := filepath.Join(root, ".ai", ".github", "workflows")
+	if err := os.MkdirAll(aiWfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(baseWfDir, "pipeline.yml"), []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(aiWfDir, "pipeline.yml"), []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// No .github/workflows/ directory at all.
@@ -431,7 +431,7 @@ func TestCheckWorkflows_WithBase_FileMissing_ReturnsFail(t *testing.T) {
 	}
 }
 
-func TestCheckWorkflows_NoBase_FallsBackToExistence(t *testing.T) {
+func TestCheckWorkflows_NoAI_FallsBackToExistence(t *testing.T) {
 	root := t.TempDir()
 	wfDir := filepath.Join(root, ".github", "workflows")
 	if err := os.MkdirAll(wfDir, 0o755); err != nil {
@@ -443,7 +443,7 @@ func TestCheckWorkflows_NoBase_FallsBackToExistence(t *testing.T) {
 		}
 	}
 
-	// No base/.github/workflows/ — should fall back to existence check.
+	// No .ai/.github/workflows/ — should fall back to existence check.
 	result := CheckWorkflows(root, bootstrap.OwnerTypeOrg)
 	if result.Status != Pass {
 		t.Errorf("expected Pass in fallback mode, got %v: %s", result.Status, result.Message)
@@ -452,20 +452,20 @@ func TestCheckWorkflows_NoBase_FallsBackToExistence(t *testing.T) {
 
 func TestCheckWorkflows_PersonalAccount_SkipsOrgOnlyWorkflows(t *testing.T) {
 	root := t.TempDir()
-	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
+	aiWfDir := filepath.Join(root, ".ai", ".github", "workflows")
 	wfDir := filepath.Join(root, ".github", "workflows")
-	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+	if err := os.MkdirAll(aiWfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(wfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// Base contains both a regular workflow and an org-only one.
-	if err := os.WriteFile(filepath.Join(baseWfDir, "agentic-pipeline.yml"), []byte("pipeline"), 0o644); err != nil {
+	// .ai contains both a regular workflow and an org-only one.
+	if err := os.WriteFile(filepath.Join(aiWfDir, "agentic-pipeline.yml"), []byte("pipeline"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(baseWfDir, "sync-status-to-label.yml"), []byte("org-only"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(aiWfDir, "sync-status-to-label.yml"), []byte("org-only"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -481,9 +481,9 @@ func TestCheckWorkflows_PersonalAccount_SkipsOrgOnlyWorkflows(t *testing.T) {
 	}
 }
 
-func TestCheckBaseDir_GitFails_ReturnsWarning(t *testing.T) {
+func TestCheckAIDir_GitFails_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -491,9 +491,64 @@ func TestCheckBaseDir_GitFails_ReturnsWarning(t *testing.T) {
 		return "", fmt.Errorf("not a git repo")
 	}
 
-	result := CheckBaseDir(root, fakeRun)
+	result := CheckAIDir(root, fakeRun)
 	if result.Status != Warning {
 		t.Errorf("expected Warning when git fails, got %v: %s", result.Status, result.Message)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Old layout detection tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestCheckOldLayout_BaseWithoutAI_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckOldLayout(root)
+	if result.Status != Warning {
+		t.Errorf("expected Warning, got %v: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "base/ directory found without .ai/") {
+		t.Errorf("expected migration message, got: %s", result.Message)
+	}
+}
+
+func TestCheckOldLayout_AIPresent_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckOldLayout(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass when .ai/ exists, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckOldLayout_BothPresent_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckOldLayout(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass when both exist, got %v: %s", result.Status, result.Message)
+	}
+}
+
+func TestCheckOldLayout_NeitherPresent_ReturnsPass(t *testing.T) {
+	root := t.TempDir()
+
+	result := CheckOldLayout(root)
+	if result.Status != Pass {
+		t.Errorf("expected Pass when neither exists, got %v: %s", result.Status, result.Message)
 	}
 }
 
