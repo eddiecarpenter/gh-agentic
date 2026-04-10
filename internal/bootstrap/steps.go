@@ -61,7 +61,7 @@ type StepState struct {
 
 // agenticMarkers are the files and directories whose presence indicates
 // a repository has already been bootstrapped with the agentic framework.
-var agenticMarkers = []string{"TEMPLATE_SOURCE", "TEMPLATE_VERSION", "base"}
+var agenticMarkers = []string{"TEMPLATE_SOURCE", "TEMPLATE_VERSION", ".ai", "base"}
 
 // repoName derives the repository name from the config.
 // Single: <project-name>, Federated: <project-name>-agentic.
@@ -288,10 +288,25 @@ func ConfigureRepo(w io.Writer, cfg BootstrapConfig, state *StepState, run RunCo
 // cloned repo: REPOS.md, AGENTS.local.md, TEMPLATE_SOURCE, skills/.gitkeep,
 // and README.md.
 func writeProjectFiles(cfg BootstrapConfig, state *StepState) error {
-	reposMD := fmt.Sprintf("# REPOS.md\n\n## %s\n\n- **Repo:** git@github.com:%s/%s.git\n- **Stack:** %s\n- **Type:** agentic\n- **Status:** active\n- **Description:** %s\n",
-		state.RepoName, cfg.Owner, state.RepoName, strings.Join(cfg.Stacks, ", "), cfg.Description)
-	if err := os.WriteFile(filepath.Join(state.ClonePath, "REPOS.md"), []byte(reposMD), 0644); err != nil {
-		return fmt.Errorf("writing REPOS.md: %w", err)
+	// REPOS.md — only for Federated (org) topology.
+	if cfg.Topology == "Federated" {
+		reposMD := fmt.Sprintf("# REPOS.md\n\n## %s\n\n- **Repo:** git@github.com:%s/%s.git\n- **Stack:** %s\n- **Type:** agentic\n- **Status:** active\n- **Description:** %s\n",
+			state.RepoName, cfg.Owner, state.RepoName, strings.Join(cfg.Stacks, ", "), cfg.Description)
+		if err := os.WriteFile(filepath.Join(state.ClonePath, "REPOS.md"), []byte(reposMD), 0644); err != nil {
+			return fmt.Errorf("writing REPOS.md: %w", err)
+		}
+
+		// Create repos/.gitignore and tools/.gitignore for org topology.
+		for _, dir := range []string{"repos", "tools"} {
+			dirPath := filepath.Join(state.ClonePath, dir)
+			if err := os.MkdirAll(dirPath, 0755); err != nil {
+				return fmt.Errorf("creating %s/: %w", dir, err)
+			}
+			gitignore := "# Cloned repos — do not commit\n*\n!.gitignore\n"
+			if err := os.WriteFile(filepath.Join(dirPath, ".gitignore"), []byte(gitignore), 0644); err != nil {
+				return fmt.Errorf("writing %s/.gitignore: %w", dir, err)
+			}
+		}
 	}
 
 	agentsLocal := fmt.Sprintf(
@@ -328,15 +343,33 @@ func writeProjectFiles(cfg BootstrapConfig, state *StepState) error {
 		return fmt.Errorf("writing skills/.gitkeep: %w", err)
 	}
 
-	readmeMD := fmt.Sprintf(
-		"# %s\n\n%s\n\n## Setup\n\n"+
-			"See [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) for project context.\n\n"+
-			"## Agent sessions\n\n"+
-			"This repo uses the [agentic development framework](https://github.com/%s).\n"+
-			"See `base/AGENTS.md` and `AGENTS.local.md` for session protocols.\n",
-		cfg.ProjectName, cfg.Description, cfg.TemplateRepo)
-	if err := os.WriteFile(filepath.Join(state.ClonePath, "README.md"), []byte(readmeMD), 0644); err != nil {
-		return fmt.Errorf("writing README.md: %w", err)
+	// LOCALRULES.md — always generated with placeholder content, skip if exists.
+	localRulesPath := filepath.Join(state.ClonePath, "LOCALRULES.md")
+	if _, err := os.Stat(localRulesPath); os.IsNotExist(err) {
+		localRules := "# LOCALRULES.md — Project-Specific Rules\n\n" +
+			"This file contains project-specific rules that extend or override the\n" +
+			"template-managed rulebook in `.ai/RULEBOOK.md`.\n\n" +
+			"This file is project-owned and is never overwritten by a template sync.\n\n" +
+			"---\n\n" +
+			"<!-- Add project-specific rules below this line -->\n"
+		if err := os.WriteFile(localRulesPath, []byte(localRules), 0644); err != nil {
+			return fmt.Errorf("writing LOCALRULES.md: %w", err)
+		}
+	}
+
+	// README.md — only created if absent.
+	readmePath := filepath.Join(state.ClonePath, "README.md")
+	if _, err := os.Stat(readmePath); os.IsNotExist(err) {
+		readmeMD := fmt.Sprintf(
+			"# %s\n\n%s\n\n## Setup\n\n"+
+				"See [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) for project context.\n\n"+
+				"## Agent sessions\n\n"+
+				"This repo uses the [agentic development framework](https://github.com/%s).\n"+
+				"See `.ai/RULEBOOK.md` and `LOCALRULES.md` for session protocols.\n",
+			cfg.ProjectName, cfg.Description, cfg.TemplateRepo)
+		if err := os.WriteFile(readmePath, []byte(readmeMD), 0644); err != nil {
+			return fmt.Errorf("writing README.md: %w", err)
+		}
 	}
 
 	return nil
@@ -346,7 +379,7 @@ func writeProjectFiles(cfg BootstrapConfig, state *StepState) error {
 // into the repo's .github/workflows/ directory. Skipped silently if the source
 // file does not exist. Returns an error only on unexpected read/write failures.
 func deployPublishWorkflow(w io.Writer, state *StepState) error {
-	publishReleaseSrc := filepath.Join(state.ClonePath, "base", "docs", "examples", "publish-release.yml")
+	publishReleaseSrc := filepath.Join(state.ClonePath, ".ai", "docs", "examples", "publish-release.yml")
 	publishReleaseDst := filepath.Join(state.ClonePath, ".github", "workflows", "publish-release.yml")
 	srcData, err := os.ReadFile(publishReleaseSrc)
 	if os.IsNotExist(err) {
@@ -752,7 +785,7 @@ var syncWorkflowFiles = []string{
 	"sync-status-to-label.yml",
 }
 
-// DeploySyncWorkflows copies kanban sync workflow files from base/.github/workflows/
+// DeploySyncWorkflows copies kanban sync workflow files from .ai/.github/workflows/
 // into the bootstrapped repo's .github/workflows/ directory for org accounts.
 // For personal accounts this step is silently skipped.
 // Missing source files are handled gracefully (warning, not error).
@@ -762,7 +795,7 @@ func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run
 		return nil
 	}
 
-	sourceDir := filepath.Join(state.ClonePath, "base", ".github", "workflows")
+	sourceDir := filepath.Join(state.ClonePath, ".ai", ".github", "workflows")
 	destDir := filepath.Join(state.ClonePath, ".github", "workflows")
 
 	// Check which source files exist.
@@ -772,7 +805,7 @@ func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run
 		if _, err := os.Stat(srcPath); err == nil {
 			toCopy = append(toCopy, f)
 		} else {
-			fmt.Fprintln(w, "  "+ui.RenderWarning("Sync workflow "+f+" not found in base/ — skipping (dependency not yet met)"))
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Sync workflow "+f+" not found in .ai/ — skipping (dependency not yet met)"))
 		}
 	}
 

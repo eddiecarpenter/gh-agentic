@@ -277,14 +277,18 @@ func TestIntegrationRunSteps_HappyPath_GoEmbedded(t *testing.T) {
 
 	// Verify the clone directory was used — PopulateRepo writes files there.
 	clonePath := filepath.Join(workDir, projectName)
-	if _, statErr := os.Stat(filepath.Join(clonePath, "REPOS.md")); os.IsNotExist(statErr) {
-		t.Error("expected REPOS.md to be written by PopulateRepo")
-	}
 	if _, statErr := os.Stat(filepath.Join(clonePath, "AGENTS.local.md")); os.IsNotExist(statErr) {
 		t.Error("expected AGENTS.local.md to be written by PopulateRepo")
 	}
 	if _, statErr := os.Stat(filepath.Join(clonePath, "README.md")); os.IsNotExist(statErr) {
 		t.Error("expected README.md to be written by PopulateRepo")
+	}
+	if _, statErr := os.Stat(filepath.Join(clonePath, "LOCALRULES.md")); os.IsNotExist(statErr) {
+		t.Error("expected LOCALRULES.md to be written by PopulateRepo")
+	}
+	// Single topology: REPOS.md should NOT be created.
+	if _, statErr := os.Stat(filepath.Join(clonePath, "REPOS.md")); !os.IsNotExist(statErr) {
+		t.Error("REPOS.md should not be created for Single topology")
 	}
 
 	// Verify ScaffoldStack created directories (the mock bash -c returns success
