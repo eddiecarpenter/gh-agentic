@@ -307,9 +307,16 @@ func RunSync(
 		return err
 	}
 
-	// Step 9: Update version.
-	if err := spinner(w, "Updating TEMPLATE_VERSION", func() error {
+	// Step 9: Update .ai/config.yml with the new version.
+	if err := spinner(w, "Updating .ai/config.yml", func() error {
 		return UpdateVersion(repoRoot, cfg.LatestVersion)
+	}); err != nil {
+		return err
+	}
+
+	// Step 9b: Remove legacy TEMPLATE_SOURCE and TEMPLATE_VERSION files.
+	if err := spinner(w, "Removing legacy version files", func() error {
+		return DeleteLegacyVersionFiles(repoRoot)
 	}); err != nil {
 		return err
 	}

@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // FetchFunc downloads a tarball for the given repo and version tag.
@@ -59,10 +61,28 @@ type command interface {
 // newCommand creates a real exec.Cmd. Overridden in tests.
 var newCommand = newRealCommand
 
-// ReadTemplateConfig reads TEMPLATE_SOURCE and TEMPLATE_VERSION from the
-// given repo root directory. Returns an error if either file is missing
-// or empty.
+// ReadTemplateConfig reads the template repo and version. Primary source is
+// .ai/config.yml; falls back to TEMPLATE_SOURCE and TEMPLATE_VERSION for
+// repos not yet migrated to v1.5.0+.
+//
+// TODO(deprecated): remove TEMPLATE_SOURCE/TEMPLATE_VERSION fallback in next major version — .ai/config.yml is the source of truth.
 func ReadTemplateConfig(root string) (repo, version string, err error) {
+	// Primary: read from .ai/config.yml.
+	if data, readErr := os.ReadFile(filepath.Join(root, ".ai", "config.yml")); readErr == nil {
+		var cfg struct {
+			Template string `yaml:"template"`
+			Version  string `yaml:"version"`
+		}
+		if parseErr := yaml.Unmarshal(data, &cfg); parseErr == nil {
+			repo = strings.TrimSpace(cfg.Template)
+			version = strings.TrimSpace(cfg.Version)
+			if repo != "" && version != "" {
+				return repo, version, nil
+			}
+		}
+	}
+
+	// TODO(deprecated): remove in next major version — TEMPLATE_SOURCE/TEMPLATE_VERSION fallback for pre-v1.5.0 repos.
 	sourceData, err := os.ReadFile(filepath.Join(root, "TEMPLATE_SOURCE"))
 	if err != nil {
 		return "", "", fmt.Errorf("TEMPLATE_SOURCE missing: %w", err)

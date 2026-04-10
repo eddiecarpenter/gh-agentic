@@ -38,10 +38,17 @@ func (t *ProjectTemplate) ResolvedStatusOptions() []StatusOption {
 	return t.StatusField.Options
 }
 
-// LoadProjectTemplate reads and parses base/project-template.json from the given root directory.
+// LoadProjectTemplate reads and parses .ai/project-template.json from the given root directory.
+// Falls back to base/project-template.json for repos not yet migrated to v1.5.0+.
 // Returns structured data or a descriptive error if the file is missing or malformed.
+//
+// TODO(deprecated): remove base/ fallback in next major version.
 func LoadProjectTemplate(root string) (*ProjectTemplate, error) {
-	path := filepath.Join(root, "base", "project-template.json")
+	path := filepath.Join(root, ".ai", "project-template.json")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		// TODO(deprecated): remove in next major version — base/ fallback for pre-v1.5.0 repos.
+		path = filepath.Join(root, "base", "project-template.json")
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading project template %s: %w", path, err)

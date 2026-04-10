@@ -29,20 +29,20 @@ func TestCheckCLAUDEMD_Missing_ReturnsFail(t *testing.T) {
 	}
 }
 
-func TestCheckAGENTSLocalMD_Present_ReturnsPass(t *testing.T) {
+func TestCheckLOCALRULESMD_Present_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "AGENTS.local.md"), []byte("# local"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "LOCALRULES.md"), []byte("# local"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result := CheckAGENTSLocalMD(root)
+	result := CheckLOCALRULESMD(root)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckAGENTSLocalMD_Missing_ReturnsWarning(t *testing.T) {
+func TestCheckLOCALRULESMD_Missing_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
-	result := CheckAGENTSLocalMD(root)
+	result := CheckLOCALRULESMD(root)
 	if result.Status != Warning {
 		t.Errorf("expected Warning, got %v", result.Status)
 	}
@@ -67,41 +67,39 @@ func TestCheckSkillsDir_Absent_ReturnsWarning(t *testing.T) {
 	}
 }
 
-func TestCheckTEMPLATESOURCE_Present_ReturnsPass(t *testing.T) {
+func TestCheckAIConfigYML_Present_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_SOURCE"), []byte("eddiecarpenter/ai-native-delivery\n"), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	result := CheckTEMPLATESOURCE(root)
+	if err := os.WriteFile(filepath.Join(root, ".ai", "config.yml"), []byte("template: eddiecarpenter/ai-native-delivery\nversion: v1.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CheckAIConfigYML(root)
 	if result.Status != Pass {
 		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestCheckTEMPLATESOURCE_Missing_ReturnsWarning(t *testing.T) {
+func TestCheckAIConfigYML_Missing_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	result := CheckTEMPLATESOURCE(root)
-	if result.Status != Warning {
-		t.Errorf("expected Warning, got %v", result.Status)
-	}
-}
-
-func TestCheckTEMPLATEVERSION_Present_ReturnsPass(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "TEMPLATE_VERSION"), []byte("v1.0.0\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	result := CheckTEMPLATEVERSION(root)
-	if result.Status != Pass {
-		t.Errorf("expected Pass, got %v: %s", result.Status, result.Message)
-	}
-}
-
-func TestCheckTEMPLATEVERSION_Missing_ReturnsFail(t *testing.T) {
-	root := t.TempDir()
-	result := CheckTEMPLATEVERSION(root)
+	result := CheckAIConfigYML(root)
 	if result.Status != Fail {
 		t.Errorf("expected Fail, got %v", result.Status)
+	}
+}
+
+func TestCheckAIConfigYML_MalformedMissingFields_ReturnsFail(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".ai", "config.yml"), []byte("# empty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CheckAIConfigYML(root)
+	if result.Status != Fail {
+		t.Errorf("expected Fail for missing fields, got %v", result.Status)
 	}
 }
 
@@ -152,9 +150,7 @@ func TestFileChecks_TableDriven(t *testing.T) {
 		missingState CheckStatus
 	}{
 		{"CLAUDE.md", "CLAUDE.md", CheckCLAUDEMD, Fail},
-		{"AGENTS.local.md", "AGENTS.local.md", CheckAGENTSLocalMD, Warning},
-		{"TEMPLATE_SOURCE", "TEMPLATE_SOURCE", CheckTEMPLATESOURCE, Warning},
-		{"TEMPLATE_VERSION", "TEMPLATE_VERSION", CheckTEMPLATEVERSION, Fail},
+		{"LOCALRULES.md", "LOCALRULES.md", CheckLOCALRULESMD, Warning},
 		{"REPOS.md", "REPOS.md", CheckREPOSMD, Fail},
 		{"README.md", "README.md", CheckREADMEMD, Fail},
 	}

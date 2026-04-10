@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/fsutil"
 	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
@@ -404,11 +406,42 @@ func ShowDiff(repoRoot string, run bootstrap.RunCommandFunc) (string, error) {
 	return out, nil
 }
 
-// UpdateVersion writes the new version string to TEMPLATE_VERSION.
+// UpdateVersion writes the new version into .ai/config.yml, preserving the
+// existing template field. TEMPLATE_VERSION is no longer written — use
+// DeleteLegacyVersionFiles to remove it after staging.
 func UpdateVersion(repoRoot, version string) error {
-	path := filepath.Join(repoRoot, "TEMPLATE_VERSION")
-	if err := os.WriteFile(path, []byte(version+"\n"), 0o644); err != nil {
-		return fmt.Errorf("writing TEMPLATE_VERSION: %w", err)
+	cfg, err := ReadAIConfig(repoRoot)
+	if err != nil {
+		// config.yml not yet present — fall back to reading the template source.
+		// TODO(deprecated): remove TEMPLATE_SOURCE fallback in next major version.
+		source, srcErr := ReadTemplateSource(repoRoot)
+		if srcErr != nil {
+			return fmt.Errorf("reading template source for config.yml: %w", srcErr)
+		}
+		cfg.Template = source
+	}
+	cfg.Version = version
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshalling .ai/config.yml: %w", err)
+	}
+	configPath := filepath.Join(repoRoot, ".ai", "config.yml")
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		return fmt.Errorf("writing .ai/config.yml: %w", err)
+	}
+	return nil
+}
+
+// DeleteLegacyVersionFiles removes TEMPLATE_SOURCE and TEMPLATE_VERSION from
+// the repo root if they exist. These files were superseded by .ai/config.yml
+// in v1.5.0.
+func DeleteLegacyVersionFiles(repoRoot string) error {
+	for _, name := range []string{"TEMPLATE_SOURCE", "TEMPLATE_VERSION"} {
+		path := filepath.Join(repoRoot, name)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing %s: %w", name, err)
+		}
 	}
 	return nil
 }
@@ -423,10 +456,16 @@ func WritePostSyncMD(repoRoot string, releaseBody string) error {
 	return nil
 }
 
-// StageSync stages .ai/, .github/workflows/, CLAUDE.md, AGENTS.md, TEMPLATE_VERSION,
-// .goose/recipes/, and POST_SYNC.md for commit.
+// StageSync stages all sync changes for commit. Removes legacy TEMPLATE_SOURCE
+// and TEMPLATE_VERSION from git tracking (they are superseded by .ai/config.yml),
+// then stages .ai/, .github/workflows/, CLAUDE.md, AGENTS.md, .goose/recipes/,
+// and POST_SYNC.md.
 func StageSync(repoRoot string, run bootstrap.RunCommandFunc) error {
-	if out, err := runInDir(run, repoRoot, "git", "add", ".ai/", "CLAUDE.md", "AGENTS.md", "TEMPLATE_VERSION", ".github/workflows/", ".goose/recipes/", "POST_SYNC.md"); err != nil {
+	// Remove legacy files from git tracking — ignore if already gone.
+	if out, err := runInDir(run, repoRoot, "git", "rm", "--ignore-unmatch", "--cached", "TEMPLATE_SOURCE", "TEMPLATE_VERSION"); err != nil {
+		return fmt.Errorf("git rm legacy files: %w\n%s", err, strings.TrimSpace(out))
+	}
+	if out, err := runInDir(run, repoRoot, "git", "add", ".ai/", "CLAUDE.md", "AGENTS.md", ".github/workflows/", ".goose/recipes/", "POST_SYNC.md"); err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
 	}
 	return nil

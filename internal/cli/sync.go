@@ -46,7 +46,7 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 		Use:   "sync",
 		Short: "Sync .ai/ from the upstream template",
 		Long: "Syncs the .ai/ directory from the upstream agentic-development template.\n" +
-			"Reads TEMPLATE_SOURCE and TEMPLATE_VERSION to determine what to sync.\n" +
+			"Reads .ai/config.yml to determine the template source and current version.\n" +
 			"Shows release notes and asks for confirmation before staging.\n" +
 			"By default, changes are staged but not committed.\n" +
 			"Pass --commit to automatically commit after staging.\n" +
@@ -106,8 +106,10 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 }
 
 // findRepoRoot walks up from the current working directory until it finds a
-// directory containing TEMPLATE_SOURCE, which indicates the agentic repo root.
-// Returns an error if not run inside an agentic repo.
+// directory containing .ai/config.yml, which indicates the agentic repo root.
+// Falls back to TEMPLATE_SOURCE for repos not yet migrated to v1.5.0+.
+//
+// TODO(deprecated): remove TEMPLATE_SOURCE fallback in next major version.
 func findRepoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -115,14 +117,19 @@ func findRepoRoot() (string, error) {
 	}
 
 	for {
+		// Primary: .ai/config.yml (v1.5.0+).
+		if _, err := os.Stat(filepath.Join(dir, ".ai", "config.yml")); err == nil {
+			return dir, nil
+		}
+
+		// TODO(deprecated): remove in next major version — TEMPLATE_SOURCE fallback for pre-v1.5.0 repos.
 		if _, err := os.Stat(filepath.Join(dir, "TEMPLATE_SOURCE")); err == nil {
 			return dir, nil
 		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached filesystem root without finding TEMPLATE_SOURCE.
-			return "", fmt.Errorf("not inside an agentic repo (no TEMPLATE_SOURCE found)")
+			return "", fmt.Errorf("not inside an agentic repo (no .ai/config.yml found)")
 		}
 		dir = parent
 	}

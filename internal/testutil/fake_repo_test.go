@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -11,13 +12,13 @@ func TestNewFakeRepo_CreatesStandardFiles(t *testing.T) {
 	repo := NewFakeRepo(t)
 
 	expectedFiles := []string{
-		"TEMPLATE_SOURCE",
-		"TEMPLATE_VERSION",
+		".ai/config.yml",
+		".ai/RULEBOOK.md",
 		"CLAUDE.md",
-		"AGENTS.local.md",
+		"AGENTS.md",
+		"LOCALRULES.md",
 		"REPOS.md",
 		"README.md",
-		".ai/RULEBOOK.md",
 	}
 
 	for _, f := range expectedFiles {
@@ -56,15 +57,18 @@ func TestNewFakeRepo_HasAtLeastOneCommit(t *testing.T) {
 	}
 }
 
-func TestNewFakeRepo_TemplateSourceContent(t *testing.T) {
+func TestNewFakeRepo_ConfigYMLContent(t *testing.T) {
 	repo := NewFakeRepo(t)
 
-	content, err := os.ReadFile(filepath.Join(repo.Root, "TEMPLATE_SOURCE"))
+	content, err := os.ReadFile(filepath.Join(repo.Root, ".ai", "config.yml"))
 	if err != nil {
-		t.Fatalf("read TEMPLATE_SOURCE: %v", err)
+		t.Fatalf("read .ai/config.yml: %v", err)
 	}
-	if string(content) != "eddiecarpenter/ai-native-delivery" {
-		t.Fatalf("unexpected TEMPLATE_SOURCE: %q", string(content))
+	if !strings.Contains(string(content), "eddiecarpenter/ai-native-delivery") {
+		t.Fatalf("unexpected .ai/config.yml content: %q", string(content))
+	}
+	if !strings.Contains(string(content), "v1.0.0") {
+		t.Fatalf(".ai/config.yml missing version: %q", string(content))
 	}
 }
 

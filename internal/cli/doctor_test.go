@@ -44,8 +44,8 @@ func setupDoctorFakeRepo(t *testing.T) *testutil.FakeRepo {
 	// .ai/skills/ must contain at least one .md for CheckAISkills.
 	repo.Write(filepath.Join(".ai", "skills", "dev-session.md"), "# skill\n")
 
-	// base/project-template.json for CheckProjectStatus (LoadProjectTemplate still reads from base/).
-	repo.Write(filepath.Join("base", "project-template.json"), `{
+	// .ai/project-template.json for CheckProjectStatus.
+	repo.Write(filepath.Join(".ai", "project-template.json"), `{
   "statusOptions": [
     {"name": "Backlog",        "color": "GRAY",   "description": "Prioritised, ready to start"},
     {"name": "Scoping",        "color": "PURPLE", "description": "Requirement or feature being scoped"},
@@ -198,9 +198,9 @@ func TestRunDoctor_MissingCLAUDEMD(t *testing.T) {
 	}
 }
 
-func TestRunDoctor_MissingAGENTSLocalMD(t *testing.T) {
+func TestRunDoctor_MissingLOCALRULESMD(t *testing.T) {
 	repo := setupDoctorFakeRepo(t)
-	repo.Remove("AGENTS.local.md")
+	repo.Remove("LOCALRULES.md")
 	mock := newMockRunner(t)
 
 	var buf bytes.Buffer
@@ -215,19 +215,21 @@ func TestRunDoctor_MissingAGENTSLocalMD(t *testing.T) {
 	}
 
 	err := runDoctor(&buf, strings.NewReader(""), cfg)
-	if err == nil {
-		t.Fatal("expected error for missing AGENTS.local.md, got nil")
-	}
 
 	output := buf.String()
-	if !strings.Contains(output, "AGENTS.local.md") {
-		t.Errorf("expected AGENTS.local.md mentioned in output, got:\n%s", output)
+	if !strings.Contains(output, "LOCALRULES.md") {
+		t.Errorf("expected LOCALRULES.md mentioned in output, got:\n%s", output)
+	}
+
+	// Missing LOCALRULES.md is a Warning — should not be a hard failure.
+	if err != nil && err != ErrSilent {
+		t.Errorf("expected nil or ErrSilent, got: %v", err)
 	}
 }
 
-func TestRunDoctor_MissingTEMPLATESOURCE(t *testing.T) {
+func TestRunDoctor_MissingAIConfigYML(t *testing.T) {
 	repo := setupDoctorFakeRepo(t)
-	repo.Remove("TEMPLATE_SOURCE")
+	repo.Remove(filepath.Join(".ai", "config.yml"))
 	mock := newMockRunner(t)
 
 	var buf bytes.Buffer
@@ -241,18 +243,15 @@ func TestRunDoctor_MissingTEMPLATESOURCE(t *testing.T) {
 		yes:          false,
 	}
 
-	// TEMPLATE_SOURCE missing is a Warning, not a Fail in some checks.
-	// The test verifies the output mentions TEMPLATE_SOURCE.
 	err := runDoctor(&buf, strings.NewReader(""), cfg)
 
 	output := buf.String()
-	if !strings.Contains(output, "TEMPLATE_SOURCE") {
-		t.Errorf("expected TEMPLATE_SOURCE mentioned in output, got:\n%s", output)
+	if !strings.Contains(output, "config.yml") {
+		t.Errorf("expected config.yml mentioned in output, got:\n%s", output)
 	}
 
-	// If there is an error, it should be ErrSilent (already printed).
-	if err != nil && err != ErrSilent {
-		t.Errorf("expected nil or ErrSilent, got: %v", err)
+	if err == nil {
+		t.Error("expected error for missing .ai/config.yml, got nil")
 	}
 }
 
@@ -293,9 +292,9 @@ func TestRunDoctor_RepairYes_RestoreCLAUDEMD(t *testing.T) {
 	}
 }
 
-func TestRunDoctor_RepairYes_RestoreAGENTSLocalMD(t *testing.T) {
+func TestRunDoctor_RepairYes_RestoreLOCALRULESMD(t *testing.T) {
 	repo := setupDoctorFakeRepo(t)
-	repo.Remove("AGENTS.local.md")
+	repo.Remove("LOCALRULES.md")
 	mock := newMockRunner(t)
 
 	var buf bytes.Buffer
@@ -311,10 +310,10 @@ func TestRunDoctor_RepairYes_RestoreAGENTSLocalMD(t *testing.T) {
 
 	err := runDoctor(&buf, strings.NewReader(""), cfg)
 
-	// After repair, AGENTS.local.md should exist on disk.
-	agentsPath := filepath.Join(repo.Root, "AGENTS.local.md")
-	if _, statErr := os.Stat(agentsPath); os.IsNotExist(statErr) {
-		t.Error("expected AGENTS.local.md to be restored by repair, but file does not exist")
+	// After repair, LOCALRULES.md should exist on disk.
+	localRulesPath := filepath.Join(repo.Root, "LOCALRULES.md")
+	if _, statErr := os.Stat(localRulesPath); os.IsNotExist(statErr) {
+		t.Error("expected LOCALRULES.md to be restored by repair, but file does not exist")
 	}
 
 	output := buf.String()
