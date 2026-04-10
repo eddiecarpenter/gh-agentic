@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"bytes"
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -127,32 +126,3 @@ func TestResolveAgentUser_EmptyScope_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestDetectOrgAgentUser_Found_ReturnsValue(t *testing.T) {
-	fakeRun := func(name string, args ...string) (string, error) {
-		return `[{"name":"AGENT_USER","value":"goose-agent"},{"name":"OTHER","value":"x"}]`, nil
-	}
-	val := detectOrgAgentUser("acme-org", fakeRun)
-	if val != "goose-agent" {
-		t.Errorf("expected %q, got %q", "goose-agent", val)
-	}
-}
-
-func TestDetectOrgAgentUser_NotFound_ReturnsEmpty(t *testing.T) {
-	fakeRun := func(name string, args ...string) (string, error) {
-		return `[{"name":"OTHER","value":"x"}]`, nil
-	}
-	val := detectOrgAgentUser("acme-org", fakeRun)
-	if val != "" {
-		t.Errorf("expected empty, got %q", val)
-	}
-}
-
-func TestDetectOrgAgentUser_Error_ReturnsEmpty(t *testing.T) {
-	fakeRun := func(name string, args ...string) (string, error) {
-		return "", fmt.Errorf("permission denied")
-	}
-	val := detectOrgAgentUser("acme-org", fakeRun)
-	if val != "" {
-		t.Errorf("expected empty, got %q", val)
-	}
-}

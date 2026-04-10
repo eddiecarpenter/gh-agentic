@@ -1,10 +1,8 @@
 package bootstrap
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 )
 
 // ResolveAgentUser validates the agent user configuration. Both AgentUser and
@@ -33,29 +31,3 @@ func ResolveAgentUser(w io.Writer, cfg *BootstrapConfig, run RunCommandFunc) err
 	return nil
 }
 
-// agentUserVariable is used to unmarshal JSON output from `gh variable list`.
-type agentUserVariable struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-// detectOrgAgentUser queries org-level GitHub Actions variables and returns the
-// value of AGENT_USER if set, or empty string if not found.
-func detectOrgAgentUser(owner string, run RunCommandFunc) string {
-	out, err := run("gh", "variable", "list", "--org", owner, "--json", "name,value", "--limit", "100")
-	if err != nil {
-		return ""
-	}
-
-	var vars []agentUserVariable
-	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &vars); jsonErr != nil {
-		return ""
-	}
-
-	for _, v := range vars {
-		if v.Name == "AGENT_USER" {
-			return v.Value
-		}
-	}
-	return ""
-}
