@@ -668,7 +668,7 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 // ResyncProjectItemStatuses is the exported entry point for resyncing all project
 // item statuses. It resolves the project node ID, fetches the status field ID and
 // options, and calls resyncProjectItemStatuses.
-func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
+func ResyncProjectItemStatuses(owner, repoName string, run bootstrap.RunCommandFunc) (updated int, correct int, err error) {
 	projectNodeID := resolveProjectNodeIDViaRun(owner, repoName, run)
 	if projectNodeID == "" {
 		return 0, 0, fmt.Errorf("no GitHub Project found for owner %s", owner)
@@ -691,8 +691,8 @@ func ResyncProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCo
 
 // RepairProjectItemStatuses resyncs all project item statuses from issue labels
 // and state. It wraps ResyncProjectItemStatuses as a repair action.
-func RepairProjectItemStatuses(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
-	updated, correct, err := ResyncProjectItemStatuses(owner, repoName, root, run)
+func RepairProjectItemStatuses(owner, repoName string, run bootstrap.RunCommandFunc) CheckResult {
+	updated, correct, err := ResyncProjectItemStatuses(owner, repoName, run)
 	if err != nil {
 		return CheckResult{
 			Name:    checkProjectItemStatusesName,

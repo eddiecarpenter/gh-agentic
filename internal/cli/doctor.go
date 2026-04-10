@@ -155,7 +155,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			case "GitHub Project has required views":
 				r = verify.RepairProjectViews(cfg.owner, cfg.repoName, cfg.root, run)
 			case "Project items have status assigned":
-				r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, cfg.root, run)
+				r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, run)
 			case "AGENT_USER variable configured":
 				r = verify.RepairAgentUserVar(cfg.owner, cfg.repoName, cfg.agentUser, cfg.agentUserScope, run, textConfirm)
 			case "RUNNER_LABEL variable configured":
