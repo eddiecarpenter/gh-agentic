@@ -1,0 +1,2 @@
+@.ai/RULEBOOK.md
+@LOCALRULES.md
