@@ -70,8 +70,8 @@ func TestRepairCLAUDEMD_CreatesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "@base/AGENTS.md") {
-		t.Error("CLAUDE.md should reference @base/AGENTS.md")
+	if !strings.Contains(content, "@.ai/RULEBOOK.md") {
+		t.Error("CLAUDE.md should reference @.ai/RULEBOOK.md")
 	}
 	if !strings.Contains(content, "@AGENTS.local.md") {
 		t.Error("CLAUDE.md should reference @AGENTS.local.md")
@@ -216,10 +216,10 @@ func TestRepairREADMEMD_CreatesFile(t *testing.T) {
 // Directory integrity repair tests
 // ──────────────────────────────────────────────────────────────────────────────
 
-func TestRepairBaseDir_UserConfirms_ReturnsPass(t *testing.T) {
+func TestRepairAIDir_UserConfirms_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
-	// Create base/ so the repair takes the git-checkout path (not sync).
-	if err := os.MkdirAll(filepath.Join(root, "base"), 0o755); err != nil {
+	// Create .ai/ so the repair takes the git-checkout path (not sync).
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	fakeRun := func(name string, args ...string) (string, error) {
@@ -229,13 +229,13 @@ func TestRepairBaseDir_UserConfirms_ReturnsPass(t *testing.T) {
 		return true, nil
 	}
 
-	result := RepairBaseDir(root, fakeRun, confirmFn)
+	result := RepairAIDir(root, fakeRun, confirmFn)
 	if result.Status != Pass {
 		t.Errorf("expected Pass after confirmed repair, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestRepairBaseDir_UserDeclines_ReturnsFail(t *testing.T) {
+func TestRepairAIDir_UserDeclines_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
@@ -244,30 +244,30 @@ func TestRepairBaseDir_UserDeclines_ReturnsFail(t *testing.T) {
 		return false, nil
 	}
 
-	result := RepairBaseDir(root, fakeRun, confirmFn)
+	result := RepairAIDir(root, fakeRun, confirmFn)
 	if result.Status != Fail {
 		t.Errorf("expected Fail when user declines, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestRepairBaseRecipes_UserConfirms_ReturnsPass(t *testing.T) {
+func TestRepairAISkills_UserConfirms_ReturnsPass(t *testing.T) {
 	root := t.TempDir()
 	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 	confirmFn := func(prompt string) (bool, error) {
 		return true, nil
 	}
 	fetch := buildTestFetchFunc(t, map[string]string{
-		"base/skills/session-init.md": "# Session Init",
-		"base/skills/dev-session.md":  "# Dev Session",
+		".ai/skills/session-init.md": "# Session Init",
+		".ai/skills/dev-session.md":  "# Dev Session",
 	})
 
-	result := RepairBaseRecipes(root, confirmFn, fetch)
+	result := RepairAISkills(root, confirmFn, fetch)
 	if result.Status != Pass {
 		t.Errorf("expected Pass after confirmed repair, got %v: %s", result.Status, result.Message)
 	}
 
 	// Verify extracted file exists.
-	data, err := os.ReadFile(filepath.Join(root, "base", "skills", "session-init.md"))
+	data, err := os.ReadFile(filepath.Join(root, ".ai", "skills", "session-init.md"))
 	if err != nil {
 		t.Fatalf("expected extracted file: %v", err)
 	}
@@ -276,27 +276,27 @@ func TestRepairBaseRecipes_UserConfirms_ReturnsPass(t *testing.T) {
 	}
 }
 
-func TestRepairBaseRecipes_UserDeclines_ReturnsWarning(t *testing.T) {
+func TestRepairAISkills_UserDeclines_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
 	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 	confirmFn := func(prompt string) (bool, error) {
 		return false, nil
 	}
 
-	result := RepairBaseRecipes(root, confirmFn, nil)
+	result := RepairAISkills(root, confirmFn, nil)
 	if result.Status != Warning {
 		t.Errorf("expected Warning when user declines, got %v: %s", result.Status, result.Message)
 	}
 }
 
-func TestRepairBaseRecipes_MissingTemplateConfig_ReturnsFail(t *testing.T) {
+func TestRepairAISkills_MissingTemplateConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
 	// No TEMPLATE_SOURCE or TEMPLATE_VERSION — should fail.
 	confirmFn := func(prompt string) (bool, error) {
 		return true, nil
 	}
 
-	result := RepairBaseRecipes(root, confirmFn, nil)
+	result := RepairAISkills(root, confirmFn, nil)
 	if result.Status != Fail {
 		t.Errorf("expected Fail when template config missing, got %v: %s", result.Status, result.Message)
 	}
@@ -359,15 +359,15 @@ func TestRepairGooseRecipes_TarballError_ReturnsFail(t *testing.T) {
 	}
 }
 
-func TestRepairWorkflows_FromBase_CopiesAndStages(t *testing.T) {
+func TestRepairWorkflows_FromAI_CopiesAndStages(t *testing.T) {
 	root := t.TempDir()
 
-	// Create base/.github/workflows/ with content.
-	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
-	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+	// Create .ai/.github/workflows/ with content.
+	aiWfDir := filepath.Join(root, ".ai", ".github", "workflows")
+	if err := os.MkdirAll(aiWfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(baseWfDir, "pipeline.yml"), []byte("pipeline-v2"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(aiWfDir, "pipeline.yml"), []byte("pipeline-v2"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -412,7 +412,7 @@ func TestRepairWorkflows_Fallback_ExtractsFromTarball(t *testing.T) {
 	root := t.TempDir()
 	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 
-	// No base/.github/workflows/ — fallback to tarball.
+	// No .ai/.github/workflows/ — fallback to tarball.
 	workflowFiles := make(map[string]string)
 	for _, name := range expectedWorkflowYMLs {
 		workflowFiles[".github/workflows/"+name] = "on: push # " + name
@@ -444,7 +444,7 @@ func TestRepairWorkflows_Fallback_ExtractsFromTarball(t *testing.T) {
 
 func TestRepairWorkflows_Fallback_MissingConfig_ReturnsFail(t *testing.T) {
 	root := t.TempDir()
-	// No base/ and no TEMPLATE_SOURCE — should fail.
+	// No .ai/ and no TEMPLATE_SOURCE — should fail.
 	fakeRun := func(name string, args ...string) (string, error) {
 		return "", nil
 	}
@@ -460,15 +460,15 @@ func TestRepairWorkflows_Fallback_MissingConfig_ReturnsFail(t *testing.T) {
 func TestRepairWorkflows_PersonalAccount_SkipsOrgOnlyWorkflow(t *testing.T) {
 	root := t.TempDir()
 
-	// Base has both a regular and an org-only workflow.
-	baseWfDir := filepath.Join(root, "base", ".github", "workflows")
-	if err := os.MkdirAll(baseWfDir, 0o755); err != nil {
+	// .ai has both a regular and an org-only workflow.
+	aiWfDir := filepath.Join(root, ".ai", ".github", "workflows")
+	if err := os.MkdirAll(aiWfDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(baseWfDir, "agentic-pipeline.yml"), []byte("pipeline-v2"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(aiWfDir, "agentic-pipeline.yml"), []byte("pipeline-v2"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(baseWfDir, "sync-status-to-label.yml"), []byte("org-only"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(aiWfDir, "sync-status-to-label.yml"), []byte("org-only"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -508,7 +508,7 @@ func TestRepairWorkflows_Fallback_PersonalAccount_SkipsOrgOnly(t *testing.T) {
 	root := t.TempDir()
 	writeTemplateConfig(t, root, "owner/template", "v1.0.0")
 
-	// No base/.github/workflows/ — fallback to tarball.
+	// No .ai/.github/workflows/ — fallback to tarball.
 	// Include both regular and org-only workflows in tarball.
 	workflowFiles := map[string]string{
 		".github/workflows/agentic-pipeline.yml":     "on: push",
@@ -703,7 +703,7 @@ func TestRepairProjectStatus_MutationFails_ReturnsFail(t *testing.T) {
 }
 
 func TestRepairProjectStatus_MissingTemplate_ReturnsFail(t *testing.T) {
-	root := t.TempDir() // No base/project-template.json.
+	root := t.TempDir() // No .ai/project-template.json.
 	fakeRun := func(name string, args ...string) (string, error) {
 		t.Fatal("run should not be called when template is missing")
 		return "", nil

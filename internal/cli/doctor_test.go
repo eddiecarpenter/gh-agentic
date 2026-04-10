@@ -41,10 +41,10 @@ func setupDoctorFakeRepo(t *testing.T) *testutil.FakeRepo {
 	// Workflows check expects agentic-pipeline.yml.
 	repo.Write(filepath.Join(".github", "workflows", "agentic-pipeline.yml"), "name: pipeline\n")
 
-	// base/skills/ must contain at least one .md for CheckBaseRecipes.
-	repo.Write(filepath.Join("base", "skills", "dev-session.md"), "# skill\n")
+	// .ai/skills/ must contain at least one .md for CheckAISkills.
+	repo.Write(filepath.Join(".ai", "skills", "dev-session.md"), "# skill\n")
 
-	// base/project-template.json for CheckProjectStatus.
+	// base/project-template.json for CheckProjectStatus (LoadProjectTemplate still reads from base/).
 	repo.Write(filepath.Join("base", "project-template.json"), `{
   "statusOptions": [
     {"name": "Backlog",        "color": "GRAY",   "description": "Prioritised, ready to start"},
@@ -66,7 +66,7 @@ func newMockRunner(t *testing.T) *testutil.MockRunner {
 	t.Helper()
 	m := &testutil.MockRunner{}
 
-	// CheckBaseDir runs: git -C <root> diff --stat HEAD -- base/
+	// CheckAIDir runs: git -C <root> diff --stat HEAD -- .ai/
 	// We use a wildcard-free approach: register empty expectations.
 	// MockRunner matches exact args — we need to register per-test since root varies.
 	// Instead, return ("", nil) for unmatched which is the default.

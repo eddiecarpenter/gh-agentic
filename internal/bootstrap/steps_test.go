@@ -650,7 +650,7 @@ func TestConfigureRepo_OutputContainsAllLabels(t *testing.T) {
 // Step 7 — PopulateRepo
 // --------------------------------------------------------------------------------------
 
-func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
+func TestPopulateRepo_WritesStandardFiles(t *testing.T) {
 	dir := t.TempDir()
 	cfg := BootstrapConfig{
 		Owner:        "alice",
@@ -672,7 +672,8 @@ func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 		t.Fatalf("PopulateRepo() unexpected error: %v", err)
 	}
 
-	for _, f := range []string{"REPOS.md", "AGENTS.local.md", "README.md"} {
+	// Single topology: AGENTS.local.md, README.md, LOCALRULES.md created.
+	for _, f := range []string{"AGENTS.local.md", "README.md", "LOCALRULES.md"} {
 		data, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
 			t.Errorf("expected %s to exist, got: %v", f, err)
@@ -683,9 +684,144 @@ func TestPopulateRepo_WritesThreeFiles(t *testing.T) {
 		}
 	}
 
+	// Single topology: REPOS.md should NOT be created.
+	if _, err := os.Stat(filepath.Join(dir, "REPOS.md")); !os.IsNotExist(err) {
+		t.Error("REPOS.md should not be created for Single topology")
+	}
+
 	// Verify skills/.gitkeep is created.
 	if _, err := os.Stat(filepath.Join(dir, "skills", ".gitkeep")); err != nil {
 		t.Error("expected skills/.gitkeep to exist")
+	}
+}
+
+func TestPopulateRepo_Federated_CreatesOrgOnlyFiles(t *testing.T) {
+	dir := t.TempDir()
+	cfg := BootstrapConfig{
+		Owner:        "myorg",
+		ProjectName:  "my-project",
+		Topology:     "Federated",
+		Stacks:      []string{"Go"},
+		Description:  "An org project",
+		Antora:       false,
+		TemplateRepo: DefaultTemplateRepo,
+	}
+	state := &StepState{
+		RepoName:  "my-project-agentic",
+		ClonePath: dir,
+		RepoURL:   "https://github.com/myorg/my-project-agentic",
+	}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Federated topology: REPOS.md, repos/.gitignore, tools/.gitignore created.
+	for _, f := range []string{"REPOS.md", "repos/.gitignore", "tools/.gitignore"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); os.IsNotExist(err) {
+			t.Errorf("expected %s to exist for Federated topology", f)
+		}
+	}
+}
+
+func TestPopulateRepo_Single_OmitsOrgOnlyFiles(t *testing.T) {
+	dir := t.TempDir()
+	cfg := BootstrapConfig{
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Topology:     "Single",
+		Stacks:      []string{"Go"},
+		Description:  "A personal project",
+		Antora:       false,
+		TemplateRepo: DefaultTemplateRepo,
+	}
+	state := &StepState{
+		RepoName:  "my-project",
+		ClonePath: dir,
+		RepoURL:   "https://github.com/alice/my-project",
+	}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// Single topology: REPOS.md, repos/.gitignore, tools/.gitignore NOT created.
+	for _, f := range []string{"REPOS.md", "repos/.gitignore", "tools/.gitignore"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); !os.IsNotExist(err) {
+			t.Errorf("%s should not be created for Single topology", f)
+		}
+	}
+}
+
+func TestPopulateRepo_LOCALRULESNotOverwritten(t *testing.T) {
+	dir := t.TempDir()
+	// Pre-create LOCALRULES.md with custom content.
+	existingContent := "# My Custom Rules\n\nDo not overwrite.\n"
+	if err := os.WriteFile(filepath.Join(dir, "LOCALRULES.md"), []byte(existingContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Topology:     "Single",
+		Stacks:      []string{"Go"},
+		Description:  "A test project",
+		Antora:       false,
+		TemplateRepo: DefaultTemplateRepo,
+	}
+	state := &StepState{
+		RepoName:  "my-project",
+		ClonePath: dir,
+		RepoURL:   "https://github.com/alice/my-project",
+	}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// LOCALRULES.md should not be overwritten.
+	data, _ := os.ReadFile(filepath.Join(dir, "LOCALRULES.md"))
+	if string(data) != existingContent {
+		t.Errorf("LOCALRULES.md should not be overwritten, got: %q", string(data))
+	}
+}
+
+func TestPopulateRepo_READMENotOverwritten(t *testing.T) {
+	dir := t.TempDir()
+	// Pre-create README.md with custom content.
+	existingContent := "# My Existing README\n"
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte(existingContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := BootstrapConfig{
+		Owner:        "alice",
+		ProjectName:  "my-project",
+		Topology:     "Single",
+		Stacks:      []string{"Go"},
+		Description:  "A test project",
+		Antora:       false,
+		TemplateRepo: DefaultTemplateRepo,
+	}
+	state := &StepState{
+		RepoName:  "my-project",
+		ClonePath: dir,
+		RepoURL:   "https://github.com/alice/my-project",
+	}
+
+	var buf bytes.Buffer
+	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
+		t.Fatalf("PopulateRepo() unexpected error: %v", err)
+	}
+
+	// README.md should not be overwritten.
+	data, _ := os.ReadFile(filepath.Join(dir, "README.md"))
+	if string(data) != existingContent {
+		t.Errorf("README.md should not be overwritten, got: %q", string(data))
 	}
 }
 
@@ -799,13 +935,14 @@ func TestPopulateRepo_PushFails_ReturnsError(t *testing.T) {
 func TestPopulateRepo_ReposMDContainsDescription(t *testing.T) {
 	dir := t.TempDir()
 	cfg := BootstrapConfig{
-		Owner:        "alice",
+		Owner:        "myorg",
 		ProjectName:  "my-project",
+		Topology:     "Federated",
 		Stacks:      []string{"Go"},
 		Description:  "unique-description-12345",
 		TemplateRepo: DefaultTemplateRepo,
 	}
-	state := &StepState{RepoName: "my-project", ClonePath: dir}
+	state := &StepState{RepoName: "my-project-agentic", ClonePath: dir}
 
 	var buf bytes.Buffer
 	if err := PopulateRepo(&buf, cfg, state, fakeRunOK("")); err != nil {
@@ -822,7 +959,7 @@ func TestPopulateRepo_DeploysPublishReleaseYml(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create the example source file in the template clone path.
-	exampleDir := filepath.Join(dir, "base", "docs", "examples")
+	exampleDir := filepath.Join(dir, ".ai", "docs", "examples")
 	if err := os.MkdirAll(exampleDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -1379,7 +1516,7 @@ func TestDeploySyncWorkflows_MissingSourceFiles_LogsWarning(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "not found in base/") {
+	if !strings.Contains(out, "not found in .ai/") {
 		t.Errorf("expected warning about missing source files, got: %s", out)
 	}
 	if !strings.Contains(out, "No sync workflows to deploy") {
@@ -1393,7 +1530,7 @@ func TestDeploySyncWorkflows_OrgSuccess_CopiesAndCommits(t *testing.T) {
 	state := &StepState{ClonePath: dir}
 
 	// Create source workflow files.
-	sourceDir := filepath.Join(dir, "base", ".github", "workflows")
+	sourceDir := filepath.Join(dir, ".ai", ".github", "workflows")
 	if err := os.MkdirAll(sourceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -1448,7 +1585,7 @@ func TestDeploySyncWorkflows_GitAddFails_LogsWarning(t *testing.T) {
 	state := &StepState{ClonePath: dir}
 
 	// Create source workflow files.
-	sourceDir := filepath.Join(dir, "base", ".github", "workflows")
+	sourceDir := filepath.Join(dir, ".ai", ".github", "workflows")
 	if err := os.MkdirAll(sourceDir, 0755); err != nil {
 		t.Fatal(err)
 	}

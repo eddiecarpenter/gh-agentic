@@ -23,7 +23,7 @@ const standardCLAUDEMD = `# CLAUDE.md
 This project uses AGENTS.md as the single source of truth for agent instructions.
 All development rules, workflows, and session protocols are defined there.
 
-@base/AGENTS.md
+@.ai/RULEBOOK.md
 @AGENTS.local.md
 `
 
@@ -31,7 +31,7 @@ All development rules, workflows, and session protocols are defined there.
 const skeletonAGENTSLocalMD = `# AGENTS.local.md — Local Overrides
 
 This file contains project-specific rules and overrides that extend or
-supersede the global protocol defined in ` + "`base/AGENTS.md`" + `.
+supersede the global protocol defined in ` + "`.ai/RULEBOOK.md`" + `.
 
 This file is never overwritten by a template sync.
 
@@ -71,7 +71,7 @@ See ` + "`docs/PROJECT_BRIEF.md`" + ` for project context.
 ## Agent sessions
 
 This repo uses the [agentic development framework](https://github.com/eddiecarpenter/ai-native-delivery).
-See ` + "`base/AGENTS.md`" + ` and ` + "`AGENTS.local.md`" + ` for session protocols.
+See ` + "`.ai/RULEBOOK.md`" + ` and ` + "`AGENTS.local.md`" + ` for session protocols.
 `
 
 // RepairCLAUDEMD restores CLAUDE.md with standard content.
@@ -330,7 +330,7 @@ func RepairAgenticProjectID(repoFullName, owner, repoName, ownerType string, run
 // GitHub Project status repair
 // ──────────────────────────────────────────────────────────────────────────────
 
-// RepairProjectStatus applies the canonical status options from base/project-template.json
+// RepairProjectStatus applies the canonical status options from .ai/project-template.json
 // to the GitHub Project via GraphQL mutation. Uses run to shell out to gh api graphql.
 func RepairProjectStatus(owner, repoName, root string, run bootstrap.RunCommandFunc) CheckResult {
 	// Load canonical options from project template.
@@ -850,43 +850,43 @@ func repairProjectCollaboratorUser(owner, repoName, agentUser string, run bootst
 // BoolConfirmFunc prompts the user for a yes/no answer.
 type BoolConfirmFunc func(prompt string) (bool, error)
 
-// RepairBaseDir re-syncs base/ from the template after prompting the user.
+// RepairAIDir re-syncs .ai/ from the template after prompting the user.
 // run is injected for git operations, confirmFn for user prompt.
-func RepairBaseDir(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
-	return RepairBaseDirWithWriter(io.Discard, root, run, confirmFn)
+func RepairAIDir(root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
+	return RepairAIDirWithWriter(io.Discard, root, run, confirmFn)
 }
 
-// RepairBaseDirWithWriter is like RepairBaseDir but writes sync output to w.
-func RepairBaseDirWithWriter(w io.Writer, root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
+// RepairAIDirWithWriter is like RepairAIDir but writes sync output to w.
+func RepairAIDirWithWriter(w io.Writer, root string, run bootstrap.RunCommandFunc, confirmFn BoolConfirmFunc) CheckResult {
 	if confirmFn != nil {
-		ok, err := confirmFn("base/ has issues — re-sync from template?")
+		ok, err := confirmFn(".ai/ has issues — re-sync from template?")
 		if err != nil || !ok {
 			return CheckResult{
-				Name:    "base/ exists and is unmodified",
+				Name:    ".ai/ exists and is unmodified",
 				Status:  Fail,
 				Message: "user declined re-sync",
 			}
 		}
 	}
 
-	baseDir := filepath.Join(root, "base")
-	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
-		// base/ has never been synced — call sync.RunSync directly with force=true
+	aiDir := filepath.Join(root, ".ai")
+	if _, err := os.Stat(aiDir); os.IsNotExist(err) {
+		// .ai/ has never been synced — call sync.RunSync directly with force=true
 		// and an auto-confirm so it runs non-interactively.
 		autoConfirm := func(_ string) (bool, error) { return true, nil }
 		if syncErr := sync.RunSync(w, root, run, sync.DefaultFetchReleases, sync.DefaultSpinner, autoConfirm, nil, sync.DefaultClear, true, true, false, "", nil); syncErr != nil {
 			return CheckResult{
-				Name:    "base/ exists and is unmodified",
+				Name:    ".ai/ exists and is unmodified",
 				Status:  Fail,
 				Message: fmt.Sprintf("sync failed: %v", syncErr),
 			}
 		}
 	} else {
-		// base/ exists but has local modifications — restore from git.
-		_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- base/", strings.ReplaceAll(root, "'", "'\\''")))
+		// .ai/ exists but has local modifications — restore from git.
+		_, err := run("bash", "-c", fmt.Sprintf("cd '%s' && git checkout HEAD -- .ai/", strings.ReplaceAll(root, "'", "'\\''")))
 		if err != nil {
 			return CheckResult{
-				Name:    "base/ exists and is unmodified",
+				Name:    ".ai/ exists and is unmodified",
 				Status:  Fail,
 				Message: fmt.Sprintf("git checkout failed: %v", err),
 			}
@@ -894,18 +894,18 @@ func RepairBaseDirWithWriter(w io.Writer, root string, run bootstrap.RunCommandF
 	}
 
 	return CheckResult{
-		Name:   "base/ exists and is unmodified",
+		Name:   ".ai/ exists and is unmodified",
 		Status: Pass,
 	}
 }
 
-// RepairBaseRecipes restores base/skills/ from the TEMPLATE_VERSION tarball
+// RepairAISkills restores .ai/skills/ from the TEMPLATE_VERSION tarball
 // after prompting the user for confirmation.
-func RepairBaseRecipes(root string, confirmFn BoolConfirmFunc, fetch tarball.FetchFunc) CheckResult {
-	const checkName = "base/skills/*.md unmodified"
+func RepairAISkills(root string, confirmFn BoolConfirmFunc, fetch tarball.FetchFunc) CheckResult {
+	const checkName = ".ai/skills/*.md unmodified"
 
 	if confirmFn != nil {
-		ok, err := confirmFn("base/skills/ has issues — restore from template tarball?")
+		ok, err := confirmFn(".ai/skills/ has issues — restore from template tarball?")
 		if err != nil || !ok {
 			return CheckResult{
 				Name:    checkName,
@@ -924,7 +924,7 @@ func RepairBaseRecipes(root string, confirmFn BoolConfirmFunc, fetch tarball.Fet
 		}
 	}
 
-	if err := tarball.ExtractFromTemplate(repo, version, root, []string{"base/skills/"}, fetch); err != nil {
+	if err := tarball.ExtractFromTemplate(repo, version, root, []string{".ai/skills/"}, fetch); err != nil {
 		return CheckResult{
 			Name:    checkName,
 			Status:  Fail,
@@ -966,10 +966,10 @@ func RepairGooseRecipes(root string, fetch tarball.FetchFunc) CheckResult {
 	}
 }
 
-// RepairWorkflows copies workflow files from base/.github/workflows/ to
+// RepairWorkflows copies workflow files from .ai/.github/workflows/ to
 // .github/workflows/ (overwriting existing), then stages them with git add.
 // Falls back to extracting from the TEMPLATE_VERSION tarball when
-// base/.github/workflows/ is absent. run is injected for git operations.
+// .ai/.github/workflows/ is absent. run is injected for git operations.
 //
 // ownerType is bootstrap.OwnerTypeUser or bootstrap.OwnerTypeOrg. Org-only
 // workflows are skipped for personal accounts.
@@ -985,17 +985,17 @@ func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc, fetch
 		}
 	}
 
-	baseWorkflowsPath := filepath.Join(root, "base", ".github", "workflows")
+	aiWorkflowsPath := filepath.Join(root, ".ai", ".github", "workflows")
 
-	// If base/.github/workflows/ exists, copy files selectively (skipping
+	// If .ai/.github/workflows/ exists, copy files selectively (skipping
 	// org-only workflows for personal accounts).
-	if info, err := os.Stat(baseWorkflowsPath); err == nil && info.IsDir() {
-		entries, err := os.ReadDir(baseWorkflowsPath)
+	if info, err := os.Stat(aiWorkflowsPath); err == nil && info.IsDir() {
+		entries, err := os.ReadDir(aiWorkflowsPath)
 		if err != nil {
 			return CheckResult{
 				Name:    checkName,
 				Status:  Fail,
-				Message: fmt.Sprintf("reading base workflows: %v", err),
+				Message: fmt.Sprintf("reading .ai workflows: %v", err),
 			}
 		}
 		for _, entry := range entries {
@@ -1006,12 +1006,12 @@ func RepairWorkflows(root, ownerType string, run bootstrap.RunCommandFunc, fetch
 			if orgOnlyWorkflows[name] && ownerType == bootstrap.OwnerTypeUser {
 				continue
 			}
-			data, err := os.ReadFile(filepath.Join(baseWorkflowsPath, name))
+			data, err := os.ReadFile(filepath.Join(aiWorkflowsPath, name))
 			if err != nil {
 				return CheckResult{
 					Name:    checkName,
 					Status:  Fail,
-					Message: fmt.Sprintf("reading %s from base: %v", name, err),
+					Message: fmt.Sprintf("reading %s from .ai: %v", name, err),
 				}
 			}
 			if err := os.WriteFile(filepath.Join(workflowsPath, name), data, 0o644); err != nil {

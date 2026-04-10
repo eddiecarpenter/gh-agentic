@@ -43,7 +43,7 @@ func NewFakeRepo(t *testing.T) *FakeRepo {
 		"AGENTS.local.md":  "# AGENTS.local.md\n",
 		"REPOS.md":         "# REPOS.md\n",
 		"README.md":        "# README\n",
-		"base/AGENTS.md":   "# AGENTS.md\n",
+		".ai/RULEBOOK.md":  "# RULEBOOK.md\n",
 		"skills/.gitkeep":  "",
 	}
 
