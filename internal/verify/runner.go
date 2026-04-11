@@ -12,14 +12,12 @@ import (
 // Returns an error if any unresolved warnings or failures remain after repair.
 // ManualAction results are displayed with instructions but do not cause failure.
 func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
-	// ── Phase 1: run all checks and collect results ───────────────────────────
+	// ── Phase 1: run all checks, print each result immediately ──────────────
 	results := make([]CheckResult, len(checks))
 	for i, fn := range checks {
 		results[i] = fn()
+		printResult(w, results[i])
 	}
-
-	// Print the full check list.
-	printResults(w, results)
 
 	// Count actionable issues (not ManualAction — those need human steps, not repair).
 	var warnings, failures int
@@ -104,19 +102,24 @@ func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
 	return fmt.Errorf("%d warnings, %d failures remain", warnings, failures)
 }
 
+// printResult renders a single ✔/⚠/✖/ℹ line for one result.
+func printResult(w io.Writer, r CheckResult) {
+	switch r.Status {
+	case Pass:
+		fmt.Fprintln(w, "  "+ui.RenderOK(r.Name))
+	case Warning:
+		fmt.Fprintln(w, "  "+ui.RenderWarning(r.Name+": "+r.Message))
+	case Fail:
+		fmt.Fprintln(w, "  "+ui.RenderError(r.Name+": "+r.Message))
+	case ManualAction:
+		fmt.Fprintln(w, "  "+ui.RenderInfo(r.Name+": "+r.Message))
+	}
+}
+
 // printResults renders the ✔/⚠/✖/ℹ line for each result.
 func printResults(w io.Writer, results []CheckResult) {
 	for _, r := range results {
-		switch r.Status {
-		case Pass:
-			fmt.Fprintln(w, "  "+ui.RenderOK(r.Name))
-		case Warning:
-			fmt.Fprintln(w, "  "+ui.RenderWarning(r.Name+": "+r.Message))
-		case Fail:
-			fmt.Fprintln(w, "  "+ui.RenderError(r.Name+": "+r.Message))
-		case ManualAction:
-			fmt.Fprintln(w, "  "+ui.RenderInfo(r.Name+": "+r.Message))
-		}
+		printResult(w, r)
 	}
 }
 
