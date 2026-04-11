@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/huh"
-
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -29,70 +27,6 @@ type SelectFunc func(releases []Release) (Release, error)
 // ClearFunc clears the terminal screen. Injected so tests can substitute a
 // no-op without requiring a real TTY.
 type ClearFunc func(w io.Writer)
-
-// DefaultSpinner is the production SpinnerFunc. Prints "⠸ label..." then
-// "✔ label" or "✖ label: error".
-func DefaultSpinner(w io.Writer, label string, fn func() error) error {
-	fmt.Fprintln(w, "  "+ui.Muted.Render("⠸ "+label+"..."))
-	if err := fn(); err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderError(label+": "+err.Error()))
-		return err
-	}
-	fmt.Fprintln(w, "  "+ui.RenderOK(label))
-	return nil
-}
-
-// DefaultConfirm is the production ConfirmFunc. Uses huh to present a
-// yes/no confirmation to the user.
-func DefaultConfirm(prompt string) (bool, error) {
-	var confirmed bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title(prompt).
-				Affirmative("Yes").
-				Negative("No").
-				Value(&confirmed),
-		),
-	)
-	if err := form.Run(); err != nil {
-		return false, err
-	}
-	return confirmed, nil
-}
-
-// DefaultClear is the production ClearFunc. Delegates to ui.ClearScreen
-// to clear the terminal and reset the cursor position.
-func DefaultClear(w io.Writer) {
-	ui.ClearScreen(w)
-}
-
-// DefaultSelect is the production SelectFunc. Uses huh.Select to present an
-// interactive version picker. Each option shows the tag and release name;
-// the description shows the release body (notes).
-func DefaultSelect(releases []Release) (Release, error) {
-	opts := make([]huh.Option[int], len(releases))
-	for i, r := range releases {
-		label := r.TagName
-		if r.Name != "" {
-			label += " — " + r.Name
-		}
-		opts[i] = huh.NewOption(label, i)
-	}
-
-	var selected int
-	sel := huh.NewSelect[int]().
-		Title("Select a version to sync to").
-		Options(opts...).
-		Value(&selected)
-
-	form := huh.NewForm(huh.NewGroup(sel))
-	if err := form.Run(); err != nil {
-		return Release{}, err
-	}
-
-	return releases[selected], nil
-}
 
 // RunSync orchestrates the full sync flow: read config → fetch releases →
 // display release notes → confirm → clone → copy → stage (and optionally commit) or restore.

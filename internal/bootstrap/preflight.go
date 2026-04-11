@@ -7,7 +7,6 @@ package bootstrap
 import (
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
@@ -187,16 +186,3 @@ func runInstall(w io.Writer, c check, run RunCommandFunc) error {
 	return nil
 }
 
-// DefaultLookPath is the production implementation of LookPathFunc.
-// It delegates to exec.LookPath.
-func DefaultLookPath(file string) (string, error) {
-	return exec.LookPath(file)
-}
-
-// DefaultRunCommand is the production implementation of RunCommandFunc.
-// It runs the command and returns its combined stdout+stderr output.
-func DefaultRunCommand(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...) //nolint:gosec
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}

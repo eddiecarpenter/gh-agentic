@@ -14,18 +14,6 @@ import (
 // text renderer without requiring a real TTY.
 type SpinnerFunc func(w io.Writer, label string, fn func() error) error
 
-// DefaultSpinner is the production SpinnerFunc. It prints a simple
-// "⠸ label..." / "✔ label" / "✖ label: error" sequence.
-func DefaultSpinner(w io.Writer, label string, fn func() error) error {
-	fmt.Fprintln(w, "  "+ui.Muted.Render("⠸ "+label+"..."))
-	if err := fn(); err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderError(label+": "+err.Error()))
-		return err
-	}
-	fmt.Fprintln(w, "  "+ui.RenderOK(label))
-	return nil
-}
-
 // RunSteps orchestrates inception steps 1-5 sequentially.
 // Each step is wrapped by spinner so the user sees progress.
 // On the first step failure the runner stops and returns the error immediately.

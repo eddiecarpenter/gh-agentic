@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cli/go-gh/v2/pkg/api"
 
@@ -528,16 +527,6 @@ ui:
 // Injected so tests can substitute a fake implementation without real gh auth.
 type GraphQLDoFunc func(query string, variables map[string]interface{}, response interface{}) error
 
-// DefaultGraphQLDo returns a GraphQLDoFunc backed by the go-gh/v2 GraphQL client.
-func DefaultGraphQLDo() (GraphQLDoFunc, error) {
-	client, err := api.DefaultGraphQLClient()
-	if err != nil {
-		return nil, fmt.Errorf("creating GraphQL client: %w", err)
-	}
-	return func(query string, variables map[string]interface{}, response interface{}) error {
-		return client.Do(query, variables, response)
-	}, nil
-}
 
 // projectCreateResponse is the JSON shape returned by gh project create --format json.
 type projectCreateResponse struct {
@@ -1024,47 +1013,6 @@ type ResolveCloneConflictFunc func(w io.Writer, clonePath string) (string, error
 // resolveCloneConflictFn is the active conflict resolver. Override in tests.
 var resolveCloneConflictFn ResolveCloneConflictFunc = DefaultResolveCloneConflict
 
-// DefaultResolveCloneConflict checks whether the target directory exists. If it does,
-// it presents the user with recovery options: rename to backup or abort.
-// Returns the resolved clone path or an error.
-func DefaultResolveCloneConflict(w io.Writer, clonePath string) (string, error) {
-	if _, err := os.Stat(clonePath); os.IsNotExist(err) {
-		return clonePath, nil // No conflict — proceed normally.
-	}
-
-	fmt.Fprintln(w, "  "+ui.RenderWarning(fmt.Sprintf("Directory %q already exists", filepath.Base(clonePath))))
-
-	var choice string
-	conflictForm := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Directory already exists").
-				Description("Choose how to resolve the conflict").
-				Options(
-					huh.NewOption("Rename existing to .backup and continue", cloneConflictRename),
-					huh.NewOption("Abort", cloneConflictAbort),
-				).
-				Value(&choice),
-		),
-	)
-	if err := conflictForm.Run(); err != nil {
-		return "", fmt.Errorf("clone conflict form: %w", err)
-	}
-
-	switch choice {
-	case cloneConflictRename:
-		backupPath := findBackupPath(clonePath)
-		if err := os.Rename(clonePath, backupPath); err != nil {
-			return "", fmt.Errorf("renaming %s to %s: %w", clonePath, backupPath, err)
-		}
-		fmt.Fprintln(w, "  "+ui.Muted.Render(fmt.Sprintf("· Renamed existing directory to %s", filepath.Base(backupPath))))
-		return clonePath, nil
-	case cloneConflictAbort:
-		return "", ErrCloneAborted
-	default:
-		return "", ErrCloneAborted
-	}
-}
 
 // findBackupPath returns a non-conflicting backup path for the given directory.
 // It tries <path>.backup, <path>.backup.1, <path>.backup.2, etc.

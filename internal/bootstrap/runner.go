@@ -3,8 +3,6 @@ package bootstrap
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -13,20 +11,6 @@ import (
 // ✔ or ✖ based on the result. It is injected so tests can substitute a plain
 // text renderer without requiring a real TTY.
 type SpinnerFunc func(w io.Writer, label string, fn func() error) error
-
-// DefaultSpinner is the production SpinnerFunc. It uses a simple inline approach:
-// print the step label, run fn, then overwrite with ✔ or ✖.
-// A real bubbles spinner requires a Bubbletea program with a full event loop;
-// for the MVP we print a simple "… label" / "✔ label" / "✖ label: error" sequence.
-func DefaultSpinner(w io.Writer, label string, fn func() error) error {
-	fmt.Fprintln(w, "  "+ui.Muted.Render("⠸ "+label+"..."))
-	if err := fn(); err != nil {
-		fmt.Fprintln(w, "  "+ui.RenderError(label+": "+err.Error()))
-		return err
-	}
-	fmt.Fprintln(w, "  "+ui.RenderOK(label))
-	return nil
-}
 
 // RunSteps orchestrates bootstrap steps 3-9 sequentially.
 // Each step is wrapped by spinner so the user sees progress.
@@ -122,14 +106,3 @@ func RunSteps(
 	return PrintSummary(w, cfg, state)
 }
 
-// DefaultWorkDirOrHome returns the working directory, falling back to the user's
-// home directory if os.Getwd() fails (e.g. in a deleted directory).
-func DefaultWorkDirOrHome() string {
-	if wd, err := os.Getwd(); err == nil {
-		return wd
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, "Development")
-	}
-	return "."
-}
