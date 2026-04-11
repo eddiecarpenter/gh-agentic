@@ -1121,6 +1121,16 @@ func TestExtractOwnerFromAgentsLocal_Sync(t *testing.T) {
 }
 
 func TestShowDiff(t *testing.T) {
+	// ShowDiff makes 8 git calls:
+	//   1. git diff .ai/
+	//   2. ls-files .ai/
+	//   3. git diff .github/workflows/
+	//   4. ls-files .github/workflows/
+	//   5. git diff .github/actions/
+	//   6. ls-files .github/actions/
+	//   7. git diff .goose/recipes/
+	//   8. ls-files .goose/recipes/
+
 	t.Run("returns diff output", func(t *testing.T) {
 		responses := []struct {
 			output string
@@ -1128,10 +1138,12 @@ func TestShowDiff(t *testing.T) {
 		}{
 			{output: "diff --git a/.ai/RULEBOOK.md", err: nil}, // git diff .ai/
 			{output: "", err: nil},                              // ls-files .ai/
-			{output: "", err: nil},                             // git diff .github/workflows/
-			{output: "", err: nil},                             // ls-files .github/workflows/
-			{output: "", err: nil},                             // git diff .goose/recipes/
-			{output: "", err: nil},                             // ls-files .goose/recipes/
+			{output: "", err: nil},                              // git diff .github/workflows/
+			{output: "", err: nil},                              // ls-files .github/workflows/
+			{output: "", err: nil},                              // git diff .github/actions/
+			{output: "", err: nil},                              // ls-files .github/actions/
+			{output: "", err: nil},                              // git diff .goose/recipes/
+			{output: "", err: nil},                              // ls-files .goose/recipes/
 		}
 		run := fakeRunMulti(responses)
 
@@ -1149,12 +1161,14 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                   // git diff .ai/
-			{output: ".ai/new-file.md\n", err: nil},  // ls-files .ai/
-			{output: "", err: nil},                   // git diff .github/workflows/
-			{output: "", err: nil},                   // ls-files .github/workflows/
-			{output: "", err: nil},                   // git diff .goose/recipes/
-			{output: "", err: nil},                   // ls-files .goose/recipes/
+			{output: "", err: nil},                  // git diff .ai/
+			{output: ".ai/new-file.md\n", err: nil}, // ls-files .ai/
+			{output: "", err: nil},                  // git diff .github/workflows/
+			{output: "", err: nil},                  // ls-files .github/workflows/
+			{output: "", err: nil},                  // git diff .github/actions/
+			{output: "", err: nil},                  // ls-files .github/actions/
+			{output: "", err: nil},                  // git diff .goose/recipes/
+			{output: "", err: nil},                  // ls-files .goose/recipes/
 		}
 		run := fakeRunMulti(responses)
 
@@ -1176,6 +1190,8 @@ func TestShowDiff(t *testing.T) {
 			{output: "", err: nil},                                      // ls-files .ai/
 			{output: "diff --git a/.github/workflows/ci.yml", err: nil}, // git diff .github/workflows/
 			{output: "", err: nil},                                      // ls-files .github/workflows/
+			{output: "", err: nil},                                      // git diff .github/actions/
+			{output: "", err: nil},                                      // ls-files .github/actions/
 			{output: "", err: nil},                                      // git diff .goose/recipes/
 			{output: "", err: nil},                                      // ls-files .goose/recipes/
 		}
@@ -1199,6 +1215,8 @@ func TestShowDiff(t *testing.T) {
 			{output: "", err: nil},                                     // ls-files .ai/
 			{output: "", err: nil},                                     // git diff .github/workflows/
 			{output: ".github/workflows/new-pipeline.yml\n", err: nil}, // ls-files .github/workflows/
+			{output: "", err: nil},                                     // git diff .github/actions/
+			{output: "", err: nil},                                     // ls-files .github/actions/
 			{output: "", err: nil},                                     // git diff .goose/recipes/
 			{output: "", err: nil},                                     // ls-files .goose/recipes/
 		}
@@ -1213,17 +1231,69 @@ func TestShowDiff(t *testing.T) {
 		}
 	})
 
+	t.Run("includes action diffs", func(t *testing.T) {
+		responses := []struct {
+			output string
+			err    error
+		}{
+			{output: "", err: nil},                                                                 // git diff .ai/
+			{output: "", err: nil},                                                                 // ls-files .ai/
+			{output: "", err: nil},                                                                 // git diff .github/workflows/
+			{output: "", err: nil},                                                                 // ls-files .github/workflows/
+			{output: "diff --git a/.github/actions/install-ai-tools/action.yml", err: nil},        // git diff .github/actions/
+			{output: "", err: nil},                                                                 // ls-files .github/actions/
+			{output: "", err: nil},                                                                 // git diff .goose/recipes/
+			{output: "", err: nil},                                                                 // ls-files .goose/recipes/
+		}
+		run := fakeRunMulti(responses)
+
+		diff, err := ShowDiff("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(diff, ".github/actions/install-ai-tools/action.yml") {
+			t.Errorf("expected action diff, got %q", diff)
+		}
+	})
+
+	t.Run("includes new action files", func(t *testing.T) {
+		responses := []struct {
+			output string
+			err    error
+		}{
+			{output: "", err: nil},                                                        // git diff .ai/
+			{output: "", err: nil},                                                        // ls-files .ai/
+			{output: "", err: nil},                                                        // git diff .github/workflows/
+			{output: "", err: nil},                                                        // ls-files .github/workflows/
+			{output: "", err: nil},                                                        // git diff .github/actions/
+			{output: ".github/actions/install-ai-tools/action.yml\n", err: nil},          // ls-files .github/actions/
+			{output: "", err: nil},                                                        // git diff .goose/recipes/
+			{output: "", err: nil},                                                        // ls-files .goose/recipes/
+		}
+		run := fakeRunMulti(responses)
+
+		diff, err := ShowDiff("/repo", run)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(diff, "New action files") {
+			t.Errorf("expected new action files section, got %q", diff)
+		}
+	})
+
 	t.Run("includes recipe diffs", func(t *testing.T) {
 		responses := []struct {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                                              // git diff .ai/
-			{output: "", err: nil},                                              // ls-files .ai/
-			{output: "", err: nil},                                              // git diff .github/workflows/
-			{output: "", err: nil},                                              // ls-files .github/workflows/
-			{output: "diff --git a/.goose/recipes/dev.yaml", err: nil},          // git diff .goose/recipes/
-			{output: "", err: nil},                                              // ls-files .goose/recipes/
+			{output: "", err: nil},                                     // git diff .ai/
+			{output: "", err: nil},                                     // ls-files .ai/
+			{output: "", err: nil},                                     // git diff .github/workflows/
+			{output: "", err: nil},                                     // ls-files .github/workflows/
+			{output: "", err: nil},                                     // git diff .github/actions/
+			{output: "", err: nil},                                     // ls-files .github/actions/
+			{output: "diff --git a/.goose/recipes/dev.yaml", err: nil}, // git diff .goose/recipes/
+			{output: "", err: nil},                                     // ls-files .goose/recipes/
 		}
 		run := fakeRunMulti(responses)
 
@@ -1241,12 +1311,14 @@ func TestShowDiff(t *testing.T) {
 			output string
 			err    error
 		}{
-			{output: "", err: nil},                                  // git diff .ai/
-			{output: "", err: nil},                                  // ls-files .ai/
-			{output: "", err: nil},                                  // git diff .github/workflows/
-			{output: "", err: nil},                                  // ls-files .github/workflows/
-			{output: "", err: nil},                                  // git diff .goose/recipes/
-			{output: ".goose/recipes/new-recipe.yaml\n", err: nil},  // ls-files .goose/recipes/
+			{output: "", err: nil},                                 // git diff .ai/
+			{output: "", err: nil},                                 // ls-files .ai/
+			{output: "", err: nil},                                 // git diff .github/workflows/
+			{output: "", err: nil},                                 // ls-files .github/workflows/
+			{output: "", err: nil},                                 // git diff .github/actions/
+			{output: "", err: nil},                                 // ls-files .github/actions/
+			{output: "", err: nil},                                 // git diff .goose/recipes/
+			{output: ".goose/recipes/new-recipe.yaml\n", err: nil}, // ls-files .goose/recipes/
 		}
 		run := fakeRunMulti(responses)
 
@@ -1264,6 +1336,84 @@ func TestShowDiff(t *testing.T) {
 		_, err := ShowDiff("/repo", run)
 		if err == nil {
 			t.Fatal("expected error")
+		}
+	})
+}
+
+func TestDeployActions(t *testing.T) {
+	t.Run("deploys action files from template", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Create template action structure.
+		actionSrc := filepath.Join(tmpDir, ".ai", ".github", "actions", "install-ai-tools")
+		if err := os.MkdirAll(actionSrc, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(actionSrc, "action.yml"), []byte("name: Install AI Tools\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployActions(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify action was deployed.
+		data, err := os.ReadFile(filepath.Join(repoRoot, ".github", "actions", "install-ai-tools", "action.yml"))
+		if err != nil {
+			t.Fatalf(".github/actions/install-ai-tools/action.yml should exist: %v", err)
+		}
+		if string(data) != "name: Install AI Tools\n" {
+			t.Errorf("content = %q, want %q", data, "name: Install AI Tools\n")
+		}
+	})
+
+	t.Run("no-op when source does not exist", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		err := DeployActions(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// .github/actions/ should not have been created.
+		if _, err := os.Stat(filepath.Join(repoRoot, ".github", "actions")); err == nil {
+			t.Error(".github/actions/ should not exist when template has no actions")
+		}
+	})
+
+	t.Run("overwrites existing action file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repoRoot := t.TempDir()
+
+		// Pre-existing action.
+		actionDst := filepath.Join(repoRoot, ".github", "actions", "install-ai-tools")
+		if err := os.MkdirAll(actionDst, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(actionDst, "action.yml"), []byte("old content\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Template with updated content.
+		actionSrc := filepath.Join(tmpDir, ".ai", ".github", "actions", "install-ai-tools")
+		if err := os.MkdirAll(actionSrc, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(actionSrc, "action.yml"), []byte("new content\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := DeployActions(tmpDir, repoRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(actionDst, "action.yml"))
+		if string(data) != "new content\n" {
+			t.Errorf("content = %q, want %q", data, "new content\n")
 		}
 	})
 }
