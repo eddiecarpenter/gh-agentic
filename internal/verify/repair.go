@@ -551,10 +551,10 @@ func fetchAllProjectItems(projectID, fieldID string, run bootstrap.RunCommandFun
 		}
 
 		// Parse the JSON response.
-		type gqlResponse struct {
-			Data struct {
-				Node struct {
-					Items struct {
+		type gqlResponse struct { // NOSONAR: inline anonymous struct used as a local data holder; a named type would unnecessarily expand the public API
+			Data struct { // NOSONAR: inline anonymous struct used as a local data holder; a named type would unnecessarily expand the public API
+				Node struct { // NOSONAR: inline anonymous struct used as a local data holder; a named type would unnecessarily expand the public API
+					Items struct { // NOSONAR: inline anonymous struct used as a local data holder; a named type would unnecessarily expand the public API
 						PageInfo struct {
 							HasNextPage bool   `json:"hasNextPage"`
 							EndCursor   string `json:"endCursor"`

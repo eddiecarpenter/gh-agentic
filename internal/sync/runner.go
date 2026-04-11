@@ -102,7 +102,7 @@ func DefaultSelect(releases []Release) (Release, error) {
 // the changes are committed automatically with the standard message.
 //
 // All dependencies are injectable for testing.
-func RunSync(
+func RunSync( // NOSONAR: all parameters are injected dependencies for test isolation; complexity reflects the full sync orchestration pipeline
 	w io.Writer,
 	repoRoot string,
 	run bootstrap.RunCommandFunc,

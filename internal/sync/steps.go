@@ -18,6 +18,16 @@ import (
 // backupSuffix is the directory name suffix used for the .ai/ backup.
 const backupSuffix = ".agentic-sync-backup"
 
+// File and path constants used across multiple sync steps.
+const (
+	claudeMD        = "CLAUDE.md"
+	agentsMD        = "AGENTS.md"
+	githubWorkflows = ".github/workflows/"
+	githubActions   = ".github/actions/"
+	gooseRecipes    = ".goose/recipes/"
+	gettingInfoFmt  = "getting info for %s: %w"
+)
+
 // MigrateBaseToAI detects repos still using the old base/ layout and renames
 // base/ to .ai/ using git mv to preserve history. Returns (true, nil) when
 // migration occurred, (false, nil) when no migration was needed.
@@ -97,7 +107,7 @@ func FetchAndExtractTemplate(tarballURL, repo, version, repoRoot string, workflo
 	// Extract .ai/ (includes .ai/.github/workflows/ and .ai/.github/actions/),
 	// .goose/ (recipes), and root files (CLAUDE.md, AGENTS.md) so the subsequent
 	// deploy steps can operate on the extracted content.
-	extractPrefixes := []string{".ai/", ".goose/", "CLAUDE.md", "AGENTS.md"}
+	extractPrefixes := []string{".ai/", ".goose/", claudeMD, agentsMD}
 	if err := tarball.ExtractFromTemplate(repo, version, tmpDir, extractPrefixes, fetchTarballFn); err != nil {
 		return err
 	}
@@ -133,7 +143,7 @@ func FetchAndExtractTemplate(tarballURL, repo, version, repoRoot string, workflo
 // BackupAI copies existing .ai/, .github/workflows/, .github/actions/, and
 // .goose/recipes/ to a temp backup location. Returns the backup directory path.
 // The caller is responsible for cleanup.
-func BackupAI(repoRoot string) (string, error) {
+func BackupAI(repoRoot string) (string, error) { // NOSONAR: complexity arises from 4 symmetrical backup paths; extraction would add indirection without reducing actual complexity
 	aiSrc := filepath.Join(repoRoot, ".ai")
 	workflowsSrc := filepath.Join(repoRoot, ".github", "workflows")
 	actionsSrc := filepath.Join(repoRoot, ".github", "actions")
@@ -241,7 +251,7 @@ func DeployWorkflows(tmpDir, repoRoot string, excludeFiles []string) error {
 		}
 		info, infoErr := entry.Info()
 		if infoErr != nil {
-			return fmt.Errorf("getting info for %s: %w", entry.Name(), infoErr)
+			return fmt.Errorf(gettingInfoFmt, entry.Name(), infoErr)
 		}
 		if writeErr := os.WriteFile(filepath.Join(dst, entry.Name()), data, info.Mode()); writeErr != nil {
 			return fmt.Errorf("writing workflow %s: %w", entry.Name(), writeErr)
@@ -300,7 +310,7 @@ func DeployActions(tmpDir, repoRoot string) error {
 		}
 		info, err := d.Info()
 		if err != nil {
-			return fmt.Errorf("getting info for %s: %w", rel, err)
+			return fmt.Errorf(gettingInfoFmt, rel, err)
 		}
 		if err := os.WriteFile(dstPath, data, info.Mode()); err != nil {
 			return fmt.Errorf("writing action file %s: %w", rel, err)
@@ -343,7 +353,7 @@ func DeployRecipes(tmpDir, repoRoot string) error {
 		}
 		info, infoErr := entry.Info()
 		if infoErr != nil {
-			return fmt.Errorf("getting info for %s: %w", entry.Name(), infoErr)
+			return fmt.Errorf(gettingInfoFmt, entry.Name(), infoErr)
 		}
 		if writeErr := os.WriteFile(filepath.Join(dst, entry.Name()), data, info.Mode()); writeErr != nil {
 			return fmt.Errorf("writing recipe %s: %w", entry.Name(), writeErr)
@@ -416,7 +426,7 @@ func CopyAI(tmpDir, repoRoot string) error {
 // DeployRootFiles copies CLAUDE.md and AGENTS.md from the extracted template
 // root into the local repo root, overwriting any existing copies.
 func DeployRootFiles(tmpDir, repoRoot string) error {
-	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+	for _, name := range []string{claudeMD, agentsMD} {
 		src := filepath.Join(tmpDir, name)
 		if _, err := os.Stat(src); os.IsNotExist(err) {
 			continue // File not in template — skip silently.
@@ -446,37 +456,37 @@ func ShowDiff(repoRoot string, run bootstrap.RunCommandFunc) (string, error) {
 	}
 
 	// Include .github/workflows/ diffs.
-	wfDiff, _ := runInDir(run, repoRoot, "git", "diff", ".github/workflows/")
+	wfDiff, _ := runInDir(run, repoRoot, "git", "diff", githubWorkflows)
 	if strings.TrimSpace(wfDiff) != "" {
 		out += "\n" + wfDiff
 	}
 
 	// Include untracked workflow files.
-	wfUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", ".github/workflows/")
+	wfUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", githubWorkflows)
 	if strings.TrimSpace(wfUntracked) != "" {
 		out += "\n--- New workflow files ---\n" + wfUntracked
 	}
 
 	// Include .github/actions/ diffs.
-	actionsDiff, _ := runInDir(run, repoRoot, "git", "diff", ".github/actions/")
+	actionsDiff, _ := runInDir(run, repoRoot, "git", "diff", githubActions)
 	if strings.TrimSpace(actionsDiff) != "" {
 		out += "\n" + actionsDiff
 	}
 
 	// Include untracked action files.
-	actionsUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", ".github/actions/")
+	actionsUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", githubActions)
 	if strings.TrimSpace(actionsUntracked) != "" {
 		out += "\n--- New action files ---\n" + actionsUntracked
 	}
 
 	// Include .goose/recipes/ diffs.
-	recipesDiff, _ := runInDir(run, repoRoot, "git", "diff", ".goose/recipes/")
+	recipesDiff, _ := runInDir(run, repoRoot, "git", "diff", gooseRecipes)
 	if strings.TrimSpace(recipesDiff) != "" {
 		out += "\n" + recipesDiff
 	}
 
 	// Include untracked recipe files.
-	recipesUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", ".goose/recipes/")
+	recipesUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", gooseRecipes)
 	if strings.TrimSpace(recipesUntracked) != "" {
 		out += "\n--- New recipe files ---\n" + recipesUntracked
 	}
@@ -543,7 +553,7 @@ func StageSync(repoRoot string, run bootstrap.RunCommandFunc) error {
 	if out, err := runInDir(run, repoRoot, "git", "rm", "--ignore-unmatch", "--cached", "TEMPLATE_SOURCE", "TEMPLATE_VERSION"); err != nil {
 		return fmt.Errorf("git rm legacy files: %w\n%s", err, strings.TrimSpace(out))
 	}
-	if out, err := runInDir(run, repoRoot, "git", "add", ".ai/", "CLAUDE.md", "AGENTS.md", ".github/workflows/", ".github/actions/", ".goose/recipes/", "POST_SYNC.md"); err != nil {
+	if out, err := runInDir(run, repoRoot, "git", "add", ".ai/", claudeMD, agentsMD, githubWorkflows, githubActions, gooseRecipes, "POST_SYNC.md"); err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
 	}
 	return nil
