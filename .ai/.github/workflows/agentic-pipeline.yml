@@ -54,40 +54,11 @@ jobs:
       - name: Install tools
         uses: ./.github/actions/install-ai-tools
 
-      - name: Restore Claude Code auth
-        env:
-          CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-        run: |
-          mkdir -p ~/.claude
-          echo "${CLAUDE_CREDENTIALS_JSON}" | base64 -d > ~/.claude/.credentials.json
-          chmod 0600 ~/.claude/.credentials.json
-
-
-      - name: Validate and refresh Claude Code credentials
-        env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          if [ ! -s ~/.claude/.credentials.json ]; then
-            echo "ERROR: ~/.claude/.credentials.json is empty or missing."
-            echo "Regenerate: run the refresh-credentials skill locally, then re-run this job."
-            exit 1
-          fi
-          CREDS_BEFORE=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
-          claude -p "hi" > /dev/null || {
-            echo "ERROR: Claude Code authentication failed — session may be revoked."
-            echo "Run the refresh-credentials skill locally to restore the secret."
-            exit 1
-          }
-          echo "Claude Code credentials valid."
-          CREDS_AFTER=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
-          if [ "$CREDS_BEFORE" != "$CREDS_AFTER" ]; then
-            echo "Credentials rotated — updating CLAUDE_CREDENTIALS_JSON secret"
-            gh secret set CLAUDE_CREDENTIALS_JSON \
-              --repo "${GITHUB_REPOSITORY}" \
-              --body "$(cat ~/.claude/.credentials.json | base64 | tr -d '\n')"
-          else
-            echo "Credentials unchanged — no update needed"
-          fi
+      - name: Setup Claude Code auth
+        uses: ./.github/actions/setup-claude-auth
+        with:
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Configure environment
         run: |
@@ -134,42 +105,18 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Resolve gh CLI version
-        id: gh-pre-version
-        run: |
-          GH_VERSION=$(curl --proto '=https' --tlsv1.2 -fsSL https://api.github.com/repos/cli/cli/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
-          echo "version=${GH_VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Cache gh CLI
-        id: cache-gh-pre
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
-        with:
-          path: ~/.local/bin/gh
-          key: gh-cli-${{ steps.gh-pre-version.outputs.version }}
-
-      - name: Install gh CLI
-        if: steps.cache-gh-pre.outputs.cache-hit != 'true'
-        env:
-          GH_VERSION: ${{ steps.gh-pre-version.outputs.version }}
-        run: |
-          mkdir -p ~/.local/bin
-          curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
-          tar -xz -C /tmp -f /tmp/gh.tar.gz
-          mv /tmp/gh_${GH_VERSION}_linux_amd64/bin/gh ~/.local/bin/gh
-
-      - name: Add gh CLI to PATH
-        run: |
-          mkdir -p ~/.local/bin
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
       - name: Resolve feature branch
         id: branch
         env:
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
         run: |
-          ISSUE=${{ github.event.issue.number }}
-          BRANCH=$(gh api repos/${{ github.repository }}/branches \
-            --jq ".[] | .name | select(startswith(\"feature/${ISSUE}-\"))" \
+          BRANCH=$(curl --proto '=https' --tlsv1.2 -fsSL \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/branches?per_page=100" \
+            | jq -r ".[].name | select(startswith(\"feature/${ISSUE}-\"))" \
             | head -1)
           if [ -z "$BRANCH" ]; then
             echo "No branch found matching feature/${ISSUE}-*"
@@ -191,43 +138,12 @@ jobs:
 
       - name: Install Goose and Claude Code CLI
         uses: ./.github/actions/install-ai-tools
+
+      - name: Setup Claude Code auth
+        uses: ./.github/actions/setup-claude-auth
         with:
-          install-gh-cli: 'false'
-
-      - name: Restore Claude Code auth
-        env:
-          CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-        run: |
-          mkdir -p ~/.claude
-          echo "${CLAUDE_CREDENTIALS_JSON}" | base64 -d > ~/.claude/.credentials.json
-          chmod 0600 ~/.claude/.credentials.json
-
-
-      - name: Validate and refresh Claude Code credentials
-        env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          if [ ! -s ~/.claude/.credentials.json ]; then
-            echo "ERROR: ~/.claude/.credentials.json is empty or missing."
-            echo "Regenerate: run the refresh-credentials skill locally, then re-run this job."
-            exit 1
-          fi
-          CREDS_BEFORE=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
-          claude -p "hi" > /dev/null || {
-            echo "ERROR: Claude Code authentication failed — session may be revoked."
-            echo "Run the refresh-credentials skill locally to restore the secret."
-            exit 1
-          }
-          echo "Claude Code credentials valid."
-          CREDS_AFTER=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
-          if [ "$CREDS_BEFORE" != "$CREDS_AFTER" ]; then
-            echo "Credentials rotated — updating CLAUDE_CREDENTIALS_JSON secret"
-            gh secret set CLAUDE_CREDENTIALS_JSON \
-              --repo "${GITHUB_REPOSITORY}" \
-              --body "$(cat ~/.claude/.credentials.json | base64 | tr -d '\n')"
-          else
-            echo "Credentials unchanged — no update needed"
-          fi
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Configure environment
         run: |
@@ -417,40 +333,11 @@ jobs:
       - name: Install tools
         uses: ./.github/actions/install-ai-tools
 
-      - name: Restore Claude Code auth
-        env:
-          CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-        run: |
-          mkdir -p ~/.claude
-          echo "${CLAUDE_CREDENTIALS_JSON}" | base64 -d > ~/.claude/.credentials.json
-          chmod 0600 ~/.claude/.credentials.json
-
-
-      - name: Validate and refresh Claude Code credentials
-        env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          if [ ! -s ~/.claude/.credentials.json ]; then
-            echo "ERROR: ~/.claude/.credentials.json is empty or missing."
-            echo "Regenerate: run the refresh-credentials skill locally, then re-run this job."
-            exit 1
-          fi
-          CREDS_BEFORE=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
-          claude -p "hi" > /dev/null || {
-            echo "ERROR: Claude Code authentication failed — session may be revoked."
-            echo "Run the refresh-credentials skill locally to restore the secret."
-            exit 1
-          }
-          echo "Claude Code credentials valid."
-          CREDS_AFTER=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
-          if [ "$CREDS_BEFORE" != "$CREDS_AFTER" ]; then
-            echo "Credentials rotated — updating CLAUDE_CREDENTIALS_JSON secret"
-            gh secret set CLAUDE_CREDENTIALS_JSON \
-              --repo "${GITHUB_REPOSITORY}" \
-              --body "$(cat ~/.claude/.credentials.json | base64 | tr -d '\n')"
-          else
-            echo "Credentials unchanged — no update needed"
-          fi
+      - name: Setup Claude Code auth
+        uses: ./.github/actions/setup-claude-auth
+        with:
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Configure environment
         run: |
@@ -531,40 +418,11 @@ jobs:
       - name: Install tools
         uses: ./.github/actions/install-ai-tools
 
-      - name: Restore Claude Code auth
-        env:
-          CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-        run: |
-          mkdir -p ~/.claude
-          echo "${CLAUDE_CREDENTIALS_JSON}" | base64 -d > ~/.claude/.credentials.json
-          chmod 0600 ~/.claude/.credentials.json
-
-
-      - name: Validate and refresh Claude Code credentials
-        env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          if [ ! -s ~/.claude/.credentials.json ]; then
-            echo "ERROR: ~/.claude/.credentials.json is empty or missing."
-            echo "Regenerate: run the refresh-credentials skill locally, then re-run this job."
-            exit 1
-          fi
-          CREDS_BEFORE=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
-          claude -p "hi" > /dev/null || {
-            echo "ERROR: Claude Code authentication failed — session may be revoked."
-            echo "Run the refresh-credentials skill locally to restore the secret."
-            exit 1
-          }
-          echo "Claude Code credentials valid."
-          CREDS_AFTER=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
-          if [ "$CREDS_BEFORE" != "$CREDS_AFTER" ]; then
-            echo "Credentials rotated — updating CLAUDE_CREDENTIALS_JSON secret"
-            gh secret set CLAUDE_CREDENTIALS_JSON \
-              --repo "${GITHUB_REPOSITORY}" \
-              --body "$(cat ~/.claude/.credentials.json | base64 | tr -d '\n')"
-          else
-            echo "Credentials unchanged — no update needed"
-          fi
+      - name: Setup Claude Code auth
+        uses: ./.github/actions/setup-claude-auth
+        with:
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Configure environment
         run: |
@@ -648,11 +506,6 @@ jobs:
         run: |
           BRANCH="${PR_HEAD_REF}"
           ISSUE_NUMBER=$(echo "${BRANCH}" | sed 's|feature/\([0-9]*\)-.*|\1|')
-          # Discard if the substitution did not produce a pure number
-          # (branch does not follow feature/N-description convention).
-          if ! echo "${ISSUE_NUMBER}" | grep -qE '^[0-9]+$'; then
-            ISSUE_NUMBER=""
-          fi
           echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
 
       - name: Apply done label, set project status, and close feature issue
