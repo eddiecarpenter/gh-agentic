@@ -172,7 +172,7 @@ func TestCopyTree_ReadFileFails_ReturnsError(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("data"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(secret, 0o000); err != nil {
+	if err := os.Chmod(secret, 0o000); err != nil { // NOSONAR: intentionally setting restrictive permissions to simulate unreadable file in tests
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(secret, 0o644) })

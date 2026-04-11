@@ -447,7 +447,7 @@ func TestCopyAI_CopyDirFails_ReturnsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Make .ai/ unreadable so CopyDir fails.
-	if err := os.Chmod(aiSrc, 0o000); err != nil {
+	if err := os.Chmod(aiSrc, 0o000); err != nil { // NOSONAR: intentionally setting restrictive permissions to simulate error path in tests
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(aiSrc, 0o755) })
