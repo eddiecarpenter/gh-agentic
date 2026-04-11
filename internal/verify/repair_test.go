@@ -2143,3 +2143,83 @@ func TestRepairAgentUserVar_RepoScope_NoDeleteAttempted(t *testing.T) {
 		t.Error("expected no delete for repo scope")
 	}
 }
+
+// ── ReadClaudeCredentials tests ────────────────────────────────────────────
+
+func TestReadClaudeCredentials_FileExists_ReturnsData(t *testing.T) {
+	readFile := func(path string) ([]byte, error) {
+		return []byte(`{"token":"file-creds"}`), nil
+	}
+	homeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	data, err := ReadClaudeCredentials(fakeRun, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if string(data) != `{"token":"file-creds"}` {
+		t.Errorf("expected file credentials, got: %s", string(data))
+	}
+}
+
+func TestReadClaudeCredentials_FileMissing_KeychainPresent_ReturnsKeychain(t *testing.T) {
+	readFile := func(path string) ([]byte, error) {
+		return nil, fmt.Errorf("file not found")
+	}
+	homeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+	fakeRun := func(name string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "find-generic-password") {
+			return "keychain-creds", nil
+		}
+		return "", nil
+	}
+
+	data, err := ReadClaudeCredentials(fakeRun, readFile, homeDir)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if string(data) != "keychain-creds" {
+		t.Errorf("expected keychain credentials, got: %s", string(data))
+	}
+}
+
+func TestReadClaudeCredentials_FileMissing_KeychainMissing_ReturnsError(t *testing.T) {
+	readFile := func(path string) ([]byte, error) {
+		return nil, fmt.Errorf("file not found")
+	}
+	homeDir := func() (string, error) {
+		return "/home/testuser", nil
+	}
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("keychain not available")
+	}
+
+	_, err := ReadClaudeCredentials(fakeRun, readFile, homeDir)
+	if err == nil {
+		t.Fatal("expected error when both file and keychain are missing, got nil")
+	}
+}
+
+func TestReadClaudeCredentials_HomeDirError_ReturnsError(t *testing.T) {
+	readFile := func(path string) ([]byte, error) {
+		return nil, fmt.Errorf("should not be called")
+	}
+	homeDir := func() (string, error) {
+		return "", fmt.Errorf("no home dir")
+	}
+	fakeRun := func(name string, args ...string) (string, error) {
+		return "", nil
+	}
+
+	_, err := ReadClaudeCredentials(fakeRun, readFile, homeDir)
+	if err == nil {
+		t.Fatal("expected error when home dir unavailable, got nil")
+	}
+}

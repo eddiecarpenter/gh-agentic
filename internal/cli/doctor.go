@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bufio"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
@@ -29,7 +31,16 @@ type doctorConfig struct {
 	yes              bool
 	agentUser        string
 	agentUserScope   string
-	forceCredentials bool
+	updateCredentials bool
+
+	// claudeRefreshCmd is the command used to refresh Claude credentials.
+	// In production this runs "claude -p 'Say Hi'" with terminal-connected I/O.
+	// Tests can override this to avoid spawning real processes.
+	claudeRefreshCmd func() error
+
+	// readCredentials reads Claude credentials from the platform-appropriate store.
+	// Tests can override this. Defaults to verify.ReadClaudeCredentialsDefault.
+	readCredentials func(run bootstrap.RunCommandFunc) ([]byte, error)
 }
 
 // runDoctor executes the doctor check/repair pipeline. It accepts an io.Writer
@@ -37,6 +48,11 @@ type doctorConfig struct {
 // dependencies injected. This makes the function testable without requiring a
 // real git repo, GitHub API, or TTY.
 func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
+	// --update-credentials: skip all checks, refresh and upload credentials.
+	if cfg.updateCredentials {
+		return runUpdateCredentials(w, cfg)
+	}
+
 	fmt.Fprintln(w, ui.SectionHeading.Render("  Doctor — check agentic environment"))
 	fmt.Fprintln(w)
 
@@ -195,29 +211,68 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 			fmt.Fprintln(w, "  Run 'gh agentic doctor --repair' to attempt automatic fixes.")
 			fmt.Fprintln(w, "  For AGENT_USER repair, add: --agent-user <username> --agent-user-scope org|repo")
 		}
-		if !cfg.forceCredentials {
-			return ErrSilent
-		}
-	}
-
-	// --force-credentials: unconditionally re-upload Claude credentials.
-	if cfg.forceCredentials {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, ui.SectionHeading.Render("  Force credentials refresh"))
-		result := verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, cfg.ownerType, run)
-		switch result.Status {
-		case verify.Pass:
-			fmt.Fprintln(w, "  "+ui.RenderOK(result.Name))
-		case verify.Warning:
-			fmt.Fprintln(w, "  "+ui.RenderWarning(result.Name+": "+result.Message))
-		case verify.Fail:
-			fmt.Fprintln(w, "  "+ui.RenderError(result.Name+": "+result.Message))
-		case verify.ManualAction:
-			fmt.Fprintln(w, "  "+ui.RenderInfo(result.Name+": "+result.Message))
-		}
+		return ErrSilent
 	}
 
 	return nil
+}
+
+// runUpdateCredentials implements the --update-credentials flow:
+// 1. Run "claude -p 'Say Hi'" to force token refresh
+// 2. Read refreshed credentials from platform-appropriate store
+// 3. Upload to GitHub as CLAUDE_CREDENTIALS_JSON secret
+func runUpdateCredentials(w io.Writer, cfg doctorConfig) error {
+	fmt.Fprintln(w, "  Updating credentials...")
+
+	// Step 1: Run claude to force token refresh.
+	refreshCmd := cfg.claudeRefreshCmd
+	if refreshCmd == nil {
+		refreshCmd = defaultClaudeRefresh
+	}
+	if err := refreshCmd(); err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderError("claude refresh failed: "+err.Error()))
+		return ErrSilent
+	}
+
+	// Step 2: Read refreshed credentials.
+	readCreds := cfg.readCredentials
+	if readCreds == nil {
+		readCreds = func(run bootstrap.RunCommandFunc) ([]byte, error) {
+			return verify.ReadClaudeCredentialsDefault(run)
+		}
+	}
+	data, err := readCreds(cfg.run)
+	if err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderError("credentials not found: "+err.Error()))
+		return ErrSilent
+	}
+
+	// Step 3: Upload to GitHub.
+	encoded := base64.StdEncoding.EncodeToString(data)
+	var ghArgs []string
+	if cfg.ownerType == bootstrap.OwnerTypeOrg {
+		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--org", cfg.owner}
+	} else {
+		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", cfg.repoFullName}
+	}
+
+	if _, setErr := cfg.run("gh", ghArgs...); setErr != nil {
+		fmt.Fprintln(w, "  "+ui.RenderError("failed to set secret: "+setErr.Error()))
+		return ErrSilent
+	}
+
+	fmt.Fprintln(w, "  "+ui.RenderOK("CLAUDE_CREDENTIALS_JSON — configured"))
+	return nil
+}
+
+// defaultClaudeRefresh runs "claude -p 'Say Hi'" with terminal-connected I/O
+// to force a token refresh. Any re-auth prompt is surfaced to the user.
+func defaultClaudeRefresh() error {
+	cmd := exec.Command("claude", "-p", "Say Hi")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // newDoctorCmd constructs the `gh agentic doctor` subcommand.
@@ -226,7 +281,7 @@ func newDoctorCmd() *cobra.Command {
 	var yes bool
 	var agentUser string
 	var agentUserScope string
-	var forceCredentials bool
+	var updateCredentials bool
 
 	cmd := &cobra.Command{
 		Use:          "doctor",
@@ -235,6 +290,7 @@ func newDoctorCmd() *cobra.Command {
 		Long: "Checks an existing agentic environment for correctness and repairs\n" +
 			"what it can automatically. Each check shows ✔ pass, ⚠ warning, or ✖ fail.\n" +
 			"Pass --repair to attempt automatic fixes for all warnings and failures.\n" +
+			"Pass --update-credentials to refresh and re-upload Claude credentials.\n" +
 			"Pass --yes to automatically confirm all repair prompts.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
@@ -278,7 +334,7 @@ func newDoctorCmd() *cobra.Command {
 				yes:              yes,
 				agentUser:        agentUser,
 				agentUserScope:   agentUserScope,
-				forceCredentials: forceCredentials,
+				updateCredentials: updateCredentials,
 			})
 		},
 	}
@@ -287,6 +343,6 @@ func newDoctorCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "automatically confirm all repair prompts")
 	cmd.Flags().StringVar(&agentUser, "agent-user", "", "agent username for repair (skips prompt)")
 	cmd.Flags().StringVar(&agentUserScope, "agent-user-scope", "", "variable scope: org or repo (skips prompt)")
-	cmd.Flags().BoolVar(&forceCredentials, "force-credentials", false, "unconditionally re-upload Claude credentials after checks complete")
+	cmd.Flags().BoolVar(&updateCredentials, "update-credentials", false, "refresh and re-upload Claude credentials (skips all checks)")
 	return cmd
 }
