@@ -860,6 +860,70 @@ func DeploySyncWorkflows(w io.Writer, cfg BootstrapConfig, state *StepState, run
 	return nil
 }
 
+// DeployCompositeActions copies composite action directories from .ai/.github/actions/
+// into the bootstrapped repo's .github/actions/ directory. Deploys for all account
+// types (personal and org). Missing source directory is silently skipped.
+func DeployCompositeActions(w io.Writer, state *StepState, run RunCommandFunc) error {
+	sourceDir := filepath.Join(state.ClonePath, ".ai", ".github", "actions")
+	destDir := filepath.Join(state.ClonePath, ".github", "actions")
+
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		fmt.Fprintln(w, "  "+ui.Muted.Render("· No composite actions to deploy"))
+		return nil
+	}
+
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("creating .github/actions/: %w", err)
+	}
+
+	// Walk source and mirror into destination.
+	if err := filepath.WalkDir(sourceDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		dstPath := filepath.Join(destDir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", rel, err)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("getting info for %s: %w", rel, err)
+		}
+		return os.WriteFile(dstPath, data, info.Mode())
+	}); err != nil {
+		return fmt.Errorf("deploying composite actions: %w", err)
+	}
+
+	// Stage the deployed actions.
+	if out, err := runInDir(run, state.ClonePath, "git", "add", ".github/actions/"); err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not stage composite actions: "+strings.TrimSpace(out)))
+		return nil
+	}
+
+	// Commit.
+	if out, err := runInDir(run, state.ClonePath, "git", "commit", "-m", "chore: deploy composite GitHub Actions"); err != nil {
+		fmt.Fprintln(w, "  "+ui.RenderWarning("Could not commit composite actions: "+strings.TrimSpace(out)))
+		return nil
+	}
+
+	// Push — skip for existing repos (branch push + PR handled by OpenBootstrapPR).
+	if !state.ExistingRepo {
+		if out, err := runInDir(run, state.ClonePath, "git", "push", "origin", "main"); err != nil {
+			fmt.Fprintln(w, "  "+ui.RenderWarning("Could not push composite actions: "+strings.TrimSpace(out)))
+		}
+	}
+
+	return nil
+}
+
 // --------------------------------------------------------------------------------------
 // Step 9 — PrintSummary + Goose launch
 // --------------------------------------------------------------------------------------

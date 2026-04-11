@@ -97,6 +97,10 @@ func RunSteps(
 			label: "Deploying sync workflows",
 			fn:    func() error { return DeploySyncWorkflows(w, cfg, state, run) },
 		},
+		{
+			label: "Deploying composite actions",
+			fn:    func() error { return DeployCompositeActions(w, state, run) },
+		},
 	}
 
 	for _, s := range steps {

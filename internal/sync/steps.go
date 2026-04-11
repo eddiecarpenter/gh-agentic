@@ -94,9 +94,9 @@ func FetchAndExtractTemplate(tarballURL, repo, version, repoRoot string, workflo
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Extract .ai/ (includes .ai/.github/workflows/), .goose/ (recipes),
-	// and root files (CLAUDE.md, AGENTS.md) so the subsequent deploy steps
-	// can operate on the extracted content.
+	// Extract .ai/ (includes .ai/.github/workflows/ and .ai/.github/actions/),
+	// .goose/ (recipes), and root files (CLAUDE.md, AGENTS.md) so the subsequent
+	// deploy steps can operate on the extracted content.
 	extractPrefixes := []string{".ai/", ".goose/", "CLAUDE.md", "AGENTS.md"}
 	if err := tarball.ExtractFromTemplate(repo, version, tmpDir, extractPrefixes, fetchTarballFn); err != nil {
 		return err
@@ -117,6 +117,11 @@ func FetchAndExtractTemplate(tarballURL, repo, version, repoRoot string, workflo
 		return err
 	}
 
+	// Deploy composite actions from extracted tarball.
+	if err := DeployActions(tmpDir, repoRoot); err != nil {
+		return err
+	}
+
 	// Deploy recipes from extracted tarball.
 	if err := DeployRecipes(tmpDir, repoRoot); err != nil {
 		return err
@@ -125,12 +130,13 @@ func FetchAndExtractTemplate(tarballURL, repo, version, repoRoot string, workflo
 	return nil
 }
 
-// BackupAI copies existing .ai/ and .github/workflows/ to a temp backup
-// location. Returns the backup directory path. The caller is responsible for
-// cleanup.
+// BackupAI copies existing .ai/, .github/workflows/, .github/actions/, and
+// .goose/recipes/ to a temp backup location. Returns the backup directory path.
+// The caller is responsible for cleanup.
 func BackupAI(repoRoot string) (string, error) {
 	aiSrc := filepath.Join(repoRoot, ".ai")
 	workflowsSrc := filepath.Join(repoRoot, ".github", "workflows")
+	actionsSrc := filepath.Join(repoRoot, ".github", "actions")
 	recipesSrc := filepath.Join(repoRoot, ".goose", "recipes")
 
 	aiExists := false
@@ -143,13 +149,18 @@ func BackupAI(repoRoot string) (string, error) {
 		workflowsExist = true
 	}
 
+	actionsExist := false
+	if _, err := os.Stat(actionsSrc); err == nil {
+		actionsExist = true
+	}
+
 	recipesExist := false
 	if _, err := os.Stat(recipesSrc); err == nil {
 		recipesExist = true
 	}
 
 	// Nothing to back up on first sync.
-	if !aiExists && !workflowsExist && !recipesExist {
+	if !aiExists && !workflowsExist && !actionsExist && !recipesExist {
 		return "", nil
 	}
 
@@ -169,6 +180,13 @@ func BackupAI(repoRoot string) (string, error) {
 		if err := fsutil.CopyDir(workflowsSrc, filepath.Join(backupDir, "workflows")); err != nil {
 			_ = os.RemoveAll(backupDir)
 			return "", fmt.Errorf("backing up .github/workflows/: %w", err)
+		}
+	}
+
+	if actionsExist {
+		if err := fsutil.CopyDir(actionsSrc, filepath.Join(backupDir, "actions")); err != nil {
+			_ = os.RemoveAll(backupDir)
+			return "", fmt.Errorf("backing up .github/actions/: %w", err)
 		}
 	}
 
@@ -241,6 +259,54 @@ func DeployWorkflows(tmpDir, repoRoot string, excludeFiles []string) error {
 	}
 
 	return nil
+}
+
+// DeployActions copies composite action directories from the extracted template's
+// .ai/.github/actions/ into the local repo's .github/actions/ using merge semantics:
+// template files overwrite existing copies, project-owned files are preserved,
+// no directories are deleted.
+// Returns nil if the source directory does not exist (template has no actions).
+func DeployActions(tmpDir, repoRoot string) error {
+	src := filepath.Join(tmpDir, ".ai", ".github", "actions")
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return nil
+	}
+
+	dst := filepath.Join(repoRoot, ".github", "actions")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return fmt.Errorf("creating .github/actions/: %w", err)
+	}
+
+	// Walk the source tree and mirror it into the destination.
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(dst, rel)
+
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, 0o755)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading action file %s: %w", rel, err)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("getting info for %s: %w", rel, err)
+		}
+		if err := os.WriteFile(dstPath, data, info.Mode()); err != nil {
+			return fmt.Errorf("writing action file %s: %w", rel, err)
+		}
+		return nil
+	})
 }
 
 // DeployRecipes copies .goose/recipes/ from the extracted template into the local
@@ -391,6 +457,18 @@ func ShowDiff(repoRoot string, run bootstrap.RunCommandFunc) (string, error) {
 		out += "\n--- New workflow files ---\n" + wfUntracked
 	}
 
+	// Include .github/actions/ diffs.
+	actionsDiff, _ := runInDir(run, repoRoot, "git", "diff", ".github/actions/")
+	if strings.TrimSpace(actionsDiff) != "" {
+		out += "\n" + actionsDiff
+	}
+
+	// Include untracked action files.
+	actionsUntracked, _ := runInDir(run, repoRoot, "git", "ls-files", "--others", "--exclude-standard", ".github/actions/")
+	if strings.TrimSpace(actionsUntracked) != "" {
+		out += "\n--- New action files ---\n" + actionsUntracked
+	}
+
 	// Include .goose/recipes/ diffs.
 	recipesDiff, _ := runInDir(run, repoRoot, "git", "diff", ".goose/recipes/")
 	if strings.TrimSpace(recipesDiff) != "" {
@@ -458,14 +536,14 @@ func WritePostSyncMD(repoRoot string, releaseBody string) error {
 
 // StageSync stages all sync changes for commit. Removes legacy TEMPLATE_SOURCE
 // and TEMPLATE_VERSION from git tracking (they are superseded by .ai/config.yml),
-// then stages .ai/, .github/workflows/, CLAUDE.md, AGENTS.md, .goose/recipes/,
-// and POST_SYNC.md.
+// then stages .ai/, .github/workflows/, .github/actions/, CLAUDE.md, AGENTS.md,
+// .goose/recipes/, and POST_SYNC.md.
 func StageSync(repoRoot string, run bootstrap.RunCommandFunc) error {
 	// Remove legacy files from git tracking — ignore if already gone.
 	if out, err := runInDir(run, repoRoot, "git", "rm", "--ignore-unmatch", "--cached", "TEMPLATE_SOURCE", "TEMPLATE_VERSION"); err != nil {
 		return fmt.Errorf("git rm legacy files: %w\n%s", err, strings.TrimSpace(out))
 	}
-	if out, err := runInDir(run, repoRoot, "git", "add", ".ai/", "CLAUDE.md", "AGENTS.md", ".github/workflows/", ".goose/recipes/", "POST_SYNC.md"); err != nil {
+	if out, err := runInDir(run, repoRoot, "git", "add", ".ai/", "CLAUDE.md", "AGENTS.md", ".github/workflows/", ".github/actions/", ".goose/recipes/", "POST_SYNC.md"); err != nil {
 		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(out))
 	}
 	return nil
@@ -494,8 +572,8 @@ func CommitSync(repoRoot, repo, version string, run bootstrap.RunCommandFunc) er
 	return nil
 }
 
-// RestoreAI restores .ai/ and .github/workflows/ from a backup created by
-// BackupAI. If backupDir is empty, there was nothing to restore.
+// RestoreAI restores .ai/, .github/workflows/, .github/actions/, and .goose/recipes/
+// from a backup created by BackupAI. If backupDir is empty, there was nothing to restore.
 func RestoreAI(repoRoot, backupDir string) error {
 	if backupDir == "" {
 		return nil
@@ -522,6 +600,18 @@ func RestoreAI(repoRoot, backupDir string) error {
 		}
 		if err := fsutil.CopyDir(workflowsSrc, workflowsDst); err != nil {
 			return fmt.Errorf("restoring .github/workflows/: %w", err)
+		}
+	}
+
+	// Restore .github/actions/ if it was backed up.
+	actionsSrc := filepath.Join(backupDir, "actions")
+	if _, err := os.Stat(actionsSrc); err == nil {
+		actionsDst := filepath.Join(repoRoot, ".github", "actions")
+		if err := os.RemoveAll(actionsDst); err != nil {
+			return fmt.Errorf("removing .github/actions/ for restore: %w", err)
+		}
+		if err := fsutil.CopyDir(actionsSrc, actionsDst); err != nil {
+			return fmt.Errorf("restoring .github/actions/: %w", err)
 		}
 	}
 
