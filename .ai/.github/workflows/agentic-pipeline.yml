@@ -648,6 +648,11 @@ jobs:
         run: |
           BRANCH="${PR_HEAD_REF}"
           ISSUE_NUMBER=$(echo "${BRANCH}" | sed 's|feature/\([0-9]*\)-.*|\1|')
+          # Discard if the substitution did not produce a pure number
+          # (branch does not follow feature/N-description convention).
+          if ! echo "${ISSUE_NUMBER}" | grep -qE '^[0-9]+$'; then
+            ISSUE_NUMBER=""
+          fi
           echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
 
       - name: Apply done label, set project status, and close feature issue
