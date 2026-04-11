@@ -1,10 +1,10 @@
 # gh-agentic
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/eddiecarpenter/gh-agentic)](go.mod)
 [![Build](https://github.com/eddiecarpenter/gh-agentic/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/eddiecarpenter/gh-agentic/actions/workflows/build-and-test.yml)
 [![Latest Release](https://img.shields.io/github/v/release/eddiecarpenter/gh-agentic)](https://github.com/eddiecarpenter/gh-agentic/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=eddiecarpenter_gh-agentic&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=eddiecarpenter_gh-agentic)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/eddiecarpenter/gh-agentic)](go.mod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A GitHub CLI extension that bootstraps and manages agentic software delivery environments.
 It replaces manual shell scripts with deterministic Go commands — creating repos, scaffolding
