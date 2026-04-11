@@ -116,72 +116,85 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 		func() verify.CheckResult { return verify.CheckStaleOpenFeatures(cfg.repoFullName, run) },
 	}
 
-	// Repair function — only active when --repair flag is set.
-	var repairFn verify.RepairFunc
+	// Repair function — used for both --repair (inline) and prompt-to-fix flows.
+	buildRepairFn := func(result verify.CheckResult) *verify.CheckResult {
+		var r verify.CheckResult
+		switch result.Name {
+		case "CLAUDE.md exists":
+			r = verify.RepairCLAUDEMD(cfg.root)
+		case "LOCALRULES.md exists":
+			r = verify.RepairLOCALRULESMD(cfg.root)
+		case "skills/ directory exists":
+			r = verify.RepairSkillsDir(cfg.root, run)
+		case ".ai/config.yml exists":
+			r = verify.RepairAIConfigYML(cfg.root, run)
+		case "REPOS.md exists":
+			r = verify.RepairREPOSMD(cfg.root)
+		case "README.md exists":
+			r = verify.RepairREADMEMD(cfg.root)
+		case ".ai/ exists and is unmodified":
+			r = verify.RepairAIDirWithWriter(w, cfg.root, run, boolConfirm)
+		case ".ai/skills/*.md unmodified":
+			r = verify.RepairAISkills(cfg.root, boolConfirm, nil)
+		case ".goose/recipes/ exists and complete":
+			r = verify.RepairGooseRecipes(cfg.root, nil)
+		case ".github/workflows/ exists and complete":
+			r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run, nil)
+		case "Standard labels present":
+			r = verify.RepairLabels(cfg.repoFullName, run)
+		case "GitHub Project linked":
+			r = verify.RepairProject(cfg.owner, cfg.repoName, run)
+		case "AGENTIC_PROJECT_ID is configured":
+			r = verify.RepairAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, cfg.ownerType, run)
+		case "GitHub Project status options are standard":
+			r = verify.RepairProjectStatus(cfg.owner, cfg.repoName, cfg.root, run)
+		case "GitHub Project has required views":
+			r = verify.RepairProjectViews(cfg.owner, cfg.repoName, cfg.root, run)
+		case "Project items have status assigned":
+			r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, run)
+		case "AGENT_USER variable configured":
+			r = verify.RepairAgentUserVar(cfg.owner, cfg.repoName, cfg.agentUser, cfg.agentUserScope, run, textConfirm)
+		case "RUNNER_LABEL variable configured":
+			r = verify.RepairRunnerLabelVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
+		case "GOOSE_PROVIDER variable configured":
+			r = verify.RepairGooseProviderVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
+		case "GOOSE_MODEL variable configured":
+			r = verify.RepairGooseModelVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
+		case "GOOSE_AGENT_PAT secret configured":
+			r = verify.RepairGooseAgentPATSecret(cfg.owner, cfg.repoName, cfg.ownerType)
+		case "CLAUDE_CREDENTIALS_JSON secret configured":
+			r = verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, cfg.ownerType, run)
+		case "Agent user is a project collaborator":
+			r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, cfg.ownerType, run)
+		case "No stale open requirements":
+			r = verify.RepairStaleOpenRequirements(cfg.repoFullName, run)
+		case "No stale open features":
+			r = verify.RepairStaleOpenFeatures(cfg.repoFullName, run)
+		default:
+			return nil
+		}
+		return &r
+	}
+
+	// Build verify options based on flags.
+	opts := verify.VerifyOptions{PromptRepairFn: buildRepairFn}
 	if cfg.repair {
-		repairFn = func(result verify.CheckResult) *verify.CheckResult {
-			var r verify.CheckResult
-			switch result.Name {
-			case "CLAUDE.md exists":
-				r = verify.RepairCLAUDEMD(cfg.root)
-			case "LOCALRULES.md exists":
-				r = verify.RepairLOCALRULESMD(cfg.root)
-			case "skills/ directory exists":
-				r = verify.RepairSkillsDir(cfg.root, run)
-			case ".ai/config.yml exists":
-				r = verify.RepairAIConfigYML(cfg.root, run)
-			case "REPOS.md exists":
-				r = verify.RepairREPOSMD(cfg.root)
-			case "README.md exists":
-				r = verify.RepairREADMEMD(cfg.root)
-			case ".ai/ exists and is unmodified":
-				r = verify.RepairAIDirWithWriter(w, cfg.root, run, boolConfirm)
-			case ".ai/skills/*.md unmodified":
-				r = verify.RepairAISkills(cfg.root, boolConfirm, nil)
-			case ".goose/recipes/ exists and complete":
-				r = verify.RepairGooseRecipes(cfg.root, nil)
-			case ".github/workflows/ exists and complete":
-				r = verify.RepairWorkflows(cfg.root, cfg.ownerType, run, nil)
-			case "Standard labels present":
-				r = verify.RepairLabels(cfg.repoFullName, run)
-			case "GitHub Project linked":
-				r = verify.RepairProject(cfg.owner, cfg.repoName, run)
-			case "AGENTIC_PROJECT_ID is configured":
-				r = verify.RepairAgenticProjectID(cfg.repoFullName, cfg.owner, cfg.repoName, cfg.ownerType, run)
-			case "GitHub Project status options are standard":
-				r = verify.RepairProjectStatus(cfg.owner, cfg.repoName, cfg.root, run)
-			case "GitHub Project has required views":
-				r = verify.RepairProjectViews(cfg.owner, cfg.repoName, cfg.root, run)
-			case "Project items have status assigned":
-				r = verify.RepairProjectItemStatuses(cfg.owner, cfg.repoName, run)
-			case "AGENT_USER variable configured":
-				r = verify.RepairAgentUserVar(cfg.owner, cfg.repoName, cfg.agentUser, cfg.agentUserScope, run, textConfirm)
-			case "RUNNER_LABEL variable configured":
-				r = verify.RepairRunnerLabelVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
-			case "GOOSE_PROVIDER variable configured":
-				r = verify.RepairGooseProviderVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
-			case "GOOSE_MODEL variable configured":
-				r = verify.RepairGooseModelVar(cfg.owner, cfg.repoName, cfg.ownerType, run)
-			case "GOOSE_AGENT_PAT secret configured":
-				r = verify.RepairGooseAgentPATSecret(cfg.owner, cfg.repoName, cfg.ownerType)
-			case "CLAUDE_CREDENTIALS_JSON secret configured":
-				r = verify.RepairClaudeCredentialsSecret(cfg.owner, cfg.repoName, cfg.ownerType, run)
-			case "Agent user is a project collaborator":
-				r = verify.RepairProjectCollaborator(cfg.owner, cfg.repoName, agentUser, cfg.ownerType, run)
-			case "No stale open requirements":
-				r = verify.RepairStaleOpenRequirements(cfg.repoFullName, run)
-			case "No stale open features":
-				r = verify.RepairStaleOpenFeatures(cfg.repoFullName, run)
-			default:
-				return nil
-			}
-			return &r
+		// --repair: inline single-pass repair.
+		opts.RepairFn = buildRepairFn
+		opts.PromptFn = nil
+		opts.PromptRepairFn = nil
+	} else {
+		// No --repair: offer prompt-to-fix when issues are found.
+		opts.PromptFn = func(prompt string) (bool, error) {
+			return boolConfirm(prompt)
 		}
 	}
 
-	if err := verify.RunVerify(w, checks, repairFn); err != nil {
-		fmt.Fprintln(w, "  Run 'gh agentic doctor --repair' to attempt automatic fixes.")
-		fmt.Fprintln(w, "  For AGENT_USER repair, add: --agent-user <username> --agent-user-scope org|repo")
+	if err := verify.RunVerifyWithPrompt(w, checks, opts); err != nil {
+		if !cfg.repair {
+			fmt.Fprintln(w, "  Run 'gh agentic doctor --repair' to attempt automatic fixes.")
+			fmt.Fprintln(w, "  For AGENT_USER repair, add: --agent-user <username> --agent-user-scope org|repo")
+		}
 		if !cfg.forceCredentials {
 			return ErrSilent
 		}

@@ -425,3 +425,187 @@ func TestRunVerify_InlineRepair_RepairReturnsManualAction(t *testing.T) {
 		t.Errorf("expected 'action needed' suffix when repair returns ManualAction, got: %s", output)
 	}
 }
+
+// ── Prompt-to-fix tests ─────────────────────────────────────────────────────
+
+func TestRunVerifyWithPrompt_NoIssues_NoPromptShown(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "check1", Status: Pass} },
+	}
+
+	promptCalled := false
+	opts := VerifyOptions{
+		PromptFn: func(prompt string) (bool, error) {
+			promptCalled = true
+			return false, nil
+		},
+		PromptRepairFn: func(r CheckResult) *CheckResult {
+			return &r
+		},
+	}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if promptCalled {
+		t.Error("prompt should not be called when no issues found")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected 'All checks passed', got: %s", output)
+	}
+}
+
+func TestRunVerifyWithPrompt_IssuesFound_UserAccepts_RepairsShown(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "pass-check", Status: Pass} },
+		func() CheckResult {
+			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+	}
+
+	opts := VerifyOptions{
+		PromptFn: func(prompt string) (bool, error) {
+			// Verify prompt text includes issue count.
+			if !strings.Contains(prompt, "1 issue") {
+				t.Errorf("expected prompt to mention 1 issue, got: %s", prompt)
+			}
+			return true, nil
+		},
+		PromptRepairFn: func(r CheckResult) *CheckResult {
+			return &CheckResult{Name: r.Name, Status: Pass, Message: "repaired"}
+		},
+	}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err != nil {
+		t.Fatalf("expected nil error after prompt-repair, got: %v", err)
+	}
+
+	output := buf.String()
+	// Passing check should appear in the initial print (no suffix).
+	if !strings.Contains(output, "pass-check") {
+		t.Errorf("expected pass-check in initial output, got: %s", output)
+	}
+	// Fail check should appear with "fixed" suffix in selective repair.
+	if !strings.Contains(output, "fixed") {
+		t.Errorf("expected 'fixed' suffix for repaired check, got: %s", output)
+	}
+	// Passing check should NOT appear in the selective repair section (only issue lines).
+	// Count occurrences of "pass-check" — should be exactly 1 (from initial print).
+	if count := strings.Count(output, "pass-check"); count != 1 {
+		t.Errorf("expected pass-check to appear once (initial only), got %d in:\n%s", count, output)
+	}
+}
+
+func TestRunVerifyWithPrompt_IssuesFound_UserDeclines_ErrorReturned(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "pass-check", Status: Pass} },
+		func() CheckResult {
+			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+	}
+
+	opts := VerifyOptions{
+		PromptFn: func(prompt string) (bool, error) {
+			return false, nil // User declines.
+		},
+		PromptRepairFn: func(r CheckResult) *CheckResult {
+			t.Fatal("repair should not be called when user declines")
+			return nil
+		},
+	}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err == nil {
+		t.Fatal("expected error when user declines repair, got nil")
+	}
+
+	output := buf.String()
+	// Summary should show failures.
+	if !strings.Contains(output, "1 failed") {
+		t.Errorf("expected '1 failed' in summary, got: %s", output)
+	}
+	// No "fixed" suffix should appear.
+	if strings.Contains(output, "fixed") {
+		t.Errorf("expected no 'fixed' output when user declines, got: %s", output)
+	}
+}
+
+func TestRunVerifyWithPrompt_NoPromptFn_FallsBackToSummary(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult {
+			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+	}
+
+	// No PromptFn — should print summary and return error without prompting.
+	opts := VerifyOptions{}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err == nil {
+		t.Fatal("expected error for unresolved failure, got nil")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "1 failed") {
+		t.Errorf("expected '1 failed' in summary, got: %s", output)
+	}
+}
+
+func TestRunVerifyWithPrompt_SelectiveRepair_OnlyIssueLines(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "ok-check", Status: Pass} },
+		func() CheckResult {
+			return CheckResult{Name: "warn-check", Status: Warning, Message: "needs fix"}
+		},
+		func() CheckResult {
+			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+	}
+
+	opts := VerifyOptions{
+		PromptFn: func(prompt string) (bool, error) {
+			return true, nil
+		},
+		PromptRepairFn: func(r CheckResult) *CheckResult {
+			if r.Status == Warning {
+				return &CheckResult{Name: r.Name, Status: Pass}
+			}
+			return &r // Fail stays failed.
+		},
+	}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err == nil {
+		t.Fatal("expected error for unresolved failure, got nil")
+	}
+
+	output := buf.String()
+	// ok-check should appear once (initial) — not in selective repair.
+	if count := strings.Count(output, "ok-check"); count != 1 {
+		t.Errorf("expected ok-check once, got %d in:\n%s", count, output)
+	}
+	// warn-check should appear twice: initial + selective repair with suffix.
+	if count := strings.Count(output, "warn-check"); count != 2 {
+		t.Errorf("expected warn-check twice, got %d in:\n%s", count, output)
+	}
+	// fail-check should appear twice: initial + selective repair with suffix.
+	if count := strings.Count(output, "fail-check"); count != 2 {
+		t.Errorf("expected fail-check twice, got %d in:\n%s", count, output)
+	}
+	// Summary should show fix and failure counts.
+	if !strings.Contains(output, "1 fixed") {
+		t.Errorf("expected '1 fixed' in selective repair summary, got: %s", output)
+	}
+	if !strings.Contains(output, "1 still failing") {
+		t.Errorf("expected '1 still failing' in selective repair summary, got: %s", output)
+	}
+}

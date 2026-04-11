@@ -19,17 +19,33 @@ type PromptFunc func(prompt string) (bool, error)
 // Returns an error if any unresolved warnings or failures remain after repair.
 // ManualAction results are displayed with instructions but do not cause failure.
 func RunVerify(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error {
-	return RunVerifyWithPrompt(w, checks, repairFn, nil)
+	return RunVerifyWithPrompt(w, checks, VerifyOptions{RepairFn: repairFn})
 }
 
-// RunVerifyWithPrompt is the full-featured entry point that supports an optional
-// interactive prompt when no --repair flag is set but issues are found.
-func RunVerifyWithPrompt(w io.Writer, checks []CheckFunc, repairFn RepairFunc, promptFn PromptFunc) error {
-	if repairFn != nil {
-		return runInlineRepair(w, checks, repairFn)
+// VerifyOptions configures the RunVerifyWithPrompt behaviour.
+type VerifyOptions struct {
+	// RepairFn is the repair function used for inline repair (--repair mode).
+	// When set, checks and repairs happen in a single pass with suffixes.
+	RepairFn RepairFunc
+
+	// PromptFn is called when no RepairFn is set and issues are found.
+	// It asks the user whether to fix issues interactively.
+	PromptFn PromptFunc
+
+	// PromptRepairFn is the repair function used when the user accepts the
+	// prompt. It is separate from RepairFn to allow different wiring:
+	// --repair uses RepairFn (inline), prompt uses PromptRepairFn (selective).
+	PromptRepairFn RepairFunc
+}
+
+// RunVerifyWithPrompt is the full-featured entry point that supports inline
+// repair (--repair) and interactive prompt-to-fix (no --repair, issues found).
+func RunVerifyWithPrompt(w io.Writer, checks []CheckFunc, opts VerifyOptions) error {
+	if opts.RepairFn != nil {
+		return runInlineRepair(w, checks, opts.RepairFn)
 	}
 
-	// ── No repair function: run all checks, print results ─────────────────
+	// ── No inline repair: run all checks, print results ──────────────────
 	results := make([]CheckResult, len(checks))
 	for i, fn := range checks {
 		results[i] = fn()
@@ -45,15 +61,15 @@ func RunVerifyWithPrompt(w io.Writer, checks []CheckFunc, repairFn RepairFunc, p
 		return nil
 	}
 
-	// If a prompt function is available, offer to fix.
-	if promptFn != nil {
+	// If a prompt function and repair function are available, offer to fix.
+	if opts.PromptFn != nil && opts.PromptRepairFn != nil {
 		fmt.Fprintln(w)
-		accepted, err := promptFn(fmt.Sprintf("Fix %d issue(s) now?", issues))
+		accepted, err := opts.PromptFn(fmt.Sprintf("Fix %d issue(s) now?", issues))
 		if err != nil {
 			return fmt.Errorf("prompt error: %w", err)
 		}
 		if accepted {
-			return runSelectiveRepair(w, results, nil)
+			return runSelectiveRepair(w, results, opts.PromptRepairFn)
 		}
 	}
 
@@ -121,13 +137,45 @@ func runInlineRepair(w io.Writer, checks []CheckFunc, repairFn RepairFunc) error
 }
 
 // runSelectiveRepair runs repair only on failing/warning results (used by
-// the prompt-to-fix flow). It prints only the issue lines with suffixes.
-// If defaultRepairFn is nil, it returns an error — caller must provide a
-// repair function via the results' repair context or a separate mechanism.
+// the prompt-to-fix flow). Only issue lines are printed with coloured suffixes;
+// passing lines are hidden. A filtered summary is printed after repair.
 func runSelectiveRepair(w io.Writer, results []CheckResult, repairFn RepairFunc) error {
-	// Placeholder for Task #414 — prompt-to-fix flow.
-	// This will be fully implemented when prompt support is added.
-	return fmt.Errorf("selective repair not yet implemented")
+	var fixedCount, failingCount, actionCount int
+
+	fmt.Fprintln(w)
+	for _, r := range results {
+		if r.Status == Pass {
+			continue // Hide passing lines.
+		}
+		if r.Status == ManualAction {
+			printResultWithSuffix(w, r, ui.StatusWarning.Render("→  action needed"))
+			actionCount++
+			continue
+		}
+
+		// Warning or Fail — attempt repair.
+		updated := repairFn(r)
+		if updated != nil && updated.Status == Pass {
+			printResultWithSuffix(w, r, ui.StatusOK.Render("→  fixed"))
+			fixedCount++
+		} else if updated != nil && updated.Status == ManualAction {
+			printResultWithSuffix(w, r, ui.StatusWarning.Render("→  action needed"))
+			actionCount++
+		} else {
+			printResultWithSuffix(w, r, ui.StatusDanger.Render("→  still failing"))
+			failingCount++
+		}
+	}
+
+	fmt.Fprintln(w)
+
+	// Print filtered summary (only repaired/failing counts).
+	printInlineSummary(w, 0, fixedCount, failingCount, actionCount)
+
+	if failingCount > 0 {
+		return fmt.Errorf("%d issue(s) still failing", failingCount)
+	}
+	return nil
 }
 
 // printResult renders a single ✔/⚠/✖/ℹ line for one result.
