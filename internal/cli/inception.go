@@ -33,7 +33,7 @@ func newInceptionCmd() *cobra.Command {
 			fmt.Fprintln(w)
 
 			// Step 2: Collect configuration via interactive form.
-			cfg, err := inception.RunForm(w, *envCtx)
+			cfg, err := inception.RunForm(w, *envCtx, inception.DefaultFormRun)
 			if errors.Is(err, inception.ErrAborted) {
 				fmt.Fprintln(w, ui.Muted.Render("Aborted."))
 				return nil

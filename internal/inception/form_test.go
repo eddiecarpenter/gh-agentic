@@ -1,8 +1,11 @@
 package inception
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/huh"
 )
 
 // --- validateRepoName tests ---
@@ -145,5 +148,85 @@ func TestRenderSummaryBox_ToolType_HasSuffix(t *testing.T) {
 	rendered := RenderSummaryBox(cfg)
 	if !strings.Contains(rendered, "alice/testbench-tool") {
 		t.Errorf("RenderSummaryBox() expected 'alice/testbench-tool' in output, got:\n%s", rendered)
+	}
+}
+
+// --- FormRunFunc injection tests ---
+
+func TestFormRunFunc_TypeDefined(t *testing.T) {
+	var fn FormRunFunc = func(f *huh.Form) error {
+		return nil
+	}
+	if err := fn(huh.NewForm()); err != nil {
+		t.Errorf("expected nil from fake FormRunFunc, got: %v", err)
+	}
+}
+
+func TestDefaultFormRun_IsNotNil(t *testing.T) {
+	if DefaultFormRun == nil {
+		t.Error("DefaultFormRun should not be nil")
+	}
+}
+
+func TestRunForm_WithFakeFormRunFunc_CompletesWithoutTerminal(t *testing.T) {
+	// Inject a fake FormRunFunc that returns nil without touching a terminal.
+	// Since the confirm form's bound `confirmed` bool stays false,
+	// RunForm returns ErrAborted — which proves it ran to completion without a TTY.
+	var buf strings.Builder
+
+	callCount := 0
+	fakeFormRun := FormRunFunc(func(f *huh.Form) error {
+		callCount++
+		return nil
+	})
+
+	ctx := EnvContext{Owner: "alice"}
+	_, err := RunForm(&buf, ctx, fakeFormRun)
+
+	// The confirm form's bound value defaults to false, so RunForm returns ErrAborted.
+	if !errors.Is(err, ErrAborted) {
+		t.Fatalf("expected ErrAborted, got: %v", err)
+	}
+
+	// Three forms should have been called: type, details, confirm.
+	if callCount != 3 {
+		t.Errorf("expected 3 form runs, got %d", callCount)
+	}
+}
+
+func TestRunForm_WithFakeFormRunFunc_SetsOwnerFromContext(t *testing.T) {
+	// Verify the config's Owner field is set from the EnvContext.
+	var buf strings.Builder
+
+	fakeFormRun := FormRunFunc(func(f *huh.Form) error {
+		return nil
+	})
+
+	ctx := EnvContext{Owner: "acme-org"}
+	// Will return ErrAborted because confirm stays false, but we can check
+	// that the owner was set correctly via the summary output.
+	_, _ = RunForm(&buf, ctx, fakeFormRun)
+
+	output := buf.String()
+	if !strings.Contains(output, "acme-org") {
+		t.Errorf("expected owner 'acme-org' in output, got:\n%s", output)
+	}
+}
+
+func TestRunForm_FormRunFunc_ErrorPropagation(t *testing.T) {
+	var buf strings.Builder
+	expectedErr := errors.New("form error")
+
+	fakeFormRun := FormRunFunc(func(f *huh.Form) error {
+		return expectedErr
+	})
+
+	ctx := EnvContext{Owner: "alice"}
+	_, err := RunForm(&buf, ctx, fakeFormRun)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "form error") {
+		t.Errorf("expected 'form error' in error, got: %v", err)
 	}
 }
