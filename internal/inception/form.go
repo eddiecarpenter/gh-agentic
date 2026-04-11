@@ -40,12 +40,23 @@ var stackOptions = []huh.Option[string]{
 	huh.NewOption("Other", "Other"),
 }
 
+// ValidateStackSelection returns an error if no stacks are selected.
+func ValidateStackSelection(selected []string) error {
+	return validateStackSelection(selected)
+}
+
 // validateStackSelection returns an error if no stacks are selected.
 func validateStackSelection(selected []string) error {
 	if len(selected) == 0 {
 		return errors.New("at least one stack must be selected")
 	}
 	return nil
+}
+
+// ValidateRepoName returns an error if s is not a valid repo name.
+// Valid names are non-empty, lowercase, and contain only letters, digits, and hyphens.
+func ValidateRepoName(s string) error {
+	return validateRepoName(s)
 }
 
 // validateRepoName returns an error if s is not a valid repo name.
