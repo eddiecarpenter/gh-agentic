@@ -46,27 +46,10 @@ func newBootstrapCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
-			confirm := func(prompt string) (bool, error) {
-				if nonInteractive {
-					return true, nil
-				}
-				fmt.Fprintf(w, "  %s [Yes/No]: ", prompt)
-				scanner := bufio.NewScanner(cmd.InOrStdin())
-				if scanner.Scan() {
-					answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
-					return answer == "yes" || answer == "y", nil
-				}
-				return false, scanner.Err()
-			}
-
-			if err := bootstrap.RunPreflight(w, bootstrap.DefaultLookPath, bootstrap.DefaultRunCommand, confirm); err != nil {
-				return err
-			}
-
-			var cfg bootstrap.BootstrapConfig
-
+			// Non-interactive: validate flags and field formats before running preflight.
+			// This allows tests and CI to catch missing/invalid flags without needing
+			// a real gh auth session.
 			if nonInteractive {
-				// Validate required flags.
 				var missing []string
 				if topology == "" {
 					missing = append(missing, "--topology")
@@ -95,19 +78,38 @@ func newBootstrapCmd() *cobra.Command {
 				if pat == "" {
 					missing = append(missing, "--pat")
 				}
-
 				if len(missing) > 0 {
 					return fmt.Errorf("--non-interactive requires %s", strings.Join(missing, ", "))
 				}
 
-				// Validate field values.
 				if err := bootstrap.ValidateProjectName(projectName); err != nil {
 					return fmt.Errorf("invalid --project-name: %w", err)
 				}
 				if err := bootstrap.ValidateStackSelection(stacks); err != nil {
 					return fmt.Errorf("invalid --stack: %w", err)
 				}
+			}
 
+			confirm := func(prompt string) (bool, error) {
+				if nonInteractive {
+					return true, nil
+				}
+				fmt.Fprintf(w, "  %s [Yes/No]: ", prompt)
+				scanner := bufio.NewScanner(cmd.InOrStdin())
+				if scanner.Scan() {
+					answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+					return answer == "yes" || answer == "y", nil
+				}
+				return false, scanner.Err()
+			}
+
+			if err := bootstrap.RunPreflight(w, bootstrap.DefaultLookPath, bootstrap.DefaultRunCommand, confirm); err != nil {
+				return err
+			}
+
+			var cfg bootstrap.BootstrapConfig
+
+			if nonInteractive {
 				// Detect owner type.
 				ownerType, err := bootstrap.DefaultDetectOwnerType(owner)
 				if err != nil {
