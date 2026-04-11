@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -13,7 +14,15 @@ import (
 
 // newInceptionCmd constructs the `gh agentic inception` subcommand.
 func newInceptionCmd() *cobra.Command {
-	return &cobra.Command{
+	var (
+		nonInteractive bool
+		repoType       string
+		repoName       string
+		description    string
+		stacks         []string
+	)
+
+	cmd := &cobra.Command{
 		Use:   "inception",
 		Short: "Register a new repo in an existing agentic environment (Phase 0b)",
 		Long:  "Creates and configures a new domain, tool, or other repo and registers it in REPOS.md.",
@@ -32,17 +41,54 @@ func newInceptionCmd() *cobra.Command {
 			fmt.Fprintln(w, "  "+ui.RenderOK("Agentic environment detected (owner: "+envCtx.Owner+")"))
 			fmt.Fprintln(w)
 
-			// Step 2: Collect configuration via interactive form.
-			cfg, err := inception.RunForm(w, *envCtx)
-			if errors.Is(err, inception.ErrAborted) {
-				fmt.Fprintln(w, ui.Muted.Render("Aborted."))
-				return nil
-			}
-			if err != nil {
-				return err
+			var cfg *inception.InceptionConfig
+
+			if nonInteractive {
+				// Validate required flags.
+				var missing []string
+				if repoType == "" {
+					missing = append(missing, "--repo-type")
+				}
+				if repoName == "" {
+					missing = append(missing, "--repo-name")
+				}
+				if len(stacks) == 0 {
+					missing = append(missing, "--stack")
+				}
+
+				if len(missing) > 0 {
+					return fmt.Errorf("--non-interactive requires %s", strings.Join(missing, ", "))
+				}
+
+				// Validate field values.
+				if err := inception.ValidateRepoName(repoName); err != nil {
+					return fmt.Errorf("invalid --repo-name: %w", err)
+				}
+				if err := inception.ValidateStackSelection(stacks); err != nil {
+					return fmt.Errorf("invalid --stack: %w", err)
+				}
+
+				// Build config from flags plus env context.
+				cfg = &inception.InceptionConfig{
+					RepoType:    repoType,
+					RepoName:    repoName,
+					Description: description,
+					Stacks:      stacks,
+					Owner:       envCtx.Owner,
+				}
+			} else {
+				// Interactive path — unchanged.
+				cfg, err = inception.RunForm(w, *envCtx, inception.DefaultFormRun)
+				if errors.Is(err, inception.ErrAborted) {
+					fmt.Fprintln(w, ui.Muted.Render("Aborted."))
+					return nil
+				}
+				if err != nil {
+					return err
+				}
 			}
 
-			// Steps 3-6: Execute inception steps with spinner.
+			// Execute inception steps with spinner.
 			return inception.RunSteps(
 				w,
 				cfg,
@@ -52,4 +98,11 @@ func newInceptionCmd() *cobra.Command {
 			)
 		},
 	}
+
+	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "run without prompting — all required flags must be provided")
+	cmd.Flags().StringVar(&repoType, "repo-type", "", "repo type: domain, tool, or other")
+	cmd.Flags().StringVar(&repoName, "repo-name", "", "repo name (without suffix, e.g. 'charging')")
+	cmd.Flags().StringVar(&description, "description", "", "short repo description")
+	cmd.Flags().StringArrayVar(&stacks, "stack", nil, "technology stack (repeatable, e.g. --stack Go --stack Rust)")
+	return cmd
 }

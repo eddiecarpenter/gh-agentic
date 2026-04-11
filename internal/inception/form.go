@@ -12,6 +12,13 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
+// FormRunFunc is a function that runs a huh.Form. The production implementation
+// simply calls f.Run(). Tests inject a fake that sets form-bound values directly.
+type FormRunFunc func(f *huh.Form) error
+
+// DefaultFormRun is the production FormRunFunc — it delegates to huh.Form.Run().
+var DefaultFormRun FormRunFunc = func(f *huh.Form) error { return f.Run() }
+
 // ErrAborted is returned by RunForm when the user declines the final confirmation.
 var ErrAborted = errors.New("aborted by user")
 
@@ -33,12 +40,23 @@ var stackOptions = []huh.Option[string]{
 	huh.NewOption("Other", "Other"),
 }
 
+// ValidateStackSelection returns an error if no stacks are selected.
+func ValidateStackSelection(selected []string) error {
+	return validateStackSelection(selected)
+}
+
 // validateStackSelection returns an error if no stacks are selected.
 func validateStackSelection(selected []string) error {
 	if len(selected) == 0 {
 		return errors.New("at least one stack must be selected")
 	}
 	return nil
+}
+
+// ValidateRepoName returns an error if s is not a valid repo name.
+// Valid names are non-empty, lowercase, and contain only letters, digits, and hyphens.
+func ValidateRepoName(s string) error {
+	return validateRepoName(s)
 }
 
 // validateRepoName returns an error if s is not a valid repo name.
@@ -71,7 +89,7 @@ func DeriveRepoName(name, repoType string) string {
 // RunForm runs the interactive huh form to collect inception configuration.
 // It receives the EnvContext to pre-fill the owner field.
 // Returns a populated InceptionConfig, or ErrAborted if the user declines confirmation.
-func RunForm(w io.Writer, ctx EnvContext) (*InceptionConfig, error) {
+func RunForm(w io.Writer, ctx EnvContext, formRun FormRunFunc) (*InceptionConfig, error) {
 	cfg := &InceptionConfig{
 		Owner: ctx.Owner,
 	}
@@ -85,7 +103,7 @@ func RunForm(w io.Writer, ctx EnvContext) (*InceptionConfig, error) {
 				Value(&cfg.RepoType),
 		),
 	)
-	if err := typeForm.Run(); err != nil {
+	if err := formRun(typeForm); err != nil {
 		return nil, fmt.Errorf("repo type form: %w", err)
 	}
 
@@ -106,7 +124,7 @@ func RunForm(w io.Writer, ctx EnvContext) (*InceptionConfig, error) {
 				Validate(validateStackSelection),
 		),
 	)
-	if err := detailsForm.Run(); err != nil {
+	if err := formRun(detailsForm); err != nil {
 		return nil, fmt.Errorf("repo details form: %w", err)
 	}
 
@@ -126,7 +144,7 @@ func RunForm(w io.Writer, ctx EnvContext) (*InceptionConfig, error) {
 				Value(&confirmed),
 		),
 	)
-	if err := confirmForm.Run(); err != nil {
+	if err := formRun(confirmForm); err != nil {
 		return nil, fmt.Errorf("confirm form: %w", err)
 	}
 
