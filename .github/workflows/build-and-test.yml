@@ -12,6 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarCloud needs full history for blame and new-code detection
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -21,5 +23,10 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Test
-        run: go test ./...
+      - name: Test with coverage
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
