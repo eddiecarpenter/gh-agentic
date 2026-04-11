@@ -40,7 +40,7 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners, bootstrap.DefaultDetectOwnerType, bootstrap.DefaultFetchRepos, bootstrap.DefaultCheckRepoExists, templateRepo)
+			cfg, err := bootstrap.RunForm(w, bootstrap.DefaultFetchOwners, bootstrap.DefaultDetectOwnerType, bootstrap.DefaultFetchRepos, bootstrap.DefaultCheckRepoExists, templateRepo, bootstrap.DefaultFormRun)
 			if errors.Is(err, bootstrap.ErrAborted) || errors.Is(err, bootstrap.ErrFederatedRequiresOrg) {
 				fmt.Fprintln(w, ui.Muted.Render("Aborted."))
 				return nil

@@ -14,6 +14,13 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
+// FormRunFunc is a function that runs a huh.Form. The production implementation
+// simply calls f.Run(). Tests inject a fake that sets form-bound values directly.
+type FormRunFunc func(f *huh.Form) error
+
+// DefaultFormRun is the production FormRunFunc — it delegates to huh.Form.Run().
+var DefaultFormRun FormRunFunc = func(f *huh.Form) error { return f.Run() }
+
 // ErrAborted is returned by RunForm when the user declines the final "Create project?" confirm.
 var ErrAborted = errors.New("aborted by user")
 
@@ -302,7 +309,7 @@ func buildRunnerOptions(projectName, owner string) []huh.Option[string] {
 // resolveTemplateRepo sets cfg.TemplateRepo from the CLI flag or an interactive prompt.
 // If templateFlag is non-empty it is used directly; otherwise the user is prompted
 // with DefaultTemplateRepo pre-filled.
-func resolveTemplateRepo(templateFlag string, cfg *BootstrapConfig) error {
+func resolveTemplateRepo(templateFlag string, cfg *BootstrapConfig, runForm FormRunFunc) error {
 	if templateFlag != "" {
 		cfg.TemplateRepo = templateFlag
 		return nil
@@ -316,7 +323,7 @@ func resolveTemplateRepo(templateFlag string, cfg *BootstrapConfig) error {
 				Value(&cfg.TemplateRepo),
 		),
 	)
-	if err := form.Run(); err != nil {
+	if err := runForm(form); err != nil {
 		return fmt.Errorf("template repo form: %w", err)
 	}
 	return nil
@@ -324,7 +331,7 @@ func resolveTemplateRepo(templateFlag string, cfg *BootstrapConfig) error {
 
 // runPhase1TopologyOwner presents the topology and owner selection forms, then
 // validates the combination. Returns the detected owner type on success.
-func runPhase1TopologyOwner(w io.Writer, cfg *BootstrapConfig, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc) (string, error) {
+func runPhase1TopologyOwner(w io.Writer, cfg *BootstrapConfig, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc, runForm FormRunFunc) (string, error) {
 	topologyForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -337,7 +344,7 @@ func runPhase1TopologyOwner(w io.Writer, cfg *BootstrapConfig, fetchOwners Fetch
 				Value(&cfg.Topology),
 		),
 	)
-	if err := topologyForm.Run(); err != nil {
+	if err := runForm(topologyForm); err != nil {
 		return "", fmt.Errorf("topology form: %w", err)
 	}
 
@@ -360,7 +367,7 @@ func runPhase1TopologyOwner(w io.Writer, cfg *BootstrapConfig, fetchOwners Fetch
 				Value(&cfg.Owner),
 		),
 	)
-	if err := ownerForm.Run(); err != nil {
+	if err := runForm(ownerForm); err != nil {
 		return "", fmt.Errorf("owner form: %w", err)
 	}
 
@@ -384,7 +391,7 @@ func runPhase1TopologyOwner(w io.Writer, cfg *BootstrapConfig, fetchOwners Fetch
 // runPhase2RepoSelection presents the repo mode selector and, depending on the
 // choice, either a filterable list of existing repos or a new-name input.
 // ESC on the existing-repo list loops back to the mode selector.
-func runPhase2RepoSelection(cfg *BootstrapConfig, fetchRepos FetchReposFunc, checkRepoExists CheckRepoExistsFunc) error {
+func runPhase2RepoSelection(cfg *BootstrapConfig, fetchRepos FetchReposFunc, checkRepoExists CheckRepoExistsFunc, runForm FormRunFunc) error {
 	for {
 		var repoMode string
 		repoModeForm := huh.NewForm(
@@ -399,7 +406,7 @@ func runPhase2RepoSelection(cfg *BootstrapConfig, fetchRepos FetchReposFunc, che
 					Value(&repoMode),
 			),
 		)
-		if err := repoModeForm.Run(); err != nil {
+		if err := runForm(repoModeForm); err != nil {
 			return fmt.Errorf("repo mode form: %w", err)
 		}
 
@@ -430,7 +437,7 @@ func runPhase2RepoSelection(cfg *BootstrapConfig, fetchRepos FetchReposFunc, che
 						Value(&cfg.ProjectName),
 				),
 			)
-			if err := repoSelectForm.Run(); err != nil {
+			if err := runForm(repoSelectForm); err != nil {
 				if errors.Is(err, huh.ErrUserAborted) {
 					cfg.ProjectName = ""
 					continue // ESC — loop back to repo mode choice
@@ -449,7 +456,7 @@ func runPhase2RepoSelection(cfg *BootstrapConfig, fetchRepos FetchReposFunc, che
 						Validate(validateNewRepoName(cfg.Owner, checkRepoExists)),
 				),
 			)
-			if err := repoNameForm.Run(); err != nil {
+			if err := runForm(repoNameForm); err != nil {
 				return fmt.Errorf("repo name form: %w", err)
 			}
 		}
@@ -459,7 +466,7 @@ func runPhase2RepoSelection(cfg *BootstrapConfig, fetchRepos FetchReposFunc, che
 
 // runPhase3Details presents the project details form: description (new repos only),
 // stack selection, agent username, agent user scope (org accounts only), and Antora toggle.
-func runPhase3Details(cfg *BootstrapConfig, ownerType string) error {
+func runPhase3Details(cfg *BootstrapConfig, ownerType string, runForm FormRunFunc) error {
 	var fields []huh.Field
 
 	if !cfg.ExistingRepo {
@@ -518,7 +525,7 @@ func runPhase3Details(cfg *BootstrapConfig, ownerType string) error {
 			Value(&cfg.Antora),
 	)
 
-	if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
+	if err := runForm(huh.NewForm(huh.NewGroup(fields...))); err != nil {
 		return fmt.Errorf("project details form: %w", err)
 	}
 	return nil
@@ -528,7 +535,7 @@ func runPhase3Details(cfg *BootstrapConfig, ownerType string) error {
 // model, and GOOSE_AGENT_PAT. Defaults are set on the first pass only so that
 // values the user entered on a previous loop iteration are preserved.
 // If the user selects "other" for the runner, a follow-up free-text prompt is shown.
-func runPipelineConfig(cfg *BootstrapConfig) error {
+func runPipelineConfig(cfg *BootstrapConfig, runForm FormRunFunc) error {
 	if cfg.RunnerLabel == "" {
 		cfg.RunnerLabel = RunnerDefaultForTopology(cfg.Topology, cfg.Owner)
 	}
@@ -563,7 +570,7 @@ func runPipelineConfig(cfg *BootstrapConfig) error {
 				Description(ui.Muted.Render("Press Enter to submit ↵")),
 		),
 	)
-	if err := form.Run(); err != nil {
+	if err := runForm(form); err != nil {
 		return fmt.Errorf("pipeline config form: %w", err)
 	}
 
@@ -583,7 +590,7 @@ func runPipelineConfig(cfg *BootstrapConfig) error {
 					}),
 			),
 		)
-		if err := customForm.Run(); err != nil {
+		if err := runForm(customForm); err != nil {
 			return fmt.Errorf("custom runner form: %w", err)
 		}
 	}
@@ -600,29 +607,29 @@ func runPipelineConfig(cfg *BootstrapConfig) error {
 // templateFlag is the value of --template from the CLI. If non-empty it is
 // used directly; otherwise an interactive prompt pre-filled with
 // DefaultTemplateRepo is shown.
-func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc, fetchRepos FetchReposFunc, checkRepoExists CheckRepoExistsFunc, templateFlag string) (BootstrapConfig, error) {
+func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwnerTypeFunc, fetchRepos FetchReposFunc, checkRepoExists CheckRepoExistsFunc, templateFlag string, formRun FormRunFunc) (BootstrapConfig, error) {
 	var cfg BootstrapConfig
 
-	if err := resolveTemplateRepo(templateFlag, &cfg); err != nil {
+	if err := resolveTemplateRepo(templateFlag, &cfg, formRun); err != nil {
 		return BootstrapConfig{}, err
 	}
 
 	for {
-		ownerType, err := runPhase1TopologyOwner(w, &cfg, fetchOwners, detectOwnerType)
+		ownerType, err := runPhase1TopologyOwner(w, &cfg, fetchOwners, detectOwnerType, formRun)
 		if err != nil {
 			return BootstrapConfig{}, err
 		}
 
-		if err := runPhase2RepoSelection(&cfg, fetchRepos, checkRepoExists); err != nil {
+		if err := runPhase2RepoSelection(&cfg, fetchRepos, checkRepoExists, formRun); err != nil {
 			return BootstrapConfig{}, err
 		}
 
-		if err := runPhase3Details(&cfg, ownerType); err != nil {
+		if err := runPhase3Details(&cfg, ownerType, formRun); err != nil {
 			return BootstrapConfig{}, err
 		}
 		cfg.OwnerType = ownerType
 
-		if err := runPipelineConfig(&cfg); err != nil {
+		if err := runPipelineConfig(&cfg, formRun); err != nil {
 			return BootstrapConfig{}, err
 		}
 
@@ -633,12 +640,12 @@ func RunForm(w io.Writer, fetchOwners FetchOwnersFunc, detectOwnerType DetectOwn
 		fmt.Fprintln(w)
 
 		var confirmed bool
-		if err := huh.NewForm(huh.NewGroup(
+		if err := formRun(huh.NewForm(huh.NewGroup(
 			huh.NewConfirm().
 				Title("Create project?").
 				Description("Review the summary above before confirming. Select 'No' to go back and edit.").
 				Value(&confirmed),
-		)).Run(); err != nil {
+		))); err != nil {
 			return BootstrapConfig{}, fmt.Errorf("confirm form: %w", err)
 		}
 
