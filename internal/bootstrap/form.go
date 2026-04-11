@@ -234,6 +234,12 @@ func DefaultFetchOwners() ([]Owner, error) {
 	return owners, nil
 }
 
+// ValidateProjectName returns an error if s is not a valid project name.
+// Valid names are non-empty, lowercase, and contain only letters, digits, and hyphens.
+func ValidateProjectName(s string) error {
+	return validateProjectName(s)
+}
+
 // validateProjectName returns an error if s is not a valid project name.
 // Valid names are non-empty, lowercase, and contain only letters, digits, and hyphens.
 func validateProjectName(s string) error {
@@ -259,12 +265,24 @@ var stackOptions = []huh.Option[string]{
 	huh.NewOption("Other", "Other"),
 }
 
+// ValidateStackSelection returns an error if no stacks are selected.
+func ValidateStackSelection(selected []string) error {
+	return validateStackSelection(selected)
+}
+
 // validateStackSelection returns an error if no stacks are selected.
 func validateStackSelection(selected []string) error {
 	if len(selected) == 0 {
 		return errors.New("at least one stack must be selected")
 	}
 	return nil
+}
+
+// ValidateTopologyOwner checks whether the selected topology is valid for the given owner type.
+// Returns ErrFederatedRequiresOrg if a personal account selects Federated topology.
+// Returns nil for all other combinations.
+func ValidateTopologyOwner(topology, ownerType string) error {
+	return validateTopologyOwner(topology, ownerType)
 }
 
 // validateTopologyOwner checks whether the selected topology is valid for the given owner type.
