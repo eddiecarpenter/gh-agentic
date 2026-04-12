@@ -1,0 +1,115 @@
+name: Agentic Pipeline (Reusable)
+
+# This is the v2 reusable workflow. Domain repos call this from their
+# wrapper workflows. It reads .ai-version from the domain repo checkout,
+# mounts the framework at that version, and runs the pipeline.
+
+on:
+  workflow_call:
+    secrets:
+      GOOSE_AGENT_PAT:
+        required: true
+      CLAUDE_CREDENTIALS_JSON:
+        required: true
+
+jobs:
+  mount-and-run:
+    name: Mount Framework & Run Pipeline
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout domain repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Read .ai-version
+        id: version
+        run: |
+          if [ ! -f .ai-version ]; then
+            echo "::error::.ai-version not found. Run 'gh agentic -v2 mount <version>' first."
+            exit 1
+          fi
+          VERSION=$(cat .ai-version | tr -d '[:space:]')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Framework version: ${VERSION}"
+
+      - name: Mount AI Framework
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Mounting AI Framework at version ${VERSION}..."
+
+          # Download and extract the framework from gh-agentic release
+          mkdir -p .ai
+          gh release download "${VERSION}" \
+            --repo eddiecarpenter/gh-agentic \
+            --archive tar.gz \
+            --output framework.tar.gz
+
+          # Extract only framework files (RULEBOOK.md, skills/, recipes/, standards/, concepts/)
+          tar xzf framework.tar.gz --strip-components=1 \
+            --directory=.ai \
+            --include='*/RULEBOOK.md' \
+            --include='*/skills/*' \
+            --include='*/recipes/*' \
+            --include='*/standards/*' \
+            --include='*/concepts/*' \
+            2>/dev/null || true
+
+          rm -f framework.tar.gz
+
+          # Also extract .goose/recipes/ for Goose
+          mkdir -p .goose
+          gh release download "${VERSION}" \
+            --repo eddiecarpenter/gh-agentic \
+            --archive tar.gz \
+            --output framework.tar.gz
+
+          tar xzf framework.tar.gz --strip-components=1 \
+            --directory=. \
+            --include='*/.goose/*' \
+            --include='*/.github/actions/*' \
+            2>/dev/null || true
+
+          rm -f framework.tar.gz
+
+          echo "✓ Framework mounted at .ai/"
+          ls -la .ai/
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
+
+      - name: Install tools
+        uses: ./.github/actions/install-ai-tools
+
+      - name: Setup Claude Code auth
+        uses: ./.github/actions/setup-claude-auth
+        with:
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Configure environment
+        run: |
+          git config user.name "${{ vars.AGENT_USER }}"
+          git config user.email "${{ vars.AGENT_USER }}@users.noreply.github.com"
+
+      - name: Configure Goose
+        run: |
+          mkdir -p ~/.config/goose
+          cat > ~/.config/goose/config.yaml <<GOOSEEOF
+          GOOSE_PROVIDER: ${{ vars.GOOSE_PROVIDER || 'claude-code' }}
+          GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
+          GOOSEEOF
+
+      # The actual pipeline job dispatch happens in the domain repo's wrapper
+      # workflow which calls this reusable workflow. The domain repo's wrapper
+      # passes the event context through.
