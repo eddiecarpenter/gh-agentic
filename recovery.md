@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #432                               |
 | Branch              | feature/432-merge-framework-content |
-| Last commit         | 05d49d2                            |
+| Last commit         | cbf474a                            |
 | Total tasks         | 5                                  |
-| Last updated        | 2026-04-12T22:45:00Z               |
+| Last updated        | 2026-04-12T22:46:00Z               |
 
 ## Completed Tasks
 
@@ -20,8 +20,12 @@
 - **Files changed:** recipes/*.yaml (8 files)
 - **Decisions:** None
 
+### #435 — Merge reusable workflows and composite actions from ai-native-delivery .github/
+- **Implemented:** Added sonarcloud.yml. Verified overlapping workflows are identical. Composite actions already match. Preserved gh-agentic-specific files.
+- **Files changed:** .github/workflows/sonarcloud.yml
+- **Decisions:** Kept gh-agentic publish-release.yml (GoReleaser-based) over ai-native-delivery skeleton version
+
 ## Remaining Tasks
 
-- [ ] #435 — Merge reusable workflows and composite actions from ai-native-delivery .github/
 - [ ] #436 — Update all internal cross-references from ai-native-delivery to gh-agentic
 - [ ] #437 — Add verification script to confirm framework content completeness
