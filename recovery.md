@@ -4,17 +4,16 @@
 |---------------------|------------------------------------|
 | Feature issue       | #432                               |
 | Branch              | feature/432-merge-framework-content |
-| Last commit         | (pending)                          |
+| Last commit         | 2bbdbda                            |
 | Total tasks         | 5                                  |
-| Last updated        | 2026-04-12T22:43:00Z               |
+| Last updated        | 2026-04-12T22:44:00Z               |
 
-## Current Task
+## Completed Tasks
 
 ### #433 — Copy framework core content (RULEBOOK.md, skills/, standards/, concepts/) from ai-native-delivery to gh-agentic root
-- **Status:** in-progress
-- **Last step:** Copied all 18 files (RULEBOOK.md, 14 skills, 1 standard, 2 concepts)
-- **Next step:** Commit and close task
-- **Notes:** Go not installed on runner — build check skipped (content-only changes)
+- **Implemented:** Copied RULEBOOK.md, 14 skill files, standards/go.md, and 2 concept files from ai-native-delivery/.ai/ to gh-agentic root
+- **Files changed:** RULEBOOK.md, skills/*.md (14 files), standards/go.md, concepts/delivery-philosophy.md, concepts/feature-switches.md
+- **Decisions:** None
 
 ## Remaining Tasks
 
