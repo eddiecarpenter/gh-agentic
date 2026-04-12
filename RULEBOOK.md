@@ -6,7 +6,7 @@ and every action, regardless of which skill is being executed.
 
 For the **playbooks** — the step-by-step procedures for each session type — see `.ai/skills/`.
 
-**This file is managed by the `ai-native-delivery` template. Do not edit manually.
+**This file is managed by the `gh-agentic` framework. Do not edit manually.
 Local overrides belong in `LOCALRULES.md`.**
 
 ---
@@ -148,11 +148,11 @@ See `.ai/concepts/delivery-philosophy.md` for the full context.
 
 ## Base Directory — Read Only
 
-The `.ai/` directory is managed exclusively by the `ai-native-delivery` template.
+The `.ai/` directory is managed exclusively by the `gh-agentic` framework.
 **Never modify any file under `.ai/` directly** — not even minor edits.
 
 If a change to the global protocol or standards is needed:
-1. Clone `eddiecarpenter/ai-native-delivery` locally
+1. Clone `eddiecarpenter/gh-agentic` locally
 2. Make and test the changes there
 3. Push and raise a PR for human review
 4. Once merged and tagged, use `gh agentic sync` to pull the update into this repo
@@ -196,7 +196,7 @@ by the template and can be freely created and edited. A local skill with the sam
 filename as a template skill in `.ai/skills/` takes precedence.
 
 - Customisation of agent behaviour belongs in `LOCALRULES.md`
-- If a recipe needs to change, raise it against `eddiecarpenter/ai-native-delivery`
+- If a recipe needs to change, raise it against `eddiecarpenter/gh-agentic`
   and let it flow in via `gh agentic sync`
 - `gh agentic verify` detects and flags any local modifications to recipe files
 

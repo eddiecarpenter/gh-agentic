@@ -1,6 +1,6 @@
 # Delivery Philosophy
 
-This document captures the foundational thinking behind the `ai-native-delivery`
+This document captures the foundational thinking behind the `gh-agentic`
 framework's approach to software delivery. Understanding this philosophy is essential
 for making good decisions during scoping, design, and implementation.
 

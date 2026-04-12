@@ -11,7 +11,7 @@ parameters:
   - key: repo
     input_type: string
     requirement: required
-    description: "Repository in owner/name format (e.g. eddiecarpenter/ai-native-delivery)"
+    description: "Repository in owner/name format (e.g. eddiecarpenter/gh-agentic)"
 
 extensions:
   - type: builtin
