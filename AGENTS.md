@@ -1,2 +1,2 @@
-@.ai/RULEBOOK.md
+@RULEBOOK.md
 @LOCALRULES.md

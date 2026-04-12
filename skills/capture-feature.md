@@ -61,7 +61,7 @@ How this feature reaches users. One of:
 
 If no switch: state the reason (e.g. bug fix, MVP phase, infrastructure change).
 
-See `.ai/concepts/feature-switches.md` for the full taxonomy.
+See `concepts/feature-switches.md` for the full taxonomy.
 
 ## UX Design
 

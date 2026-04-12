@@ -4,7 +4,7 @@ This file is the **rulebook** for all AI agents operating in this repository and
 domain repos. Rules here are always active — they govern every session, every phase,
 and every action, regardless of which skill is being executed.
 
-For the **playbooks** — the step-by-step procedures for each session type — see `.ai/skills/`.
+For the **playbooks** — the step-by-step procedures for each session type — see `skills/`.
 
 **This file is managed by the `gh-agentic` framework. Do not edit manually.
 Local overrides belong in `LOCALRULES.md`.**
@@ -20,7 +20,7 @@ When resuming from a context summary, apply the same session-start discipline as
 
 ### Session Types
 
-Each session type has a dedicated skill in `.ai/skills/`. Load the relevant skill for
+Each session type has a dedicated skill in `skills/`. Load the relevant skill for
 the session being run.
 
 | Session | Skill | Trigger |
@@ -63,7 +63,7 @@ One branch per Feature. Tasks are commits on that branch, not separate branches.
 - Never claim a task complete with failing tests
 - Fix failing tests before moving to the next step
 - Unit tests must not require external services — isolate infrastructure dependencies
-- See the relevant file in `.ai/standards/` for language-specific test commands,
+- See the relevant file in `standards/` for language-specific test commands,
   frameworks, naming conventions, and patterns
 
 ### Integration Tests
@@ -86,7 +86,7 @@ The agent does not invent integration test strategy. When a feature introduces o
 changes an external interface, the agent identifies the contract and flags that a
 contract test should be scoped — but the human decides the approach.
 
-See `.ai/concepts/delivery-philosophy.md` for the full context.
+See `concepts/delivery-philosophy.md` for the full context.
 
 ---
 
@@ -94,7 +94,7 @@ See `.ai/concepts/delivery-philosophy.md` for the full context.
 
 - The build must pass cleanly before claiming a task complete
 - Report exact command output on any failure — diagnose before retrying
-- See the relevant file in `.ai/standards/` for language-specific build commands
+- See the relevant file in `standards/` for language-specific build commands
 
 ---
 
@@ -109,7 +109,7 @@ See `.ai/concepts/delivery-philosophy.md` for the full context.
 - **Features and enhancements deploy behind a feature switch by default.** Bug fixes
   deploy directly — no switch. The human may waive the switch during scoping; the
   decision and reason must be recorded in the feature issue. See
-  `.ai/concepts/feature-switches.md` for the full taxonomy and implementation guidance.
+  `concepts/feature-switches.md` for the full taxonomy and implementation guidance.
 - **To cancel a requirement or feature, delete the GitHub Issue.** The agent will detect
   its absence during the next session and will not attempt work against it. Clean up any
   associated feature branch manually if one was already created.
@@ -146,25 +146,24 @@ See `.ai/concepts/delivery-philosophy.md` for the full context.
 
 ---
 
-## Base Directory — Read Only
+## Framework Files — Read Only
 
-The `.ai/` directory is managed exclusively by the `gh-agentic` framework.
-**Never modify any file under `.ai/` directly** — not even minor edits.
+The framework files in this directory (RULEBOOK.md, `skills/`, `standards/`, `concepts/`,
+`recipes/`) are managed exclusively by the `eddiecarpenter/gh-agentic` repo.
+
+In domain repos, this framework is mounted as `.ai/` via `gh agentic mount <version>`.
+**Never modify any framework file directly in a domain repo** — they are read-only.
+The mount is gitignored and will be overwritten on the next `gh agentic mount`.
 
 If a change to the global protocol or standards is needed:
 1. Clone `eddiecarpenter/gh-agentic` locally
 2. Make and test the changes there
 3. Push and raise a PR for human review
-4. Once merged and tagged, use `gh agentic sync` to pull the update into this repo
+4. Once merged and tagged, run `gh agentic mount <new-version>` in domain repos to update
 
-For project-specific overrides, add them to `LOCALRULES.md` — that is what it is for.
-`LOCALRULES.md` is optional: if it does not exist, no local rules are applied.
-`AGENTS.md` is template-managed and must not be edited directly.
-
-The sync intentionally overwrites all files under `.ai/`. If `gh agentic verify` reports
-drift in `.ai/`, it means files have been accidentally modified. The sync will discard
-those changes — this is correct behaviour. Local customisations belong in `LOCALRULES.md`
-and `skills/`, not in `.ai/`.
+For project-specific overrides, add them to `LOCALRULES.md` at the domain repo root —
+that is what it is for. `LOCALRULES.md` is optional: if it does not exist, no local
+rules are applied.
 
 ---
 
@@ -184,21 +183,19 @@ Always ask a human before:
 
 | Path | Editable | Purpose |
 |---|---|---|
-| `.goose/recipes/*.yaml` | ❌ Never (managed by template) | Complete recipe — instructions, parameters, model settings |
-| `.ai/skills/*.md` | ❌ Never | Template-managed playbooks — read-only |
-| `skills/*.md` | ✅ Yes (local, project-specific) | Local playbooks — override base skills of the same name |
+| `.goose/recipes/*.yaml` | ❌ Never (managed by framework) | Complete recipe — instructions, parameters, model settings |
+| `skills/*.md` (inside `.ai/`) | ❌ Never | Framework playbooks — read-only in domain repos |
+| `skills/*.md` (at repo root) | ✅ Yes (local, project-specific) | Local playbooks — override framework skills of the same name |
 
-**`.goose/recipes/*.yaml` and `.ai/skills/*.md` are managed by the template.**
-Neither should ever be modified locally.
+**Framework skills** (`skills/` inside the mounted `.ai/`) are managed by `gh-agentic`.
+Never modify them in a domain repo — they will be overwritten on the next mount update.
 
-**`skills/*.md` files are local, project-specific playbooks.** They are not synced
-by the template and can be freely created and edited. A local skill with the same
-filename as a template skill in `.ai/skills/` takes precedence.
+**Local skills** (`skills/` at the domain repo root, outside `.ai/`) are project-specific
+playbooks that can be freely created and edited. A local skill with the same filename as a
+framework skill takes precedence.
 
 - Customisation of agent behaviour belongs in `LOCALRULES.md`
-- If a recipe needs to change, raise it against `eddiecarpenter/gh-agentic`
-  and let it flow in via `gh agentic sync`
-- `gh agentic verify` detects and flags any local modifications to recipe files
+- If a recipe or framework skill needs to change, raise it against `eddiecarpenter/gh-agentic`
 
 ---
 

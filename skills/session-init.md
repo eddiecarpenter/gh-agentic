@@ -3,15 +3,16 @@
 ## Purpose
 
 Load the project environment at the start of a session, or reload it after a
-mid-session template sync. Ensures the agent operates with the correct context,
+framework mount update. Ensures the agent operates with the correct context,
 repo state, rules, and skills before doing any work.
 
 ## When to Invoke
 
 - **New session starts** — invoke this skill before anything else
-- **Template synced mid-session** — the human says any of the following:
+- **Framework updated mid-session** — the human says any of the following:
   - "template synced"
   - "I just synced the template"
+  - "framework updated"
   - `/template-synced`
 
 ## What the Agent Does
@@ -19,7 +20,7 @@ repo state, rules, and skills before doing any work.
 Execute these steps in order — do not skip any:
 
 1. Check whether `POST_SYNC.md` exists in the repository root.
-   - If it exists: invoke the `post-sync` skill (from `.ai/skills/post-sync.md`).
+   - If it exists: invoke the `post-sync` skill (from `skills/post-sync.md`).
      - If the post-sync skill **exits** (automated session): session-init also exits
        immediately — do not execute any further steps.
      - If the post-sync skill **completes** (interactive session): continue with the
@@ -42,7 +43,7 @@ Execute these steps in order — do not skip any:
    This check applies to both interactive and automated (CI) sessions — do not skip it.
 
 4. Check whether `REPOS.md` exists in the repository root.
-   - If it does not exist: this is a single-repo (Embedded) topology — skip this step entirely and continue.
+   - If it does not exist: this is a single-repo topology — skip this step entirely and continue.
    - If it exists: read it. For each repo with status `active`, derive its local directory as
    `<type>s/<name>` (e.g. `type: domain` → `domains/<name>`, `type: tool` → `tools/<name>`).
    For each unique type, ensure the type folder (`<type>s/`) exists — if not:
@@ -70,12 +71,12 @@ Execute these steps in order — do not skip any:
 6. For domain sessions — query open Feature issues in the domain repo:
    `gh issue list --label feature --state open --json number,title,labels,body`
 
-7. Read the relevant standards file from `.ai/standards/` for the domain language
-   (e.g. `.ai/standards/go.md` for Go domains)
+7. Read the relevant standards file from `standards/` for the domain language
+   (e.g. `standards/go.md` for Go domains)
 
-8. Load skills — read every `.md` file in `.ai/skills/` (template-managed) and in
-   `skills/` (local, if the directory exists). Local skills in `skills/` take
-   precedence over template skills in `.ai/skills/` of the same name.
+8. Load skills — read every `.md` file in `skills/` (framework-managed) and in
+   the repo root `skills/` (local, if it exists outside `.ai/`). Local skills take
+   precedence over framework skills of the same name.
 
    **Automation-only skills** — the following skills are loaded for reference only.
    They must never be executed in an interactive session:
@@ -91,14 +92,15 @@ Execute these steps in order — do not skip any:
    enters recovery mode — skipping completed tasks and resuming from where the
    previous session left off. See `dev-session.md` for full details.
 
-9. Read `.ai/config.yml` and note the template source and version.
+9. Read `.ai-version` at the repository root and note the mounted framework version.
+   If absent (e.g. in the gh-agentic repo itself), skip and continue.
 
 ## On Completion
 
 **New session:** proceed with the work for this session.
 
-**Template synced mid-session:** confirm to the human before resuming work:
-- The new template version (from `.ai/config.yml`)
+**Framework updated mid-session:** confirm to the human before resuming work:
+- The new framework version (from `.ai-version`)
 - The list of files reloaded (protocol + skills)
 - Any skills added or removed compared to what was previously loaded (if detectable)
 
@@ -108,8 +110,8 @@ Execute these steps in order — do not skip any:
 - Do not modify any files during this skill — steps 1–9 are read-only except for
   the post-sync actions in step 1 (if `POST_SYNC.md` is present) and the type
   folder bootstrap in step 4 (only if a folder is missing)
-- If `.ai/config.yml` is missing or unreadable, warn the human and continue —
-  the config file is informational, not blocking
+- If `.ai-version` is missing or unreadable, warn the human and continue —
+  the version file is informational, not blocking
 - There is no STATUS.md — current state is derived from GitHub Issues
 - **Inline status updates**: this skill does not apply pipeline labels. If a future
   change adds a pipeline label transition here, it must include an inline project status
