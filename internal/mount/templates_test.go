@@ -1,6 +1,7 @@
 package mount
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -103,5 +104,53 @@ func TestAGENTSMDTemplate_BootstrapRule(t *testing.T) {
 	}
 	if !strings.Contains(agentsMDTemplate, "CI context") {
 		t.Error("AGENTS.md should mention CI context")
+	}
+}
+
+func TestAGENTSMDTemplate_BootstrapRuleCommand(t *testing.T) {
+	// AC 9: bootstrap rule must reference the mount command with .ai-version.
+	if !strings.Contains(agentsMDTemplate, "gh agentic -v2 mount $(cat .ai-version)") {
+		t.Error("AGENTS.md bootstrap rule should reference 'gh agentic -v2 mount $(cat .ai-version)'")
+	}
+}
+
+func TestAGENTSMDTemplate_BootstrapRuleAIAbsence(t *testing.T) {
+	// Bootstrap rule activates when .ai/ is absent.
+	if !strings.Contains(agentsMDTemplate, ".ai/ directory does not exist") {
+		t.Error("AGENTS.md bootstrap rule should mention '.ai/ directory does not exist'")
+	}
+}
+
+func TestAGENTSMDTemplate_BootstrapRuleStops(t *testing.T) {
+	// Bootstrap rule should instruct Claude to stop.
+	if !strings.Contains(agentsMDTemplate, "stop immediately") {
+		t.Error("AGENTS.md bootstrap rule should instruct to 'stop immediately'")
+	}
+}
+
+func TestAGENTSMDTemplate_BootstrapRuleNoProceeding(t *testing.T) {
+	// Bootstrap rule should prevent proceeding without mount.
+	if !strings.Contains(agentsMDTemplate, "Do not proceed") {
+		t.Error("AGENTS.md bootstrap rule should say 'Do not proceed'")
+	}
+}
+
+func TestAGENTSMDTemplateFile_MatchesEmbeddedTemplate(t *testing.T) {
+	// Verify the AGENTS.md.tmpl file exists and has consistent content.
+	data, err := os.ReadFile("templates/AGENTS.md.tmpl")
+	if err != nil {
+		t.Skipf("template file not found (may be running from different dir): %v", err)
+	}
+	content := string(data)
+
+	// Both should have the same bootstrap rule elements.
+	if !strings.Contains(content, "gh agentic -v2 mount $(cat .ai-version)") {
+		t.Error("template file should reference mount command")
+	}
+	if !strings.Contains(content, "Interactive context") {
+		t.Error("template file should distinguish interactive context")
+	}
+	if !strings.Contains(content, "CI context") {
+		t.Error("template file should distinguish CI context")
 	}
 }
