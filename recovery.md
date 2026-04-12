@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #418                               |
 | Branch              | feature/418-v2-self-mounting-framework |
-| Last commit         | 41adf54                            |
+| Last commit         | b9620b5                            |
 | Total tasks         | 9                                  |
-| Last updated        | 2026-04-12T10:45:00Z               |
+| Last updated        | 2026-04-12T10:55:00Z               |
 
 ## Completed Tasks
 
@@ -36,12 +36,16 @@
 - **Decisions:** None
 
 ### #424 — Implement v2 doctor command with grouped output
-- **Implemented:** Grouped health checks: Repository, Framework, Agent files, Workflows, Variables & secrets
+- **Implemented:** Grouped health checks with ✓/⚠/✗ output
 - **Files changed:** internal/doctorv2/checks.go, checks_test.go, groups.go, internal/cli/doctorv2.go, doctorv2_test.go
+- **Decisions:** None
+
+### #425 — Implement init command — interactive wizard
+- **Implemented:** Init wizard with CollectConfig, mount, configure secrets/variables/collaborator
+- **Files changed:** internal/initv2/wizard.go, wizard_test.go, internal/cli/init.go, init_test.go
 - **Decisions:** None
 
 ## Remaining Tasks
 
-- [ ] #425 — Implement init command — interactive wizard
 - [ ] #426 — Create reusable GitHub Actions workflow with mount step
 - [ ] #427 — Add v2 bootstrap rule to AGENTS.md template
