@@ -5,7 +5,6 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
@@ -51,30 +50,13 @@ func newRootCmd(version, date string) *cobra.Command {
 
 	// v2 commands — available regardless of -v2 flag, but only useful with it.
 	root.AddCommand(newMountCmd())
-	root.AddCommand(newInitStubCmd())
+	root.AddCommand(newInitCmd())
 	root.AddCommand(newAuthCmd())
 	root.AddCommand(newDoctorV2Cmd())
 
 	return root
 }
 
-// newInitStubCmd creates a stub init command for v2.
-func newInitStubCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Initialise a new agentic environment (v2)",
-		Long:  "Interactive wizard to configure a new agentic environment.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if !v2FlagValue {
-				return fmt.Errorf("init requires the -v2 flag: gh agentic -v2 init")
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), "init: not yet implemented")
-			return nil
-		},
-	}
-	cmd.Flags().Bool("force", false, "overwrite existing configuration")
-	return cmd
-}
 
 
 // Execute builds and runs the root command. Called by main.go.
