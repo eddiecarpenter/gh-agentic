@@ -76,7 +76,37 @@ func TestRunVerify_FailReturnsError(t *testing.T) {
 	}
 }
 
-func TestRunVerify_RepairFixesFail(t *testing.T) {
+func TestRunVerify_InlineRepair_AllPass_ShowsOKSuffix(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "check1", Status: Pass} },
+		func() CheckResult { return CheckResult{Name: "check2", Status: Pass} },
+	}
+
+	repairFn := func(r CheckResult) *CheckResult {
+		return &r // Should not be called for passing checks.
+	}
+
+	err := RunVerify(&buf, checks, repairFn)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+
+	output := buf.String()
+	// Each line should have "ok" suffix.
+	if !strings.Contains(output, "ok") {
+		t.Errorf("expected 'ok' suffix in output, got: %s", output)
+	}
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected 'All checks passed' in output, got: %s", output)
+	}
+	// No "Final state" reprint.
+	if strings.Contains(output, "Final state") {
+		t.Errorf("should not contain 'Final state' in inline repair mode, got: %s", output)
+	}
+}
+
+func TestRunVerify_InlineRepair_FixesFail_ShowsFixedSuffix(t *testing.T) {
 	var buf bytes.Buffer
 	checks := []CheckFunc{
 		func() CheckResult {
@@ -95,37 +125,19 @@ func TestRunVerify_RepairFixesFail(t *testing.T) {
 
 	output := buf.String()
 	if !strings.Contains(output, "fixed") {
-		t.Errorf("expected 'fixed' in output, got: %s", output)
+		t.Errorf("expected 'fixed' suffix in output, got: %s", output)
 	}
-	if !strings.Contains(output, "All checks passed") {
-		t.Errorf("expected 'All checks passed' after repair, got: %s", output)
+	// No "Final state" reprint.
+	if strings.Contains(output, "Final state") {
+		t.Errorf("should not contain 'Final state' in inline repair mode, got: %s", output)
 	}
-}
-
-func TestRunVerify_RepairFixesWarning(t *testing.T) {
-	var buf bytes.Buffer
-	checks := []CheckFunc{
-		func() CheckResult {
-			return CheckResult{Name: "check1", Status: Warning, Message: "issue"}
-		},
-	}
-
-	repairFn := func(r CheckResult) *CheckResult {
-		return &CheckResult{Name: r.Name, Status: Pass, Message: "fixed"}
-	}
-
-	err := RunVerify(&buf, checks, repairFn)
-	if err != nil {
-		t.Fatalf("expected nil error after repair, got: %v", err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "All checks passed") {
-		t.Errorf("expected 'All checks passed' after repair, got: %s", output)
+	// No separate "Repairing" phase.
+	if strings.Contains(output, "Repairing") {
+		t.Errorf("should not contain 'Repairing' in inline repair mode, got: %s", output)
 	}
 }
 
-func TestRunVerify_RepairFailsToFix(t *testing.T) {
+func TestRunVerify_InlineRepair_RepairFails_ShowsStillFailing(t *testing.T) {
 	var buf bytes.Buffer
 	checks := []CheckFunc{
 		func() CheckResult {
@@ -141,22 +153,37 @@ func TestRunVerify_RepairFailsToFix(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when repair fails, got nil")
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "still failing") {
+		t.Errorf("expected 'still failing' suffix in output, got: %s", output)
+	}
 }
 
-func TestRunVerify_EmptyChecks_ReturnsNil(t *testing.T) {
+func TestRunVerify_InlineRepair_ManualAction_ShowsActionNeeded(t *testing.T) {
 	var buf bytes.Buffer
-	err := RunVerify(&buf, []CheckFunc{}, nil)
+	checks := []CheckFunc{
+		func() CheckResult {
+			return CheckResult{Name: "runner-check", Status: ManualAction, Message: "see instructions"}
+		},
+	}
+
+	repairFn := func(r CheckResult) *CheckResult {
+		return &r // Should not be called for ManualAction.
+	}
+
+	err := RunVerify(&buf, checks, repairFn)
 	if err != nil {
-		t.Fatalf("expected nil error for empty checks, got: %v", err)
+		t.Fatalf("expected nil error for ManualAction, got: %v", err)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "All checks passed") {
-		t.Errorf("expected 'All checks passed' for empty checks, got: %s", output)
+	if !strings.Contains(output, "action needed") {
+		t.Errorf("expected 'action needed' suffix in output, got: %s", output)
 	}
 }
 
-func TestRunVerify_MixedResults(t *testing.T) {
+func TestRunVerify_InlineRepair_MixedResults_SummaryFormat(t *testing.T) {
 	var buf bytes.Buffer
 	checks := []CheckFunc{
 		func() CheckResult { return CheckResult{Name: "ok-check", Status: Pass} },
@@ -165,6 +192,9 @@ func TestRunVerify_MixedResults(t *testing.T) {
 		},
 		func() CheckResult {
 			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+		func() CheckResult {
+			return CheckResult{Name: "manual-check", Status: ManualAction, Message: "see instructions"}
 		},
 	}
 
@@ -182,14 +212,91 @@ func TestRunVerify_MixedResults(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "2 passed") {
-		t.Errorf("expected '2 passed' in summary, got: %s", output)
+	// New summary format: N ok, M fixed, K still failing, L action needed
+	if !strings.Contains(output, "1 ok") {
+		t.Errorf("expected '1 ok' in summary, got: %s", output)
 	}
-	if !strings.Contains(output, "1 repaired") {
-		t.Errorf("expected '1 repaired' in summary, got: %s", output)
+	if !strings.Contains(output, "1 fixed") {
+		t.Errorf("expected '1 fixed' in summary, got: %s", output)
 	}
-	if !strings.Contains(output, "1 failed") {
-		t.Errorf("expected '1 failed' in summary, got: %s", output)
+	if !strings.Contains(output, "1 still failing") {
+		t.Errorf("expected '1 still failing' in summary, got: %s", output)
+	}
+	if !strings.Contains(output, "1 action needed") {
+		t.Errorf("expected '1 action needed' in summary, got: %s", output)
+	}
+	// No "Final state" reprint.
+	if strings.Contains(output, "Final state") {
+		t.Errorf("should not contain 'Final state' in inline repair mode, got: %s", output)
+	}
+}
+
+func TestRunVerify_InlineRepair_NoFinalStateReprint(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult {
+			return CheckResult{Name: "fixable", Status: Fail, Message: "broken"}
+		},
+	}
+
+	repairFn := func(r CheckResult) *CheckResult {
+		return &CheckResult{Name: r.Name, Status: Pass, Message: "repaired"}
+	}
+
+	err := RunVerify(&buf, checks, repairFn)
+	if err != nil {
+		t.Fatalf("expected nil error after repair, got: %v", err)
+	}
+
+	output := buf.String()
+	// The check name should appear exactly once (no reprint).
+	count := strings.Count(output, "fixable")
+	if count != 1 {
+		t.Errorf("expected check name 'fixable' to appear once, got %d times in:\n%s", count, output)
+	}
+	// No "Final state" divider.
+	if strings.Contains(output, "Final state") {
+		t.Errorf("should not contain 'Final state' in inline repair mode, got: %s", output)
+	}
+	// No "Repairing" phase text.
+	if strings.Contains(output, "Repairing") {
+		t.Errorf("should not contain 'Repairing' in inline repair mode, got: %s", output)
+	}
+}
+
+func TestRunVerify_EmptyChecks_ReturnsNil(t *testing.T) {
+	var buf bytes.Buffer
+	err := RunVerify(&buf, []CheckFunc{}, nil)
+	if err != nil {
+		t.Fatalf("expected nil error for empty checks, got: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected 'All checks passed' for empty checks, got: %s", output)
+	}
+}
+
+func TestRunVerify_InlineRepair_FixesWarning(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult {
+			return CheckResult{Name: "check1", Status: Warning, Message: "issue"}
+		},
+	}
+
+	repairFn := func(r CheckResult) *CheckResult {
+		return &CheckResult{Name: r.Name, Status: Pass, Message: "fixed"}
+	}
+
+	err := RunVerify(&buf, checks, repairFn)
+	if err != nil {
+		t.Fatalf("expected nil error after repair, got: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "fixed") {
+		t.Errorf("expected 'fixed' in output, got: %s", output)
 	}
 }
 
@@ -267,12 +374,14 @@ func TestRunVerify_StreamsResultsProgressively(t *testing.T) {
 	}
 }
 
-func TestRunVerify_RepairPhaseStillShowsFinalState(t *testing.T) {
+func TestRunVerify_InlineRepair_EachCheckPrintedOnce(t *testing.T) {
 	var buf bytes.Buffer
 	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "check-alpha", Status: Pass} },
 		func() CheckResult {
-			return CheckResult{Name: "fixable", Status: Fail, Message: "broken"}
+			return CheckResult{Name: "check-bravo", Status: Fail, Message: "broken"}
 		},
+		func() CheckResult { return CheckResult{Name: "check-charlie", Status: Pass} },
 	}
 
 	repairFn := func(r CheckResult) *CheckResult {
@@ -285,20 +394,218 @@ func TestRunVerify_RepairPhaseStillShowsFinalState(t *testing.T) {
 	}
 
 	output := buf.String()
-	// The initial check result should appear before the repair section.
-	failIdx := strings.Index(output, "fixable")
-	repairIdx := strings.Index(output, "Repairing")
-	finalIdx := strings.Index(output, "Final state")
+	// Each check name should appear exactly once.
+	for _, name := range []string{"check-alpha", "check-bravo", "check-charlie"} {
+		count := strings.Count(output, name)
+		if count != 1 {
+			t.Errorf("expected %q to appear once, got %d in:\n%s", name, count, output)
+		}
+	}
+}
 
-	if failIdx < 0 || repairIdx < 0 || finalIdx < 0 {
-		t.Fatalf("expected initial result, repair section, and final state in output, got: %s", output)
+func TestRunVerify_InlineRepair_RepairReturnsManualAction(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult {
+			return CheckResult{Name: "check1", Status: Fail, Message: "broken"}
+		},
 	}
-	if failIdx >= repairIdx {
-		t.Errorf("initial result should appear before repair section: fail@%d, repair@%d",
-			failIdx, repairIdx)
+
+	repairFn := func(r CheckResult) *CheckResult {
+		return &CheckResult{Name: r.Name, Status: ManualAction, Message: "needs manual steps"}
 	}
-	if repairIdx >= finalIdx {
-		t.Errorf("repair section should appear before final state: repair@%d, final@%d",
-			repairIdx, finalIdx)
+
+	err := RunVerify(&buf, checks, repairFn)
+	if err != nil {
+		t.Fatalf("expected nil error for ManualAction result, got: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "action needed") {
+		t.Errorf("expected 'action needed' suffix when repair returns ManualAction, got: %s", output)
+	}
+}
+
+// ── Prompt-to-fix tests ─────────────────────────────────────────────────────
+
+func TestRunVerifyWithPrompt_NoIssues_NoPromptShown(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "check1", Status: Pass} },
+	}
+
+	promptCalled := false
+	opts := VerifyOptions{
+		PromptFn: func(prompt string) (bool, error) {
+			promptCalled = true
+			return false, nil
+		},
+		PromptRepairFn: func(r CheckResult) *CheckResult {
+			return &r
+		},
+	}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if promptCalled {
+		t.Error("prompt should not be called when no issues found")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected 'All checks passed', got: %s", output)
+	}
+}
+
+func TestRunVerifyWithPrompt_IssuesFound_UserAccepts_RepairsShown(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "pass-check", Status: Pass} },
+		func() CheckResult {
+			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+	}
+
+	opts := VerifyOptions{
+		PromptFn: func(prompt string) (bool, error) {
+			// Verify prompt text includes issue count.
+			if !strings.Contains(prompt, "1 issue") {
+				t.Errorf("expected prompt to mention 1 issue, got: %s", prompt)
+			}
+			return true, nil
+		},
+		PromptRepairFn: func(r CheckResult) *CheckResult {
+			return &CheckResult{Name: r.Name, Status: Pass, Message: "repaired"}
+		},
+	}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err != nil {
+		t.Fatalf("expected nil error after prompt-repair, got: %v", err)
+	}
+
+	output := buf.String()
+	// Passing check should appear in the initial print (no suffix).
+	if !strings.Contains(output, "pass-check") {
+		t.Errorf("expected pass-check in initial output, got: %s", output)
+	}
+	// Fail check should appear with "fixed" suffix in selective repair.
+	if !strings.Contains(output, "fixed") {
+		t.Errorf("expected 'fixed' suffix for repaired check, got: %s", output)
+	}
+	// Passing check should NOT appear in the selective repair section (only issue lines).
+	// Count occurrences of "pass-check" — should be exactly 1 (from initial print).
+	if count := strings.Count(output, "pass-check"); count != 1 {
+		t.Errorf("expected pass-check to appear once (initial only), got %d in:\n%s", count, output)
+	}
+}
+
+func TestRunVerifyWithPrompt_IssuesFound_UserDeclines_ErrorReturned(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "pass-check", Status: Pass} },
+		func() CheckResult {
+			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+	}
+
+	opts := VerifyOptions{
+		PromptFn: func(prompt string) (bool, error) {
+			return false, nil // User declines.
+		},
+		PromptRepairFn: func(r CheckResult) *CheckResult {
+			t.Fatal("repair should not be called when user declines")
+			return nil
+		},
+	}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err == nil {
+		t.Fatal("expected error when user declines repair, got nil")
+	}
+
+	output := buf.String()
+	// Summary should show failures.
+	if !strings.Contains(output, "1 failed") {
+		t.Errorf("expected '1 failed' in summary, got: %s", output)
+	}
+	// No "fixed" suffix should appear.
+	if strings.Contains(output, "fixed") {
+		t.Errorf("expected no 'fixed' output when user declines, got: %s", output)
+	}
+}
+
+func TestRunVerifyWithPrompt_NoPromptFn_FallsBackToSummary(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult {
+			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+	}
+
+	// No PromptFn — should print summary and return error without prompting.
+	opts := VerifyOptions{}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err == nil {
+		t.Fatal("expected error for unresolved failure, got nil")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "1 failed") {
+		t.Errorf("expected '1 failed' in summary, got: %s", output)
+	}
+}
+
+func TestRunVerifyWithPrompt_SelectiveRepair_OnlyIssueLines(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []CheckFunc{
+		func() CheckResult { return CheckResult{Name: "ok-check", Status: Pass} },
+		func() CheckResult {
+			return CheckResult{Name: "warn-check", Status: Warning, Message: "needs fix"}
+		},
+		func() CheckResult {
+			return CheckResult{Name: "fail-check", Status: Fail, Message: "broken"}
+		},
+	}
+
+	opts := VerifyOptions{
+		PromptFn: func(prompt string) (bool, error) {
+			return true, nil
+		},
+		PromptRepairFn: func(r CheckResult) *CheckResult {
+			if r.Status == Warning {
+				return &CheckResult{Name: r.Name, Status: Pass}
+			}
+			return &r // Fail stays failed.
+		},
+	}
+
+	err := RunVerifyWithPrompt(&buf, checks, opts)
+	if err == nil {
+		t.Fatal("expected error for unresolved failure, got nil")
+	}
+
+	output := buf.String()
+	// ok-check should appear once (initial) — not in selective repair.
+	if count := strings.Count(output, "ok-check"); count != 1 {
+		t.Errorf("expected ok-check once, got %d in:\n%s", count, output)
+	}
+	// warn-check should appear twice: initial + selective repair with suffix.
+	if count := strings.Count(output, "warn-check"); count != 2 {
+		t.Errorf("expected warn-check twice, got %d in:\n%s", count, output)
+	}
+	// fail-check should appear twice: initial + selective repair with suffix.
+	if count := strings.Count(output, "fail-check"); count != 2 {
+		t.Errorf("expected fail-check twice, got %d in:\n%s", count, output)
+	}
+	// Summary should show fix and failure counts.
+	if !strings.Contains(output, "1 fixed") {
+		t.Errorf("expected '1 fixed' in selective repair summary, got: %s", output)
+	}
+	if !strings.Contains(output, "1 still failing") {
+		t.Errorf("expected '1 still failing' in selective repair summary, got: %s", output)
 	}
 }

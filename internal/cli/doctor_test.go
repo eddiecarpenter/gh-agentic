@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
@@ -326,30 +327,25 @@ func TestRunDoctor_RepairYes_RestoreLOCALRULESMD(t *testing.T) {
 	}
 }
 
-func TestRunDoctor_ForceCredentials_CallsRepair(t *testing.T) {
-	repo := setupDoctorFakeRepo(t)
-	mock := newMockRunner(t)
-
-	// Add expectations for RepairClaudeCredentialsSecret:
-	// It will try to read credentials via os.ReadFile (which will fail in test),
-	// then try macOS Keychain (security command) — we return credentials.
-	mock.Expect([]string{"security", "find-generic-password", "-s", "Claude Code-credentials", "-w"},
-		`{"token":"test"}`, nil)
-	// ValidateClaudeAuth: claude -p hi
-	mock.Expect([]string{"claude", "-p", "hi"}, "Hello!", nil)
+func TestRunDoctor_UpdateCredentials_SkipsChecks_UploadsCredentials(t *testing.T) {
+	mock := &testutil.MockRunner{}
 	// gh secret set CLAUDE_CREDENTIALS_JSON
 	mock.Expect([]string{"gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", "eyJ0b2tlbiI6InRlc3QifQ==", "--repo", "testowner/testrepo"}, "", nil)
 
 	var buf bytes.Buffer
 	cfg := doctorConfig{
-		root:             repo.Root,
-		repoFullName:     "testowner/testrepo",
-		owner:            "testowner",
-		repoName:         "testrepo",
-		run:              mock.RunCommand,
-		repair:           false,
-		yes:              false,
-		forceCredentials: true,
+		repoFullName:      "testowner/testrepo",
+		owner:             "testowner",
+		repoName:          "testrepo",
+		ownerType:         "User",
+		run:               mock.RunCommand,
+		updateCredentials: true,
+		claudeRefreshCmd: func() error {
+			return nil // Simulate successful claude refresh.
+		},
+		readCredentials: func(run bootstrap.RunCommandFunc) ([]byte, error) {
+			return []byte(`{"token":"test"}`), nil
+		},
 	}
 
 	err := runDoctor(&buf, strings.NewReader(""), cfg)
@@ -359,25 +355,128 @@ func TestRunDoctor_ForceCredentials_CallsRepair(t *testing.T) {
 		t.Fatalf("expected nil error, got: %v\nOutput:\n%s", err, output)
 	}
 
-	if !strings.Contains(output, "Force credentials refresh") {
-		t.Errorf("expected 'Force credentials refresh' in output, got:\n%s", output)
+	// Should show "Updating credentials..." and confirmation.
+	if !strings.Contains(output, "Updating credentials") {
+		t.Errorf("expected 'Updating credentials' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "CLAUDE_CREDENTIALS_JSON") {
+		t.Errorf("expected 'CLAUDE_CREDENTIALS_JSON' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "configured") {
+		t.Errorf("expected 'configured' in output, got:\n%s", output)
+	}
+
+	// Should NOT contain any check output (checks skipped).
+	if strings.Contains(output, "CLAUDE.md") {
+		t.Errorf("checks should be skipped with --update-credentials, got:\n%s", output)
 	}
 }
 
-func TestRunDoctor_NoForceCredentials_SkipsRepair(t *testing.T) {
+func TestRunDoctor_UpdateCredentials_ClaudeRefreshFails(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		repoFullName:      "testowner/testrepo",
+		owner:             "testowner",
+		repoName:          "testrepo",
+		ownerType:         "User",
+		run:               (&testutil.MockRunner{}).RunCommand,
+		updateCredentials: true,
+		claudeRefreshCmd: func() error {
+			return fmt.Errorf("auth expired")
+		},
+	}
+
+	err := runDoctor(&buf, strings.NewReader(""), cfg)
+	if err == nil {
+		t.Fatal("expected error when claude refresh fails, got nil")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "claude refresh failed") {
+		t.Errorf("expected 'claude refresh failed' in output, got:\n%s", output)
+	}
+}
+
+func TestRunDoctor_UpdateCredentials_MacOS_KeychainRead(t *testing.T) {
+	mock := &testutil.MockRunner{}
+	// gh secret set CLAUDE_CREDENTIALS_JSON
+	mock.Expect([]string{"gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", "a2V5Y2hhaW4tY3JlZHM=", "--repo", "testowner/testrepo"}, "", nil)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		repoFullName:      "testowner/testrepo",
+		owner:             "testowner",
+		repoName:          "testrepo",
+		ownerType:         "User",
+		run:               mock.RunCommand,
+		updateCredentials: true,
+		claudeRefreshCmd: func() error {
+			return nil
+		},
+		readCredentials: func(run bootstrap.RunCommandFunc) ([]byte, error) {
+			// Simulate macOS keychain read.
+			return []byte("keychain-creds"), nil
+		},
+	}
+
+	err := runDoctor(&buf, strings.NewReader(""), cfg)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v\nOutput:\n%s", err, buf.String())
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "configured") {
+		t.Errorf("expected 'configured' in output, got:\n%s", output)
+	}
+}
+
+func TestRunDoctor_UpdateCredentials_LinuxFileRead(t *testing.T) {
+	mock := &testutil.MockRunner{}
+	// gh secret set CLAUDE_CREDENTIALS_JSON — for Linux file-based read.
+	mock.Expect([]string{"gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", "bGludXgtZmlsZS1jcmVkcw==", "--repo", "testowner/testrepo"}, "", nil)
+
+	var buf bytes.Buffer
+	cfg := doctorConfig{
+		repoFullName:      "testowner/testrepo",
+		owner:             "testowner",
+		repoName:          "testrepo",
+		ownerType:         "User",
+		run:               mock.RunCommand,
+		updateCredentials: true,
+		claudeRefreshCmd: func() error {
+			return nil
+		},
+		readCredentials: func(run bootstrap.RunCommandFunc) ([]byte, error) {
+			// Simulate Linux file read.
+			return []byte("linux-file-creds"), nil
+		},
+	}
+
+	err := runDoctor(&buf, strings.NewReader(""), cfg)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v\nOutput:\n%s", err, buf.String())
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "configured") {
+		t.Errorf("expected 'configured' in output, got:\n%s", output)
+	}
+}
+
+func TestRunDoctor_NoUpdateCredentials_RunsChecks(t *testing.T) {
 	repo := setupDoctorFakeRepo(t)
 	mock := newMockRunner(t)
 
 	var buf bytes.Buffer
 	cfg := doctorConfig{
-		root:             repo.Root,
-		repoFullName:     "testowner/testrepo",
-		owner:            "testowner",
-		repoName:         "testrepo",
-		run:              mock.RunCommand,
-		repair:           false,
-		yes:              false,
-		forceCredentials: false,
+		root:              repo.Root,
+		repoFullName:      "testowner/testrepo",
+		owner:             "testowner",
+		repoName:          "testrepo",
+		run:               mock.RunCommand,
+		repair:            false,
+		yes:               false,
+		updateCredentials: false,
 	}
 
 	err := runDoctor(&buf, strings.NewReader(""), cfg)
@@ -387,8 +486,9 @@ func TestRunDoctor_NoForceCredentials_SkipsRepair(t *testing.T) {
 		t.Fatalf("expected nil error, got: %v\nOutput:\n%s", err, output)
 	}
 
-	if strings.Contains(output, "Force credentials refresh") {
-		t.Errorf("did not expect 'Force credentials refresh' when flag is not set, got:\n%s", output)
+	// Should contain check output — not skipped.
+	if !strings.Contains(output, "All checks passed") {
+		t.Errorf("expected checks to run when --update-credentials not set, got:\n%s", output)
 	}
 }
 
