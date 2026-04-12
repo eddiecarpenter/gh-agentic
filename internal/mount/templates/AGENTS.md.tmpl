@@ -1,0 +1,17 @@
+# AGENTS.md
+
+@.ai/RULEBOOK.md
+@LOCALRULES.md
+
+## Bootstrap Rule
+
+If the `.ai/` directory does not exist, stop immediately.
+
+- **Interactive context:** Instruct the user to run:
+  `gh agentic -v2 mount $(cat .ai-version)`
+
+- **CI context:** Fail with the message:
+  "Framework not mounted. Add a mount step before the pipeline:
+  `gh agentic -v2 mount $(cat .ai-version)`"
+
+Do not proceed with any other work until the framework is mounted.

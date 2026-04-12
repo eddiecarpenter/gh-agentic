@@ -44,6 +44,11 @@ func newBootstrapCmd() *cobra.Command {
 		Short: "Bootstrap a new agentic environment (Phase 0a)",
 		Long:  "Creates and configures a new agentic development environment from scratch.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Block in v2 mode.
+			if err := checkV2Guard("bootstrap", &v2FlagValue); err != nil {
+				return err
+			}
+
 			w := cmd.OutOrStdout()
 
 			// Non-interactive: validate flags and field formats before running preflight.

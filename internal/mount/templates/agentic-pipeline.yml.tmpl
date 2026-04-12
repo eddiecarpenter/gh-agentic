@@ -1,0 +1,30 @@
+name: Agentic Pipeline
+
+on:
+  issues:
+    types: [labeled, assigned]
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to process review comments for'
+        required: true
+        type: string
+      branch_name:
+        description: 'Feature branch the PR is open on'
+        required: true
+        type: string
+
+jobs:
+  pipeline:
+    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline-reusable.yml@{{.Version}}
+    secrets: inherit
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write

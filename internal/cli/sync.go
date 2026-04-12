@@ -55,6 +55,11 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 			"Pass --list to display available releases without syncing.\n" +
 			"Pass --release <tag> to sync to a specific release version.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Block in v2 mode.
+			if err := checkV2Guard("sync", &v2FlagValue); err != nil {
+				return err
+			}
+
 			// Validate mutually exclusive flags.
 			if list && releaseTag != "" {
 				return fmt.Errorf("--list and --release are mutually exclusive")
