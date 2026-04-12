@@ -223,6 +223,7 @@ func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 // 3. Upload to GitHub as CLAUDE_CREDENTIALS_JSON secret
 func runUpdateCredentials(w io.Writer, cfg doctorConfig) error {
 	fmt.Fprintln(w, "  Updating credentials...")
+	fmt.Fprintln(w, "  "+ui.RenderOK("Refreshing OAuth tokens"))
 
 	// Step 1: Run claude to force token refresh.
 	refreshCmd := cfg.claudeRefreshCmd
@@ -265,12 +266,13 @@ func runUpdateCredentials(w io.Writer, cfg doctorConfig) error {
 	return nil
 }
 
-// defaultClaudeRefresh runs "claude -p 'Say Hi'" with terminal-connected I/O
-// to force a token refresh. Any re-auth prompt is surfaced to the user.
+// defaultClaudeRefresh runs "claude -p 'Say Hi'" to force a token refresh.
+// Stdout is discarded to suppress the model response. Stdin and stderr remain
+// connected so any re-auth prompt is surfaced to the user.
 func defaultClaudeRefresh() error {
 	cmd := exec.Command("claude", "-p", "Say Hi")
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = io.Discard
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
