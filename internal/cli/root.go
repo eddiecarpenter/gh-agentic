@@ -53,7 +53,7 @@ func newRootCmd(version, date string) *cobra.Command {
 	root.AddCommand(newMountCmd())
 	root.AddCommand(newInitStubCmd())
 	root.AddCommand(newAuthCmd())
-	root.AddCommand(newDoctorV2StubCmd())
+	root.AddCommand(newDoctorV2Cmd())
 
 	return root
 }
@@ -76,20 +76,6 @@ func newInitStubCmd() *cobra.Command {
 	return cmd
 }
 
-// newDoctorV2StubCmd creates a stub doctor-v2 command.
-// Named "doctor-v2" to avoid conflict with existing doctor command.
-// Will be renamed to "doctor" when v2 ships as default.
-func newDoctorV2StubCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:    "doctor-v2",
-		Short:  "Health check with grouped output (v2)",
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "doctor-v2: not yet implemented")
-			return nil
-		},
-	}
-}
 
 // Execute builds and runs the root command. Called by main.go.
 func Execute(version, date string) error {
