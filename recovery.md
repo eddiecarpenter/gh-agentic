@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #432                               |
 | Branch              | feature/432-merge-framework-content |
-| Last commit         | cbf474a                            |
+| Last commit         | 90ee802                            |
 | Total tasks         | 5                                  |
-| Last updated        | 2026-04-12T22:46:00Z               |
+| Last updated        | 2026-04-12T22:47:00Z               |
 
 ## Completed Tasks
 
@@ -25,7 +25,11 @@
 - **Files changed:** .github/workflows/sonarcloud.yml
 - **Decisions:** Kept gh-agentic publish-release.yml (GoReleaser-based) over ai-native-delivery skeleton version
 
+### #436 — Update all internal cross-references from ai-native-delivery to gh-agentic
+- **Implemented:** Updated 7 references across 4 files. Verified zero remaining ai-native-delivery references in framework content.
+- **Files changed:** RULEBOOK.md, skills/update-project-template.md, recipes/release.yaml, concepts/delivery-philosophy.md
+- **Decisions:** None
+
 ## Remaining Tasks
 
-- [ ] #436 — Update all internal cross-references from ai-native-delivery to gh-agentic
 - [ ] #437 — Add verification script to confirm framework content completeness
