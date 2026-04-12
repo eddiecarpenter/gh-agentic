@@ -4,14 +4,14 @@
 |---------------------|------------------------------------|
 | Feature issue       | #418                               |
 | Branch              | feature/418-v2-self-mounting-framework |
-| Last commit         | b9620b5                            |
+| Last commit         | f7fae0a                            |
 | Total tasks         | 9                                  |
-| Last updated        | 2026-04-12T10:55:00Z               |
+| Last updated        | 2026-04-12T11:05:00Z               |
 
 ## Completed Tasks
 
 ### #419 — Add -v2 persistent flag routing and deprecated command blocking
-- **Implemented:** -v2 flag, v2 guard checks, stub commands
+- **Implemented:** -v2 flag, v2 guard checks
 - **Files changed:** internal/cli/root.go, v2.go, v2_test.go, sync.go, bootstrap.go, inception.go, doctor.go
 - **Decisions:** None
 
@@ -45,7 +45,11 @@
 - **Files changed:** internal/initv2/wizard.go, wizard_test.go, internal/cli/init.go, init_test.go
 - **Decisions:** None
 
+### #426 — Create reusable GitHub Actions workflow with mount step
+- **Implemented:** Reusable workflow, wrapper templates, template rendering tests
+- **Files changed:** .github/workflows/agentic-pipeline-reusable.yml, internal/mount/templates/*.tmpl, templates_test.go
+- **Decisions:** None
+
 ## Remaining Tasks
 
-- [ ] #426 — Create reusable GitHub Actions workflow with mount step
 - [ ] #427 — Add v2 bootstrap rule to AGENTS.md template
