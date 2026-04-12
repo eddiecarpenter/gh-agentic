@@ -27,6 +27,11 @@ func newInceptionCmd() *cobra.Command {
 		Short: "Register a new repo in an existing agentic environment (Phase 0b)",
 		Long:  "Creates and configures a new domain, tool, or other repo and registers it in REPOS.md.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Block in v2 mode.
+			if err := checkV2Guard("inception", &v2FlagValue); err != nil {
+				return err
+			}
+
 			w := cmd.OutOrStdout()
 
 			// Step 1: Validate environment.

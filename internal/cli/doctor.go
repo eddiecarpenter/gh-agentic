@@ -295,6 +295,13 @@ func newDoctorCmd() *cobra.Command {
 			"Pass --update-credentials to refresh and re-upload Claude credentials.\n" +
 			"Pass --yes to automatically confirm all repair prompts.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Block "verify" alias in v2 mode. Doctor itself is not deprecated.
+			if cmd.CalledAs() == "verify" {
+				if err := checkV2Guard("verify", &v2FlagValue); err != nil {
+					return err
+				}
+			}
+
 			w := cmd.OutOrStdout()
 
 			// Resolve repo root. If .ai/config.yml is not found (repo predates
