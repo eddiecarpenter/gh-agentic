@@ -49,31 +49,13 @@ func newRootCmd(version, date string) *cobra.Command {
 	verifyAlias.Hidden = true
 	root.AddCommand(&verifyAlias)
 
-	// v2 stub commands — available regardless of -v2 flag, but only useful with it.
-	root.AddCommand(newMountStubCmd())
+	// v2 commands — available regardless of -v2 flag, but only useful with it.
+	root.AddCommand(newMountCmd())
 	root.AddCommand(newInitStubCmd())
 	root.AddCommand(newAuthStubCmd())
 	root.AddCommand(newDoctorV2StubCmd())
 
 	return root
-}
-
-// newMountStubCmd creates a stub mount command for v2.
-// This will be replaced with the full implementation in later tasks.
-func newMountStubCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "mount [version]",
-		Short: "Mount the AI-Native Delivery Framework at .ai/ (v2)",
-		Long:  "Downloads and mounts the AI-Native Delivery Framework at the specified version.",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := checkV2Guard("", &v2FlagValue); err == nil && !v2FlagValue {
-				return fmt.Errorf("mount requires the -v2 flag: gh agentic -v2 mount [version]")
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), "mount: not yet implemented")
-			return nil
-		},
-	}
 }
 
 // newInitStubCmd creates a stub init command for v2.

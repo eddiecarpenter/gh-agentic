@@ -20,19 +20,20 @@ func TestV2Flag_Registration(t *testing.T) {
 func TestV2Flag_MountCommandRoutes(t *testing.T) {
 	root := newRootCmd("dev", "")
 
+	// Mount command is now real — it requires a version or .ai-version.
+	// Verify it's registered and routes correctly by checking the error
+	// is about missing version (not about unknown command).
 	var buf bytes.Buffer
 	root.SetOut(&buf)
 	root.SetErr(&buf)
 	root.SetArgs([]string{"--v2", "mount"})
 	err := root.Execute()
 
-	if err != nil {
-		t.Fatalf("expected mount to succeed (stub), got error: %v", err)
+	if err == nil {
+		t.Fatal("expected error (no version specified), got nil")
 	}
-
-	output := buf.String()
-	if !strings.Contains(output, "not yet implemented") {
-		t.Errorf("expected stub message, got: %s", output)
+	if !strings.Contains(err.Error(), "no version specified") {
+		t.Errorf("expected 'no version specified' error, got: %v", err)
 	}
 }
 
