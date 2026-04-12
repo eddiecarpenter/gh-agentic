@@ -52,7 +52,7 @@ func newRootCmd(version, date string) *cobra.Command {
 	// v2 commands — available regardless of -v2 flag, but only useful with it.
 	root.AddCommand(newMountCmd())
 	root.AddCommand(newInitStubCmd())
-	root.AddCommand(newAuthStubCmd())
+	root.AddCommand(newAuthCmd())
 	root.AddCommand(newDoctorV2StubCmd())
 
 	return root
@@ -73,47 +73,6 @@ func newInitStubCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("force", false, "overwrite existing configuration")
-	return cmd
-}
-
-// newAuthStubCmd creates a stub auth command for v2.
-func newAuthStubCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "auth",
-		Short: "Manage Claude Code credentials (v2)",
-		Long:  "Login, refresh, or check Claude Code credentials.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if !v2FlagValue {
-				return fmt.Errorf("auth requires the -v2 flag: gh agentic -v2 auth")
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), "auth: not yet implemented")
-			return nil
-		},
-	}
-	cmd.AddCommand(&cobra.Command{
-		Use:   "login",
-		Short: "Force Claude Code login and push credentials",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "auth login: not yet implemented")
-			return nil
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "refresh",
-		Short: "Push current local credentials to repo secret",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "auth refresh: not yet implemented")
-			return nil
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "check",
-		Short: "Verify credentials are present and not expired",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "auth check: not yet implemented")
-			return nil
-		},
-	})
 	return cmd
 }
 
