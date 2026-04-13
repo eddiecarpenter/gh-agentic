@@ -57,6 +57,18 @@ type SetRepoVariableFunc func(owner, repo, name, value string) error
 // DeleteRepoVariableFunc deletes a repo-level Actions variable.
 type DeleteRepoVariableFunc func(owner, repo, name string) error
 
+// FetchOwnerAndRepoIDsFunc fetches the GraphQL node IDs for a GitHub owner and repository.
+type FetchOwnerAndRepoIDsFunc func(owner, repo string) (ownerID, repoID string, err error)
+
+// CreateProjectFunc creates a new GitHub ProjectV2 and returns its node ID.
+type CreateProjectFunc func(ownerID, title string) (projectID string, err error)
+
+// LinkRepoToProjectFunc links a repository to a GitHub ProjectV2.
+type LinkRepoToProjectFunc func(projectID, repoID string) error
+
+// ConfirmFunc prompts the user for a yes/no confirmation. Returns true if confirmed.
+type ConfirmFunc func(prompt string) (bool, error)
+
 // --- Topology detection ---
 
 // DetectTopology compares the current repo against the project's linked repos.
@@ -245,6 +257,94 @@ func DefaultDeleteRepoVariable(owner, repo, name string) error {
 	endpoint := fmt.Sprintf("repos/%s/%s/actions/variables/%s", owner, repo, name)
 	if err := client.Delete(endpoint, nil); err != nil {
 		return fmt.Errorf("deleting variable %s: %w", name, err)
+	}
+	return nil
+}
+
+// graphqlOwnerAndRepoIDsResponse is the response shape for the owner+repo ID query.
+type graphqlOwnerAndRepoIDsResponse struct {
+	RepositoryOwner struct {
+		ID string `json:"id"`
+	} `json:"repositoryOwner"`
+	Repository struct {
+		ID string `json:"id"`
+	} `json:"repository"`
+}
+
+// DefaultFetchOwnerAndRepoIDs fetches the GraphQL node IDs for the given owner and repo.
+func DefaultFetchOwnerAndRepoIDs(owner, repo string) (ownerID, repoID string, err error) {
+	client, err := api.DefaultGraphQLClient()
+	if err != nil {
+		return "", "", fmt.Errorf("creating GraphQL client: %w", err)
+	}
+
+	query := `query($owner: String!, $name: String!) {
+		repositoryOwner(login: $owner) { id }
+		repository(owner: $owner, name: $name) { id }
+	}`
+
+	var resp graphqlOwnerAndRepoIDsResponse
+	if err := client.Do(query, map[string]interface{}{"owner": owner, "name": repo}, &resp); err != nil {
+		return "", "", fmt.Errorf("fetching owner/repo IDs for %s/%s: %w", owner, repo, err)
+	}
+	return resp.RepositoryOwner.ID, resp.Repository.ID, nil
+}
+
+// graphqlCreateProjectResponse is the response shape for the createProjectV2 mutation.
+type graphqlCreateProjectResponse struct {
+	CreateProjectV2 struct {
+		ProjectV2 struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"projectV2"`
+	} `json:"createProjectV2"`
+}
+
+// DefaultCreateProject creates a new GitHub ProjectV2 under the given owner node ID.
+func DefaultCreateProject(ownerID, title string) (projectID string, err error) {
+	client, err := api.DefaultGraphQLClient()
+	if err != nil {
+		return "", fmt.Errorf("creating GraphQL client: %w", err)
+	}
+
+	mutation := `mutation($ownerId: ID!, $title: String!) {
+		createProjectV2(input: {ownerId: $ownerId, title: $title}) {
+			projectV2 { id title }
+		}
+	}`
+
+	var resp graphqlCreateProjectResponse
+	if err := client.Do(mutation, map[string]interface{}{"ownerId": ownerID, "title": title}, &resp); err != nil {
+		return "", fmt.Errorf("creating project %q: %w", title, err)
+	}
+	return resp.CreateProjectV2.ProjectV2.ID, nil
+}
+
+// graphqlLinkRepoResponse is the response shape for the linkProjectV2ToRepository mutation.
+type graphqlLinkRepoResponse struct {
+	LinkProjectV2ToRepository struct {
+		Repository struct {
+			ID string `json:"id"`
+		} `json:"repository"`
+	} `json:"linkProjectV2ToRepository"`
+}
+
+// DefaultLinkRepoToProject links the given repository to a GitHub ProjectV2.
+func DefaultLinkRepoToProject(projectID, repoID string) error {
+	client, err := api.DefaultGraphQLClient()
+	if err != nil {
+		return fmt.Errorf("creating GraphQL client: %w", err)
+	}
+
+	mutation := `mutation($projectId: ID!, $repositoryId: ID!) {
+		linkProjectV2ToRepository(input: {projectId: $projectId, repositoryId: $repositoryId}) {
+			repository { id }
+		}
+	}`
+
+	var resp graphqlLinkRepoResponse
+	if err := client.Do(mutation, map[string]interface{}{"projectId": projectID, "repositoryId": repoID}, &resp); err != nil {
+		return fmt.Errorf("linking repo to project: %w", err)
 	}
 	return nil
 }

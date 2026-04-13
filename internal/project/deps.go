@@ -1,6 +1,10 @@
 package project
 
-import "github.com/eddiecarpenter/gh-agentic/internal/mount"
+import (
+	"github.com/charmbracelet/huh"
+	"github.com/eddiecarpenter/gh-agentic/internal/auth"
+	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+)
 
 // Deps holds injectable dependencies for project subcommands.
 // Tests supply fakes; production fills in real defaults.
@@ -14,26 +18,55 @@ type Deps struct {
 	// Root is the local repository root path.
 	Root string
 
-	FetchLinkedRepos    FetchLinkedReposFunc
+	FetchLinkedRepos     FetchLinkedReposFunc
 	FetchProjectsForRepo FetchProjectsForRepoFunc
-	GetRepoVariable     GetRepoVariableFunc
-	SetRepoVariable     SetRepoVariableFunc
-	DeleteRepoVariable  DeleteRepoVariableFunc
-	ReadAIVersion       func(root string) (string, error)
+	GetRepoVariable      GetRepoVariableFunc
+	SetRepoVariable      SetRepoVariableFunc
+	DeleteRepoVariable   DeleteRepoVariableFunc
+	ReadAIVersion        func(root string) (string, error)
+
+	FetchOwnerAndRepoIDs FetchOwnerAndRepoIDsFunc
+	CreateProject        CreateProjectFunc
+	LinkRepoToProject    LinkRepoToProjectFunc
+	Confirm              ConfirmFunc
+	DetectOwnerType      auth.DetectOwnerTypeFunc
+	Clone                mount.CloneFunc
+	FetchReleases        mount.FetchReleasesFunc
 }
 
 // DefaultDeps returns production dependencies for the given repo context.
 func DefaultDeps(owner, repoName, root string) Deps {
 	return Deps{
-		RepoFullName:        owner + "/" + repoName,
-		Owner:               owner,
-		RepoName:            repoName,
-		Root:                root,
-		FetchLinkedRepos:    DefaultFetchLinkedRepos,
+		RepoFullName:         owner + "/" + repoName,
+		Owner:                owner,
+		RepoName:             repoName,
+		Root:                 root,
+		FetchLinkedRepos:     DefaultFetchLinkedRepos,
 		FetchProjectsForRepo: DefaultFetchProjectsForRepo,
-		GetRepoVariable:     DefaultGetRepoVariable,
-		SetRepoVariable:     DefaultSetRepoVariable,
-		DeleteRepoVariable:  DefaultDeleteRepoVariable,
-		ReadAIVersion:       mount.ReadAIVersionFromGit,
+		GetRepoVariable:      DefaultGetRepoVariable,
+		SetRepoVariable:      DefaultSetRepoVariable,
+		DeleteRepoVariable:   DefaultDeleteRepoVariable,
+		ReadAIVersion:        mount.ReadAIVersionFromGit,
+		FetchOwnerAndRepoIDs: DefaultFetchOwnerAndRepoIDs,
+		CreateProject:        DefaultCreateProject,
+		LinkRepoToProject:    DefaultLinkRepoToProject,
+		Confirm:              defaultConfirm,
+		DetectOwnerType:      auth.DefaultDetectOwnerType,
+		Clone:                mount.DefaultClone,
+		FetchReleases:        mount.DefaultFetchReleases,
 	}
+}
+
+// defaultConfirm prompts the user via huh for a yes/no confirmation.
+func defaultConfirm(prompt string) (bool, error) {
+	var confirmed bool
+	err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().Title(prompt).Value(&confirmed),
+		),
+	).Run()
+	if err != nil {
+		return false, err
+	}
+	return confirmed, nil
 }

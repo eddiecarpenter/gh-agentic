@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 )
 
@@ -35,6 +36,17 @@ func fakeProjectDeps(owner, repo string) project.Deps {
 		SetRepoVariable:    func(o, r, n, v string) error { return nil },
 		DeleteRepoVariable: func(o, r, n string) error { return nil },
 		ReadAIVersion:      func(root string) (string, error) { return "v2.0.10", nil },
+		FetchOwnerAndRepoIDs: func(owner, repo string) (string, string, error) {
+			return "owner-node-id", "repo-node-id", nil
+		},
+		CreateProject:     func(ownerID, title string) (string, error) { return "PVT_created123", nil },
+		LinkRepoToProject: func(projectID, repoID string) error { return nil },
+		Confirm:           func(prompt string) (bool, error) { return true, nil },
+		DetectOwnerType:   func(owner string) (string, error) { return "Organization", nil },
+		Clone:             func(repoURL, tag, destDir string) error { return nil },
+		FetchReleases: func(repo string) ([]mount.Release, error) {
+			return []mount.Release{{TagName: "v2.0.10"}}, nil
+		},
 	}
 }
 
@@ -108,7 +120,7 @@ func TestProjectCmd_SubcommandsRegistered(t *testing.T) {
 		subs[c.Use] = true
 	}
 
-	for _, want := range []string{"info", "check"} {
+	for _, want := range []string{"info", "check", "create", "join <project-id>", "unlink", "repair"} {
 		if !subs[want] {
 			t.Errorf("subcommand %q not registered under project", want)
 		}

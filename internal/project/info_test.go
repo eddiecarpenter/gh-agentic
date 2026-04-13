@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
 
 func testDeps(owner, repo string) Deps {
@@ -28,6 +30,19 @@ func testDeps(owner, repo string) Deps {
 		SetRepoVariable:    func(o, r, n, v string) error { return nil },
 		DeleteRepoVariable: func(o, r, n string) error { return nil },
 		ReadAIVersion:      func(root string) (string, error) { return "v2.0.10", nil },
+		FetchOwnerAndRepoIDs: func(owner, repo string) (string, string, error) {
+			return "owner-node-id", "repo-node-id", nil
+		},
+		CreateProject: func(ownerID, title string) (string, error) {
+			return "PVT_created123", nil
+		},
+		LinkRepoToProject: func(projectID, repoID string) error { return nil },
+		Confirm:           func(prompt string) (bool, error) { return true, nil },
+		DetectOwnerType:   func(owner string) (string, error) { return "Organization", nil },
+		Clone:             func(repoURL, tag, destDir string) error { return nil },
+		FetchReleases: func(repo string) ([]mount.Release, error) {
+			return []mount.Release{{TagName: "v2.0.10"}}, nil
+		},
 	}
 }
 
