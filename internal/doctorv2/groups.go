@@ -6,6 +6,8 @@ package doctorv2
 import (
 	"fmt"
 	"io"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // Status represents the outcome of a health check.
@@ -99,13 +101,13 @@ func (r *Report) Render(w io.Writer) {
 		for _, c := range g.Results {
 			switch c.Status {
 			case Pass:
-				fmt.Fprintf(w, "  ✓ %s\n", c.Message)
+				fmt.Fprintf(w, "  %s %s\n", ui.StatusOK.Render("✓"), c.Message)
 			case Warning:
-				fmt.Fprintf(w, "  ⚠ %s\n", c.Message)
+				fmt.Fprintf(w, "  %s %s\n", ui.StatusWarning.Render("⚠"), c.Message)
 			case Fail:
-				fmt.Fprintf(w, "  ✗ %s\n", c.Message)
+				fmt.Fprintf(w, "  %s %s\n", ui.StatusDanger.Render("✗"), c.Message)
 				if c.Remediation != "" {
-					fmt.Fprintf(w, "    → %s\n", c.Remediation)
+					fmt.Fprintf(w, "    %s %s\n", ui.Muted.Render("→"), c.Remediation)
 				}
 			}
 		}
@@ -121,8 +123,8 @@ func (r *Report) Render(w io.Writer) {
 		if warnings > 0 {
 			fmt.Fprintf(w, ", %d warning(s)", warnings)
 		}
-		fmt.Fprintln(w, " — run 'gh agentic -v2 doctor --help' for remediation steps.")
+		fmt.Fprintln(w, " — run 'gh agentic --v2 doctor --help' for remediation steps.")
 	} else if warnings > 0 {
-		fmt.Fprintf(w, "%d warning(s) — run 'gh agentic -v2 doctor --help' for remediation steps.\n", warnings)
+		fmt.Fprintf(w, "%d warning(s) — run 'gh agentic --v2 doctor --help' for remediation steps.\n", warnings)
 	}
 }

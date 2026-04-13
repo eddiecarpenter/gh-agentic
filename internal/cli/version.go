@@ -23,7 +23,7 @@ func newVersionCmd(version, date string) *cobra.Command {
 			fmt.Fprintln(w, ui.SectionHeading.Render("  gh agentic — version info"))
 			fmt.Fprintln(w)
 
-			fmt.Fprintf(w, "  %-16s %s\n", "Version:", version)
+			fmt.Fprintf(w, "  %-16s %s\n", "Extension:", version)
 
 			// Release date — injected by GoReleaser as RFC3339; blank for dev builds.
 			if date != "" {

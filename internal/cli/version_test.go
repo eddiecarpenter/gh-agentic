@@ -108,8 +108,8 @@ func TestVersionCmd_Run_ShowsVersionLabel(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, "Version:") {
-		t.Errorf("expected 'Version:' label in output, got: %s", out)
+	if !strings.Contains(out, "Extension:") {
+		t.Errorf("expected 'Extension:' label in output, got: %s", out)
 	}
 }
 
