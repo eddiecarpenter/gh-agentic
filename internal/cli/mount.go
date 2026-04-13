@@ -29,7 +29,7 @@ func newMountCmd() *cobra.Command {
 func newMountCmdWithDeps(deps mountDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mount [version]",
-		Short: "Mount the AI-Native Delivery Framework at .ai/ (v2)",
+		Short: "Mount the AI-Native Delivery Framework at .ai/",
 		Long: "Clones the AI-Native Delivery Framework at the specified version tag into .ai/.\n" +
 			"First time: generates CLAUDE.md, AGENTS.md, wrapper workflows.\n" +
 			"Version switch: prompts for confirmation, updates references.\n" +

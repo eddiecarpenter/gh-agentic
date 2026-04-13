@@ -35,7 +35,7 @@ func newAuthCmd() *cobra.Command {
 func newAuthCmdWithDeps(deps authDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "Manage Claude Code credentials (v2)",
+		Short: "Manage Claude Code credentials",
 		Long:  "Login, refresh, or check Claude Code credentials.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()

@@ -58,7 +58,7 @@ func newInitCmdWithDeps(deps initv2.Deps) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialise a new agentic environment (v2)",
+		Short: "Initialise a new agentic environment",
 		Long: "Interactive wizard to configure a new agentic environment.\n" +
 			"Detects the current repo, collects configuration, mounts the framework,\n" +
 			"and configures secrets and variables.\n" +
