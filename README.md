@@ -8,8 +8,8 @@
 
 A GitHub CLI extension that bootstraps and manages agentic software delivery environments.
 It replaces manual shell scripts with deterministic Go commands — creating repos, scaffolding
-projects, configuring GitHub, and keeping template files in sync — so AI agents can focus
-on the work that actually requires reasoning.
+projects, configuring GitHub, mounting the AI-Native Delivery Framework, and managing
+credentials — so AI agents can focus on the work that actually requires reasoning.
 
 ## Install
 
@@ -17,52 +17,96 @@ on the work that actually requires reasoning.
 gh extension install eddiecarpenter/gh-agentic
 ```
 
-## Commands
-
-| Command | Description |
-|---|---|
-| `gh agentic bootstrap` | Bootstrap a new agentic environment (Phase 0a) |
-| `gh agentic inception` | Register a new domain or tool repo (Phase 0b) |
-| `gh agentic sync` | Sync `.ai/`, workflows, and recipes from the upstream template |
-| `gh agentic doctor` | Check the local repo for missing or misconfigured agentic files |
-
 ## Prerequisites
 
 - [git](https://git-scm.com)
 - [GitHub CLI](https://cli.github.com) — authenticated (`gh auth login`)
-- [Goose](https://github.com/block/goose)
+- [Claude Code](https://claude.ai/code) — required for agent sessions and credential management
 
-Claude Code is recommended as the Goose provider but not required.
+### Platform requirements for credential management
 
-## Usage
+- **macOS** — credentials are stored in the macOS keychain (`"Claude Code-credentials"`)
+- **Linux** — credentials are stored at `~/.claude/.credentials.json`
 
-### Bootstrap a new project
+## Getting started (v2)
 
-Run `gh agentic bootstrap` from any directory. You will be prompted for:
-
-- **Topology** — Embedded (single repo) or Organisation (separate control plane)
-- **Owner** — your personal account or an organisation
-- **Project name** and **description**
-- **Stack** — Go, Java, TypeScript, Python, Rust, or Other
-
-The command creates the GitHub repo, scaffolds the project structure, configures branch
-protection and labels, and prints next steps for starting a Requirements Session with
-your AI agent.
-
-### Sync the template
+### 1. Clone or create a repo
 
 ```bash
-gh agentic sync                     # sync to the latest release
-gh agentic sync --release v1.5.0    # sync to a specific release
-gh agentic sync --list              # list available releases
-gh agentic sync --force             # re-sync even if already up to date
+git clone git@github.com:<owner>/<repo>.git
+cd <repo>
 ```
 
-### Check repo health
+### 2. Initialise the agentic environment
 
 ```bash
-gh agentic doctor          # report missing or misconfigured files
-gh agentic doctor --repair # interactively repair detected issues
+gh agentic -v2 init
+```
+
+The init wizard detects the current repo, collects configuration (stack, framework
+version), mounts the framework, generates agent entry files, and configures GitHub
+secrets and variables.
+
+### 3. Verify the setup
+
+```bash
+gh agentic -v2 doctor-v2
+```
+
+All checks should pass. If any fail, follow the remediation commands in the output.
+
+### 4. Start working
+
+Open the repo in your AI agent and begin a Requirements Session. The agent reads
+`CLAUDE.md` and `AGENTS.md` to load the framework rules and playbooks.
+
+## Commands
+
+### v2 commands (current)
+
+| Command | Description |
+|---|---|
+| `gh agentic -v2 init` | Interactive wizard to initialise a new agentic environment |
+| `gh agentic -v2 mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
+| `gh agentic -v2 auth login` | Force Claude Code login and push credentials to repo secret |
+| `gh agentic -v2 auth refresh` | Push current local credentials to repo secret |
+| `gh agentic -v2 auth check` | Verify credentials are present and not expired |
+| `gh agentic -v2 doctor-v2` | Health check with grouped output |
+
+### v1 commands (deprecated)
+
+> **Legacy notice:** The following v1 commands are deprecated and will be removed
+> in a future release. Use the v2 equivalents above.
+
+| Command | Replacement |
+|---|---|
+| `gh agentic bootstrap` | `gh agentic -v2 init` |
+| `gh agentic inception` | `gh agentic -v2 init` |
+| `gh agentic sync` | `gh agentic -v2 mount` |
+| `gh agentic doctor` | `gh agentic -v2 doctor-v2` |
+
+## Mount
+
+The mount command downloads the AI-Native Delivery Framework and installs it at
+`.ai/` in the current repo. The `.ai/` directory is gitignored — it is populated
+on demand and not committed.
+
+```bash
+gh agentic -v2 mount v2.0.0    # first-time mount at a specific version
+gh agentic -v2 mount            # remount at current .ai-version
+gh agentic -v2 mount v2.1.0    # switch to a new version (prompts for confirmation)
+```
+
+The pinned version is stored in `.ai-version` (committed to the repo).
+
+## Auth
+
+The auth command manages Claude Code credentials for CI runners.
+
+```bash
+gh agentic -v2 auth login      # force login and push credentials
+gh agentic -v2 auth refresh    # push current local credentials to repo secret
+gh agentic -v2 auth check      # verify credentials are present and not expired
 ```
 
 ## Upgrade
@@ -80,7 +124,9 @@ go build ./...
 go test ./...
 ```
 
-See [`docs/PROJECT_BRIEF.md`](docs/PROJECT_BRIEF.md) for full design documentation.
+See [`docs/PROJECT_BRIEF.md`](docs/PROJECT_BRIEF.md) for full design documentation
+and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the package structure and
+mount model.
 
 ## License
 
