@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,19 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
+
+// initAIGitRepo initialises dir as a git repo tagged at version.
+func initAIGitRepo(t *testing.T, dir, version string) {
+	t.Helper()
+	_ = os.MkdirAll(dir, 0o755)
+	_ = exec.Command("git", "-C", dir, "init").Run()
+	_ = exec.Command("git", "-C", dir, "config", "user.email", "test@test.com").Run()
+	_ = exec.Command("git", "-C", dir, "config", "user.name", "Test").Run()
+	_ = os.WriteFile(filepath.Join(dir, ".gitkeep"), []byte(""), 0o644)
+	_ = exec.Command("git", "-C", dir, "add", ".").Run()
+	_ = exec.Command("git", "-C", dir, "commit", "-m", "init").Run()
+	_ = exec.Command("git", "-C", dir, "tag", version).Run()
+}
 
 func setupDoctorV2HealthyRepo(t *testing.T) string {
 	t.Helper()
@@ -19,6 +33,7 @@ func setupDoctorV2HealthyRepo(t *testing.T) string {
 	_ = os.MkdirAll(filepath.Join(aiDir, "skills"), 0o755)
 	_ = os.MkdirAll(filepath.Join(aiDir, "standards"), 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "RULEBOOK.md"), []byte("# Rules"), 0o644)
+	initAIGitRepo(t, aiDir, "v2.0.0")
 	_ = mount.WriteAIVersion(root, "v2.0.0")
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".ai/\n"), 0o644)
 	_ = os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# Claude\n@AGENTS.md"), 0o644)
@@ -148,6 +163,7 @@ func TestDoctorV2Cmd_MissingFramework_ExitCode1(t *testing.T) {
 
 func TestDoctorV2Cmd_VersionMismatch_ShowsRemediation(t *testing.T) {
 	root := t.TempDir()
+	initAIGitRepo(t, filepath.Join(root, ".ai"), "v2.0.0")
 	_ = mount.WriteAIVersion(root, "v2.0.0")
 
 	// Create workflow with wrong version.
@@ -198,6 +214,7 @@ func TestDoctorV2Cmd_WarningExitCode0(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(aiDir, "skills"), 0o755)
 	_ = os.MkdirAll(filepath.Join(aiDir, "standards"), 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "RULEBOOK.md"), []byte("# Rules"), 0o644)
+	initAIGitRepo(t, aiDir, "v2.0.0")
 	_ = mount.WriteAIVersion(root, "v2.0.0")
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".ai/\n"), 0o644)
 	_ = os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# Claude"), 0o644)

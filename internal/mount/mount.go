@@ -29,21 +29,32 @@ func ValidateTag(version string, releases []sync.Release) error {
 }
 
 // DefaultClone performs a shallow git clone of repoURL at the given tag into
-// destDir, then removes the .git/ directory so the clone is not a repo.
+// destDir. The .git/ directory is retained so that the mounted version can be
+// read from git metadata and the clone is left in detached HEAD state (no branch
+// to push to).
 func DefaultClone(repoURL, tag, destDir string) error {
 	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", tag, repoURL, destDir)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git clone failed: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
-
-	// Strip .git/ so the cloned directory is not itself a git repo.
-	if err := os.RemoveAll(filepath.Join(destDir, ".git")); err != nil {
-		return fmt.Errorf("removing .git from clone: %w", err)
-	}
-
 	return nil
+}
+
+// ReadAIVersionFromGit reads the mounted framework version from the .git
+// metadata inside .ai/. This is the authoritative source of truth — it reflects
+// exactly what was cloned, not what .ai-version says.
+func ReadAIVersionFromGit(root string) (string, error) {
+	aiDir := filepath.Join(root, ".ai")
+	cmd := exec.Command("git", "-C", aiDir, "describe", "--tags", "--exact-match")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("reading version from .ai/.git: %w", err)
+	}
+	v := strings.TrimSpace(string(out))
+	if v == "" {
+		return "", fmt.Errorf(".ai/.git has no version tag")
+	}
+	return v, nil
 }
 
 // DownloadFramework clones the framework at the given version tag into

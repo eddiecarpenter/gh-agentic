@@ -72,7 +72,7 @@ func checkFramework(deps CheckDeps) Group {
 	// .ai/ mounted.
 	aiDir := filepath.Join(deps.Root, ".ai")
 	if dirExists(aiDir) && fileExists(filepath.Join(aiDir, "RULEBOOK.md")) {
-		v, err := mount.ReadAIVersion(deps.Root)
+		v, err := mount.ReadAIVersionFromGit(deps.Root)
 		version := "unknown"
 		if err == nil {
 			version = v
@@ -84,12 +84,12 @@ func checkFramework(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-mounted", Status: Fail,
 			Message:     ".ai/ not mounted",
-			Remediation: "Run 'gh agentic -v2 mount <version>'",
+			Remediation: "Run 'gh agentic --v2 mount <version>'",
 		})
 	}
 
-	// .ai-version present.
-	v, err := mount.ReadAIVersion(deps.Root)
+	// .ai-version present (from .git metadata).
+	v, err := mount.ReadAIVersionFromGit(deps.Root)
 	if err == nil {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-version", Status: Pass, Message: fmt.Sprintf(".ai-version present (%s)", v),
@@ -97,8 +97,8 @@ func checkFramework(deps CheckDeps) Group {
 	} else {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-version", Status: Fail,
-			Message:     ".ai-version not found",
-			Remediation: "Run 'gh agentic -v2 mount <version>'",
+			Message:     ".ai/ git metadata missing — framework may not be properly mounted",
+			Remediation: "Run 'gh agentic --v2 mount <version>'",
 		})
 	}
 
@@ -146,7 +146,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "claude-md", Status: Fail,
 			Message:     "CLAUDE.md not found",
-			Remediation: "Run 'gh agentic -v2 mount <version>'",
+			Remediation: "Run 'gh agentic --v2 mount <version>'",
 		})
 	}
 
@@ -159,7 +159,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "agents-md", Status: Fail,
 			Message:     "AGENTS.md not found",
-			Remediation: "Run 'gh agentic -v2 mount <version>'",
+			Remediation: "Run 'gh agentic --v2 mount <version>'",
 		})
 	}
 
@@ -192,7 +192,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 func checkWorkflows(deps CheckDeps) Group {
 	g := Group{Name: "Workflows"}
 
-	version, _ := mount.ReadAIVersion(deps.Root)
+	version, _ := mount.ReadAIVersionFromGit(deps.Root)
 	workflowsDir := filepath.Join(deps.Root, ".github", "workflows")
 
 	workflows := []string{"agentic-pipeline.yml", "release.yml"}
@@ -221,7 +221,7 @@ func checkWorkflows(deps CheckDeps) Group {
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Fail,
 				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, version),
-				Remediation: fmt.Sprintf("Run 'gh agentic -v2 mount %s'", version),
+				Remediation: fmt.Sprintf("Run 'gh agentic --v2 mount %s'", version),
 			})
 		} else {
 			g.Results = append(g.Results, CheckResult{
@@ -258,7 +258,7 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 			g.Results = append(g.Results, CheckResult{
 				Name: "claude-creds", Status: Fail,
 				Message:     "CLAUDE_CREDENTIALS_JSON — not configured",
-				Remediation: "Run 'gh agentic -v2 auth login'",
+				Remediation: "Run 'gh agentic --v2 auth login'",
 			})
 		} else {
 			_ = data

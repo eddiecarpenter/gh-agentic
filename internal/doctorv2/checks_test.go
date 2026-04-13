@@ -3,6 +3,7 @@ package doctorv2
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,20 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
+
+// setupAIGitRepo initialises aiDir as a git repo tagged at version,
+// simulating a real git clone --depth 1 --branch <version>.
+func setupAIGitRepo(t *testing.T, aiDir, version string) {
+	t.Helper()
+	_ = os.MkdirAll(aiDir, 0o755)
+	_ = exec.Command("git", "-C", aiDir, "init").Run()
+	_ = exec.Command("git", "-C", aiDir, "config", "user.email", "test@test.com").Run()
+	_ = exec.Command("git", "-C", aiDir, "config", "user.name", "Test").Run()
+	_ = os.WriteFile(filepath.Join(aiDir, ".gitkeep"), []byte(""), 0o644)
+	_ = exec.Command("git", "-C", aiDir, "add", ".").Run()
+	_ = exec.Command("git", "-C", aiDir, "commit", "-m", "init").Run()
+	_ = exec.Command("git", "-C", aiDir, "tag", version).Run()
+}
 
 // setupHealthyRepo creates a temp directory that passes all framework checks.
 func setupHealthyRepo(t *testing.T) string {
@@ -21,8 +36,9 @@ func setupHealthyRepo(t *testing.T) string {
 	_ = os.MkdirAll(filepath.Join(aiDir, "skills"), 0o755)
 	_ = os.MkdirAll(filepath.Join(aiDir, "standards"), 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "RULEBOOK.md"), []byte("# Rules"), 0o644)
+	setupAIGitRepo(t, aiDir, "v2.0.0")
 
-	// .ai-version.
+	// .ai-version (fallback).
 	_ = mount.WriteAIVersion(root, "v2.0.0")
 
 	// .gitignore.
@@ -147,6 +163,7 @@ func TestCheckFramework_NotMounted(t *testing.T) {
 
 func TestCheckWorkflows_VersionMismatch(t *testing.T) {
 	root := t.TempDir()
+	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.0.0")
 	_ = mount.WriteAIVersion(root, "v2.0.0")
 
 	workflowsDir := filepath.Join(root, ".github", "workflows")
@@ -174,6 +191,7 @@ func TestCheckWorkflows_VersionMismatch(t *testing.T) {
 
 func TestCheckWorkflows_VersionMatch(t *testing.T) {
 	root := t.TempDir()
+	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.0.0")
 	_ = mount.WriteAIVersion(root, "v2.0.0")
 
 	workflowsDir := filepath.Join(root, ".github", "workflows")
