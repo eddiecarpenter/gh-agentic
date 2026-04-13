@@ -91,33 +91,33 @@ func (r *Report) FailCount() int {
 	return count
 }
 
-// Render writes the grouped report to the writer.
-func (r *Report) Render(w io.Writer) {
+// RenderHeader writes the report heading.
+func RenderHeader(w io.Writer) {
 	fmt.Fprintln(w, "AI-Native Delivery Framework — Health Check")
 	fmt.Fprintln(w)
+}
 
-	for _, g := range r.Groups {
-		fmt.Fprintf(w, "  %s\n", g.Name)
-		for _, c := range g.Results {
-			switch c.Status {
-			case Pass:
-				fmt.Fprintf(w, "  %s %s\n", ui.StatusOK.Render("✓"), c.Message)
-			case Warning:
-				fmt.Fprintf(w, "  %s %s\n", ui.StatusWarning.Render("⚠"), c.Message)
-			case Fail:
-				fmt.Fprintf(w, "  %s %s\n", ui.StatusDanger.Render("✗"), c.Message)
-				if c.Remediation != "" {
-					fmt.Fprintf(w, "    %s %s\n", ui.Muted.Render("→"), c.Remediation)
-				}
+// RenderGroup writes a single group's results immediately.
+func RenderGroup(w io.Writer, g Group) {
+	fmt.Fprintf(w, "  %s\n", g.Name)
+	for _, c := range g.Results {
+		switch c.Status {
+		case Pass:
+			fmt.Fprintf(w, "  %s %s\n", ui.StatusOK.Render("✓"), c.Message)
+		case Warning:
+			fmt.Fprintf(w, "  %s %s\n", ui.StatusWarning.Render("⚠"), c.Message)
+		case Fail:
+			fmt.Fprintf(w, "  %s %s\n", ui.StatusDanger.Render("✗"), c.Message)
+			if c.Remediation != "" {
+				fmt.Fprintf(w, "    %s %s\n", ui.Muted.Render("→"), c.Remediation)
 			}
 		}
-		fmt.Fprintln(w)
 	}
+	fmt.Fprintln(w)
+}
 
-	// Summary.
-	warnings := r.WarningCount()
-	failures := r.FailCount()
-
+// RenderSummary writes the failure/warning summary line.
+func RenderSummary(w io.Writer, failures, warnings int) {
 	if failures > 0 {
 		fmt.Fprintf(w, "%d failure(s)", failures)
 		if warnings > 0 {
@@ -127,4 +127,13 @@ func (r *Report) Render(w io.Writer) {
 	} else if warnings > 0 {
 		fmt.Fprintf(w, "%d warning(s) — run 'gh agentic --v2 doctor --help' for remediation steps.\n", warnings)
 	}
+}
+
+// Render writes the full grouped report to the writer (used in tests).
+func (r *Report) Render(w io.Writer) {
+	RenderHeader(w)
+	for _, g := range r.Groups {
+		RenderGroup(w, g)
+	}
+	RenderSummary(w, r.FailCount(), r.WarningCount())
 }

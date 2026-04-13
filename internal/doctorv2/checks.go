@@ -2,6 +2,7 @@ package doctorv2
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,15 +24,33 @@ type CheckDeps struct {
 }
 
 // RunAllChecks runs all v2 checks and returns a grouped Report.
+// Used in tests and non-streaming contexts.
 func RunAllChecks(deps CheckDeps) *Report {
 	report := &Report{}
-
 	report.Groups = append(report.Groups, checkRepository(deps))
 	report.Groups = append(report.Groups, checkFramework(deps))
 	report.Groups = append(report.Groups, checkAgentFiles(deps))
 	report.Groups = append(report.Groups, checkWorkflows(deps))
 	report.Groups = append(report.Groups, checkVariablesAndSecrets(deps))
+	return report
+}
 
+// StreamAllChecks runs each check group and renders it immediately as it
+// completes, giving the user progressive feedback rather than a single dump.
+// Returns the completed Report for summary rendering.
+func StreamAllChecks(w io.Writer, deps CheckDeps) *Report {
+	report := &Report{}
+	for _, fn := range []func(CheckDeps) Group{
+		checkRepository,
+		checkFramework,
+		checkAgentFiles,
+		checkWorkflows,
+		checkVariablesAndSecrets,
+	} {
+		g := fn(deps)
+		RenderGroup(w, g)
+		report.Groups = append(report.Groups, g)
+	}
 	return report
 }
 

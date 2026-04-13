@@ -86,7 +86,6 @@ func newDoctorV2CmdWithDeps(deps doctorV2Deps) *cobra.Command {
 				info, _ = deps.resolveRepo()
 			}
 
-			// Run all checks.
 			checkDeps := doctorv2.CheckDeps{
 				Root:         root,
 				RepoFullName: info.FullName,
@@ -97,8 +96,11 @@ func newDoctorV2CmdWithDeps(deps doctorV2Deps) *cobra.Command {
 				ReadCreds:    deps.readCreds,
 			}
 
-			report := doctorv2.RunAllChecks(checkDeps)
-			report.Render(w)
+			// Stream results — print each group as its checks complete.
+			doctorv2.RenderHeader(w)
+			report := doctorv2.StreamAllChecks(w, checkDeps)
+
+			doctorv2.RenderSummary(w, report.FailCount(), report.WarningCount())
 
 			if report.HasFailures() {
 				return ErrSilent
