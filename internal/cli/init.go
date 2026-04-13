@@ -10,6 +10,8 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
 	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
+
+	ghAPI "github.com/cli/go-gh/v2/pkg/api"
 )
 
 // initDeps holds injectable dependencies for the init command.
@@ -18,15 +20,33 @@ type initDeps struct {
 	fetchTarball initv2.Deps
 }
 
+// defaultDetectOwnerType detects whether a GitHub owner is a user or org via the API.
+func defaultDetectOwnerType(owner string) (string, error) {
+	client, err := ghAPI.DefaultRESTClient()
+	if err != nil {
+		return "", fmt.Errorf("creating GitHub API client: %w", err)
+	}
+
+	var resp struct {
+		Type string `json:"type"`
+	}
+	if err := client.Get(fmt.Sprintf("users/%s", owner), &resp); err != nil {
+		return "", fmt.Errorf("detecting owner type for %q: %w", owner, err)
+	}
+	return resp.Type, nil
+}
+
 // newInitCmd constructs the `gh agentic -v2 init` command with production deps.
 func newInitCmd() *cobra.Command {
 	return newInitCmdWithDeps(initv2.Deps{
 		Run:          bootstrap.DefaultRunCommand,
 		FetchTarball: tarball.DefaultFetch,
 		CollectConfig: func(w io.Writer, repo string) (*initv2.InitConfig, error) {
-			// Production path would use huh forms.
-			// For now, return an error indicating interactive mode is needed.
-			return nil, fmt.Errorf("interactive mode requires a terminal — use flags for non-interactive setup")
+			return initv2.CollectConfigInteractive(w, repo, initv2.FormDeps{
+				RunForm:         initv2.DefaultFormRun,
+				RunCommand:      bootstrap.DefaultRunCommand,
+				DetectOwnerType: defaultDetectOwnerType,
+			})
 		},
 	})
 }
