@@ -64,11 +64,10 @@ func newDoctorCmd() *cobra.Command {
 func newDoctorCmdWithDeps(deps doctorDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Health check with grouped output (v2)",
+		Short: "Check the health of the agentic framework environment",
 		Long: "Checks the AI-Native Delivery Framework health with grouped output.\n" +
 			"Groups: Repository, Framework, Agent files, Workflows, Variables & secrets.\n" +
 			"✓ pass, ⚠ warning (exit 0), ✗ fail (exit 1) with remediation commands.",
-		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
