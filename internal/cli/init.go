@@ -9,15 +9,15 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
-	"github.com/eddiecarpenter/gh-agentic/internal/tarball"
+	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 
 	ghAPI "github.com/cli/go-gh/v2/pkg/api"
 )
 
 // initDeps holds injectable dependencies for the init command.
 type initDeps struct {
-	run          initv2.RunCommandFunc
-	fetchTarball initv2.Deps
+	run   initv2.RunCommandFunc
+	clone initv2.Deps
 }
 
 // defaultDetectOwnerType detects whether a GitHub owner is a user or org via the API.
@@ -40,7 +40,7 @@ func defaultDetectOwnerType(owner string) (string, error) {
 func newInitCmd() *cobra.Command {
 	return newInitCmdWithDeps(initv2.Deps{
 		Run:          bootstrap.DefaultRunCommand,
-		FetchTarball: tarball.DefaultFetch,
+		Clone: mount.DefaultClone,
 		CollectConfig: func(w io.Writer, repo string) (*initv2.InitConfig, error) {
 			return initv2.CollectConfigInteractive(w, repo, initv2.FormDeps{
 				RunForm:         initv2.DefaultFormRun,

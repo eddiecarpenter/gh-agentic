@@ -17,7 +17,7 @@ import (
 //  6. Generates wrapper workflows in .github/workflows/
 //
 // No confirmation prompt is shown for first-time mount.
-func RunFirstTime(w io.Writer, root, version string, fetch FetchTarballFunc) error {
+func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 	fmt.Fprintln(w, "Initialising AI-Native Delivery Framework...")
 
 	// Step 1: Download framework.
@@ -68,7 +68,7 @@ func RunFirstTime(w io.Writer, root, version string, fetch FetchTarballFunc) err
 	fmt.Fprintln(w, "Next steps:")
 	fmt.Fprintln(w, "  1. Review and commit the generated files")
 	fmt.Fprintln(w, "  2. Configure GOOSE_AGENT_PAT and CLAUDE_CREDENTIALS_JSON as secrets")
-	fmt.Fprintln(w, "  3. Run 'gh agentic -v2 doctor' to verify")
+	fmt.Fprintln(w, "  3. Run 'gh agentic --v2 doctor' to verify")
 
 	return nil
 }

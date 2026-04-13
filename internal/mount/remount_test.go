@@ -12,7 +12,7 @@ func TestRunRemount_Success(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	fetch := fakeFetchTarball(map[string]string{
+	fetch := fakeClone(map[string]string{
 		"RULEBOOK.md":            "# Rules refreshed",
 		"skills/session-init.md": "# Session Init",
 	})
@@ -51,7 +51,7 @@ func TestRunRemount_CleansAndRefreshes(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(aiDir, "stale.txt"), []byte("stale"), 0o644)
 	_ = os.WriteFile(filepath.Join(aiDir, "RULEBOOK.md"), []byte("# Old rules"), 0o644)
 
-	fetch := fakeFetchTarball(map[string]string{
+	fetch := fakeClone(map[string]string{
 		"RULEBOOK.md": "# Fresh rules",
 	})
 
@@ -76,7 +76,7 @@ func TestRunRemount_DownloadFailure(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	err := RunRemount(&buf, root, "v2.0.0", fakeFetchError("network"))
+	err := RunRemount(&buf, root, "v2.0.0", fakeCloneError("network"))
 	if err == nil {
 		t.Fatal("expected error on download failure")
 	}
@@ -89,7 +89,7 @@ func TestRunRemount_SilentNoPrompt(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	fetch := fakeFetchTarball(map[string]string{
+	fetch := fakeClone(map[string]string{
 		"RULEBOOK.md": "# Rules",
 	})
 

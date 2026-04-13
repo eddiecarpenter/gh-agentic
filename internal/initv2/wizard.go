@@ -37,7 +37,7 @@ type RunCommandFunc = bootstrap.RunCommandFunc
 // Deps holds injectable dependencies for the init wizard.
 type Deps struct {
 	Run          RunCommandFunc
-	FetchTarball mount.FetchTarballFunc
+	Clone mount.CloneFunc
 	// CollectConfig gathers configuration interactively (or from test injection).
 	CollectConfig func(w io.Writer, repoFullName string) (*InitConfig, error)
 }
@@ -62,7 +62,7 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 	}
 
 	// Run first-time mount.
-	if err := mount.RunFirstTime(w, root, cfg.Version, deps.FetchTarball); err != nil {
+	if err := mount.RunFirstTime(w, root, cfg.Version, deps.Clone); err != nil {
 		return fmt.Errorf("mount: %w", err)
 	}
 

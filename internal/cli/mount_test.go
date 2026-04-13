@@ -1,10 +1,7 @@
 package cli
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,44 +11,29 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
-// mountFakeFetch creates a FetchTarballFunc that returns a tarball with
-// framework files for testing.
-func mountFakeFetch() mount.FetchTarballFunc {
-	return func(repo, version string) (io.ReadCloser, error) {
+// mountFakeClone creates a CloneFunc that writes framework files into destDir.
+func mountFakeClone() mount.CloneFunc {
+	return func(repoURL, tag, destDir string) error {
 		files := map[string]string{
-			"RULEBOOK.md":            "# Rules for " + version,
+			"RULEBOOK.md":            "# Rules for " + tag,
 			"skills/session-init.md": "# Session Init",
 			"standards/go.md":        "# Go Standards",
 			"recipes/dev.yaml":       "recipe: dev",
 			"concepts/philosophy.md": "# Philosophy",
 		}
-
-		var buf bytes.Buffer
-		gw := gzip.NewWriter(&buf)
-		tw := tar.NewWriter(gw)
-
-		prefix := "gh-agentic-" + version + "/"
-		_ = tw.WriteHeader(&tar.Header{
-			Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755,
-		})
-
-		for path, content := range files {
-			dir := filepath.Dir(path)
-			if dir != "." {
-				_ = tw.WriteHeader(&tar.Header{
-					Name: prefix + dir + "/", Typeflag: tar.TypeDir, Mode: 0o755,
-				})
-			}
-			_ = tw.WriteHeader(&tar.Header{
-				Name: prefix + path, Size: int64(len(content)),
-				Mode: 0o644, Typeflag: tar.TypeReg,
-			})
-			_, _ = tw.Write([]byte(content))
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
+			return err
 		}
-
-		_ = tw.Close()
-		_ = gw.Close()
-		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+		for path, content := range files {
+			full := filepath.Join(destDir, path)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }
 
@@ -74,12 +56,11 @@ func TestMountCmd_FirstTimeMount(t *testing.T) {
 
 	deps := mountDeps{
 		fetchReleases: mountFakeReleases(),
-		fetchTarball:  mountFakeFetch(),
+		clone:         mountFakeClone(),
 	}
 
 	cmd := newMountCmdWithDeps(deps)
 	rootCmd := newRootCmd("dev", "")
-	// Replace the mount command with our test version.
 	for i, c := range rootCmd.Commands() {
 		if strings.HasPrefix(c.Use, "mount") {
 			rootCmd.RemoveCommand(c)
@@ -101,17 +82,14 @@ func TestMountCmd_FirstTimeMount(t *testing.T) {
 
 	output := buf.String()
 
-	// Verify output messages.
 	if !strings.Contains(output, "AI Framework successfully mounted") {
 		t.Errorf("expected success message, got:\n%s", output)
 	}
 
-	// Verify .ai/RULEBOOK.md exists.
 	if _, err := os.Stat(filepath.Join(root, ".ai", "RULEBOOK.md")); os.IsNotExist(err) {
 		t.Error(".ai/RULEBOOK.md should exist")
 	}
 
-	// Verify .ai-version.
 	v, err := mount.ReadAIVersion(root)
 	if err != nil {
 		t.Fatalf("reading .ai-version: %v", err)
@@ -120,13 +98,11 @@ func TestMountCmd_FirstTimeMount(t *testing.T) {
 		t.Errorf("expected v2.0.0, got %q", v)
 	}
 
-	// Verify .gitignore.
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if !strings.Contains(string(gitignore), ".ai/") {
 		t.Error(".gitignore should contain .ai/")
 	}
 
-	// Verify workflows.
 	pipeline, _ := os.ReadFile(filepath.Join(root, ".github", "workflows", "agentic-pipeline.yml"))
 	if !strings.Contains(string(pipeline), "@v2.0.0") {
 		t.Errorf("pipeline workflow should reference @v2.0.0, got: %s", pipeline)
@@ -142,7 +118,7 @@ func TestMountCmd_InvalidTag(t *testing.T) {
 
 	deps := mountDeps{
 		fetchReleases: mountFakeReleases(),
-		fetchTarball:  mountFakeFetch(),
+		clone:         mountFakeClone(),
 	}
 
 	cmd := newMountCmdWithDeps(deps)
@@ -175,7 +151,7 @@ func TestMountCmd_InvalidTag(t *testing.T) {
 func TestMountCmd_WithoutV2Flag(t *testing.T) {
 	deps := mountDeps{
 		fetchReleases: mountFakeReleases(),
-		fetchTarball:  mountFakeFetch(),
+		clone:         mountFakeClone(),
 	}
 
 	cmd := newMountCmdWithDeps(deps)
@@ -195,7 +171,7 @@ func TestMountCmd_WithoutV2Flag(t *testing.T) {
 	err := rootCmd.Execute()
 
 	if err == nil {
-		t.Fatal("expected error without -v2 flag")
+		t.Fatal("expected error without --v2 flag")
 	}
 	if !strings.Contains(err.Error(), "requires the --v2 flag") {
 		t.Errorf("error should mention --v2 flag, got: %v", err)
@@ -211,7 +187,7 @@ func TestMountCmd_NoVersionNoAIVersion(t *testing.T) {
 
 	deps := mountDeps{
 		fetchReleases: mountFakeReleases(),
-		fetchTarball:  mountFakeFetch(),
+		clone:         mountFakeClone(),
 	}
 
 	cmd := newMountCmdWithDeps(deps)

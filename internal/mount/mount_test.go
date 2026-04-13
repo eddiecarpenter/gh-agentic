@@ -1,10 +1,7 @@
 package mount
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
-	"io"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,56 +10,30 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
-// fakeFetchTarball returns a FetchTarballFunc that creates a tarball with
-// the given files. Keys are paths within the archive (after the top-level
-// prefix dir), values are file contents.
-func fakeFetchTarball(files map[string]string) FetchTarballFunc {
-	return func(repo, version string) (io.ReadCloser, error) {
-		var buf bytes.Buffer
-		gw := gzip.NewWriter(&buf)
-		tw := tar.NewWriter(gw)
-
-		prefix := "gh-agentic-" + version + "/"
-
-		// Write top-level directory.
-		_ = tw.WriteHeader(&tar.Header{
-			Name:     prefix,
-			Typeflag: tar.TypeDir,
-			Mode:     0o755,
-		})
-
-		for path, content := range files {
-			fullPath := prefix + path
-
-			// Create parent dirs.
-			dir := filepath.Dir(path)
-			if dir != "." {
-				_ = tw.WriteHeader(&tar.Header{
-					Name:     prefix + dir + "/",
-					Typeflag: tar.TypeDir,
-					Mode:     0o755,
-				})
-			}
-
-			_ = tw.WriteHeader(&tar.Header{
-				Name:     fullPath,
-				Size:     int64(len(content)),
-				Mode:     0o644,
-				Typeflag: tar.TypeReg,
-			})
-			_, _ = tw.Write([]byte(content))
+// fakeClone returns a CloneFunc that creates the given files in destDir,
+// simulating a shallow git clone of the framework.
+func fakeClone(files map[string]string) CloneFunc {
+	return func(repoURL, tag, destDir string) error {
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
+			return err
 		}
-
-		_ = tw.Close()
-		_ = gw.Close()
-		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+		for path, content := range files {
+			full := filepath.Join(destDir, path)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }
 
-// fakeFetchError returns a FetchTarballFunc that always returns an error.
-func fakeFetchError(errMsg string) FetchTarballFunc {
-	return func(repo, version string) (io.ReadCloser, error) {
-		return nil, io.ErrUnexpectedEOF
+// fakeCloneError returns a CloneFunc that always returns an error.
+func fakeCloneError(errMsg string) CloneFunc {
+	return func(repoURL, tag, destDir string) error {
+		return fmt.Errorf("%s", errMsg)
 	}
 }
 
@@ -109,22 +80,22 @@ func TestValidateTag_EmptyReleases(t *testing.T) {
 func TestDownloadFramework_Success(t *testing.T) {
 	root := t.TempDir()
 
-	fetch := fakeFetchTarball(map[string]string{
-		"RULEBOOK.md":               "# Rules",
-		"skills/session-init.md":    "# Session Init",
-		"recipes/dev.yaml":          "recipe: dev",
-		"standards/go.md":           "# Go Standards",
-		"concepts/philosophy.md":    "# Philosophy",
-		"cmd/gh-agentic/main.go":    "package main", // Should NOT be extracted.
-		"internal/cli/root.go":      "package cli",   // Should NOT be extracted.
+	clone := fakeClone(map[string]string{
+		"RULEBOOK.md":            "# Rules",
+		"skills/session-init.md": "# Session Init",
+		"recipes/dev.yaml":       "recipe: dev",
+		"standards/go.md":        "# Go Standards",
+		"concepts/philosophy.md": "# Philosophy",
+		"cmd/gh-agentic/main.go": "package main", // Also cloned — all files land in .ai/
+		"internal/cli/root.go":   "package cli",
 	})
 
-	err := DownloadFramework(root, "v2.0.0", fetch)
+	err := DownloadFramework(root, "v2.0.0", clone)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify framework files exist.
+	// Verify framework files exist in .ai/.
 	expectedFiles := []string{
 		".ai/RULEBOOK.md",
 		".ai/skills/session-init.md",
@@ -136,18 +107,6 @@ func TestDownloadFramework_Success(t *testing.T) {
 		path := filepath.Join(root, f)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("expected %s to exist", f)
-		}
-	}
-
-	// Verify non-framework files are NOT extracted.
-	unexpectedFiles := []string{
-		".ai/cmd/gh-agentic/main.go",
-		".ai/internal/cli/root.go",
-	}
-	for _, f := range unexpectedFiles {
-		path := filepath.Join(root, f)
-		if _, err := os.Stat(path); err == nil {
-			t.Errorf("expected %s to NOT exist", f)
 		}
 	}
 
@@ -172,11 +131,14 @@ func TestDownloadFramework_EmptyVersion(t *testing.T) {
 	}
 }
 
-func TestDownloadFramework_FetchError(t *testing.T) {
+func TestDownloadFramework_CloneError(t *testing.T) {
 	root := t.TempDir()
-	err := DownloadFramework(root, "v2.0.0", fakeFetchError("network error"))
+	err := DownloadFramework(root, "v2.0.0", fakeCloneError("network error"))
 	if err == nil {
-		t.Fatal("expected error on fetch failure")
+		t.Fatal("expected error on clone failure")
+	}
+	if !strings.Contains(err.Error(), "network error") {
+		t.Errorf("expected 'network error' in error, got: %v", err)
 	}
 }
 
@@ -188,11 +150,11 @@ func TestDownloadFramework_CleansExistingAI(t *testing.T) {
 	_ = os.MkdirAll(aiDir, 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "stale.txt"), []byte("stale"), 0o644)
 
-	fetch := fakeFetchTarball(map[string]string{
+	clone := fakeClone(map[string]string{
 		"RULEBOOK.md": "# Fresh Rules",
 	})
 
-	err := DownloadFramework(root, "v2.0.0", fetch)
+	err := DownloadFramework(root, "v2.0.0", clone)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -281,7 +243,6 @@ func TestEnsureGitignore_AlreadyPresent(t *testing.T) {
 	}
 
 	data, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	// Should not duplicate the entry.
 	count := strings.Count(string(data), ".ai/")
 	if count != 1 {
 		t.Errorf("expected exactly 1 .ai/ entry, got %d in: %s", count, data)

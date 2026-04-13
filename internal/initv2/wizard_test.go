@@ -1,9 +1,7 @@
 package initv2
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -14,40 +12,26 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
 
-func fakeFetchTarball() mount.FetchTarballFunc {
-	return func(repo, version string) (io.ReadCloser, error) {
+func fakeCloneFunc() mount.CloneFunc {
+	return func(repoURL, tag, destDir string) error {
 		files := map[string]string{
 			"RULEBOOK.md":            "# Rules",
 			"skills/session-init.md": "# Session Init",
 			"standards/go.md":        "# Go",
 		}
-
-		var buf bytes.Buffer
-		gw := gzip.NewWriter(&buf)
-		tw := tar.NewWriter(gw)
-
-		prefix := "gh-agentic-" + version + "/"
-		_ = tw.WriteHeader(&tar.Header{
-			Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755,
-		})
-
-		for path, content := range files {
-			dir := filepath.Dir(path)
-			if dir != "." {
-				_ = tw.WriteHeader(&tar.Header{
-					Name: prefix + dir + "/", Typeflag: tar.TypeDir, Mode: 0o755,
-				})
-			}
-			_ = tw.WriteHeader(&tar.Header{
-				Name: prefix + path, Size: int64(len(content)),
-				Mode: 0o644, Typeflag: tar.TypeReg,
-			})
-			_, _ = tw.Write([]byte(content))
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
+			return err
 		}
-
-		_ = tw.Close()
-		_ = gw.Close()
-		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+		for path, content := range files {
+			full := filepath.Join(destDir, path)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }
 
@@ -83,7 +67,7 @@ func TestRun_Success(t *testing.T) {
 			setCalls = append(setCalls, name+" "+strings.Join(args, " "))
 			return "", nil
 		},
-		FetchTarball:  fakeFetchTarball(),
+		Clone:  fakeCloneFunc(),
 		CollectConfig: fakeCollectConfig(cfg),
 	}
 
@@ -133,7 +117,7 @@ func TestRun_BlockedWithoutForce(t *testing.T) {
 
 	deps := Deps{
 		Run:          func(name string, args ...string) (string, error) { return "", nil },
-		FetchTarball: fakeFetchTarball(),
+		Clone: fakeCloneFunc(),
 		CollectConfig: fakeCollectConfig(&InitConfig{
 			Version: "v2.0.0",
 		}),
@@ -164,7 +148,7 @@ func TestRun_ProceedsWithForce(t *testing.T) {
 
 	deps := Deps{
 		Run:           func(name string, args ...string) (string, error) { return "", nil },
-		FetchTarball:  fakeFetchTarball(),
+		Clone:  fakeCloneFunc(),
 		CollectConfig: fakeCollectConfig(cfg),
 	}
 
@@ -185,7 +169,7 @@ func TestRun_NoRepoContext(t *testing.T) {
 
 	deps := Deps{
 		Run:           func(name string, args ...string) (string, error) { return "", nil },
-		FetchTarball:  fakeFetchTarball(),
+		Clone:  fakeCloneFunc(),
 		CollectConfig: fakeCollectConfig(cfg),
 	}
 

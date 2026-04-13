@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,32 +12,12 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
 
-func initFakeFetch() mount.FetchTarballFunc {
-	return func(repo, version string) (io.ReadCloser, error) {
-		files := map[string]string{
-			"RULEBOOK.md": "# Rules",
+func initFakeClone() mount.CloneFunc {
+	return func(repoURL, tag, destDir string) error {
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
+			return err
 		}
-
-		var buf bytes.Buffer
-		gw := gzip.NewWriter(&buf)
-		tw := tar.NewWriter(gw)
-
-		prefix := "gh-agentic-" + version + "/"
-		_ = tw.WriteHeader(&tar.Header{
-			Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755,
-		})
-
-		for path, content := range files {
-			_ = tw.WriteHeader(&tar.Header{
-				Name: prefix + path, Size: int64(len(content)),
-				Mode: 0o644, Typeflag: tar.TypeReg,
-			})
-			_, _ = tw.Write([]byte(content))
-		}
-
-		_ = tw.Close()
-		_ = gw.Close()
-		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+		return os.WriteFile(filepath.Join(destDir, "RULEBOOK.md"), []byte("# Rules"), 0o644)
 	}
 }
 
@@ -70,7 +48,7 @@ func TestInitCmd_BlockedWithoutForce(t *testing.T) {
 
 	deps := initv2.Deps{
 		Run:          func(name string, args ...string) (string, error) { return "", nil },
-		FetchTarball: initFakeFetch(),
+		Clone: initFakeClone(),
 		CollectConfig: func(w io.Writer, repo string) (*initv2.InitConfig, error) {
 			return &initv2.InitConfig{Version: "v2.0.0"}, nil
 		},
@@ -110,7 +88,7 @@ func TestInitCmd_ProceedsWithForce(t *testing.T) {
 
 	deps := initv2.Deps{
 		Run:          func(name string, args ...string) (string, error) { return "", nil },
-		FetchTarball: initFakeFetch(),
+		Clone: initFakeClone(),
 		CollectConfig: func(w io.Writer, repo string) (*initv2.InitConfig, error) {
 			return &initv2.InitConfig{
 				Version:      "v2.0.0",
@@ -150,7 +128,7 @@ func TestInitCmd_ProceedsWithForce(t *testing.T) {
 func TestInitCmd_ForceFlagRegistered(t *testing.T) {
 	deps := initv2.Deps{
 		Run:          func(name string, args ...string) (string, error) { return "", nil },
-		FetchTarball: initFakeFetch(),
+		Clone: initFakeClone(),
 		CollectConfig: func(w io.Writer, repo string) (*initv2.InitConfig, error) {
 			return &initv2.InitConfig{Version: "v2.0.0"}, nil
 		},

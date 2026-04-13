@@ -20,7 +20,7 @@ func TestRunSwitch_ConfirmAndUpdate(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(root, ".github", "workflows", "release.yml"),
 		[]byte(releaseWorkflowTemplate("v1.5.6")), 0o644)
 
-	fetch := fakeFetchTarball(map[string]string{
+	fetch := fakeClone(map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
 	})
 
@@ -75,7 +75,7 @@ func TestRunSwitch_Declined(t *testing.T) {
 
 	_ = WriteAIVersion(root, "v1.5.6")
 
-	fetch := fakeFetchTarball(map[string]string{
+	fetch := fakeClone(map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
 	})
 
@@ -104,7 +104,7 @@ func TestRunSwitch_NilConfirm(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(root, ".github", "workflows", "agentic-pipeline.yml"),
 		[]byte(workflowTemplate("v1.5.6")), 0o644)
 
-	fetch := fakeFetchTarball(map[string]string{
+	fetch := fakeClone(map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
 	})
 
@@ -126,7 +126,7 @@ func TestRunSwitch_DownloadFailure(t *testing.T) {
 
 	_ = WriteAIVersion(root, "v1.5.6")
 
-	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", fakeFetchError("network"), nil)
+	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", fakeCloneError("network"), nil)
 	if err == nil {
 		t.Fatal("expected error on download failure")
 	}

@@ -8,7 +8,7 @@ import (
 // RunRemount remounts the framework at the current version. No confirmation
 // prompt is shown since the version is unchanged. This re-downloads and
 // extracts the framework, ensuring a clean state.
-func RunRemount(w io.Writer, root, version string, fetch FetchTarballFunc) error {
+func RunRemount(w io.Writer, root, version string, fetch CloneFunc) error {
 	fmt.Fprintf(w, "Mounting AI Framework (%s) at .ai/...\n", version)
 
 	if err := DownloadFramework(root, version, fetch); err != nil {
