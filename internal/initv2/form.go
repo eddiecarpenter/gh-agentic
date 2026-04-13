@@ -9,6 +9,8 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -27,6 +29,7 @@ type FormDeps struct {
 	RunForm         FormRunFunc
 	RunCommand      RunCommandFunc
 	DetectOwnerType DetectOwnerTypeFunc
+	FetchReleases   mount.FetchReleasesFunc
 }
 
 // DefaultFormDeps returns production dependencies for the interactive form.
@@ -78,8 +81,18 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 	}
 	fmt.Fprintln(w)
 
+	// --- Fetch available releases for version dropdown ---
+	var releases []sync.Release
+	if deps.FetchReleases != nil {
+		var fetchErr error
+		releases, fetchErr = deps.FetchReleases(mount.FrameworkRepo)
+		if fetchErr != nil {
+			fmt.Fprintf(w, "  %s\n", ui.RenderWarning("Could not fetch releases — enter version manually"))
+		}
+	}
+
 	// --- Phase 1: Version and Topology ---
-	if err := collectVersionTopology(cfg, deps.RunForm); err != nil {
+	if err := collectVersionTopology(cfg, releases, deps.RunForm); err != nil {
 		return nil, err
 	}
 
@@ -102,14 +115,35 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 }
 
 // collectVersionTopology collects the framework version and project topology.
-func collectVersionTopology(cfg *InitConfig, runForm FormRunFunc) error {
+// If releases are provided, the version is presented as a dropdown; otherwise
+// falls back to a free-text input.
+func collectVersionTopology(cfg *InitConfig, releases []sync.Release, runForm FormRunFunc) error {
+	var versionField huh.Field
+	if len(releases) > 0 {
+		// Pre-select the latest release.
+		if cfg.Version == "" {
+			cfg.Version = releases[0].TagName
+		}
+		opts := make([]huh.Option[string], len(releases))
+		for i, r := range releases {
+			opts[i] = huh.NewOption(r.TagName, r.TagName)
+		}
+		versionField = huh.NewSelect[string]().
+			Title("Framework version").
+			Description("Select the gh-agentic release to mount").
+			Options(opts...).
+			Value(&cfg.Version)
+	} else {
+		versionField = huh.NewInput().
+			Title("Framework version").
+			Description("The gh-agentic release tag to mount (e.g. v2.0.0)").
+			Value(&cfg.Version).
+			Validate(validateVersion)
+	}
+
 	form := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().
-				Title("Framework version").
-				Description("The gh-agentic release tag to mount (e.g. v2.0.0)").
-				Value(&cfg.Version).
-				Validate(validateVersion),
+			versionField,
 			huh.NewSelect[string]().
 				Title("Project topology").
 				Description("How your project repos are structured").
