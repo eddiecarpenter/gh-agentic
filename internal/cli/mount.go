@@ -36,10 +36,6 @@ func newMountCmdWithDeps(deps mountDeps) *cobra.Command {
 			"No args: remounts at current .ai-version.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !v2FlagValue {
-				return fmt.Errorf("mount requires the --v2 flag: gh agentic --v2 mount [version]")
-			}
-
 			w := cmd.OutOrStdout()
 
 			root, err := os.Getwd()

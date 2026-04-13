@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +22,7 @@ func fakeExpiredCreds() []byte {
 	return data
 }
 
-func TestAuthCmd_WithoutV2Flag(t *testing.T) {
+func TestAuthCmd_ShowsHelp(t *testing.T) {
 	root := newRootCmd("dev", "")
 
 	var buf bytes.Buffer
@@ -32,11 +31,8 @@ func TestAuthCmd_WithoutV2Flag(t *testing.T) {
 	root.SetArgs([]string{"auth"})
 	err := root.Execute()
 
-	if err == nil {
-		t.Fatal("expected error without -v2 flag")
-	}
-	if !strings.Contains(err.Error(), "requires the --v2 flag") {
-		t.Errorf("expected v2 flag error, got: %v", err)
+	if err != nil {
+		t.Fatalf("expected no error for auth with no subcommand, got: %v", err)
 	}
 }
 

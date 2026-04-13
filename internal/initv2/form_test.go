@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 )
 
 // fakeFormRun returns a FormRunFunc that sets bound values directly without
@@ -61,7 +61,7 @@ func TestCollectConfigInteractive_Success(t *testing.T) {
 			return "", nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
-			return bootstrap.OwnerTypeUser, nil
+			return auth.OwnerTypeUser, nil
 		},
 	}
 
@@ -82,8 +82,8 @@ func TestCollectConfigInteractive_Success(t *testing.T) {
 	if result.RepoName != "repo" {
 		t.Errorf("expected RepoName 'repo', got %q", result.RepoName)
 	}
-	if result.OwnerType != bootstrap.OwnerTypeUser {
-		t.Errorf("expected OwnerType %q, got %q", bootstrap.OwnerTypeUser, result.OwnerType)
+	if result.OwnerType != auth.OwnerTypeUser {
+		t.Errorf("expected OwnerType %q, got %q", auth.OwnerTypeUser, result.OwnerType)
 	}
 
 	output := buf.String()
@@ -117,7 +117,7 @@ func TestCollectConfigInteractive_WithExplicitRepo(t *testing.T) {
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
-			return bootstrap.OwnerTypeOrg, nil
+			return auth.OwnerTypeOrg, nil
 		},
 	}
 
@@ -132,8 +132,8 @@ func TestCollectConfigInteractive_WithExplicitRepo(t *testing.T) {
 	if result.RepoName != "my-repo" {
 		t.Errorf("expected RepoName 'my-repo', got %q", result.RepoName)
 	}
-	if result.OwnerType != bootstrap.OwnerTypeOrg {
-		t.Errorf("expected OwnerType %q, got %q", bootstrap.OwnerTypeOrg, result.OwnerType)
+	if result.OwnerType != auth.OwnerTypeOrg {
+		t.Errorf("expected OwnerType %q, got %q", auth.OwnerTypeOrg, result.OwnerType)
 	}
 }
 
@@ -154,7 +154,7 @@ func TestCollectConfigInteractive_OrgSetsAgentUserScope(t *testing.T) {
 			case 1:
 				cfg.Stacks = []string{"Go"}
 				cfg.AgentUser = "agent"
-				cfg.AgentUserScope = bootstrap.AgentUserScopeOrg
+				cfg.AgentUserScope = AgentUserScopeOrg
 			case 2:
 				// pipeline defaults
 			case 3:
@@ -163,7 +163,7 @@ func TestCollectConfigInteractive_OrgSetsAgentUserScope(t *testing.T) {
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
-			return bootstrap.OwnerTypeOrg, nil
+			return auth.OwnerTypeOrg, nil
 		},
 	}
 
@@ -172,8 +172,8 @@ func TestCollectConfigInteractive_OrgSetsAgentUserScope(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.AgentUserScope != bootstrap.AgentUserScopeOrg {
-		t.Errorf("expected AgentUserScope %q for org, got %q", bootstrap.AgentUserScopeOrg, result.AgentUserScope)
+	if result.AgentUserScope != AgentUserScopeOrg {
+		t.Errorf("expected AgentUserScope %q for org, got %q", AgentUserScopeOrg, result.AgentUserScope)
 	}
 }
 
@@ -201,7 +201,7 @@ func TestCollectConfigInteractive_UserSetsAgentUserScopeToRepo(t *testing.T) {
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
-			return bootstrap.OwnerTypeUser, nil
+			return auth.OwnerTypeUser, nil
 		},
 	}
 
@@ -210,8 +210,8 @@ func TestCollectConfigInteractive_UserSetsAgentUserScopeToRepo(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.AgentUserScope != bootstrap.AgentUserScopeRepo {
-		t.Errorf("expected AgentUserScope %q for user, got %q", bootstrap.AgentUserScopeRepo, result.AgentUserScope)
+	if result.AgentUserScope != AgentUserScopeRepo {
+		t.Errorf("expected AgentUserScope %q for user, got %q", AgentUserScopeRepo, result.AgentUserScope)
 	}
 }
 
@@ -251,8 +251,8 @@ func TestCollectConfigInteractive_NoRepoContext(t *testing.T) {
 	if result.RepoFullName != "" {
 		t.Errorf("expected empty RepoFullName, got %q", result.RepoFullName)
 	}
-	if result.OwnerType != bootstrap.OwnerTypeUser {
-		t.Errorf("expected default OwnerType %q, got %q", bootstrap.OwnerTypeUser, result.OwnerType)
+	if result.OwnerType != auth.OwnerTypeUser {
+		t.Errorf("expected default OwnerType %q, got %q", auth.OwnerTypeUser, result.OwnerType)
 	}
 }
 
@@ -298,7 +298,7 @@ func TestCollectConfigInteractive_PipelineDefaults(t *testing.T) {
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
-			return bootstrap.OwnerTypeUser, nil
+			return auth.OwnerTypeUser, nil
 		},
 	}
 
@@ -307,14 +307,14 @@ func TestCollectConfigInteractive_PipelineDefaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.RunnerLabel != bootstrap.DefaultRunnerLabel {
-		t.Errorf("expected default runner label %q, got %q", bootstrap.DefaultRunnerLabel, result.RunnerLabel)
+	if result.RunnerLabel != DefaultRunnerLabel {
+		t.Errorf("expected default runner label %q, got %q", DefaultRunnerLabel, result.RunnerLabel)
 	}
-	if result.GooseProvider != bootstrap.DefaultGooseProvider {
-		t.Errorf("expected default provider %q, got %q", bootstrap.DefaultGooseProvider, result.GooseProvider)
+	if result.GooseProvider != DefaultGooseProvider {
+		t.Errorf("expected default provider %q, got %q", DefaultGooseProvider, result.GooseProvider)
 	}
-	if result.GooseModel != bootstrap.DefaultGooseModel {
-		t.Errorf("expected default model %q, got %q", bootstrap.DefaultGooseModel, result.GooseModel)
+	if result.GooseModel != DefaultGooseModel {
+		t.Errorf("expected default model %q, got %q", DefaultGooseModel, result.GooseModel)
 	}
 }
 
@@ -475,8 +475,8 @@ func TestCollectConfigInteractive_OwnerTypeDetectionFailure(t *testing.T) {
 	}
 
 	// Should fall back to User type.
-	if result.OwnerType != bootstrap.OwnerTypeUser {
-		t.Errorf("expected fallback to %q, got %q", bootstrap.OwnerTypeUser, result.OwnerType)
+	if result.OwnerType != auth.OwnerTypeUser {
+		t.Errorf("expected fallback to %q, got %q", auth.OwnerTypeUser, result.OwnerType)
 	}
 
 	output := buf.String()

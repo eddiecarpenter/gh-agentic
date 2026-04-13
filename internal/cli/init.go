@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 
@@ -39,12 +39,12 @@ func defaultDetectOwnerType(owner string) (string, error) {
 // newInitCmd constructs the `gh agentic --v2 init` command with production deps.
 func newInitCmd() *cobra.Command {
 	return newInitCmdWithDeps(initv2.Deps{
-		Run:          bootstrap.DefaultRunCommand,
+		Run:          auth.DefaultRunCommand,
 		Clone: mount.DefaultClone,
 		CollectConfig: func(w io.Writer, repo string) (*initv2.InitConfig, error) {
 			return initv2.CollectConfigInteractive(w, repo, initv2.FormDeps{
 				RunForm:         initv2.DefaultFormRun,
-				RunCommand:      bootstrap.DefaultRunCommand,
+				RunCommand:      auth.DefaultRunCommand,
 				DetectOwnerType: defaultDetectOwnerType,
 				FetchReleases:   mount.DefaultFetchReleases,
 			})
@@ -64,10 +64,6 @@ func newInitCmdWithDeps(deps initv2.Deps) *cobra.Command {
 			"and configures secrets and variables.\n" +
 			"Blocked if .ai-version exists unless --force is passed.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !v2FlagValue {
-				return fmt.Errorf("init requires the --v2 flag: gh agentic --v2 init")
-			}
-
 			w := cmd.OutOrStdout()
 
 			root, err := os.Getwd()

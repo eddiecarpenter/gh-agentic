@@ -10,11 +10,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 )
 
 // RunCommandFunc is a function type for running shell commands.
-type RunCommandFunc = bootstrap.RunCommandFunc
+// Defined in shell.go.
 
 // ReadCredentialsFunc reads Claude credentials from the local store.
 type ReadCredentialsFunc func(run RunCommandFunc) ([]byte, error)
@@ -131,7 +130,7 @@ func uploadCredentials(w io.Writer, deps Deps) error {
 	encoded := base64.StdEncoding.EncodeToString(data)
 
 	var ghArgs []string
-	if deps.OwnerType == bootstrap.OwnerTypeOrg {
+	if deps.OwnerType == OwnerTypeOrg {
 		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--org", deps.Owner}
 	} else {
 		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", deps.RepoFullName}

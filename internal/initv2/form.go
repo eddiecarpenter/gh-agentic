@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -36,7 +36,7 @@ func DefaultFormDeps() FormDeps {
 	return FormDeps{
 		RunForm:    DefaultFormRun,
 		DetectOwnerType: func(owner string) (string, error) {
-			return bootstrap.OwnerTypeUser, nil // fallback; real detection below
+			return auth.OwnerTypeUser, nil // fallback; real detection below
 		},
 	}
 }
@@ -70,13 +70,13 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 		ownerType, err := deps.DetectOwnerType(cfg.Owner)
 		if err != nil {
 			fmt.Fprintf(w, "  %s\n", ui.RenderWarning("Could not detect owner type — defaulting to user"))
-			cfg.OwnerType = bootstrap.OwnerTypeUser
+			cfg.OwnerType = auth.OwnerTypeUser
 		} else {
 			cfg.OwnerType = ownerType
 			fmt.Fprintf(w, "  %s Owner type: %s\n", ui.SymbolInfo, ownerType)
 		}
 	} else {
-		cfg.OwnerType = bootstrap.OwnerTypeUser
+		cfg.OwnerType = auth.OwnerTypeUser
 	}
 	fmt.Fprintln(w)
 
@@ -181,22 +181,22 @@ func collectStackAndAgent(cfg *InitConfig, runForm FormRunFunc) error {
 			Validate(validateRequired("agent username")),
 	)
 
-	if cfg.OwnerType == bootstrap.OwnerTypeOrg {
+	if cfg.OwnerType == auth.OwnerTypeOrg {
 		if cfg.AgentUserScope == "" {
-			cfg.AgentUserScope = bootstrap.AgentUserScopeOrg
+			cfg.AgentUserScope = AgentUserScopeOrg
 		}
 		fields = append(fields,
 			huh.NewSelect[string]().
 				Title("AGENT_USER variable scope").
 				Description("Where to store the AGENT_USER variable — org level shares it across repos").
 				Options(
-					huh.NewOption("Organisation level", bootstrap.AgentUserScopeOrg),
-					huh.NewOption("Repository level", bootstrap.AgentUserScopeRepo),
+					huh.NewOption("Organisation level", AgentUserScopeOrg),
+					huh.NewOption("Repository level", AgentUserScopeRepo),
 				).
 				Value(&cfg.AgentUserScope),
 		)
 	} else {
-		cfg.AgentUserScope = bootstrap.AgentUserScopeRepo
+		cfg.AgentUserScope = AgentUserScopeRepo
 	}
 
 	if err := runForm(huh.NewForm(huh.NewGroup(fields...))); err != nil {
@@ -208,17 +208,17 @@ func collectStackAndAgent(cfg *InitConfig, runForm FormRunFunc) error {
 // collectPipelineConfig collects runner label, Goose provider, and model.
 func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 	if cfg.RunnerLabel == "" {
-		cfg.RunnerLabel = bootstrap.RunnerDefaultForTopology(cfg.Topology, cfg.Owner)
+		cfg.RunnerLabel = RunnerDefaultForTopology(cfg.Topology, cfg.Owner)
 	}
 	if cfg.GooseProvider == "" {
-		cfg.GooseProvider = bootstrap.DefaultGooseProvider
+		cfg.GooseProvider = DefaultGooseProvider
 	}
 	if cfg.GooseModel == "" {
-		cfg.GooseModel = bootstrap.DefaultGooseModel
+		cfg.GooseModel = DefaultGooseModel
 	}
 
 	// Phase 3a: Runner select (mirrors bootstrap runner selection).
-	runnerOpts := bootstrap.BuildRunnerOptions(cfg.RepoName, cfg.Owner)
+	runnerOpts := BuildRunnerOptions(cfg.RepoName, cfg.Owner)
 	runnerForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -233,7 +233,7 @@ func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 	}
 
 	// If "other" selected, prompt for custom label.
-	if cfg.RunnerLabel == bootstrap.RunnerOther {
+	if cfg.RunnerLabel == RunnerOther {
 		cfg.RunnerLabel = ""
 		customForm := huh.NewForm(
 			huh.NewGroup(

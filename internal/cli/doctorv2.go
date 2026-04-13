@@ -8,9 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/doctorv2"
-	"github.com/eddiecarpenter/gh-agentic/internal/verify"
 )
 
 // repoInfo holds resolved repository identity.
@@ -26,7 +24,7 @@ type resolveRepoFunc func() (repoInfo, error)
 
 // doctorV2Deps holds injectable dependencies for the v2 doctor command.
 type doctorV2Deps struct {
-	run         bootstrap.RunCommandFunc
+	run         auth.RunCommandFunc
 	readCreds   auth.ReadCredentialsFunc
 	resolveRepo resolveRepoFunc
 }
@@ -38,7 +36,7 @@ func defaultResolveRepo() (repoInfo, error) {
 		return repoInfo{}, err
 	}
 
-	ownerType, typeErr := bootstrap.DefaultDetectOwnerType(currentRepo.Owner)
+	ownerType, typeErr := auth.DefaultDetectOwnerType(currentRepo.Owner)
 	if typeErr != nil {
 		ownerType = ""
 	}
@@ -54,9 +52,9 @@ func defaultResolveRepo() (repoInfo, error) {
 // newDoctorV2Cmd constructs the `gh agentic -v2 doctor` command with production deps.
 func newDoctorV2Cmd() *cobra.Command {
 	return newDoctorV2CmdWithDeps(doctorV2Deps{
-		run: bootstrap.DefaultRunCommand,
+		run: auth.DefaultRunCommand,
 		readCreds: func(run auth.RunCommandFunc) ([]byte, error) {
-			return verify.ReadClaudeCredentialsDefault(run)
+			return auth.ReadClaudeCredentialsDefault(run)
 		},
 		resolveRepo: defaultResolveRepo,
 	})

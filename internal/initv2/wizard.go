@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
+	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
 
@@ -32,7 +32,7 @@ type InitConfig struct {
 }
 
 // RunCommandFunc is a function type for running shell commands.
-type RunCommandFunc = bootstrap.RunCommandFunc
+type RunCommandFunc = auth.RunCommandFunc
 
 // Deps holds injectable dependencies for the init wizard.
 type Deps struct {

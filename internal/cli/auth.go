@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
-	"github.com/eddiecarpenter/gh-agentic/internal/verify"
 )
 
 // authDeps holds injectable dependencies for the auth command.
@@ -22,9 +20,9 @@ type authDeps struct {
 // newAuthCmd constructs the `gh agentic --v2 auth` command with production deps.
 func newAuthCmd() *cobra.Command {
 	return newAuthCmdWithDeps(authDeps{
-		run: bootstrap.DefaultRunCommand,
+		run: auth.DefaultRunCommand,
 		readCredentials: func(run auth.RunCommandFunc) ([]byte, error) {
-			return verify.ReadClaudeCredentialsDefault(run)
+			return auth.ReadClaudeCredentialsDefault(run)
 		},
 		claudeRefresh: func() error {
 			cmd := exec.Command("claude", "-p", "Say Hi")
@@ -40,9 +38,6 @@ func newAuthCmdWithDeps(deps authDeps) *cobra.Command {
 		Short: "Manage Claude Code credentials (v2)",
 		Long:  "Login, refresh, or check Claude Code credentials.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !v2FlagValue {
-				return fmt.Errorf("auth requires the --v2 flag: gh agentic --v2 auth <subcommand>")
-			}
 			return cmd.Help()
 		},
 	}
@@ -61,9 +56,9 @@ func resolveAuthDeps(deps authDeps) (auth.Deps, error) {
 		return auth.Deps{}, fmt.Errorf("resolving repo name: %w", err)
 	}
 
-	ownerType, err := bootstrap.DefaultDetectOwnerType(currentRepo.Owner)
+	ownerType, err := auth.DefaultDetectOwnerType(currentRepo.Owner)
 	if err != nil {
-		ownerType = bootstrap.OwnerTypeUser
+		ownerType = auth.OwnerTypeUser
 	}
 
 	return auth.Deps{

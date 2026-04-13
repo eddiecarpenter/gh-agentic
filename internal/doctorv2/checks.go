@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
 
@@ -19,7 +18,7 @@ type CheckDeps struct {
 	Owner        string
 	RepoName     string
 	OwnerType    string
-	Run          bootstrap.RunCommandFunc
+	Run          auth.RunCommandFunc
 	ReadCreds    auth.ReadCredentialsFunc
 }
 

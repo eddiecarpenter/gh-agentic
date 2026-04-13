@@ -21,23 +21,6 @@ func initFakeClone() mount.CloneFunc {
 	}
 }
 
-func TestInitCmd_WithoutV2Flag(t *testing.T) {
-	root := newRootCmd("dev", "")
-
-	var buf bytes.Buffer
-	root.SetOut(&buf)
-	root.SetErr(&buf)
-	root.SetArgs([]string{"init"})
-	err := root.Execute()
-
-	if err == nil {
-		t.Fatal("expected error without -v2 flag")
-	}
-	if !strings.Contains(err.Error(), "requires the --v2 flag") {
-		t.Errorf("expected v2 flag error, got: %v", err)
-	}
-}
-
 func TestInitCmd_BlockedWithoutForce(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
@@ -68,7 +51,7 @@ func TestInitCmd_BlockedWithoutForce(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"--v2", "init"})
+	rootCmd.SetArgs([]string{"init"})
 	err := rootCmd.Execute()
 
 	if err == nil {
@@ -114,7 +97,7 @@ func TestInitCmd_ProceedsWithForce(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"--v2", "init", "--force"})
+	rootCmd.SetArgs([]string{"init", "--force"})
 	err := rootCmd.Execute()
 
 	if err != nil {

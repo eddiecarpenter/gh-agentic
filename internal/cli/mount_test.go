@@ -72,7 +72,7 @@ func TestMountCmd_FirstTimeMount(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"--v2", "mount", "v2.0.0"})
+	rootCmd.SetArgs([]string{"mount", "v2.0.0"})
 	err := rootCmd.Execute()
 
 	if err != nil {
@@ -133,7 +133,7 @@ func TestMountCmd_InvalidTag(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"--v2", "mount", "v9.9.9"})
+	rootCmd.SetArgs([]string{"mount", "v9.9.9"})
 	err := rootCmd.Execute()
 
 	if err == nil {
@@ -147,35 +147,6 @@ func TestMountCmd_InvalidTag(t *testing.T) {
 	}
 }
 
-func TestMountCmd_WithoutV2Flag(t *testing.T) {
-	deps := mountDeps{
-		fetchReleases: mountFakeReleases(),
-		clone:         mountFakeClone(),
-	}
-
-	cmd := newMountCmdWithDeps(deps)
-	rootCmd := newRootCmd("dev", "")
-	for _, c := range rootCmd.Commands() {
-		if strings.HasPrefix(c.Use, "mount") {
-			rootCmd.RemoveCommand(c)
-			break
-		}
-	}
-	rootCmd.AddCommand(cmd)
-
-	var buf bytes.Buffer
-	rootCmd.SetOut(&buf)
-	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"mount", "v2.0.0"})
-	err := rootCmd.Execute()
-
-	if err == nil {
-		t.Fatal("expected error without --v2 flag")
-	}
-	if !strings.Contains(err.Error(), "requires the --v2 flag") {
-		t.Errorf("error should mention --v2 flag, got: %v", err)
-	}
-}
 
 func TestMountCmd_NoVersionNoAIVersion(t *testing.T) {
 	root := t.TempDir()
@@ -202,7 +173,7 @@ func TestMountCmd_NoVersionNoAIVersion(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"--v2", "mount"})
+	rootCmd.SetArgs([]string{"mount"})
 	err := rootCmd.Execute()
 
 	if err == nil {
