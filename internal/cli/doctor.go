@@ -304,6 +304,14 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
+			// In v2 mode, delegate to the v2 doctor command.
+			if v2FlagValue {
+				v2Cmd := newDoctorV2Cmd()
+				v2Cmd.SetOut(cmd.OutOrStdout())
+				v2Cmd.SetErr(cmd.ErrOrStderr())
+				return v2Cmd.RunE(v2Cmd, args)
+			}
+
 			w := cmd.OutOrStdout()
 
 			// Resolve repo root. If .ai/config.yml is not found (repo predates
