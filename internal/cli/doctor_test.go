@@ -541,8 +541,8 @@ func TestDoctorCmd_UpdateCredentials_DeprecationNotice(t *testing.T) {
 	if !strings.Contains(output, "Deprecated") {
 		t.Errorf("expected deprecation notice in output, got: %q", output)
 	}
-	if !strings.Contains(output, "gh agentic -v2 auth refresh") {
-		t.Errorf("expected 'gh agentic -v2 auth refresh' in deprecation notice, got: %q", output)
+	if !strings.Contains(output, "gh agentic --v2 auth refresh") {
+		t.Errorf("expected 'gh agentic --v2 auth refresh' in deprecation notice, got: %q", output)
 	}
 }
 

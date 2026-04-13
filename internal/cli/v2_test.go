@@ -49,7 +49,7 @@ func TestV2Flag_MountWithoutV2Flag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when mount is called without -v2")
 	}
-	if !strings.Contains(err.Error(), "requires the -v2 flag") {
+	if !strings.Contains(err.Error(), "requires the --v2 flag") {
 		t.Errorf("expected '-v2 flag required' error, got: %v", err)
 	}
 }
@@ -198,10 +198,10 @@ func TestPrintDeprecationNotice_AllCommands(t *testing.T) {
 		command string
 		want    string
 	}{
-		{name: "sync", command: "sync", want: "gh agentic -v2 mount"},
-		{name: "bootstrap", command: "bootstrap", want: "gh agentic -v2 init"},
-		{name: "inception", command: "inception", want: "gh agentic -v2 init"},
-		{name: "update-credentials", command: "update-credentials", want: "gh agentic -v2 auth refresh"},
+		{name: "sync", command: "sync", want: "gh agentic --v2 mount"},
+		{name: "bootstrap", command: "bootstrap", want: "gh agentic --v2 init"},
+		{name: "inception", command: "inception", want: "gh agentic --v2 init"},
+		{name: "update-credentials", command: "update-credentials", want: "gh agentic --v2 auth refresh"},
 	}
 
 	for _, tc := range tests {
@@ -257,7 +257,7 @@ func TestV2Flag_InitBlockedWithoutV2(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when init is called without -v2")
 	}
-	if !strings.Contains(err.Error(), "requires the -v2 flag") {
+	if !strings.Contains(err.Error(), "requires the --v2 flag") {
 		t.Errorf("expected '-v2 flag required' error, got: %v", err)
 	}
 }
@@ -274,7 +274,7 @@ func TestV2Flag_AuthBlockedWithoutV2(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when auth is called without -v2")
 	}
-	if !strings.Contains(err.Error(), "requires the -v2 flag") {
+	if !strings.Contains(err.Error(), "requires the --v2 flag") {
 		t.Errorf("expected '-v2 flag required' error, got: %v", err)
 	}
 }

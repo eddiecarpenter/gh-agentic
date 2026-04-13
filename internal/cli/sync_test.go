@@ -534,8 +534,8 @@ func TestSyncCmd_DeprecationNotice(t *testing.T) {
 	if !strings.Contains(errOutput, "Deprecated") {
 		t.Errorf("expected deprecation notice in stderr, got: %q", errOutput)
 	}
-	if !strings.Contains(errOutput, "gh agentic -v2 mount") {
-		t.Errorf("expected 'gh agentic -v2 mount' in deprecation notice, got: %q", errOutput)
+	if !strings.Contains(errOutput, "gh agentic --v2 mount") {
+		t.Errorf("expected 'gh agentic --v2 mount' in deprecation notice, got: %q", errOutput)
 	}
 }
 

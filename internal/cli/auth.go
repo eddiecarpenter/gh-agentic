@@ -19,7 +19,7 @@ type authDeps struct {
 	claudeRefresh   auth.ClaudeRefreshFunc
 }
 
-// newAuthCmd constructs the `gh agentic -v2 auth` command with production deps.
+// newAuthCmd constructs the `gh agentic --v2 auth` command with production deps.
 func newAuthCmd() *cobra.Command {
 	return newAuthCmdWithDeps(authDeps{
 		run: bootstrap.DefaultRunCommand,
@@ -41,7 +41,7 @@ func newAuthCmdWithDeps(deps authDeps) *cobra.Command {
 		Long:  "Login, refresh, or check Claude Code credentials.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !v2FlagValue {
-				return fmt.Errorf("auth requires the -v2 flag: gh agentic -v2 auth <subcommand>")
+				return fmt.Errorf("auth requires the --v2 flag: gh agentic --v2 auth <subcommand>")
 			}
 			return cmd.Help()
 		},

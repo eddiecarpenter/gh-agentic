@@ -55,7 +55,7 @@ func TestInitCmd_WithoutV2Flag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error without -v2 flag")
 	}
-	if !strings.Contains(err.Error(), "requires the -v2 flag") {
+	if !strings.Contains(err.Error(), "requires the --v2 flag") {
 		t.Errorf("expected v2 flag error, got: %v", err)
 	}
 }

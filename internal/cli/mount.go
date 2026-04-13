@@ -18,7 +18,7 @@ type mountDeps struct {
 	confirm       mount.ConfirmFunc
 }
 
-// newMountCmd constructs the `gh agentic -v2 mount` subcommand with production deps.
+// newMountCmd constructs the `gh agentic --v2 mount` subcommand with production deps.
 func newMountCmd() *cobra.Command {
 	return newMountCmdWithDeps(mountDeps{
 		fetchReleases: sync.DefaultFetchReleases,
@@ -39,7 +39,7 @@ func newMountCmdWithDeps(deps mountDeps) *cobra.Command {
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !v2FlagValue {
-				return fmt.Errorf("mount requires the -v2 flag: gh agentic -v2 mount [version]")
+				return fmt.Errorf("mount requires the --v2 flag: gh agentic --v2 mount [version]")
 			}
 
 			w := cmd.OutOrStdout()
@@ -61,7 +61,7 @@ func newMountCmdWithDeps(deps mountDeps) *cobra.Command {
 
 			// If no version specified and no .ai-version, error.
 			if version == "" && aiVersionErr != nil {
-				return fmt.Errorf("no version specified and no .ai-version found — usage: gh agentic -v2 mount <version>")
+				return fmt.Errorf("no version specified and no .ai-version found — usage: gh agentic --v2 mount <version>")
 			}
 
 			// If no version specified, use current .ai-version (remount).

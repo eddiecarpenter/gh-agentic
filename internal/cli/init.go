@@ -36,7 +36,7 @@ func defaultDetectOwnerType(owner string) (string, error) {
 	return resp.Type, nil
 }
 
-// newInitCmd constructs the `gh agentic -v2 init` command with production deps.
+// newInitCmd constructs the `gh agentic --v2 init` command with production deps.
 func newInitCmd() *cobra.Command {
 	return newInitCmdWithDeps(initv2.Deps{
 		Run:          bootstrap.DefaultRunCommand,
@@ -64,7 +64,7 @@ func newInitCmdWithDeps(deps initv2.Deps) *cobra.Command {
 			"Blocked if .ai-version exists unless --force is passed.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !v2FlagValue {
-				return fmt.Errorf("init requires the -v2 flag: gh agentic -v2 init")
+				return fmt.Errorf("init requires the --v2 flag: gh agentic --v2 init")
 			}
 
 			w := cmd.OutOrStdout()
