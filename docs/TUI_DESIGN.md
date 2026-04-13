@@ -1,9 +1,14 @@
 # TUI_DESIGN.md — gh agentic bootstrap
 
-This document is the authoritative UX reference for `gh agentic bootstrap`.
-All UI-impacted features (#6, #7, #8, #9) implement from this spec.
+> **Legacy notice:** This document describes the v1 `gh agentic bootstrap` UX
+> prototype. The v2 replacement is `gh agentic -v2 init`, which uses a different
+> flow and configuration model. This document is retained for historical reference
+> only and may not reflect the current v2 implementation.
 
-Prototyped and agreed using `gum` — see `prototype.sh`.
+This document was the authoritative UX reference for the v1 `gh agentic bootstrap`
+command. All UI-impacted features (#6, #7, #8, #9) were implemented from this spec.
+
+Prototyped and agreed using `gum` — see `prototype.sh` (v1 only).
 
 ---
 
