@@ -29,7 +29,7 @@ func newRootCmd(version, date string) *cobra.Command {
 	root.AddCommand(newMountCmd())
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newAuthCmd())
-	root.AddCommand(newDoctorV2Cmd())
+	root.AddCommand(newDoctorCmd())
 
 	return root
 }

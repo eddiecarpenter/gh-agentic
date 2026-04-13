@@ -22,8 +22,8 @@ type repoInfo struct {
 // resolveRepoFunc resolves the current repo identity.
 type resolveRepoFunc func() (repoInfo, error)
 
-// doctorV2Deps holds injectable dependencies for the v2 doctor command.
-type doctorV2Deps struct {
+// doctorDeps holds injectable dependencies for the doctor command.
+type doctorDeps struct {
 	run         auth.RunCommandFunc
 	readCreds   auth.ReadCredentialsFunc
 	resolveRepo resolveRepoFunc
@@ -49,9 +49,9 @@ func defaultResolveRepo() (repoInfo, error) {
 	}, nil
 }
 
-// newDoctorV2Cmd constructs the `gh agentic -v2 doctor` command with production deps.
-func newDoctorV2Cmd() *cobra.Command {
-	return newDoctorV2CmdWithDeps(doctorV2Deps{
+// newDoctorCmd constructs the `gh agentic doctor` command with production deps.
+func newDoctorCmd() *cobra.Command {
+	return newDoctorCmdWithDeps(doctorDeps{
 		run: auth.DefaultRunCommand,
 		readCreds: func(run auth.RunCommandFunc) ([]byte, error) {
 			return auth.ReadClaudeCredentialsDefault(run)
@@ -60,10 +60,10 @@ func newDoctorV2Cmd() *cobra.Command {
 	})
 }
 
-// newDoctorV2CmdWithDeps constructs the v2 doctor command with injectable deps.
-func newDoctorV2CmdWithDeps(deps doctorV2Deps) *cobra.Command {
+// newDoctorCmdWithDeps constructs the v2 doctor command with injectable deps.
+func newDoctorCmdWithDeps(deps doctorDeps) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "doctor-v2",
+		Use:   "doctor",
 		Short: "Health check with grouped output (v2)",
 		Long: "Checks the AI-Native Delivery Framework health with grouped output.\n" +
 			"Groups: Repository, Framework, Agent files, Workflows, Variables & secrets.\n" +

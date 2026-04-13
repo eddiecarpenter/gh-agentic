@@ -25,7 +25,7 @@ func initAIGitRepo(t *testing.T, dir, version string) {
 	_ = exec.Command("git", "-C", dir, "tag", version).Run()
 }
 
-func setupDoctorV2HealthyRepo(t *testing.T) string {
+func setupDoctorHealthyRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 
@@ -61,14 +61,14 @@ func fakeResolveRepo() (repoInfo, error) {
 	}, nil
 }
 
-func TestDoctorV2Cmd_HealthyRepo_GroupedOutput(t *testing.T) {
-	root := setupDoctorV2HealthyRepo(t)
+func TestDoctorCmd_HealthyRepo_GroupedOutput(t *testing.T) {
+	root := setupDoctorHealthyRepo(t)
 
 	origDir, _ := os.Getwd()
 	_ = os.Chdir(root)
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
-	deps := doctorV2Deps{
+	deps := doctorDeps{
 		run: func(name string, args ...string) (string, error) {
 			if name == "gh" && len(args) > 0 && args[0] == "variable" {
 				return "some-value", nil
@@ -84,11 +84,11 @@ func TestDoctorV2Cmd_HealthyRepo_GroupedOutput(t *testing.T) {
 		resolveRepo: fakeResolveRepo,
 	}
 
-	cmd := newDoctorV2CmdWithDeps(deps)
+	cmd := newDoctorCmdWithDeps(deps)
 	rootCmd := newRootCmd("dev", "")
 	// Replace doctor-v2 with test version.
 	for _, c := range rootCmd.Commands() {
-		if c.Use == "doctor-v2" {
+		if c.Use == "doctor" {
 			rootCmd.RemoveCommand(c)
 			break
 		}
@@ -98,7 +98,7 @@ func TestDoctorV2Cmd_HealthyRepo_GroupedOutput(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"doctor-v2"})
+	rootCmd.SetArgs([]string{"doctor"})
 	err := rootCmd.Execute()
 
 	if err != nil {
@@ -120,24 +120,24 @@ func TestDoctorV2Cmd_HealthyRepo_GroupedOutput(t *testing.T) {
 	}
 }
 
-func TestDoctorV2Cmd_MissingFramework_ExitCode1(t *testing.T) {
+func TestDoctorCmd_MissingFramework_ExitCode1(t *testing.T) {
 	root := t.TempDir()
 
 	origDir, _ := os.Getwd()
 	_ = os.Chdir(root)
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
-	deps := doctorV2Deps{
+	deps := doctorDeps{
 		run: func(name string, args ...string) (string, error) {
 			return "", nil
 		},
 		resolveRepo: fakeResolveRepo,
 	}
 
-	cmd := newDoctorV2CmdWithDeps(deps)
+	cmd := newDoctorCmdWithDeps(deps)
 	rootCmd := newRootCmd("dev", "")
 	for _, c := range rootCmd.Commands() {
-		if c.Use == "doctor-v2" {
+		if c.Use == "doctor" {
 			rootCmd.RemoveCommand(c)
 			break
 		}
@@ -147,7 +147,7 @@ func TestDoctorV2Cmd_MissingFramework_ExitCode1(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"doctor-v2"})
+	rootCmd.SetArgs([]string{"doctor"})
 	err := rootCmd.Execute()
 
 	// Should return ErrSilent (which is non-nil).
@@ -161,7 +161,7 @@ func TestDoctorV2Cmd_MissingFramework_ExitCode1(t *testing.T) {
 	}
 }
 
-func TestDoctorV2Cmd_VersionMismatch_ShowsRemediation(t *testing.T) {
+func TestDoctorCmd_VersionMismatch_ShowsRemediation(t *testing.T) {
 	root := t.TempDir()
 	initAIGitRepo(t, filepath.Join(root, ".ai"), "v2.0.0")
 	_ = mount.WriteAIVersion(root, "v2.0.0")
@@ -176,15 +176,15 @@ func TestDoctorV2Cmd_VersionMismatch_ShowsRemediation(t *testing.T) {
 	_ = os.Chdir(root)
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
-	deps := doctorV2Deps{
+	deps := doctorDeps{
 		run:         func(name string, args ...string) (string, error) { return "", nil },
 		resolveRepo: fakeResolveRepo,
 	}
 
-	cmd := newDoctorV2CmdWithDeps(deps)
+	cmd := newDoctorCmdWithDeps(deps)
 	rootCmd := newRootCmd("dev", "")
 	for _, c := range rootCmd.Commands() {
-		if c.Use == "doctor-v2" {
+		if c.Use == "doctor" {
 			rootCmd.RemoveCommand(c)
 			break
 		}
@@ -194,7 +194,7 @@ func TestDoctorV2Cmd_VersionMismatch_ShowsRemediation(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"doctor-v2"})
+	rootCmd.SetArgs([]string{"doctor"})
 	_ = rootCmd.Execute()
 
 	output := buf.String()
@@ -206,7 +206,7 @@ func TestDoctorV2Cmd_VersionMismatch_ShowsRemediation(t *testing.T) {
 	}
 }
 
-func TestDoctorV2Cmd_WarningExitCode0(t *testing.T) {
+func TestDoctorCmd_WarningExitCode0(t *testing.T) {
 	root := t.TempDir()
 
 	// Minimal setup — only mandatory files, missing optional ones.
@@ -232,7 +232,7 @@ func TestDoctorV2Cmd_WarningExitCode0(t *testing.T) {
 	_ = os.Chdir(root)
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
-	deps := doctorV2Deps{
+	deps := doctorDeps{
 		run: func(name string, args ...string) (string, error) {
 			if name == "gh" && len(args) > 0 && args[0] == "variable" {
 				return "some-value", nil
@@ -248,10 +248,10 @@ func TestDoctorV2Cmd_WarningExitCode0(t *testing.T) {
 		resolveRepo: fakeResolveRepo,
 	}
 
-	cmd := newDoctorV2CmdWithDeps(deps)
+	cmd := newDoctorCmdWithDeps(deps)
 	rootCmd := newRootCmd("dev", "")
 	for _, c := range rootCmd.Commands() {
-		if c.Use == "doctor-v2" {
+		if c.Use == "doctor" {
 			rootCmd.RemoveCommand(c)
 			break
 		}
@@ -261,7 +261,7 @@ func TestDoctorV2Cmd_WarningExitCode0(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"doctor-v2"})
+	rootCmd.SetArgs([]string{"doctor"})
 	err := rootCmd.Execute()
 
 	// Should exit 0 (nil error) even with warnings (missing LOCALRULES.md, skills/).
