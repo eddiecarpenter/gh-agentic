@@ -4,6 +4,9 @@ package cli
 
 import (
 	"fmt"
+	"io"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // v2DeprecatedCommands lists v1 commands that are not available in v2 mode.
@@ -33,4 +36,24 @@ func checkV2Guard(cmdName string, v2Flag *bool) error {
 		return errV2NotAvailable(cmdName)
 	}
 	return nil
+}
+
+// deprecationNotices maps deprecated v1 commands to their v2 replacement message.
+var deprecationNotices = map[string]string{
+	"sync":               "Deprecated: use 'gh agentic -v2 mount' instead.",
+	"bootstrap":          "Deprecated: use 'gh agentic -v2 init' instead.",
+	"inception":          "Deprecated: use 'gh agentic -v2 init' instead.",
+	"update-credentials": "Deprecated: use 'gh agentic -v2 auth refresh' instead.",
+}
+
+// printDeprecationNotice prints a deprecation warning to the given writer.
+// The notice is styled using ui.RenderWarning for visual consistency.
+// In production, pass cmd.ErrOrStderr() to print to stderr.
+func printDeprecationNotice(w io.Writer, command string) {
+	msg, ok := deprecationNotices[command]
+	if !ok {
+		return
+	}
+	fmt.Fprintln(w, ui.RenderWarning(msg))
+	fmt.Fprintln(w)
 }

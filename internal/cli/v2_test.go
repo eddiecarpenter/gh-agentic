@@ -192,6 +192,41 @@ func TestCheckV2Guard_True(t *testing.T) {
 	}
 }
 
+func TestPrintDeprecationNotice_AllCommands(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		want    string
+	}{
+		{name: "sync", command: "sync", want: "gh agentic -v2 mount"},
+		{name: "bootstrap", command: "bootstrap", want: "gh agentic -v2 init"},
+		{name: "inception", command: "inception", want: "gh agentic -v2 init"},
+		{name: "update-credentials", command: "update-credentials", want: "gh agentic -v2 auth refresh"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printDeprecationNotice(&buf, tc.command)
+			output := buf.String()
+			if !strings.Contains(output, "Deprecated") {
+				t.Errorf("expected 'Deprecated' in output, got: %q", output)
+			}
+			if !strings.Contains(output, tc.want) {
+				t.Errorf("expected %q in output, got: %q", tc.want, output)
+			}
+		})
+	}
+}
+
+func TestPrintDeprecationNotice_UnknownCommand(t *testing.T) {
+	var buf bytes.Buffer
+	printDeprecationNotice(&buf, "nonexistent")
+	if buf.Len() != 0 {
+		t.Errorf("expected no output for unknown command, got: %q", buf.String())
+	}
+}
+
 func TestV2StubCommands_Registered(t *testing.T) {
 	root := newRootCmd("dev", "")
 

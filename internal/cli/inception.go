@@ -32,6 +32,9 @@ func newInceptionCmd() *cobra.Command {
 				return err
 			}
 
+			// Print deprecation notice to stderr.
+			printDeprecationNotice(cmd.ErrOrStderr(), "inception")
+
 			w := cmd.OutOrStdout()
 
 			// Step 1: Validate environment.

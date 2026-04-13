@@ -515,4 +515,35 @@ func TestRunDoctor_AgenticProjectIDCheckAppearsInOutput(t *testing.T) {
 	}
 }
 
+func TestDoctorCmd_UpdateCredentials_DeprecationNotice(t *testing.T) {
+	var buf bytes.Buffer
+
+	cfg := doctorConfig{
+		root:              t.TempDir(),
+		repoFullName:      "owner/repo",
+		owner:             "owner",
+		repoName:          "repo",
+		ownerType:         bootstrap.OwnerTypeUser,
+		run:               func(name string, args ...string) (string, error) { return "", nil },
+		updateCredentials: true,
+		claudeRefreshCmd:  func() error { return nil },
+		readCredentials: func(run bootstrap.RunCommandFunc) ([]byte, error) {
+			return []byte(`{"expiresAt":"2099-01-01T00:00:00Z"}`), nil
+		},
+	}
+
+	err := runDoctor(&buf, strings.NewReader(""), cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Deprecated") {
+		t.Errorf("expected deprecation notice in output, got: %q", output)
+	}
+	if !strings.Contains(output, "gh agentic -v2 auth refresh") {
+		t.Errorf("expected 'gh agentic -v2 auth refresh' in deprecation notice, got: %q", output)
+	}
+}
+
 

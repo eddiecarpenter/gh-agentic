@@ -49,6 +49,9 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
+			// Print deprecation notice to stderr.
+			printDeprecationNotice(cmd.ErrOrStderr(), "bootstrap")
+
 			w := cmd.OutOrStdout()
 
 			// Non-interactive: validate flags and field formats before running preflight.

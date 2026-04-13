@@ -60,6 +60,9 @@ func newSyncCmdWithDeps(deps syncDeps) *cobra.Command {
 				return err
 			}
 
+			// Print deprecation notice to stderr.
+			printDeprecationNotice(cmd.ErrOrStderr(), "sync")
+
 			// Validate mutually exclusive flags.
 			if list && releaseTag != "" {
 				return fmt.Errorf("--list and --release are mutually exclusive")

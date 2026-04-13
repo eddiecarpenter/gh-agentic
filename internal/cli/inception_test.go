@@ -123,6 +123,27 @@ func TestInceptionCmd_NonInteractive_MissingRepoType_ReturnsError(t *testing.T) 
 	}
 }
 
+func TestInceptionCmd_DeprecationNotice(t *testing.T) {
+	// Inception requires an agentic environment to get past validation.
+	// The deprecation notice should appear on stderr before any error.
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	root := newRootCmd("dev", "")
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+	root.SetArgs([]string{"inception"})
+
+	_ = root.Execute()
+
+	errOutput := stderr.String()
+	if !strings.Contains(errOutput, "Deprecated") {
+		t.Errorf("expected deprecation notice in stderr, got: %q", errOutput)
+	}
+	if !strings.Contains(errOutput, "gh agentic -v2 init") {
+		t.Errorf("expected 'gh agentic -v2 init' in deprecation notice, got: %q", errOutput)
+	}
+}
+
 func TestInceptionCmd_NonInteractive_StackRepeatable(t *testing.T) {
 	// Verify --stack accepts multiple values without parsing errors.
 	buf := &bytes.Buffer{}

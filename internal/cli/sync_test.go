@@ -500,6 +500,45 @@ func TestSyncCmd_ReleaseSyncsToSpecificVersion(t *testing.T) {
 	}
 }
 
+func TestSyncCmd_DeprecationNotice(t *testing.T) {
+	repo := testutil.NewFakeRepo(t)
+	defer setupFakeTarball(t, "deprecation test")()
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo.Root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	mock := &testutil.MockRunner{}
+	deps := syncDeps{
+		run:           mock.RunCommand,
+		fetchReleases: fakeCLIReleases("v2.0.0"),
+		spinner:       testutil.NoopSpinner,
+	}
+
+	syncCmd := newSyncCmdWithDeps(deps)
+	root := newTestSyncRoot(syncCmd)
+
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"sync", "--yes"})
+	_ = root.Execute()
+
+	// The deprecation notice should be printed to stderr.
+	errOutput := stderr.String()
+	if !strings.Contains(errOutput, "Deprecated") {
+		t.Errorf("expected deprecation notice in stderr, got: %q", errOutput)
+	}
+	if !strings.Contains(errOutput, "gh agentic -v2 mount") {
+		t.Errorf("expected 'gh agentic -v2 mount' in deprecation notice, got: %q", errOutput)
+	}
+}
+
 func TestSyncCmd_ReleaseNotFound(t *testing.T) {
 	repo := testutil.NewFakeRepo(t)
 

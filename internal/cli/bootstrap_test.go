@@ -236,3 +236,26 @@ func TestBootstrapCmd_NonInteractive_EmptyStack_ReturnsError(t *testing.T) {
 		t.Errorf("expected --stack in error, got: %s", err.Error())
 	}
 }
+
+func TestBootstrapCmd_DeprecationNotice(t *testing.T) {
+	// Bootstrap requires non-interactive flags to get past preflight.
+	// The deprecation notice should appear on stderr regardless of whether
+	// the command succeeds or fails. We use --non-interactive with missing
+	// flags to trigger early failure, but the notice prints before validation.
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	root := newRootCmd("dev", "")
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+	root.SetArgs([]string{"bootstrap", "--non-interactive"})
+
+	_ = root.Execute()
+
+	errOutput := stderr.String()
+	if !strings.Contains(errOutput, "Deprecated") {
+		t.Errorf("expected deprecation notice in stderr, got: %q", errOutput)
+	}
+	if !strings.Contains(errOutput, "gh agentic -v2 init") {
+		t.Errorf("expected 'gh agentic -v2 init' in deprecation notice, got: %q", errOutput)
+	}
+}
