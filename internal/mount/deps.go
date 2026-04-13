@@ -4,8 +4,6 @@ package mount
 
 import (
 	"io"
-
-	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
 // FrameworkRepo is the default repository for framework clones.
@@ -17,10 +15,6 @@ const FrameworkRepoURL = "https://github.com/" + FrameworkRepo + ".git"
 // CloneFunc clones a repository at a given tag into a destination directory.
 // It must perform a shallow clone (--depth 1) and strip the .git/ directory.
 type CloneFunc func(repoURL, tag, destDir string) error
-
-// FetchReleasesFunc fetches all releases for a repo.
-// Reuses the sync package type for consistency.
-type FetchReleasesFunc = sync.FetchReleasesFunc
 
 // ConfirmFunc prompts the user for confirmation. Returns true if confirmed.
 type ConfirmFunc func(prompt string) (bool, error)
@@ -44,7 +38,7 @@ type Deps struct {
 // DefaultDeps returns production dependencies.
 func DefaultDeps(w io.Writer) Deps {
 	return Deps{
-		FetchReleases: sync.DefaultFetchReleases,
+		FetchReleases: DefaultFetchReleases,
 		Clone:         DefaultClone,
 		Confirm:       nil, // Set by caller when needed.
 		Stdout:        w,

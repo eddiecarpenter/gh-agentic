@@ -10,7 +10,6 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
-	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -82,7 +81,7 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 	fmt.Fprintln(w)
 
 	// --- Fetch available releases for version dropdown ---
-	var releases []sync.Release
+	var releases []mount.Release
 	if deps.FetchReleases != nil {
 		var fetchErr error
 		releases, fetchErr = deps.FetchReleases(mount.FrameworkRepo)
@@ -117,7 +116,7 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 // collectVersionTopology collects the framework version and project topology.
 // If releases are provided, the version is presented as a dropdown; otherwise
 // falls back to a free-text input.
-func collectVersionTopology(cfg *InitConfig, releases []sync.Release, runForm FormRunFunc) error {
+func collectVersionTopology(cfg *InitConfig, releases []mount.Release, runForm FormRunFunc) error {
 	var versionField huh.Field
 	if len(releases) > 0 {
 		// Pre-select the latest release.

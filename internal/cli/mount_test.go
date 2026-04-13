@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
-	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
 // mountFakeClone creates a CloneFunc that writes framework files into destDir.
@@ -39,8 +38,8 @@ func mountFakeClone() mount.CloneFunc {
 
 // mountFakeReleases returns a FetchReleasesFunc with test releases.
 func mountFakeReleases() mount.FetchReleasesFunc {
-	return func(repo string) ([]sync.Release, error) {
-		return []sync.Release{
+	return func(repo string) ([]mount.Release, error) {
+		return []mount.Release{
 			{TagName: "v2.0.0", Name: "v2.0.0", TarballURL: "https://example.com/v2.0.0.tar.gz"},
 			{TagName: "v1.5.0", Name: "v1.5.0", TarballURL: "https://example.com/v1.5.0.tar.gz"},
 		}, nil

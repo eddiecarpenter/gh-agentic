@@ -10,7 +10,6 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/bootstrap"
 	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
-	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 
 	ghAPI "github.com/cli/go-gh/v2/pkg/api"
 )
@@ -47,7 +46,7 @@ func newInitCmd() *cobra.Command {
 				RunForm:         initv2.DefaultFormRun,
 				RunCommand:      bootstrap.DefaultRunCommand,
 				DetectOwnerType: defaultDetectOwnerType,
-				FetchReleases:   sync.DefaultFetchReleases,
+				FetchReleases:   mount.DefaultFetchReleases,
 			})
 		},
 	})

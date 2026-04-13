@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
 // fakeClone returns a CloneFunc that creates the given files in destDir,
@@ -37,8 +36,8 @@ func fakeCloneError(errMsg string) CloneFunc {
 	}
 }
 
-func sampleReleases() []sync.Release {
-	return []sync.Release{
+func sampleReleases() []Release {
+	return []Release{
 		{TagName: "v2.1.0", Name: "v2.1.0", Body: "Latest", TarballURL: "https://example.com/v2.1.0.tar.gz"},
 		{TagName: "v2.0.0", Name: "v2.0.0", Body: "Stable", TarballURL: "https://example.com/v2.0.0.tar.gz"},
 		{TagName: "v1.5.0", Name: "v1.5.0", Body: "Old", TarballURL: "https://example.com/v1.5.0.tar.gz"},

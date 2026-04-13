@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
-	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
 // mountDeps holds injectable dependencies for the mount command.
@@ -20,7 +19,7 @@ type mountDeps struct {
 // newMountCmd constructs the `gh agentic --v2 mount` subcommand with production deps.
 func newMountCmd() *cobra.Command {
 	return newMountCmdWithDeps(mountDeps{
-		fetchReleases: sync.DefaultFetchReleases,
+		fetchReleases: mount.DefaultFetchReleases,
 		clone:         mount.DefaultClone,
 		confirm:       nil, // Set when needed for version switch.
 	})

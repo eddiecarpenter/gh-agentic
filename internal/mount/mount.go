@@ -7,15 +7,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/eddiecarpenter/gh-agentic/internal/sync"
 )
 
 // ValidateTag checks that the requested version tag exists among available
 // releases. If the tag is not found, returns an error that includes the
 // latest available version for guidance.
-func ValidateTag(version string, releases []sync.Release) error {
-	_, found := sync.FindReleaseByTag(releases, version)
+func ValidateTag(version string, releases []Release) error {
+	_, found := FindReleaseByTag(releases, version)
 	if found {
 		return nil
 	}
