@@ -304,6 +304,9 @@ const repoModeCreateNew = "new"
 // runnerOther is the sentinel value for the "other" runner option.
 const runnerOther = "__other__"
 
+// RunnerOther is the sentinel value for the "other — enter a custom label" option.
+const RunnerOther = runnerOther
+
 // RunnerDefaultForTopology returns the smart default runner label based on topology.
 // Single topology defaults to "ubuntu-latest"; Federated defaults to the org name.
 func RunnerDefaultForTopology(topology, owner string) string {
@@ -311,6 +314,11 @@ func RunnerDefaultForTopology(topology, owner string) string {
 		return owner
 	}
 	return DefaultRunnerLabel
+}
+
+// BuildRunnerOptions builds the runner select options with dynamic repo and org names.
+func BuildRunnerOptions(projectName, owner string) []huh.Option[string] {
+	return buildRunnerOptions(projectName, owner)
 }
 
 // buildRunnerOptions builds the runner select options with dynamic repo and org names.

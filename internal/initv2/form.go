@@ -209,7 +209,7 @@ func collectStackAndAgent(cfg *InitConfig, runForm FormRunFunc) error {
 // collectPipelineConfig collects runner label, Goose provider, and model.
 func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 	if cfg.RunnerLabel == "" {
-		cfg.RunnerLabel = bootstrap.DefaultRunnerLabel
+		cfg.RunnerLabel = bootstrap.RunnerDefaultForTopology(cfg.Topology, cfg.Owner)
 	}
 	if cfg.GooseProvider == "" {
 		cfg.GooseProvider = bootstrap.DefaultGooseProvider
@@ -218,13 +218,41 @@ func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 		cfg.GooseModel = bootstrap.DefaultGooseModel
 	}
 
-	form := huh.NewForm(
+	// Phase 3a: Runner select (mirrors bootstrap runner selection).
+	runnerOpts := bootstrap.BuildRunnerOptions(cfg.RepoName, cfg.Owner)
+	runnerForm := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().
+			huh.NewSelect[string]().
 				Title("Runner label").
 				Description("The GitHub Actions runner label for the agentic pipeline").
-				Value(&cfg.RunnerLabel).
-				Validate(validateRequired("runner label")),
+				Options(runnerOpts...).
+				Value(&cfg.RunnerLabel),
+		),
+	)
+	if err := runForm(runnerForm); err != nil {
+		return fmt.Errorf("runner form: %w", err)
+	}
+
+	// If "other" selected, prompt for custom label.
+	if cfg.RunnerLabel == bootstrap.RunnerOther {
+		cfg.RunnerLabel = ""
+		customForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Custom runner label").
+					Description("Enter your custom GitHub Actions runner label").
+					Value(&cfg.RunnerLabel).
+					Validate(validateRequired("runner label")),
+			),
+		)
+		if err := runForm(customForm); err != nil {
+			return fmt.Errorf("custom runner form: %w", err)
+		}
+	}
+
+	// Phase 3b: Provider and model.
+	providerForm := huh.NewForm(
+		huh.NewGroup(
 			huh.NewInput().
 				Title("Goose provider").
 				Description("The LLM provider the agent will use").
@@ -235,7 +263,7 @@ func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 				Value(&cfg.GooseModel),
 		),
 	)
-	if err := runForm(form); err != nil {
+	if err := runForm(providerForm); err != nil {
 		return fmt.Errorf("pipeline config form: %w", err)
 	}
 	return nil
