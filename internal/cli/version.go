@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -39,6 +40,20 @@ func newVersionCmd(version, date string) *cobra.Command {
 			if exe, err := os.Executable(); err == nil {
 				if info, err := os.Stat(exe); err == nil {
 					fmt.Fprintf(w, "  %-16s %s\n", "Installed:", info.ModTime().Local().Format("2006-01-02 15:04:05"))
+				}
+			}
+
+			// Framework version — read from .ai/.git metadata if mounted.
+			root, err := os.Getwd()
+			if err == nil {
+				fwVersion, err := mount.ReadAIVersionFromGit(root)
+				if err != nil {
+					fwVersion, err = mount.ReadAIVersion(root)
+				}
+				if err == nil {
+					fmt.Fprintf(w, "  %-16s %s\n", "Framework:", fwVersion)
+				} else {
+					fmt.Fprintf(w, "  %-16s %s\n", "Framework:", "not mounted")
 				}
 			}
 
