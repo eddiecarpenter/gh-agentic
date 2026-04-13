@@ -43,6 +43,7 @@ func fakeCollectConfig(cfg *InitConfig) func(w io.Writer, repo string) (*InitCon
 
 func TestRun_Success(t *testing.T) {
 	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
 	var buf bytes.Buffer
 	var setCalls []string
 
@@ -110,10 +111,11 @@ func TestRun_Success(t *testing.T) {
 
 func TestRun_BlockedWithoutForce(t *testing.T) {
 	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
 	var buf bytes.Buffer
 
-	// Create existing .ai-version.
-	_ = mount.WriteAIVersion(root, "v1.0.0")
+	// Create existing .ai/ to simulate mounted framework.
+	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
 
 	deps := Deps{
 		Run:          func(name string, args ...string) (string, error) { return "", nil },
@@ -134,10 +136,11 @@ func TestRun_BlockedWithoutForce(t *testing.T) {
 
 func TestRun_ProceedsWithForce(t *testing.T) {
 	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
 	var buf bytes.Buffer
 
-	// Create existing .ai-version.
-	_ = mount.WriteAIVersion(root, "v1.0.0")
+	// Create existing .ai/ to simulate mounted framework.
+	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
 
 	cfg := &InitConfig{
 		Version:      "v2.0.0",
@@ -160,6 +163,7 @@ func TestRun_ProceedsWithForce(t *testing.T) {
 
 func TestRun_NoRepoContext(t *testing.T) {
 	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
 	var buf bytes.Buffer
 
 	cfg := &InitConfig{

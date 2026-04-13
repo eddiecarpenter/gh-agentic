@@ -43,13 +43,16 @@ type Deps struct {
 }
 
 // Run executes the v2 init wizard.
-// It checks for existing .ai-version (blocked without --force), collects
-// configuration, calls mount, and configures secrets/variables.
+// It requires a git repository with no existing .ai/ directory (unless --force).
 func Run(w io.Writer, root string, force bool, deps Deps) error {
-	// Check for existing .ai-version.
-	_, aiVersionErr := mount.ReadAIVersion(root)
-	if aiVersionErr == nil && !force {
-		return fmt.Errorf("this repository already has an .ai-version file — use --force to reinitialise")
+	// Must be inside a git repository.
+	if _, err := os.Stat(filepath.Join(root, ".git")); os.IsNotExist(err) {
+		return fmt.Errorf("not a git repository — run 'git init' and add a remote before running init")
+	}
+
+	// Block if .ai/ already exists (framework already mounted).
+	if _, err := os.Stat(filepath.Join(root, ".ai")); err == nil && !force {
+		return fmt.Errorf("framework already mounted at .ai/ — use 'gh agentic --v2 mount <version>' to update, or --force to reinitialise")
 	}
 
 	fmt.Fprintln(w, "Initialising AI-Native Delivery Framework")

@@ -40,7 +40,8 @@ func TestInitCmd_WithoutV2Flag(t *testing.T) {
 
 func TestInitCmd_BlockedWithoutForce(t *testing.T) {
 	root := t.TempDir()
-	_ = mount.WriteAIVersion(root, "v1.0.0")
+	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
+	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
 
 	origDir, _ := os.Getwd()
 	_ = os.Chdir(root)
@@ -71,7 +72,7 @@ func TestInitCmd_BlockedWithoutForce(t *testing.T) {
 	err := rootCmd.Execute()
 
 	if err == nil {
-		t.Fatal("expected error when .ai-version exists without --force")
+		t.Fatal("expected error when .ai/ exists without --force")
 	}
 	if !strings.Contains(err.Error(), "--force") {
 		t.Errorf("expected --force in error, got: %v", err)
@@ -80,7 +81,8 @@ func TestInitCmd_BlockedWithoutForce(t *testing.T) {
 
 func TestInitCmd_ProceedsWithForce(t *testing.T) {
 	root := t.TempDir()
-	_ = mount.WriteAIVersion(root, "v1.0.0")
+	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
+	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
 
 	origDir, _ := os.Getwd()
 	_ = os.Chdir(root)
