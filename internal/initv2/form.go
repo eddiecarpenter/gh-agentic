@@ -132,6 +132,7 @@ func collectVersionTopology(cfg *InitConfig, releases []sync.Release, runForm Fo
 			Title("Framework version").
 			Description("Select the gh-agentic release to mount").
 			Options(opts...).
+			Height(10).
 			Value(&cfg.Version)
 	} else {
 		versionField = huh.NewInput().
