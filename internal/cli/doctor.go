@@ -50,6 +50,8 @@ type doctorConfig struct {
 func runDoctor(w io.Writer, in io.Reader, cfg doctorConfig) error {
 	// --update-credentials: skip all checks, refresh and upload credentials.
 	if cfg.updateCredentials {
+		// Print deprecation notice to the same writer (doctor uses w for stderr-like output).
+		printDeprecationNotice(w, "update-credentials")
 		return runUpdateCredentials(w, cfg)
 	}
 
