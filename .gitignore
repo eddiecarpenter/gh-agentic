@@ -4,3 +4,5 @@
 .goose/data/
 .goose/state/
 gh-agentic
+.ai/
+.claude/
