@@ -37,5 +37,6 @@ runs:
       if: steps.check.outputs.installed != 'true'
       shell: bash
       run: |
+        sudo rm -rf /var/lib/apt/lists/*
         sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends gh bzip2 libgomp1
+        sudo apt-get install -y --no-install-recommends --fix-missing gh bzip2 libgomp1
