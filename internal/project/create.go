@@ -3,6 +3,7 @@ package project
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
@@ -36,7 +37,8 @@ func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 	// Guard 1: AGENTIC_PROJECT_ID must not already be set.
 	existing, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
 	if existing != "" {
-		return fmt.Errorf("repo is already affiliated with project %s — use 'gh agentic project join' to re-affiliate or 'gh agentic project unlink' first", existing)
+		existingName := ProjectDisplayName(deps, existing)
+		return fmt.Errorf("this repo is already part of agentic project %q — use 'gh agentic project init' to join a different project or 'gh agentic project unlink' first", existingName)
 	}
 
 	// Guard 2: Repo must not already be linked to any GitHub Project.
@@ -86,6 +88,18 @@ func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 	}
 	fmt.Fprintf(w, "  %s  %s set\n", ui.StatusOK.Render("✓"), ProjectVarName)
 
+	// Set topology marker — identifies this repo as a federated control plane.
+	if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName, "federated"); err != nil {
+		return fmt.Errorf("setting %s: %w", TopologyVarName, err)
+	}
+	fmt.Fprintf(w, "  %s  %s set to federated\n", ui.StatusOK.Render("✓"), TopologyVarName)
+
+	// Set the canonical framework version for domain repos to read.
+	if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName, cfg.Version); err != nil {
+		return fmt.Errorf("setting %s: %w", FrameworkVersionVarName, err)
+	}
+	fmt.Fprintf(w, "  %s  %s set to %s\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName, cfg.Version)
+
 	// Step 8: Clone framework into .ai/.
 	fmt.Fprintf(w, "  Mounting framework %s...\n", cfg.Version)
 	if err := mount.DownloadFramework(deps.Root, cfg.Version, deps.Clone); err != nil {
@@ -93,7 +107,79 @@ func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 	}
 	fmt.Fprintf(w, "  %s  Framework mounted at %s\n", ui.StatusOK.Render("✓"), cfg.Version)
 
+	// Step 9: Scaffold project from template (description, readme, status options, views).
+	fmt.Fprintf(w, "  Scaffolding project from template...\n")
+	scaffoldProject(w, deps, projectID, ownerType)
+
 	fmt.Fprintln(w, "")
-	fmt.Fprintf(w, "  %s\n\n", ui.StatusOK.Render("Project created and control plane configured"))
+	fmt.Fprintf(w, "  %s\n\n", ui.StatusOK.Render("Agentic project created and control plane configured"))
 	return nil
+}
+
+// scaffoldProject applies the project template to a newly created GitHub Project.
+// It updates the project description, README, Status field options, and creates views.
+// Scaffold failures are non-fatal — they emit warnings but do not abort the create flow.
+func scaffoldProject(w io.Writer, deps Deps, projectID, ownerType string) {
+	tpl, err := ReadProjectTemplate()
+	if err != nil {
+		fmt.Fprintf(w, "  %s  Could not read project template (%v) — skipping scaffold\n",
+			ui.StatusWarning.Render("⚠"), err)
+		return
+	}
+
+	// Update project description and README.
+	if tpl.ShortDescription != "" || tpl.Readme != "" {
+		if err := deps.UpdateProject(projectID, tpl.ShortDescription, tpl.Readme); err != nil {
+			fmt.Fprintf(w, "  %s  Could not update project description: %v\n", ui.StatusWarning.Render("⚠"), err)
+		} else {
+			fmt.Fprintf(w, "  %s  Project description and README updated\n", ui.StatusOK.Render("✓"))
+		}
+	}
+
+	// Update Status field options.
+	if len(tpl.StatusField.Options) > 0 {
+		fields, err := deps.FetchProjectFields(projectID)
+		if err != nil {
+			fmt.Fprintf(w, "  %s  Could not fetch project fields: %v\n", ui.StatusWarning.Render("⚠"), err)
+		} else {
+			var statusFieldID string
+			for _, f := range fields {
+				if f.Name == "Status" && f.DataType == "SINGLE_SELECT" {
+					statusFieldID = f.ID
+					break
+				}
+			}
+			if statusFieldID == "" {
+				fmt.Fprintf(w, "  %s  Status field not found — skipping option update\n", ui.StatusWarning.Render("⚠"))
+			} else if err := deps.UpdateStatusFieldOptions(statusFieldID, tpl.StatusField.Options); err != nil {
+				fmt.Fprintf(w, "  %s  Could not update Status field options: %v\n", ui.StatusWarning.Render("⚠"), err)
+			} else {
+				fmt.Fprintf(w, "  %s  Status field options updated (%d options)\n",
+					ui.StatusOK.Render("✓"), len(tpl.StatusField.Options))
+			}
+		}
+	}
+
+	// Create views via the REST API.
+	if len(tpl.Views) > 0 {
+		projectNumber, err := deps.FetchProjectNumber(projectID)
+		if err != nil {
+			fmt.Fprintf(w, "  %s  Could not fetch project number: %v\n", ui.StatusWarning.Render("⚠"), err)
+		} else {
+			viewsCreated := 0
+			for _, v := range tpl.Views {
+				layout := strings.ToLower(strings.TrimSuffix(v.Layout, "_LAYOUT"))
+				if err := deps.CreateProjectView(deps.Owner, ownerType, projectNumber, v.Name, layout, v.Filter); err != nil {
+					fmt.Fprintf(w, "  %s  Could not create view %q: %v\n", ui.StatusWarning.Render("⚠"), v.Name, err)
+				} else {
+					fmt.Fprintf(w, "  %s  View %q created (%s)\n", ui.StatusOK.Render("✓"), v.Name, layout)
+					viewsCreated++
+				}
+			}
+			if viewsCreated > 0 {
+				fmt.Fprintf(w, "\n  %s  GitHub creates a default \"View 1\" that cannot be deleted via API.\n", ui.StatusWarning.Render("⚠"))
+				fmt.Fprintf(w, "       Delete it manually: open the project → click ··· on the \"View 1\" tab → Delete view\n")
+			}
+		}
+	}
 }

@@ -21,14 +21,20 @@ type ReadCredentialsFunc func(run RunCommandFunc) ([]byte, error)
 // ClaudeRefreshFunc triggers a Claude Code login/refresh.
 type ClaudeRefreshFunc func() error
 
+// CheckRepoSecretFunc checks whether a named secret exists in a GitHub repo.
+// Returns true if the secret is set, false if not found.
+type CheckRepoSecretFunc func(owner, repo, secretName string) (bool, error)
+
 // Deps holds injectable dependencies for auth operations.
 type Deps struct {
-	Run             RunCommandFunc
-	ReadCredentials ReadCredentialsFunc
-	ClaudeRefresh   ClaudeRefreshFunc
-	RepoFullName    string
-	Owner           string
-	OwnerType       string
+	Run              RunCommandFunc
+	ReadCredentials  ReadCredentialsFunc
+	ClaudeRefresh    ClaudeRefreshFunc
+	CheckRepoSecret  CheckRepoSecretFunc
+	RepoFullName     string
+	Owner            string
+	RepoName         string
+	OwnerType        string
 }
 
 // Login forces a Claude Code login, reads the refreshed credentials, and
@@ -63,61 +69,83 @@ func Refresh(w io.Writer, deps Deps) error {
 
 // CheckResult represents the result of a credential check.
 type CheckResult struct {
-	Valid     bool
-	ExpiresIn time.Duration
-	ExpiresAt time.Time
-	Message   string
+	Valid         bool
+	ExpiresIn     time.Duration
+	ExpiresAt     time.Time
+	Message       string
+	RepoSecretSet bool
+	InSync        bool
 }
 
-// Check verifies that the CLAUDE_CREDENTIALS_JSON is present and not expired.
-// Returns a CheckResult with validity status and expiry information.
+const secretName = "CLAUDE_CREDENTIALS_JSON"
+
+// Check verifies local Claude credentials and the repo secret, then compares them.
 func Check(w io.Writer, deps Deps) (CheckResult, error) {
-	data, err := deps.ReadCredentials(deps.Run)
-	if err != nil {
-		result := CheckResult{
-			Valid:   false,
-			Message: "credentials not found — run 'gh agentic -v2 auth login'",
+	// --- Local credentials ---
+	localValid := false
+	var localExpiry time.Time
+	var localExpiresIn time.Duration
+
+	data, localErr := deps.ReadCredentials(deps.Run)
+	if localErr != nil {
+		fmt.Fprintf(w, "  ✗  Local credentials — not found\n")
+		fmt.Fprintf(w, "       → Run 'gh agentic auth login'\n")
+	} else {
+		expiry, parseErr := parseCredentialExpiry(data)
+		if parseErr != nil {
+			localValid = true
+			fmt.Fprintf(w, "  ✓  Local credentials — present (expiry unknown)\n")
+		} else {
+			remaining := time.Until(expiry)
+			if remaining <= 0 {
+				fmt.Fprintf(w, "  ✗  Local credentials — expired\n")
+				fmt.Fprintf(w, "       → Run 'gh agentic auth login'\n")
+			} else {
+				localValid = true
+				localExpiry = expiry
+				localExpiresIn = remaining
+				days := int(remaining.Hours() / 24)
+				fmt.Fprintf(w, "  ✓  Local credentials — valid (expires in %d days)\n", days)
+			}
 		}
-		fmt.Fprintf(w, "  ✗ CLAUDE_CREDENTIALS_JSON — not found\n")
-		fmt.Fprintf(w, "    → Run 'gh agentic -v2 auth login'\n")
-		return result, nil
 	}
 
-	// Try to parse expiry from credentials JSON.
-	expiry, parseErr := parseCredentialExpiry(data)
-	if parseErr != nil {
-		// Can't determine expiry — treat as valid but warn.
-		result := CheckResult{
-			Valid:   true,
-			Message: "credentials present (expiry unknown)",
+	// --- Repo secret ---
+	secretSet := false
+	if deps.CheckRepoSecret != nil {
+		set, err := deps.CheckRepoSecret(deps.Owner, deps.RepoName, secretName)
+		if err == nil {
+			secretSet = set
 		}
-		fmt.Fprintln(w, "  ✓ CLAUDE_CREDENTIALS_JSON — present (expiry unknown)")
-		return result, nil
+	}
+	if secretSet {
+		fmt.Fprintf(w, "  ✓  %s — set in repo\n", secretName)
+	} else {
+		fmt.Fprintf(w, "  ✗  %s — not set in repo\n", secretName)
 	}
 
-	now := time.Now()
-	remaining := expiry.Sub(now)
-
-	if remaining <= 0 {
-		result := CheckResult{
-			Valid:     false,
-			ExpiresAt: expiry,
-			Message:   "credentials expired",
-		}
-		fmt.Fprintln(w, "  ✗ CLAUDE_CREDENTIALS_JSON — expired")
-		fmt.Fprintln(w, "    → Run 'gh agentic -v2 auth refresh'")
-		return result, nil
+	// --- Comparison ---
+	inSync := localValid && secretSet
+	fmt.Fprintln(w, "")
+	switch {
+	case localValid && secretSet:
+		fmt.Fprintf(w, "  ✓  Credentials in sync\n")
+	case localValid && !secretSet:
+		fmt.Fprintf(w, "  ✗  Local credentials not uploaded — run 'gh agentic auth refresh'\n")
+	case !localValid && secretSet:
+		fmt.Fprintf(w, "  ✗  Local credentials missing or expired — run 'gh agentic auth login'\n")
+	default:
+		fmt.Fprintf(w, "  ✗  No credentials configured — run 'gh agentic auth login'\n")
 	}
 
-	days := int(remaining.Hours() / 24)
-	result := CheckResult{
-		Valid:     true,
-		ExpiresIn: remaining,
-		ExpiresAt: expiry,
-		Message:   fmt.Sprintf("valid (expires in %d days)", days),
-	}
-	fmt.Fprintf(w, "  ✓ CLAUDE_CREDENTIALS_JSON — valid (expires in %d days)\n", days)
-	return result, nil
+	return CheckResult{
+		Valid:         localValid,
+		ExpiresIn:     localExpiresIn,
+		ExpiresAt:     localExpiry,
+		RepoSecretSet: secretSet,
+		InSync:        inSync,
+		Message:       fmt.Sprintf("local=%v repo=%v", localValid, secretSet),
+	}, nil
 }
 
 // uploadCredentials reads local credentials and uploads them to GitHub.

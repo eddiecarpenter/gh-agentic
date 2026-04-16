@@ -18,19 +18,60 @@ type CheckDeps struct {
 	Owner        string
 	RepoName     string
 	OwnerType    string
+	Topology     string // "single", "federated-cp", "federated-domain", "" (unknown)
+	ProjectID    string // value of AGENTIC_PROJECT_ID if set
 	Run          auth.RunCommandFunc
 	ReadCreds    auth.ReadCredentialsFunc
 }
 
-// RunAllChecks runs all v2 checks and returns a grouped Report.
+// checkGroupStep pairs a spinner label with a check function.
+type checkGroupStep struct {
+	label string
+	fn    func(CheckDeps) Group
+}
+
+// checksForTopologyWithLabels returns the ordered list of labelled check steps.
+func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
+	base := []checkGroupStep{
+		{"Checking repository...", checkRepository},
+		{"Checking framework mount...", checkFramework},
+		{"Checking agent files...", checkAgentFiles},
+	}
+	if deps.Topology == "federated-domain" {
+		base = append(base, checkGroupStep{"Checking agentic project membership...", checkProjectAffiliation})
+	} else {
+		base = append(base, checkGroupStep{"Checking workflows...", checkWorkflows})
+		base = append(base, checkGroupStep{"Checking variables and secrets...", checkVariablesAndSecrets})
+	}
+	return base
+}
+
+// checksForTopology returns the ordered list of check functions for the given topology.
+func checksForTopology(deps CheckDeps) []func(CheckDeps) Group {
+	steps := checksForTopologyWithLabels(deps)
+	fns := make([]func(CheckDeps) Group, len(steps))
+	for i, s := range steps {
+		fns[i] = s.fn
+	}
+	return fns
+}
+
+// RunAllChecks runs all checks (topology-aware) and returns a grouped Report.
 // Used in tests and non-streaming contexts.
 func RunAllChecks(deps CheckDeps) *Report {
+	return RunAllChecksWithProgress(deps, nil)
+}
+
+// RunAllChecksWithProgress runs all checks, calling setLabel before each step.
+// If setLabel is nil it is not called. Returns the completed Report.
+func RunAllChecksWithProgress(deps CheckDeps, setLabel func(string)) *Report {
 	report := &Report{}
-	report.Groups = append(report.Groups, checkRepository(deps))
-	report.Groups = append(report.Groups, checkFramework(deps))
-	report.Groups = append(report.Groups, checkAgentFiles(deps))
-	report.Groups = append(report.Groups, checkWorkflows(deps))
-	report.Groups = append(report.Groups, checkVariablesAndSecrets(deps))
+	for _, step := range checksForTopologyWithLabels(deps) {
+		if setLabel != nil {
+			setLabel(step.label)
+		}
+		report.Groups = append(report.Groups, step.fn(deps))
+	}
 	return report
 }
 
@@ -39,13 +80,7 @@ func RunAllChecks(deps CheckDeps) *Report {
 // Returns the completed Report for summary rendering.
 func StreamAllChecks(w io.Writer, deps CheckDeps) *Report {
 	report := &Report{}
-	for _, fn := range []func(CheckDeps) Group{
-		checkRepository,
-		checkFramework,
-		checkAgentFiles,
-		checkWorkflows,
-		checkVariablesAndSecrets,
-	} {
+	for _, fn := range checksForTopology(deps) {
 		g := fn(deps)
 		RenderGroup(w, g)
 		report.Groups = append(report.Groups, g)
@@ -102,7 +137,7 @@ func checkFramework(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-mounted", Status: Fail,
 			Message:     ".ai/ not mounted",
-			Remediation: "Run 'gh agentic --v2 mount <version>'",
+			Remediation: "Run 'gh agentic mount'",
 		})
 	}
 
@@ -116,7 +151,7 @@ func checkFramework(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-version", Status: Fail,
 			Message:     ".ai/ git metadata missing — framework may not be properly mounted",
-			Remediation: "Run 'gh agentic --v2 mount <version>'",
+			Remediation: "Run 'gh agentic mount'",
 		})
 	}
 
@@ -164,7 +199,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "claude-md", Status: Fail,
 			Message:     "CLAUDE.md not found",
-			Remediation: "Run 'gh agentic --v2 mount <version>'",
+			Remediation: "Run 'gh agentic mount'",
 		})
 	}
 
@@ -177,7 +212,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "agents-md", Status: Fail,
 			Message:     "AGENTS.md not found",
-			Remediation: "Run 'gh agentic --v2 mount <version>'",
+			Remediation: "Run 'gh agentic mount'",
 		})
 	}
 
@@ -239,7 +274,7 @@ func checkWorkflows(deps CheckDeps) Group {
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Fail,
 				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, version),
-				Remediation: fmt.Sprintf("Run 'gh agentic --v2 mount %s'", version),
+				Remediation: "Run 'gh agentic mount'",
 			})
 		} else {
 			g.Results = append(g.Results, CheckResult{
@@ -262,6 +297,14 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 		g.Results = append(g.Results, result)
 	}
 
+	// Federated control plane also needs topology and framework version variables.
+	if deps.Topology == "federated-cp" {
+		for _, v := range []string{"AGENTIC_TOPOLOGY", "AGENTIC_FRAMEWORK_VERSION"} {
+			result := checkVariable(deps, v)
+			g.Results = append(g.Results, result)
+		}
+	}
+
 	// Check secrets.
 	secrets := []string{"GOOSE_AGENT_PAT"}
 	for _, s := range secrets {
@@ -276,7 +319,7 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 			g.Results = append(g.Results, CheckResult{
 				Name: "claude-creds", Status: Fail,
 				Message:     "CLAUDE_CREDENTIALS_JSON — not configured",
-				Remediation: "Run 'gh agentic --v2 auth login'",
+				Remediation: "Run 'gh agentic auth login'",
 			})
 		} else {
 			_ = data
@@ -286,6 +329,19 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 			})
 		}
 	}
+
+	return g
+}
+
+// checkProjectAffiliation checks AGENTIC_PROJECT_ID and AGENTIC_TOPOLOGY for domain repos.
+func checkProjectAffiliation(deps CheckDeps) Group {
+	g := Group{Name: "Agentic project membership"}
+
+	result := checkVariable(deps, "AGENTIC_PROJECT_ID")
+	g.Results = append(g.Results, result)
+
+	result = checkVariable(deps, "AGENTIC_TOPOLOGY")
+	g.Results = append(g.Results, result)
 
 	return g
 }

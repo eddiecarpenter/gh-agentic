@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
+	"github.com/eddiecarpenter/gh-agentic/internal/project"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // authDeps holds injectable dependencies for the auth command.
@@ -31,12 +33,43 @@ func newAuthCmd() *cobra.Command {
 	})
 }
 
+// controlPlaneAuthError prints the control plane block message and returns ErrSilent.
+func controlPlaneAuthError(w interface{ Write([]byte) (int, error) }) error {
+	fmt.Fprintf(w, "  %s  This repo is the control plane — auth commands are for domain repos only.\n", ui.StatusWarning.Render("⚠"))
+	fmt.Fprintf(w, "       The control plane does not run Claude agents and does not need credentials.\n")
+	return ErrSilent
+}
+
+// isControlPlane returns true if the current repo is a Single-topology control plane.
+func isControlPlane() bool {
+	deps, err := resolveProjectDeps()
+	if err != nil {
+		return false
+	}
+	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, project.ProjectVarName)
+	if err != nil || projectID == "" {
+		return false
+	}
+	linked, err := deps.FetchLinkedRepos(projectID)
+	if err != nil {
+		return false
+	}
+	return project.DetectTopology(deps.RepoFullName, linked) == project.TopologySingle
+}
+
 // newAuthCmdWithDeps constructs the auth command with injectable dependencies.
 func newAuthCmdWithDeps(deps authDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Manage Claude Code credentials",
-		Long:  "Login, refresh, or check Claude Code credentials.",
+		Long: `Manage Claude Code credentials for domain repos that run Claude agents.
+
+These commands are for domain repos only — the control plane does not run
+Claude agents and does not need credentials.
+
+  gh agentic auth login    — force a new Claude Code login and upload credentials
+  gh agentic auth refresh  — upload current local credentials without re-logging in
+  gh agentic auth check    — verify local credentials and the repo secret are in sync`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -65,8 +98,10 @@ func resolveAuthDeps(deps authDeps) (auth.Deps, error) {
 		Run:             deps.run,
 		ReadCredentials: deps.readCredentials,
 		ClaudeRefresh:   deps.claudeRefresh,
+		CheckRepoSecret: auth.DefaultCheckRepoSecret,
 		RepoFullName:    currentRepo.Owner + "/" + currentRepo.Name,
 		Owner:           currentRepo.Owner,
+		RepoName:        currentRepo.Name,
 		OwnerType:       ownerType,
 	}, nil
 }
@@ -75,9 +110,18 @@ func resolveAuthDeps(deps authDeps) (auth.Deps, error) {
 func newAuthLoginCmd(deps authDeps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
-		Short: "Force Claude Code login and push credentials",
+		Short: "Force Claude Code login and upload credentials to repo secret",
+		Long: `Force a new Claude Code login, then upload the refreshed credentials to the
+CLAUDE_CREDENTIALS_JSON repo secret so that agents can authenticate.
+
+Use this when credentials are missing or expired. For a credential refresh
+without re-logging in, use 'auth refresh' instead.`,
+		Example: `  gh agentic auth login`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
+			if isControlPlane() {
+				return controlPlaneAuthError(w)
+			}
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {
 				return err
@@ -91,9 +135,19 @@ func newAuthLoginCmd(deps authDeps) *cobra.Command {
 func newAuthRefreshCmd(deps authDeps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "refresh",
-		Short: "Push current local credentials to repo secret",
+		Short: "Upload current local credentials to repo secret",
+		Long: `Read the current local Claude Code credentials and upload them to the
+CLAUDE_CREDENTIALS_JSON repo secret without triggering a new login.
+
+Use this after a successful local Claude login to sync credentials to the repo,
+or to push refreshed credentials when they have changed locally. Use 'auth login'
+if your local credentials are missing or expired.`,
+		Example: `  gh agentic auth refresh`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
+			if isControlPlane() {
+				return controlPlaneAuthError(w)
+			}
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {
 				return err
@@ -107,9 +161,21 @@ func newAuthRefreshCmd(deps authDeps) *cobra.Command {
 func newAuthCheckCmd(deps authDeps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "check",
-		Short: "Verify credentials are present and not expired",
+		Short: "Verify local credentials and repo secret are in sync",
+		Long: `Check that local Claude Code credentials are valid and that the
+CLAUDE_CREDENTIALS_JSON repo secret is set, then report whether they are in sync.
+
+  Local valid + secret set     → in sync, no action needed
+  Local valid + secret missing → run 'auth refresh' to upload
+  Local missing/expired        → run 'auth login' to refresh`,
+		Example: `  gh agentic auth check`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
+
+			if isControlPlane() {
+				return controlPlaneAuthError(w)
+			}
+
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {
 				return err
@@ -118,7 +184,7 @@ func newAuthCheckCmd(deps authDeps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if !result.Valid {
+			if !result.InSync {
 				return ErrSilent
 			}
 			return nil

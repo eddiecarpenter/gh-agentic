@@ -91,15 +91,28 @@ func (r *Report) FailCount() int {
 	return count
 }
 
-// RenderHeader writes the report heading.
-func RenderHeader(w io.Writer) {
-	fmt.Fprintln(w, "AI-Native Delivery Framework — Health Check")
+// RenderHeader writes the report heading with topology context.
+func RenderHeader(w io.Writer, topology string) {
+	fmt.Fprintln(w, ui.SectionHeading.Render("  gh agentic — doctor"))
+	fmt.Fprintln(w)
+
+	switch topology {
+	case "single":
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Mode: Single agentic project (control plane + code repo)"))
+	case "federated-cp":
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Mode: Federated agentic project — control plane"))
+	case "federated-domain":
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Mode: Federated agentic project — domain repo"))
+	default:
+		fmt.Fprintln(w, "  "+ui.Muted.Render("Mode: Unknown — not part of an agentic project"))
+	}
 	fmt.Fprintln(w)
 }
 
 // RenderGroup writes a single group's results immediately.
 func RenderGroup(w io.Writer, g Group) {
-	fmt.Fprintf(w, "  %s\n", g.Name)
+	fmt.Fprintln(w, "  "+ui.SectionHeading.Render(g.Name))
+	fmt.Fprintln(w, "  "+ui.Divider(48))
 	for _, c := range g.Results {
 		switch c.Status {
 		case Pass:
@@ -119,19 +132,22 @@ func RenderGroup(w io.Writer, g Group) {
 // RenderSummary writes the failure/warning summary line.
 func RenderSummary(w io.Writer, failures, warnings int) {
 	if failures > 0 {
-		fmt.Fprintf(w, "%d failure(s)", failures)
+		fmt.Fprintf(w, "  %d failure(s)", failures)
 		if warnings > 0 {
 			fmt.Fprintf(w, ", %d warning(s)", warnings)
 		}
-		fmt.Fprintln(w, " — run 'gh agentic --v2 doctor --help' for remediation steps.")
+		fmt.Fprintln(w, " — see remediation steps above.")
 	} else if warnings > 0 {
-		fmt.Fprintf(w, "%d warning(s) — run 'gh agentic --v2 doctor --help' for remediation steps.\n", warnings)
+		fmt.Fprintf(w, "  %d warning(s)\n", warnings)
+	} else {
+		fmt.Fprintf(w, "  %s\n", ui.StatusOK.Render("All checks passed"))
 	}
+	fmt.Fprintln(w)
 }
 
 // Render writes the full grouped report to the writer (used in tests).
 func (r *Report) Render(w io.Writer) {
-	RenderHeader(w)
+	RenderHeader(w, "")
 	for _, g := range r.Groups {
 		RenderGroup(w, g)
 	}

@@ -58,12 +58,16 @@ func EvalJoinGuard(deps Deps, newProjectID string) (GuardResult, error) {
 		return GuardResult{Guard: JoinGuardClear}, nil
 	}
 
+	currentName := ProjectDisplayName(deps, currentProjectID)
+
 	if currentProjectID == newProjectID {
 		return GuardResult{
 			Guard:   JoinGuardSameProject,
-			Message: "repo is already affiliated with project " + newProjectID,
+			Message: "this repo is already part of agentic project \"" + currentName + "\"",
 		}, nil
 	}
+
+	newName := ProjectDisplayName(deps, newProjectID)
 
 	// Already affiliated with a different project — check topology to decide severity.
 	linked, err := deps.FetchLinkedRepos(currentProjectID)
@@ -71,7 +75,7 @@ func EvalJoinGuard(deps Deps, newProjectID string) (GuardResult, error) {
 		// Cannot determine topology — treat as warn+confirm.
 		return GuardResult{
 			Guard:   JoinGuardWarnConfirm,
-			Message: "repo is currently affiliated with project " + currentProjectID + "; re-affiliating will change project membership",
+			Message: "repo is currently part of agentic project \"" + currentName + "\"; re-affiliating will change agentic project membership",
 		}, nil
 	}
 
@@ -81,20 +85,54 @@ func EvalJoinGuard(deps Deps, newProjectID string) (GuardResult, error) {
 		if HasDocsContent(deps.Root) {
 			return GuardResult{
 				Guard:   JoinGuardBlocked,
-				Message: "this repo is the control plane and docs/ has content — migrate docs/ to the new control plane first",
+				Message: "this repo is the agentic project control plane and docs/ has content — migrate to the new agentic project control plane first",
 			}, nil
 		}
 		return GuardResult{
 			Guard:   JoinGuardWarnConfirm,
-			Message: "this repo is currently the control plane; moving it to a different project will demote it from control plane status",
+			Message: "this repo is the agentic project control plane; moving it to a different agentic project will remove it as control plane",
 		}, nil
 	}
 
 	// Federated member re-affiliating.
 	return GuardResult{
 		Guard:   JoinGuardWarnConfirm,
-		Message: "repo is currently affiliated with project " + currentProjectID + "; re-affiliating to " + newProjectID,
+		Message: "repo is currently part of agentic project \"" + currentName + "\"; re-affiliating to \"" + newName + "\"",
 	}, nil
+}
+
+// EvalPreJoinWarning checks current repo state to surface any warning before a project
+// selection UI is shown. It is independent of the target project ID.
+// Returns JoinGuardBlocked if the operation must not proceed at all.
+// Returns JoinGuardWarnConfirm with a message if a heads-up should be shown.
+// Returns JoinGuardClear if no warning is needed.
+func EvalPreJoinWarning(deps Deps) (GuardResult, error) {
+	currentProjectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
+	if err != nil || currentProjectID == "" {
+		return GuardResult{Guard: JoinGuardClear}, nil
+	}
+
+	linked, err := deps.FetchLinkedRepos(currentProjectID)
+	if err != nil {
+		// Cannot determine topology — no pre-warning, let EvalJoinGuard handle it post-selection.
+		return GuardResult{Guard: JoinGuardClear}, nil
+	}
+
+	topo := DetectTopology(deps.RepoFullName, linked)
+	if topo == TopologySingle {
+		if HasDocsContent(deps.Root) {
+			return GuardResult{
+				Guard:   JoinGuardBlocked,
+				Message: "this repo is the agentic project control plane and docs/ has content — migrate to the new agentic project control plane first",
+			}, nil
+		}
+		return GuardResult{
+			Guard:   JoinGuardWarnConfirm,
+			Message: "this repo is the agentic project control plane; moving it to a different agentic project will remove it as control plane",
+		}, nil
+	}
+
+	return GuardResult{Guard: JoinGuardClear}, nil
 }
 
 // EvalUnlinkGuard evaluates the guard for an unlink operation.
@@ -103,7 +141,7 @@ func EvalUnlinkGuard(deps Deps) (GuardResult, error) {
 	if err != nil || currentProjectID == "" {
 		return GuardResult{
 			Guard:   JoinGuardClear,
-			Message: "nothing to unlink — repo is not affiliated with any project",
+			Message: "nothing to unlink — this repo is not part of an agentic project",
 		}, nil
 	}
 
@@ -113,7 +151,7 @@ func EvalUnlinkGuard(deps Deps) (GuardResult, error) {
 		// Cannot determine topology — warn+confirm is safe.
 		return GuardResult{
 			Guard:   JoinGuardWarnConfirm,
-			Message: "remove project affiliation from this repo?",
+			Message: "remove this repo from the agentic project?",
 		}, nil
 	}
 
@@ -122,17 +160,17 @@ func EvalUnlinkGuard(deps Deps) (GuardResult, error) {
 		if HasDocsContent(deps.Root) {
 			return GuardResult{
 				Guard:   JoinGuardBlocked,
-				Message: "this repo is the control plane and docs/ has content — migrate docs/ first before unlinking",
+				Message: "this repo is the agentic project control plane and docs/ has content — migrate to the new agentic project control plane first before unlinking",
 			}, nil
 		}
 		return GuardResult{
 			Guard:   JoinGuardWarnConfirm,
-			Message: "this repo is the project control plane — unlinking will remove project affiliation",
+			Message: "this repo is the agentic project control plane — unlinking will remove it from the agentic project",
 		}, nil
 	}
 
 	return GuardResult{
 		Guard:   JoinGuardWarnConfirm,
-		Message: "remove project affiliation from this repo?",
+		Message: "remove this repo from the agentic project?",
 	}, nil
 }

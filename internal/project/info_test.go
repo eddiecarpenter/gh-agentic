@@ -22,8 +22,13 @@ func testDeps(owner, repo string) Deps {
 			return nil, nil
 		},
 		GetRepoVariable: func(o, r, name string) (string, error) {
-			if name == ProjectVarName {
+			switch name {
+			case ProjectVarName:
 				return "PVT_test123", nil
+			case TopologyVarName:
+				return "single", nil
+			// AGENTIC_FRAMEWORK_VERSION intentionally not set — single topology
+			// repos don't broadcast a version; local .ai-version is authoritative.
 			}
 			return "", errors.New("not found")
 		},
@@ -43,6 +48,27 @@ func testDeps(owner, repo string) Deps {
 		FetchReleases: func(repo string) ([]mount.Release, error) {
 			return []mount.Release{{TagName: "v2.0.10"}}, nil
 		},
+		UpdateProject: func(projectID, shortDescription, readme string) error { return nil },
+		FetchProjectFields: func(projectID string) ([]ProjectField, error) {
+			return []ProjectField{{ID: "field-id", Name: "Status", DataType: "SINGLE_SELECT"}}, nil
+		},
+		UpdateStatusFieldOptions: func(fieldID string, options []StatusOption) error { return nil },
+		FetchProjectNumber: func(projectID string) (int, error) { return 1, nil },
+		CreateProjectView: func(owner, ownerType string, projectNumber int, name, layout, filter string) error {
+			return nil
+		},
+		FetchProjectViews: func(projectID string) ([]ProjectView, error) {
+			return []ProjectView{{Name: "Requirements"}, {Name: "Requirements Kanban"}, {Name: "Features Kanban"}}, nil
+		},
+		FetchProjectsForOwner: func(owner, ownerType string) ([]ProjectInfo, error) {
+			return []ProjectInfo{{ID: "PVT_test123", Title: "Test Project"}}, nil
+		},
+		FetchProjectTitle: func(projectID string) (string, error) {
+			if projectID == "PVT_test123" {
+				return "Test Project", nil
+			}
+			return "", nil
+		},
 	}
 }
 
@@ -55,6 +81,9 @@ func TestPrintInfo_Single(t *testing.T) {
 	}
 
 	out := buf.String()
+	if !strings.Contains(out, "Test Project") {
+		t.Error("expected project name in output")
+	}
 	if !strings.Contains(out, "PVT_test123") {
 		t.Error("expected project ID in output")
 	}

@@ -25,13 +25,22 @@ type Deps struct {
 	DeleteRepoVariable   DeleteRepoVariableFunc
 	ReadAIVersion        func(root string) (string, error)
 
-	FetchOwnerAndRepoIDs FetchOwnerAndRepoIDsFunc
-	CreateProject        CreateProjectFunc
-	LinkRepoToProject    LinkRepoToProjectFunc
-	Confirm              ConfirmFunc
-	DetectOwnerType      auth.DetectOwnerTypeFunc
-	Clone                mount.CloneFunc
-	FetchReleases        mount.FetchReleasesFunc
+	FetchOwnerAndRepoIDs    FetchOwnerAndRepoIDsFunc
+	CreateProject           CreateProjectFunc
+	LinkRepoToProject       LinkRepoToProjectFunc
+	Confirm                 ConfirmFunc
+	DetectOwnerType         auth.DetectOwnerTypeFunc
+	Clone                   mount.CloneFunc
+	FetchReleases           mount.FetchReleasesFunc
+	UpdateProject            UpdateProjectFunc
+	FetchProjectFields       FetchProjectFieldsFunc
+	UpdateStatusFieldOptions UpdateStatusFieldOptionsFunc
+	FetchProjectNumber       FetchProjectNumberFunc
+	CreateProjectView        CreateProjectViewFunc
+	FetchProjectViews        FetchProjectViewsFunc
+	FetchProjectsForOwner    FetchProjectsForOwnerFunc
+	FetchProjectTitle        FetchProjectTitleFunc
+	Run                      auth.RunCommandFunc
 }
 
 // DefaultDeps returns production dependencies for the given repo context.
@@ -50,10 +59,19 @@ func DefaultDeps(owner, repoName, root string) Deps {
 		FetchOwnerAndRepoIDs: DefaultFetchOwnerAndRepoIDs,
 		CreateProject:        DefaultCreateProject,
 		LinkRepoToProject:    DefaultLinkRepoToProject,
-		Confirm:              defaultConfirm,
-		DetectOwnerType:      auth.DefaultDetectOwnerType,
-		Clone:                mount.DefaultClone,
-		FetchReleases:        mount.DefaultFetchReleases,
+		Confirm:                 defaultConfirm,
+		DetectOwnerType:         auth.DefaultDetectOwnerType,
+		Clone:                   mount.DefaultClone,
+		FetchReleases:           mount.DefaultFetchReleases,
+		UpdateProject:            DefaultUpdateProject,
+		FetchProjectFields:       DefaultFetchProjectFields,
+		UpdateStatusFieldOptions: DefaultUpdateStatusFieldOptions,
+		FetchProjectNumber:       DefaultFetchProjectNumber,
+		CreateProjectView:        DefaultCreateProjectView,
+		FetchProjectViews:        DefaultFetchProjectViews,
+		FetchProjectsForOwner:    DefaultFetchProjectsForOwner,
+		FetchProjectTitle:        DefaultFetchProjectTitle,
+		Run:                      auth.DefaultRunCommand,
 	}
 }
 

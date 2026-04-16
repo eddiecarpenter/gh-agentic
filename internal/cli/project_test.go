@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -28,8 +26,13 @@ func fakeProjectDeps(owner, repo string) project.Deps {
 			return nil, nil
 		},
 		GetRepoVariable: func(o, r, name string) (string, error) {
-			if name == project.ProjectVarName {
+			switch name {
+			case project.ProjectVarName:
 				return "PVT_test123", nil
+			case project.FrameworkVersionVarName:
+				return "v2.0.10", nil
+			case project.TopologyVarName:
+				return "single", nil
 			}
 			return "", errors.New("not found")
 		},
@@ -47,23 +50,27 @@ func fakeProjectDeps(owner, repo string) project.Deps {
 		FetchReleases: func(repo string) ([]mount.Release, error) {
 			return []mount.Release{{TagName: "v2.0.10"}}, nil
 		},
-	}
-}
-
-func TestProjectInfoCmd_OutputsTopology(t *testing.T) {
-	deps := fakeProjectDeps("owner", "myrepo")
-
-	var buf bytes.Buffer
-	if err := project.PrintInfo(&buf, deps); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	out := buf.String()
-	if !strings.Contains(out, "Single") {
-		t.Errorf("expected Single topology in output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "PVT_test123") {
-		t.Errorf("expected project ID in output, got:\n%s", out)
+		UpdateProject: func(projectID, shortDescription, readme string) error { return nil },
+		FetchProjectFields: func(projectID string) ([]project.ProjectField, error) {
+			return []project.ProjectField{{ID: "field-id", Name: "Status", DataType: "SINGLE_SELECT"}}, nil
+		},
+		UpdateStatusFieldOptions: func(fieldID string, options []project.StatusOption) error { return nil },
+		FetchProjectNumber: func(projectID string) (int, error) { return 1, nil },
+		CreateProjectView: func(owner, ownerType string, projectNumber int, name, layout, filter string) error {
+			return nil
+		},
+		FetchProjectViews: func(projectID string) ([]project.ProjectView, error) {
+			return []project.ProjectView{{Name: "Requirements"}, {Name: "Requirements Kanban"}, {Name: "Features Kanban"}}, nil
+		},
+		FetchProjectsForOwner: func(owner, ownerType string) ([]project.ProjectInfo, error) {
+			return []project.ProjectInfo{{ID: "PVT_test123", Title: "Test Project"}}, nil
+		},
+		FetchProjectTitle: func(projectID string) (string, error) {
+			if projectID == "PVT_test123" {
+				return "Test Project", nil
+			}
+			return "", nil
+		},
 	}
 }
 
@@ -120,7 +127,7 @@ func TestProjectCmd_SubcommandsRegistered(t *testing.T) {
 		subs[c.Use] = true
 	}
 
-	for _, want := range []string{"info", "check", "create", "join <project-id>", "unlink", "repair"} {
+	for _, want := range []string{"check", "create [title]", "join [project-name]", "unlink", "repair", "switch", "init"} {
 		if !subs[want] {
 			t.Errorf("subcommand %q not registered under project", want)
 		}

@@ -3,6 +3,7 @@
 package initv2
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +11,12 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
+
+// ErrAlreadyInitialised is returned when the framework is already mounted
+// and --force was not passed. The error message has already been printed to w.
+var ErrAlreadyInitialised = errors.New("already initialised")
 
 // InitConfig holds the collected configuration from the wizard.
 type InitConfig struct {
@@ -52,7 +58,9 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 
 	// Block if .ai/ already exists (framework already mounted).
 	if _, err := os.Stat(filepath.Join(root, ".ai")); err == nil && !force {
-		return fmt.Errorf("framework already mounted at .ai/ — use 'gh agentic --v2 mount <version>' to update, or --force to reinitialise")
+		fmt.Fprintf(w, "  %s  Framework already mounted at .ai/\n", ui.StatusWarning.Render("⚠"))
+		fmt.Fprintf(w, "       → Run 'gh agentic mount <version>' to upgrade, or 'gh agentic init --force' to reinitialise\n\n")
+		return ErrAlreadyInitialised
 	}
 
 	fmt.Fprintln(w, "Initialising AI-Native Delivery Framework")
@@ -70,7 +78,7 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 	}
 
 	// Configure secrets and variables.
-	if err := configureRepo(w, cfg, deps.Run); err != nil {
+	if err := ConfigureRepo(w, cfg, deps.Run); err != nil {
 		return fmt.Errorf("configuration: %w", err)
 	}
 
@@ -84,8 +92,8 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 	return nil
 }
 
-// configureRepo sets up GitHub secrets, variables, and collaborator access.
-func configureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
+// ConfigureRepo sets up GitHub secrets, variables, and collaborator access.
+func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	repo := cfg.RepoFullName
 	if repo == "" {
 		return nil // No repo context — skip remote configuration.

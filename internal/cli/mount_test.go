@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,6 +57,9 @@ func TestMountCmd_FirstTimeMount(t *testing.T) {
 	deps := mountDeps{
 		fetchReleases: mountFakeReleases(),
 		clone:         mountFakeClone(),
+		resolveVersion: func(root string) (string, error) {
+			return "v2.0.0", nil
+		},
 	}
 
 	cmd := newMountCmdWithDeps(deps)
@@ -72,7 +76,7 @@ func TestMountCmd_FirstTimeMount(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"mount", "v2.0.0"})
+	rootCmd.SetArgs([]string{"mount"})
 	err := rootCmd.Execute()
 
 	if err != nil {
@@ -118,6 +122,9 @@ func TestMountCmd_InvalidTag(t *testing.T) {
 	deps := mountDeps{
 		fetchReleases: mountFakeReleases(),
 		clone:         mountFakeClone(),
+		resolveVersion: func(root string) (string, error) {
+			return "v9.9.9", nil
+		},
 	}
 
 	cmd := newMountCmdWithDeps(deps)
@@ -133,7 +140,7 @@ func TestMountCmd_InvalidTag(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"mount", "v9.9.9"})
+	rootCmd.SetArgs([]string{"mount"})
 	err := rootCmd.Execute()
 
 	if err == nil {
@@ -147,7 +154,6 @@ func TestMountCmd_InvalidTag(t *testing.T) {
 	}
 }
 
-
 func TestMountCmd_NoVersionNoAIVersion(t *testing.T) {
 	root := t.TempDir()
 
@@ -158,6 +164,9 @@ func TestMountCmd_NoVersionNoAIVersion(t *testing.T) {
 	deps := mountDeps{
 		fetchReleases: mountFakeReleases(),
 		clone:         mountFakeClone(),
+		resolveVersion: func(root string) (string, error) {
+			return "", fmt.Errorf("no version found — run 'gh agentic project init' to set up this repo")
+		},
 	}
 
 	cmd := newMountCmdWithDeps(deps)
@@ -179,7 +188,7 @@ func TestMountCmd_NoVersionNoAIVersion(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no version and no .ai-version")
 	}
-	if !strings.Contains(err.Error(), "no version specified") {
+	if !strings.Contains(err.Error(), "no version found") {
 		t.Errorf("error should mention missing version, got: %v", err)
 	}
 }

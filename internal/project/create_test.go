@@ -109,6 +109,78 @@ func TestCreate_SuccessfulFlow(t *testing.T) {
 	}
 }
 
+func TestCreate_ScaffoldsProjectFromEmbeddedTemplate(t *testing.T) {
+	tmp := t.TempDir()
+
+	var updateProjectCalled bool
+	var updateFieldCalled bool
+	var fetchFieldsCalled bool
+	var fetchNumberCalled bool
+	var createdViews []string
+
+	deps := testDeps("owner", "repo")
+	deps.Root = tmp
+	deps.GetRepoVariable = func(o, r, n string) (string, error) { return "", errors.New("not set") }
+	deps.FetchProjectsForRepo = func(o, r string) ([]ProjectInfo, error) { return nil, nil }
+	deps.DetectOwnerType = func(owner string) (string, error) { return "Organization", nil }
+	deps.FetchOwnerAndRepoIDs = func(owner, repo string) (string, string, error) {
+		return "O_owner", "R_repo", nil
+	}
+	deps.CreateProject = func(ownerID, title string) (string, error) { return "PVT_scaffold", nil }
+	deps.LinkRepoToProject = func(projectID, repoID string) error { return nil }
+	deps.SetRepoVariable = func(o, r, n, v string) error { return nil }
+	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
+	deps.UpdateProject = func(projectID, shortDescription, readme string) error {
+		updateProjectCalled = true
+		return nil
+	}
+	deps.FetchProjectFields = func(projectID string) ([]ProjectField, error) {
+		fetchFieldsCalled = true
+		return []ProjectField{{ID: "PVTSSF_status", Name: "Status", DataType: "SINGLE_SELECT"}}, nil
+	}
+	deps.UpdateStatusFieldOptions = func(fieldID string, options []StatusOption) error {
+		updateFieldCalled = true
+		if len(options) == 0 {
+			t.Error("expected status options, got none")
+		}
+		return nil
+	}
+	deps.FetchProjectNumber = func(projectID string) (int, error) {
+		fetchNumberCalled = true
+		return 42, nil
+	}
+	deps.CreateProjectView = func(owner, ownerType string, projectNumber int, name, layout, filter string) error {
+		createdViews = append(createdViews, name)
+		return nil
+	}
+
+	var buf bytes.Buffer
+	if err := Create(&buf, deps, CreateConfig{Title: "Scaffold Test", Version: "v2.0.10"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !updateProjectCalled {
+		t.Error("expected UpdateProject to be called")
+	}
+	if !fetchFieldsCalled {
+		t.Error("expected FetchProjectFields to be called")
+	}
+	if !updateFieldCalled {
+		t.Error("expected UpdateStatusFieldOptions to be called")
+	}
+	if !fetchNumberCalled {
+		t.Error("expected FetchProjectNumber to be called")
+	}
+	if len(createdViews) == 0 {
+		t.Errorf("expected at least one view to be created, got: %v", createdViews)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "View") {
+		t.Errorf("expected view creation output, got:\n%s", out)
+	}
+}
+
 func TestCreate_WarnsForPersonalAccount(t *testing.T) {
 	tmp := t.TempDir()
 

@@ -8,3 +8,9 @@ import "io"
 func NoopSpinner(_ io.Writer, _ string, fn func() error) error {
 	return fn()
 }
+
+// NoopDynamicSpinner satisfies the DynamicSpinnerFunc signature. It calls fn
+// with a no-op setLabel callback, making it suitable for use in tests.
+func NoopDynamicSpinner(_ io.Writer, _ string, fn func(setLabel func(string)) error) error {
+	return fn(func(string) {})
+}

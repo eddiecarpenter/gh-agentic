@@ -2,23 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"io"
-	"os"
-
-	"github.com/spf13/cobra"
-
-	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
-	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 
 	ghAPI "github.com/cli/go-gh/v2/pkg/api"
 )
-
-// initDeps holds injectable dependencies for the init command.
-type initDeps struct {
-	run   initv2.RunCommandFunc
-	clone initv2.Deps
-}
 
 // defaultDetectOwnerType detects whether a GitHub owner is a user or org via the API.
 func defaultDetectOwnerType(owner string) (string, error) {
@@ -34,48 +20,4 @@ func defaultDetectOwnerType(owner string) (string, error) {
 		return "", fmt.Errorf("detecting owner type for %q: %w", owner, err)
 	}
 	return resp.Type, nil
-}
-
-// newInitCmd constructs the `gh agentic --v2 init` command with production deps.
-func newInitCmd() *cobra.Command {
-	return newInitCmdWithDeps(initv2.Deps{
-		Run:          auth.DefaultRunCommand,
-		Clone: mount.DefaultClone,
-		CollectConfig: func(w io.Writer, repo string) (*initv2.InitConfig, error) {
-			return initv2.CollectConfigInteractive(w, repo, initv2.FormDeps{
-				RunForm:         initv2.DefaultFormRun,
-				RunCommand:      auth.DefaultRunCommand,
-				DetectOwnerType: defaultDetectOwnerType,
-				FetchReleases:   mount.DefaultFetchReleases,
-			})
-		},
-	})
-}
-
-// newInitCmdWithDeps constructs the init command with injectable dependencies.
-func newInitCmdWithDeps(deps initv2.Deps) *cobra.Command {
-	var force bool
-
-	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Initialise a new agentic environment",
-		Long: "Interactive wizard to configure a new agentic environment.\n" +
-			"Detects the current repo, collects configuration, mounts the framework,\n" +
-			"and configures secrets and variables.\n" +
-			"Blocked if .ai-version exists unless --force is passed.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			w := cmd.OutOrStdout()
-
-			root, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("resolving working directory: %w", err)
-			}
-
-			return initv2.Run(w, root, force, deps)
-		},
-	}
-
-	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing configuration")
-
-	return cmd
 }

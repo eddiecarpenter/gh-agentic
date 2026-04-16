@@ -2,6 +2,7 @@ package initv2
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -127,10 +128,13 @@ func TestRun_BlockedWithoutForce(t *testing.T) {
 
 	err := Run(&buf, root, false, deps)
 	if err == nil {
-		t.Fatal("expected error when .ai-version exists without --force")
+		t.Fatal("expected error when .ai/ exists without --force")
 	}
-	if !strings.Contains(err.Error(), "--force") {
-		t.Errorf("error should mention --force, got: %v", err)
+	if !errors.Is(err, ErrAlreadyInitialised) {
+		t.Errorf("expected ErrAlreadyInitialised, got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "--force") {
+		t.Errorf("expected --force hint in output, got: %s", buf.String())
 	}
 }
 
@@ -205,7 +209,7 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 		return "", nil
 	}
 
-	err := configureRepo(&buf, cfg, run)
+	err := ConfigureRepo(&buf, cfg, run)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -253,7 +257,7 @@ func TestConfigureRepo_GrantsAccess(t *testing.T) {
 		return "", nil
 	}
 
-	err := configureRepo(&buf, cfg, run)
+	err := ConfigureRepo(&buf, cfg, run)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -17,8 +17,8 @@ func TestRepair_NoIssues(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(buf.String(), "No issues found") {
-		t.Errorf("expected 'No issues found' in output, got:\n%s", buf.String())
+	if !strings.Contains(buf.String(), "No agentic project issues found") {
+		t.Errorf("expected 'No agentic project issues found' in output, got:\n%s", buf.String())
 	}
 }
 
@@ -76,6 +76,39 @@ func TestRepair_FrameworkNotMounted_FetchReleasesError(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "manual attention") {
 		t.Errorf("expected manual attention message in output, got:\n%s", out)
+	}
+}
+
+func TestRepair_MissingViews_RecreatesThem(t *testing.T) {
+	var createdViews []string
+
+	deps := testDeps("owner", "repo")
+	// One view is missing from the project.
+	deps.FetchProjectViews = func(projectID string) ([]ProjectView, error) {
+		return []ProjectView{{Name: "Requirements"}, {Name: "Requirements Kanban"}}, nil
+	}
+	deps.CreateProjectView = func(owner, ownerType string, projectNumber int, name, layout, filter string) error {
+		createdViews = append(createdViews, name)
+		return nil
+	}
+
+	var buf bytes.Buffer
+	if err := Repair(&buf, deps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(createdViews) == 0 {
+		t.Error("expected at least one view to be recreated")
+	}
+	// "Features Kanban" is the missing one based on testDeps returning only 2 views.
+	found := false
+	for _, v := range createdViews {
+		if v == "Features Kanban" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'Features Kanban' to be recreated, got: %v", createdViews)
 	}
 }
 

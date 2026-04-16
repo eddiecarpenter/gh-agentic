@@ -167,7 +167,13 @@ func TestRefresh_UploadError(t *testing.T) {
 	}
 }
 
-func TestCheck_ValidCredentials(t *testing.T) {
+func fakeCheckRepoSecret(exists bool) CheckRepoSecretFunc {
+	return func(owner, repo, name string) (bool, error) {
+		return exists, nil
+	}
+}
+
+func TestCheck_InSync(t *testing.T) {
 	var buf bytes.Buffer
 
 	deps := Deps{
@@ -175,6 +181,9 @@ func TestCheck_ValidCredentials(t *testing.T) {
 		ReadCredentials: func(run RunCommandFunc) ([]byte, error) {
 			return fakeFutureCredentials(), nil
 		},
+		CheckRepoSecret: fakeCheckRepoSecret(true),
+		Owner:           "owner",
+		RepoName:        "repo",
 	}
 
 	result, err := Check(&buf, deps)
@@ -183,15 +192,49 @@ func TestCheck_ValidCredentials(t *testing.T) {
 	}
 
 	if !result.Valid {
-		t.Error("expected valid result")
+		t.Error("expected valid local credentials")
 	}
-	if result.ExpiresIn <= 0 {
-		t.Error("expected positive expires-in duration")
+	if !result.RepoSecretSet {
+		t.Error("expected repo secret to be set")
+	}
+	if !result.InSync {
+		t.Error("expected in-sync result")
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "✓") {
-		t.Errorf("expected check mark for valid creds, got:\n%s", output)
+	if !strings.Contains(output, "in sync") {
+		t.Errorf("expected 'in sync' in output, got:\n%s", output)
+	}
+}
+
+func TestCheck_LocalValidSecretMissing(t *testing.T) {
+	var buf bytes.Buffer
+
+	deps := Deps{
+		Run: fakeRun(""),
+		ReadCredentials: func(run RunCommandFunc) ([]byte, error) {
+			return fakeFutureCredentials(), nil
+		},
+		CheckRepoSecret: fakeCheckRepoSecret(false),
+		Owner:           "owner",
+		RepoName:        "repo",
+	}
+
+	result, err := Check(&buf, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.Valid {
+		t.Error("expected valid local credentials")
+	}
+	if result.InSync {
+		t.Error("expected out-of-sync when secret missing")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "auth refresh") {
+		t.Errorf("expected 'auth refresh' remediation, got:\n%s", output)
 	}
 }
 
@@ -203,6 +246,9 @@ func TestCheck_ExpiredCredentials(t *testing.T) {
 		ReadCredentials: func(run RunCommandFunc) ([]byte, error) {
 			return fakeExpiredCredentials(), nil
 		},
+		CheckRepoSecret: fakeCheckRepoSecret(true),
+		Owner:           "owner",
+		RepoName:        "repo",
 	}
 
 	result, err := Check(&buf, deps)
@@ -213,13 +259,16 @@ func TestCheck_ExpiredCredentials(t *testing.T) {
 	if result.Valid {
 		t.Error("expected invalid result for expired credentials")
 	}
+	if result.InSync {
+		t.Error("expected out-of-sync for expired credentials")
+	}
 
 	output := buf.String()
 	if !strings.Contains(output, "✗") {
 		t.Errorf("expected fail mark for expired creds, got:\n%s", output)
 	}
-	if !strings.Contains(output, "auth refresh") {
-		t.Errorf("expected remediation command, got:\n%s", output)
+	if !strings.Contains(output, "auth login") {
+		t.Errorf("expected login remediation, got:\n%s", output)
 	}
 }
 
@@ -231,6 +280,9 @@ func TestCheck_MissingCredentials(t *testing.T) {
 		ReadCredentials: func(run RunCommandFunc) ([]byte, error) {
 			return nil, fmt.Errorf("not found")
 		},
+		CheckRepoSecret: fakeCheckRepoSecret(false),
+		Owner:           "owner",
+		RepoName:        "repo",
 	}
 
 	result, err := Check(&buf, deps)
@@ -241,11 +293,11 @@ func TestCheck_MissingCredentials(t *testing.T) {
 	if result.Valid {
 		t.Error("expected invalid result for missing credentials")
 	}
+	if result.InSync {
+		t.Error("expected out-of-sync when nothing is configured")
+	}
 
 	output := buf.String()
-	if !strings.Contains(output, "✗") {
-		t.Errorf("expected fail mark, got:\n%s", output)
-	}
 	if !strings.Contains(output, "auth login") {
 		t.Errorf("expected login remediation, got:\n%s", output)
 	}
@@ -259,6 +311,9 @@ func TestCheck_UnparseableExpiry(t *testing.T) {
 		ReadCredentials: func(run RunCommandFunc) ([]byte, error) {
 			return []byte(`{"token": "abc123"}`), nil // No expiry field.
 		},
+		CheckRepoSecret: fakeCheckRepoSecret(true),
+		Owner:           "owner",
+		RepoName:        "repo",
 	}
 
 	result, err := Check(&buf, deps)
