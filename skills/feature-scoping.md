@@ -29,7 +29,13 @@ The full requirement label lifecycle: **Backlog → Scoping → Scheduled → Do
 ## What the Agent Does
 
 1. Prints: `=== Feature Scoping Session (Phase 2) — Started ===`
-2. Lists available requirements in `backlog` state
+2. **Verify framework version is current:**
+   ```bash
+   gh agentic info
+   ```
+   - Local version matches control plane → proceed
+   - Version mismatch → run `gh agentic mount` to sync, then confirm versions match before continuing
+3. Lists available requirements in `backlog` state
 3. Waits for the human to select a requirement
 4. Transitions the requirement from `backlog` to `scoping`.
    **Inline status update** — immediately after applying the `scoping` label, set the

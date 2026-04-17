@@ -30,17 +30,21 @@ Execute these steps in order — do not skip any:
 2. Read `docs/PROJECT_BRIEF.md` — understand what the system is and how it works.
    If the file does not exist, note this and continue — do not block.
 
-3. **Verify `AGENTIC_PROJECT_ID` is set.** Check whether the repo variable
-   `AGENTIC_PROJECT_ID` exists:
+3. **Run health check and repair.**
+   ```bash
+   gh agentic check
+   ```
+   - All checks pass → continue
+   - Any check fails → run `gh agentic repair`, then re-run `gh agentic check`
+   - Still failing after repair → **stop and alert the human** with the exact failure output.
+     Do not proceed until the repo is in a healthy state.
+
+   This check applies to both interactive and automated (CI) sessions — do not skip it.
+
+   If `gh agentic` is not installed, fall back to verifying `AGENTIC_PROJECT_ID` manually:
    ```bash
    gh variable list --json name --jq '.[].name' | grep -q AGENTIC_PROJECT_ID
    ```
-   If the variable is not set, **fail immediately** with this message:
-   > AGENTIC_PROJECT_ID is not configured. Set this repo variable to the ProjectV2
-   > node ID before running any session. Command:
-   > `gh variable set AGENTIC_PROJECT_ID --repo {owner}/{repo} --body "{project_node_id}"`
-
-   This check applies to both interactive and automated (CI) sessions — do not skip it.
 
 4. Check whether `REPOS.md` exists in the repository root.
    - If it does not exist: this is a single-repo topology — skip this step entirely and continue.

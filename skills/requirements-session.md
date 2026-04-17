@@ -18,7 +18,13 @@ Open Goose and select the **Requirements Session (Stage 1)** recipe.
 ## What the Agent Does
 
 1. Prints: `=== Requirements Session (Phase 1) — Started ===`
-2. Reads the project brief and existing open requirements
+2. **Verify framework version is current:**
+   ```bash
+   gh agentic info
+   ```
+   - Local version matches control plane → proceed
+   - Version mismatch → run `gh agentic mount` to sync, then confirm versions match before continuing
+3. Reads the project brief and existing open requirements
 3. Converses with the human to distil raw ideas into clear needs
 4. Challenges vague descriptions and solution-framed requirements
 5. Creates GitHub Issues with `requirement` + `backlog` or `draft` labels
