@@ -530,6 +530,9 @@ jobs:
           fi
           gh issue edit ${ISSUE} \
             --repo ${{ github.repository }} \
+            --remove-label "backlog" \
+            --remove-label "in-design" \
+            --remove-label "in-development" \
             --remove-label "in-review" \
             --add-label "done"
 
@@ -680,7 +683,9 @@ jobs:
           echo "All sub-issues closed — closing requirement ${AGENTIC_REPO}#${PARENT}"
           gh issue edit ${PARENT} \
             --repo ${AGENTIC_REPO} \
+            --remove-label "backlog" \
             --remove-label "scoping" \
+            --remove-label "scheduled" \
             --add-label "done"
 
           # Inline project status update — set requirement to "Done"
