@@ -67,8 +67,8 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Next steps:")
 	fmt.Fprintln(w, "  1. Review and commit the generated files")
-	fmt.Fprintln(w, "  2. Configure GOOSE_AGENT_PAT and CLAUDE_CREDENTIALS_JSON as secrets")
-	fmt.Fprintln(w, "  3. Run 'gh agentic --v2 doctor' to verify")
+	fmt.Fprintln(w, "  2. Run 'gh agentic init' to join or create an agentic project")
+	fmt.Fprintln(w, "  3. Run 'gh agentic check' to verify the full setup")
 
 	return nil
 }
