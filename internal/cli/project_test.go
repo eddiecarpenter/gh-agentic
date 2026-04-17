@@ -127,9 +127,25 @@ func TestProjectCmd_SubcommandsRegistered(t *testing.T) {
 		subs[c.Use] = true
 	}
 
-	for _, want := range []string{"check", "create [title]", "join [project-name]", "unlink", "repair", "switch", "init"} {
+	// project group now holds only lifecycle operations.
+	// init/check/repair/upgrade are top-level commands.
+	for _, want := range []string{"create [title]", "join [project-name]", "unlink", "switch [project-name]"} {
 		if !subs[want] {
 			t.Errorf("subcommand %q not registered under project", want)
+		}
+	}
+}
+
+func TestRootCmd_TopLevelCommandsRegistered(t *testing.T) {
+	root := newRootCmd("dev", "")
+	subs := map[string]bool{}
+	for _, c := range root.Commands() {
+		subs[c.Use] = true
+	}
+
+	for _, want := range []string{"init", "check", "repair", "mount", "upgrade [version]", "project", "info", "auth"} {
+		if !subs[want] {
+			t.Errorf("top-level command %q not registered", want)
 		}
 	}
 }

@@ -96,7 +96,7 @@ func PrintReport(w io.Writer, report *CheckReport) bool {
 	fmt.Fprintln(w, "")
 
 	for _, r := range report.Results {
-		icon := statusIcon(r.Status)
+		icon := StatusIcon(r.Status)
 		fmt.Fprintf(w, "  %s  %s\n", icon, r.Message)
 		if r.Remediation != "" {
 			fmt.Fprintf(w, "       %s\n", ui.Muted.Render("→ "+r.Remediation))
@@ -119,7 +119,7 @@ func PrintReport(w io.Writer, report *CheckReport) bool {
 	return true
 }
 
-func statusIcon(s CheckStatus) string {
+func StatusIcon(s CheckStatus) string {
 	switch s {
 	case CheckPass:
 		return ui.StatusOK.Render("✓")
