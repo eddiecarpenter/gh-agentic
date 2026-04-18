@@ -1,0 +1,27 @@
+{
+  "description": "Schema for `gh agentic status requirement <N> --json`. A single self-contained object whose fields mirror the Requirement struct, with embedded linked_features.",
+  "root_fields": {
+    "number": "number",
+    "title": "string",
+    "body": "string",
+    "stage": "string",
+    "created_at": "string",
+    "last_transitioned_at": "string",
+    "owning_repo": "string",
+    "blocked": "object-or-null",
+    "linked_features": "array"
+  },
+  "linked_feature_fields": {
+    "number": "number",
+    "title": "string",
+    "stage": "string",
+    "owning_repo": "string",
+    "branch_one_liner": "string",
+    "pr": "object-or-null"
+  },
+  "pr_fields_when_present": {
+    "number": "number",
+    "state": "string",
+    "reviewers": "array"
+  }
+}
