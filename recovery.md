@@ -4,33 +4,34 @@
 |---------------------|--------------------------------------------------|
 | Feature issue       | #492                                             |
 | Branch              | feature/492-gh-agentic-status                    |
-| Last commit         | a4c46db                                          |
+| Last commit         | bd19f4d                                          |
 | Total tasks         | 11                                               |
-| Last updated        | 2026-04-18T10:55:00Z                             |
+| Last updated        | 2026-04-18T11:05:00Z                             |
 
 ## Completed Tasks
 
 ### #494 — Scaffold gh agentic status command group and four sub-command stubs
 - **Implemented:** Cobra command group with four leaf sub-commands as stubs.
-  All downstream flags declared. Wired into root.
-- **Files changed:** internal/cli/status.go, internal/cli/status_test.go, internal/cli/root.go
-- **Decisions:** Shared `errStatusNotImplemented` sentinel; flag registrars split into list vs detail.
+- **Files:** internal/cli/status.go, status_test.go, root.go
+- **Decisions:** Shared `errStatusNotImplemented` sentinel; flag registrars split list/detail.
 
 ### #495 — Build internal/projectstatus package — types, GraphQL queries, typed errors
-- **Implemented:** Complete data model (Requirement, Feature, summaries, TaskRef, BranchState,
-  PRState, BlockedInfo) with canonical Stage enum. Injectable Deps with production GraphQL
-  implementations. Typed errors (ErrIssueNotFound, ErrWrongType, ErrProjectNotConfigured,
-  ErrProjectUnreachable) and ClassifyAPIError. Parent resolution prefers native trackedInIssues,
-  falls back to `Closes #N` in the body. Extensive unit tests with fake deps.
-- **Files changed:** internal/projectstatus/{types,deps,errors,queries,queries_default}.go + tests.
-- **Decisions:** Blocked annotation deferred to task #501 (field on struct already). Stage parsing
-  is the single chokepoint — ParseStage normalises spaces, hyphens, case. A bare `Closes #N` only
-  matches within the same owning repo to prevent cross-repo number collisions.
+- **Implemented:** Complete data model + injectable Deps + ClassifyAPIError.
+- **Files:** internal/projectstatus/{types,deps,errors,queries,queries_default}.go + tests.
+- **Decisions:** Blocked annotation deferred to #501. Stage parsing normalises spaces/hyphens/case.
+
+### #496 — Implement 'gh agentic status requirements' list command
+- **Implemented:** Handler + renderer (table + JSON envelope). --include-done / --this-repo /
+  --json wired. --kanban and --horizontal return scoped not-yet-implemented until task #500.
+- **Files:** internal/cli/status_requirements.go + test; internal/cli/status.go updated to
+  wire newStatusRequirementsCmdWithDeps. types.go gained JSON tags for the stable schema.
+- **Decisions:** statusDeps struct is the shared CLI-layer injectable. REPO column shows only
+  when at least one row is cross-repo. Totals line uses singular/plural form and a `(N blocked)`
+  suffix when applicable.
 
 ## Remaining Tasks
 
-- [ ] #496 — Implement 'gh agentic status requirements' list command ← current
-- [ ] #497 — Implement 'gh agentic status requirement <N>' detail command
+- [ ] #497 — Implement 'gh agentic status requirement <N>' detail command ← current
 - [ ] #498 — Implement 'gh agentic status features' list command
 - [ ] #499 — Implement 'gh agentic status feature <N>' detail command
 - [ ] #500 — Implement --kanban renderer (vertical + --horizontal) with --json precedence
