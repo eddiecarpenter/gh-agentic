@@ -127,6 +127,15 @@ func FetchRequirement(deps Deps, projectID string, number int) (*Requirement, er
 // FetchFeatures returns the feature issues on the project board, sorted by
 // issue number ascending. Closed or done items are filtered out unless
 // includeDone is true.
+//
+// Each returned Feature has TasksTotal and TasksDone populated from the
+// sub-issue relationship (via deps.FetchSubIssues). A feature with no
+// sub-issues yields both zero. Sub-issue fetch failures for an individual
+// feature are treated as zero counts rather than failing the whole list —
+// the task-count signal is a rendering nice-to-have, not a hard
+// requirement. The per-feature loop is acceptable because the number of
+// open features is bounded in practice; a future optimisation can batch
+// the sub-issue queries via GraphQL aliases.
 func FetchFeatures(deps Deps, projectID string, includeDone bool) ([]Feature, error) {
 	issues, err := deps.FetchProjectIssues(projectID)
 	if err != nil {
@@ -151,10 +160,38 @@ func FetchFeatures(deps Deps, projectID string, includeDone bool) ([]Feature, er
 			OwningRepo:         issue.OwningRepo,
 		}
 		populateBlocked(deps, &f.Blocked, issue.OwningRepo, issue.Number, issue.Body)
+		populateTaskCounts(deps, &f)
 		features = append(features, f)
 	}
 	sort.Slice(features, func(i, j int) bool { return features[i].Number < features[j].Number })
 	return features, nil
+}
+
+// populateTaskCounts writes TasksTotal and TasksDone on f using deps.FetchSubIssues.
+// When the dependency is not wired, when the owning repo cannot be parsed,
+// or when the sub-issue fetch fails, both counts remain zero — the
+// rendering layer treats that as "no task info available" rather than
+// breaking the list view.
+func populateTaskCounts(deps Deps, f *Feature) {
+	if f == nil || deps.FetchSubIssues == nil {
+		return
+	}
+	owner, repo := splitOwnerRepo(f.OwningRepo)
+	if owner == "" || repo == "" {
+		return
+	}
+	tasks, err := deps.FetchSubIssues(owner, repo, f.Number)
+	if err != nil {
+		return
+	}
+	f.TasksTotal = len(tasks)
+	done := 0
+	for _, t := range tasks {
+		if t.Closed {
+			done++
+		}
+	}
+	f.TasksDone = done
 }
 
 // FetchFeature returns a single feature with parent requirement, tasks,
@@ -194,6 +231,15 @@ func FetchFeature(deps Deps, projectID string, number int) (*Feature, error) {
 			return nil, fmt.Errorf("fetching sub-issues for feature %d: %w", number, err)
 		}
 		feature.Tasks = tasks
+		// Mirror the internal counts used by list-context renderers so the
+		// detail path exposes the same signal even though it already has
+		// the full Tasks slice available.
+		feature.TasksTotal = len(tasks)
+		for _, t := range tasks {
+			if t.Closed {
+				feature.TasksDone++
+			}
+		}
 	}
 
 	// Parent requirement — native first, then Closes #N fallback.

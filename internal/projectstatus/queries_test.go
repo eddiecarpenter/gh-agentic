@@ -1,6 +1,7 @@
 package projectstatus
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -8,6 +9,12 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 )
+
+// jsonMarshal wraps encoding/json.Marshal in a locally-named shim to avoid
+// colliding with test helpers that use `json.Unmarshal` inline.
+func jsonMarshal(v interface{}) ([]byte, error) {
+	return json.Marshal(v)
+}
 
 // fakeDeps builds a Deps populated with deterministic fakes for tests.
 // Each callback is wired to return data derived from the provided issues
@@ -155,6 +162,134 @@ func TestFetchFeatures_ExcludesDoneByDefault(t *testing.T) {
 	want := []int{492}
 	if !equalInts(numbers, want) {
 		t.Errorf("FetchFeatures (default) numbers = %v, want %v", numbers, want)
+	}
+}
+
+// TestFetchFeatures_PopulatesTaskCounts verifies that FetchFeatures writes
+// TasksTotal and TasksDone on every feature it returns — zero tasks, partial
+// completion, and full completion all produce the expected counts.
+func TestFetchFeatures_PopulatesTaskCounts(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []ProjectIssue{
+		{Number: 100, Title: "zero-task feature", Type: "feature", State: "open", Stage: StageBacklog, OwningRepo: "o/r", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 200, Title: "partial feature", Type: "feature", State: "open", Stage: StageInDevelopment, OwningRepo: "o/r", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 300, Title: "complete feature", Type: "feature", State: "open", Stage: StageInReview, OwningRepo: "o/r", CreatedAt: now, LastTransitionedAt: now},
+	}
+	subs := map[int][]TaskRef{
+		100: {},
+		200: {
+			{Number: 201, Title: "t1", Closed: true},
+			{Number: 202, Title: "t2", Closed: false},
+			{Number: 203, Title: "t3", Closed: true},
+		},
+		300: {
+			{Number: 301, Title: "t1", Closed: true},
+			{Number: 302, Title: "t2", Closed: true},
+		},
+	}
+	f := fakeDeps{issues: issues, subIssues: subs}
+
+	got, err := FetchFeatures(f.Deps(), "PROJ", false)
+	if err != nil {
+		t.Fatalf("FetchFeatures: %v", err)
+	}
+	byNumber := map[int]Feature{}
+	for _, ft := range got {
+		byNumber[ft.Number] = ft
+	}
+
+	cases := []struct {
+		number      int
+		wantTotal   int
+		wantDone    int
+		description string
+	}{
+		{number: 100, wantTotal: 0, wantDone: 0, description: "zero tasks"},
+		{number: 200, wantTotal: 3, wantDone: 2, description: "partial completion"},
+		{number: 300, wantTotal: 2, wantDone: 2, description: "full completion"},
+	}
+	for _, tc := range cases {
+		ft, ok := byNumber[tc.number]
+		if !ok {
+			t.Errorf("%s: feature #%d missing from result", tc.description, tc.number)
+			continue
+		}
+		if ft.TasksTotal != tc.wantTotal {
+			t.Errorf("%s (#%d): TasksTotal = %d, want %d", tc.description, tc.number, ft.TasksTotal, tc.wantTotal)
+		}
+		if ft.TasksDone != tc.wantDone {
+			t.Errorf("%s (#%d): TasksDone = %d, want %d", tc.description, tc.number, ft.TasksDone, tc.wantDone)
+		}
+	}
+}
+
+// TestFetchFeatures_TaskCountsZeroWhenDepNotWired verifies that a FetchFeatures
+// call still succeeds when FetchSubIssues is not wired — the counts simply
+// remain zero and the feature list is otherwise unaffected.
+func TestFetchFeatures_TaskCountsZeroWhenDepNotWired(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []ProjectIssue{
+		{Number: 100, Title: "f", Type: "feature", State: "open", Stage: StageBacklog, OwningRepo: "o/r", CreatedAt: now, LastTransitionedAt: now},
+	}
+	// A Deps without FetchSubIssues wired.
+	deps := Deps{
+		FetchProjectIssues: func(string) ([]ProjectIssue, error) { return issues, nil },
+	}
+	got, err := FetchFeatures(deps, "PROJ", false)
+	if err != nil {
+		t.Fatalf("FetchFeatures: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(got))
+	}
+	if got[0].TasksTotal != 0 || got[0].TasksDone != 0 {
+		t.Errorf("expected zero counts when dep not wired; got Total=%d Done=%d", got[0].TasksTotal, got[0].TasksDone)
+	}
+}
+
+// TestFetchFeatures_TaskCountsExcludedFromJSON verifies that the new internal
+// fields are not serialised by json.Marshal — the locked schema for --json
+// continues to emit exactly the documented keys.
+func TestFetchFeatures_TaskCountsExcludedFromJSON(t *testing.T) {
+	feat := Feature{
+		Number:     1,
+		Title:      "f",
+		TasksTotal: 5,
+		TasksDone:  3,
+	}
+	blob, err := jsonMarshalFeature(feat)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, disallowed := range []string{"tasks_total", "tasks_done", "TasksTotal", "TasksDone"} {
+		if containsIdentifier(blob, disallowed) {
+			t.Errorf("JSON payload must not contain %q; got:\n%s", disallowed, blob)
+		}
+	}
+}
+
+// TestFetchFeature_TaskCountsMirrorTasksSlice verifies the detail path also
+// populates the internal counts from the already-fetched Tasks slice.
+func TestFetchFeature_TaskCountsMirrorTasksSlice(t *testing.T) {
+	f := fakeDeps{
+		issues: sampleIssues(),
+		subIssues: map[int][]TaskRef{
+			492: {
+				{Number: 494, Title: "a", Closed: true},
+				{Number: 495, Title: "b", Closed: false},
+				{Number: 496, Title: "c", Closed: true},
+			},
+		},
+	}
+	feat, err := FetchFeature(f.Deps(), "PROJ", 492)
+	if err != nil {
+		t.Fatalf("FetchFeature: %v", err)
+	}
+	if feat.TasksTotal != 3 {
+		t.Errorf("TasksTotal = %d, want 3", feat.TasksTotal)
+	}
+	if feat.TasksDone != 2 {
+		t.Errorf("TasksDone = %d, want 2", feat.TasksDone)
 	}
 }
 
@@ -444,6 +579,33 @@ func TestBodyReferencesRequirement_CrossRepoGuard(t *testing.T) {
 	if !bodyReferencesRequirement("Closes a/b#457", 457, "c/d", "a/b") {
 		t.Errorf("qualified Closes a/b#457 should match regardless of feature repo")
 	}
+}
+
+// jsonMarshalFeature marshals a Feature using encoding/json — used by the
+// schema-stability test to confirm internal fields are not emitted.
+func jsonMarshalFeature(f Feature) (string, error) {
+	b, err := jsonMarshal(f)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// containsIdentifier reports whether s contains target as a substring. Named
+// for readability in the schema-stability test.
+func containsIdentifier(s, target string) bool {
+	return len(target) > 0 && indexOf(s, target) >= 0
+}
+
+// indexOf wraps strings.Index via a local shim so the test file does not
+// need to import strings inline for a single call.
+func indexOf(s, sep string) int {
+	for i := 0; i+len(sep) <= len(s); i++ {
+		if s[i:i+len(sep)] == sep {
+			return i
+		}
+	}
+	return -1
 }
 
 // equalInts is a small helper for slice comparison in tests.
