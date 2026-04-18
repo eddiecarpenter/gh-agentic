@@ -164,6 +164,10 @@ See `concepts/delivery-philosophy.md` for the full context.
   manually, even if the next steps are obvious. The automation runs the next session.
   This rule is unconditional and overrides any "completing early" logic.
 
+- **If the agent performs the same substantive action repeatedly in a session,** invoke
+  `skills/skill-creation.md` in proactive-suggestion mode. Detection thresholds and
+  classification logic are defined in that skill.
+
 ---
 
 ## Framework Files — Read Only
