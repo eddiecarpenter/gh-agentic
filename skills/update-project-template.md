@@ -1,3 +1,13 @@
+---
+name: update-project-template
+description: Extracts the live GitHub Project configuration (shortDescription, readme, status field options, and views) and writes it as the canonical .ai/project-template.json so board customisations flow to downstream environments via gh agentic sync. Use when the human asks to save the current project config as the template or to update the project template from the live project (template repo only).
+category: Operation
+triggers: human-interactive
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
 # Update Project Template
 
 ## Purpose

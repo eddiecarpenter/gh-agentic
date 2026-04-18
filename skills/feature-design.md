@@ -1,3 +1,17 @@
+---
+name: feature-design
+description: Decomposes a Feature issue into ordered Task sub-issues that cover every acceptance criterion, creates the feature branch, and hands off to Dev Session via the in-development label. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-design label — never run interactively.
+category: Session
+triggers: "automation: in-design"
+loads:
+  - session-init
+  - gh-agentic-tool
+  - set-issue-status
+  - session-exit
+emits-exit-block: true
+exit-hands-to: "automation: dev-session (in-development label)"
+---
+
 # Feature Design — Stage 3
 
 ## ⛔ Automation-Only — Do Not Execute Interactively
@@ -42,8 +56,25 @@ Triggered automatically by GitHub Actions when a Feature issue is labelled `in-d
    - Find or create the project item
    - Resolve the Status field and option IDs
    - Set status to `In Development`
-8. Prints: `=== Feature Design Session — Completed ===`
-9. Exits cleanly — no code written, no PR opened
+8. Emits the canonical exit block (see `skills/session-exit.md`):
+
+   ```
+   === Feature Design Session — Completed ===
+
+   Produced:
+     - M task sub-issues created (#N–#N) under Feature #N
+     - Feature branch feature/N-<description> created
+     - Acceptance-criteria-to-task coverage verified (all K criteria mapped)
+     - in-development label applied to Feature #N
+
+   Blocked: none
+
+   Next: automation: dev-session (in-development label on #N)
+   ```
+
+9. **Terminate the session.** Immediately after the exit block, invoke the host
+   runtime's session-close API if exposed; otherwise halt. No code is written,
+   no PR is opened (see RULEBOOK — Session Termination).
 
 ## Task Issue Format
 

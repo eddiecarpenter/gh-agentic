@@ -1,3 +1,13 @@
+---
+name: post-sync
+description: Handles post-sync upgrade actions left behind in POST_SYNC.md — runs required migration steps (commands, config changes, file renames) in interactive sessions, or warns and exits in automated sessions. Use only when session-init detects POST_SYNC.md at the repo root — never invoke directly.
+category: Bootstrap
+triggers: post-sync
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
 # Post-Sync Upgrade
 
 ## Purpose

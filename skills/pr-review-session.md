@@ -1,3 +1,17 @@
+---
+name: pr-review-session
+description: Processes inline review comments on a PR — answers questions, implements change requests with tests, and escalates ambiguous or scope-changing feedback via the needs-foreground-review label. Use when GitHub Actions triggers this session automatically on a PR review being submitted — never run interactively.
+category: Session
+triggers: "automation: pr-review-submitted"
+loads:
+  - session-init
+  - gh-agentic-tool
+  - session-exit
+  - notify-user
+emits-exit-block: true
+exit-hands-to: "automation: github-actions pushes fixes if any | human: re-review PR"
+---
+
 # PR Review Session — Stage 4b
 
 ## ⛔ Automation-Only — Do Not Execute Interactively
@@ -40,7 +54,52 @@ Triggered automatically by GitHub Actions when a PR review is submitted with
      1. Posts a GitHub comment explaining what it cannot resolve and why
      2. Applies the `needs-foreground-review` label to the PR
      3. Exits immediately without making any code changes
-4. Exits cleanly — the workflow pushes if any code was changed
+4. Emits the canonical exit block (see `skills/session-exit.md`). Match the
+   actual outcome; all variants conform to the same shape.
+
+   **Comments resolved (some code changed):**
+   ```
+   === PR Review Session (Stage 4b) — Completed ===
+
+   Produced:
+     - M inline comments resolved on PR #N
+     - K questions answered inline
+     - J change requests implemented with tests
+     - L commits added to feature/<N>-<description>
+
+   Blocked: none
+
+   Next: automation: workflow pushes fixes; human: re-review PR #N
+   ```
+
+   **Comments resolved (no code changed — questions only):**
+   ```
+   === PR Review Session (Stage 4b) — Completed ===
+
+   Produced:
+     - M inline comments answered on PR #N
+
+   Blocked: none
+
+   Next: human: re-review PR #N
+   ```
+
+   **Escalation (ambiguous or scope-changing feedback):**
+   ```
+   === PR Review Session (Stage 4b) — Completed ===
+
+   Produced:
+     - needs-foreground-review label applied to PR #N
+     - Escalation comment posted on PR #N explaining what could not be resolved
+
+   Blocked: PR #N — feedback requires human judgement (contract change, broad refactor, or ambiguous intent)
+
+   Next: human: run Foreground Recovery recipe
+   ```
+
+5. **Terminate the session.** Immediately after the exit block, invoke the host
+   runtime's session-close API if exposed; otherwise halt. The workflow pushes
+   any code changes after the session exits (see RULEBOOK — Session Termination).
 
 ## Rules
 

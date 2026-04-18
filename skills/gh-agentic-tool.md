@@ -1,3 +1,13 @@
+---
+name: gh-agentic-tool
+description: Authoritative command reference for the gh agentic CLI extension — describes every command (info, project check/repair/info/create/join/unlink, mount, auth check/login/refresh, doctor), when to use each, and the agent's decision logic for common situations. Use whenever the agent needs to interact with the agentic framework from the command line or diagnose project health.
+category: Reference
+triggers: on-demand
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
 # gh-agentic Tool
 
 ## Purpose

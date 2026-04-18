@@ -1,3 +1,16 @@
+---
+name: issue-session
+description: Handles a GitHub Issue assigned to the agent — routes by label to either fix a bug on a new branch or answer a question as a comment, and exits cleanly so the workflow can open a PR if code changed. Use when GitHub Actions triggers this session automatically on an issue being assigned to the agent user — never run interactively.
+category: Session
+triggers: "automation: issue-assigned"
+loads:
+  - session-init
+  - gh-agentic-tool
+  - session-exit
+emits-exit-block: true
+exit-hands-to: "automation: github-actions opens PR if code changed | human: review comment/PR"
+---
+
 # Issue Session — Stage 4c
 
 ## ⛔ Automation-Only — Do Not Execute Interactively
@@ -33,11 +46,67 @@ the agent user (e.g. `goose-agent`).
 2. Posts an acknowledgement comment
 3. Routes by label:
    - **bug**: locates the problem, verifies fix is in safe scope, creates a fix branch,
-     implements the minimal fix, builds and tests, commits, and exits cleanly
-     (workflow pushes and opens PR)
-   - **question**: researches the answer, posts a detailed reply, adds `answered` label,
-     exits cleanly (no code changes, no branch, no PR)
-   - **other**: posts a comment asking for a `bug` or `question` label, exits cleanly
+     implements the minimal fix, builds and tests, commits (workflow pushes and opens PR)
+   - **question**: researches the answer, posts a detailed reply, adds `answered` label
+     (no code changes, no branch, no PR)
+   - **other**: posts a comment asking for a `bug` or `question` label
+4. Emits the canonical exit block (see `skills/session-exit.md`). Match the
+   actual outcome; all variants conform to the same shape.
+
+   **Bug fix applied:**
+   ```
+   === Issue Session (Stage 4c) — Completed ===
+
+   Produced:
+     - Fix branch fix/<N>-<description> created
+     - Minimal fix committed (build and tests pass)
+
+   Blocked: none
+
+   Next: automation: workflow pushes branch and opens PR closing #<N>
+   ```
+
+   **Bug out of safe scope:**
+   ```
+   === Issue Session (Stage 4c) — Completed ===
+
+   Produced:
+     - needs-human label applied to issue #<N>
+     - Comment posted on #<N> explaining why the fix is out of safe scope
+
+   Blocked: #<N> — fix requires out-of-scope changes (contract modification, broad refactor, or new dependency)
+
+   Next: human: triage and decide how to proceed
+   ```
+
+   **Question answered:**
+   ```
+   === Issue Session (Stage 4c) — Completed ===
+
+   Produced:
+     - Reply comment posted on issue #<N>
+     - answered label applied to #<N>
+
+   Blocked: none
+
+   Next: nothing
+   ```
+
+   **Unlabelled or other:**
+   ```
+   === Issue Session (Stage 4c) — Completed ===
+
+   Produced:
+     - Comment posted on issue #<N> requesting a bug or question label
+
+   Blocked: #<N> — cannot route without a bug or question label
+
+   Next: human: apply the correct label
+   ```
+
+5. **Terminate the session.** Immediately after the exit block, invoke the host
+   runtime's session-close API if exposed; otherwise halt. The workflow opens a
+   PR if code changed (see RULEBOOK — Session Termination).
 
 ## Scope Check (bugs only)
 

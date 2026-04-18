@@ -1,3 +1,17 @@
+---
+name: foreground-recovery
+description: The human-driven escape hatch for any blocked pipeline state — diagnoses failures from exact error output, applies minimal fixes, and optionally rewinds to an earlier pipeline phase with explicit human confirmation. Use when the automated pipeline is blocked (red build, failing tests, merge conflict, silent workflow failure, or any situation requiring manual intervention) and a human opens the Foreground Recovery recipe.
+category: Recovery
+triggers: human-interactive
+loads:
+  - session-init
+  - gh-agentic-tool
+  - session-exit
+  - notify-user
+emits-exit-block: true
+exit-hands-to: "automation: dev-session re-triggers on push | human: re-apply in-development label if workflow does not restart"
+---
+
 # Foreground Recovery
 
 ## Purpose
@@ -33,7 +47,51 @@ Open Goose and select the **Foreground Recovery** recipe.
 6. Builds and tests
 7. Commits, closes the Task issue if complete, and pushes
 8. Re-triggers the Dev Session workflow if needed
-9. Reports exactly what was fixed
+9. Emits the canonical exit block (see `skills/session-exit.md`). Match the
+   actual outcome; all variants conform to the same shape.
+
+   **Fix applied on feature branch:**
+   ```
+   === Foreground Recovery — Completed ===
+
+   Produced:
+     - Fix committed on feature/<N>-<description>: <brief description>
+     - Build and tests pass locally
+     - Fix pushed to origin
+
+   Blocked: none
+
+   Next: automation: dev-session re-triggers on push; human: re-apply in-development label if it does not restart
+   ```
+
+   **Rewind executed (human confirmed):**
+   ```
+   === Foreground Recovery — Completed ===
+
+   Produced:
+     - Rewind executed: <Dev Session only | Feature Design | Scoping | Requirements | Full reset>
+     - Cleanup: <closed tasks #…, deleted branch feature/<N>, relabelled #<N>>
+
+   Blocked: none
+
+   Next: automation: <re-triggered phase> | human: re-capture requirements
+   ```
+
+   **Escalation (cannot fix without human decision):**
+   ```
+   === Foreground Recovery — Completed ===
+
+   Produced:
+     - Diagnosis reported to the human
+
+   Blocked: <feature/issue reference> — fix requires human decision (contract change, broad refactor, or rewind approval not given)
+
+   Next: human: decide how to proceed
+   ```
+
+10. **Terminate the session.** Immediately after the exit block, invoke the host
+    runtime's session-close API if exposed; otherwise halt. No continuation in
+    the same session (see RULEBOOK — Session Termination).
 
 ## Rewind Paths
 
