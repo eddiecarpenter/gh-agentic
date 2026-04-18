@@ -63,10 +63,11 @@ func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) erro
 	}
 
 	if flags.kanban {
+		unicode := ui.TerminalSupportsUTF8()
 		columns := columnsForFeatures(flags.includeDone)
-		cards := featureCards(features, columns)
+		cards := featureCards(features, columns, unicode)
 		if layout.horizontal {
-			return writeHorizontalKanban(w, columns, cards, terminalWidth(), featureKanbanMinWidth, ui.TerminalSupportsUTF8())
+			return writeHorizontalKanban(w, columns, cards, terminalWidth(), featureKanbanMinWidth, unicode)
 		}
 		return writeVerticalKanban(w, "Features — Kanban", columns, cards, layout.notice)
 	}

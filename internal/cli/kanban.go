@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // requirementKanbanColumns is the canonical left-to-right column order for
@@ -120,20 +121,40 @@ func requirementCards(reqs []projectstatus.Requirement, columns []projectstatus.
 	return out
 }
 
-// featureCards groups features by stage and renders them as cards.
-func featureCards(features []projectstatus.Feature, columns []projectstatus.Stage) map[projectstatus.Stage][]kanbanCard {
+// featureCards groups features by stage and renders them as cards. Every
+// feature card carries a progress line combining the block-bar glyph
+// (via ui.RenderProgressBar) and the numeric `N/M tasks` caption so both
+// list-context views — horizontal and vertical kanban — communicate
+// per-feature progress at a glance.
+//
+// unicode selects between the Unicode block glyphs and the ASCII fallback;
+// callers thread in ui.TerminalSupportsUTF8() — the same value used to
+// choose box-drawing glyphs — so a terminal gets a consistent look across
+// the whole view.
+func featureCards(features []projectstatus.Feature, columns []projectstatus.Stage, unicode bool) map[projectstatus.Stage][]kanbanCard {
 	out := map[projectstatus.Stage][]kanbanCard{}
 	for _, col := range columns {
 		out[col] = nil
 	}
 	for _, f := range features {
 		card := kanbanCard{Lines: []string{fmt.Sprintf("#%d %s", f.Number, f.Title)}}
+		card.Lines = append(card.Lines, featureProgressLine(f, unicode))
 		if f.Blocked != nil && f.Blocked.BlockingRef != "" {
 			card.Lines = append(card.Lines, fmt.Sprintf("[blocked by %s]", f.Blocked.BlockingRef))
 		}
 		out[f.Stage] = append(out[f.Stage], card)
 	}
 	return out
+}
+
+// featureProgressLine renders the progress indicator shown on every
+// feature kanban card — a block-bar followed by the exact N/M numeric.
+// Zero-total features still emit a `0/0 tasks` caption so the line
+// position is consistent across cards; the block-bar renders as `[]` in
+// that case (see ui.RenderProgressBar).
+func featureProgressLine(f projectstatus.Feature, unicode bool) string {
+	bar := ui.RenderProgressBar(f.TasksDone, f.TasksTotal, unicode)
+	return fmt.Sprintf("%s %d/%d tasks", bar, f.TasksDone, f.TasksTotal)
 }
 
 // writeVerticalKanban renders the stage-grouped view that works at any

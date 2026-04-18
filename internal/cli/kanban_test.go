@@ -83,7 +83,7 @@ func TestHorizontalKanban_NarrowTerminalStillRenders(t *testing.T) {
 	cols := columnsForFeatures(false)
 	cards := featureCards([]projectstatus.Feature{
 		{Number: 1, Title: "t", Stage: projectstatus.StageBacklog},
-	}, cols)
+	}, cols, true)
 	buf := &bytes.Buffer{}
 	err := writeHorizontalKanban(buf, cols, cards, 80, 120, true)
 	if err != nil {
@@ -105,7 +105,7 @@ func TestHorizontalKanban_WideTerminalRenders(t *testing.T) {
 	cols := columnsForFeatures(false)
 	cards := featureCards([]projectstatus.Feature{
 		{Number: 492, Title: "feat: status command", Stage: projectstatus.StageInDevelopment},
-	}, cols)
+	}, cols, true)
 
 	buf := &bytes.Buffer{}
 	if err := writeHorizontalKanban(buf, cols, cards, 160, kanbanMinHorizontalWidthFeatures, true); err != nil {
@@ -166,7 +166,7 @@ func TestFeatureCards_SortedByStage(t *testing.T) {
 		{Number: 3, Title: "c", Stage: projectstatus.StageInDesign},
 	}
 	cols := []projectstatus.Stage{projectstatus.StageBacklog, projectstatus.StageInDesign}
-	cards := featureCards(features, cols)
+	cards := featureCards(features, cols, true)
 	if len(cards[projectstatus.StageBacklog]) != 1 {
 		t.Errorf("backlog should have 1 card; got %d", len(cards[projectstatus.StageBacklog]))
 	}
@@ -503,6 +503,191 @@ func TestStatusCmd_VerticalFlagRegistered(t *testing.T) {
 		if child.Flags().Lookup("vertical") == nil {
 			t.Errorf("status %s: expected --vertical flag; not registered", parent)
 		}
+	}
+}
+
+// TestFeatureCards_ProgressLineZeroTasks verifies a feature with zero
+// sub-issues renders the documented zero-total form on its progress line
+// — `[] 0/0 tasks` — so the cards maintain a consistent structure.
+func TestFeatureCards_ProgressLineZeroTasks(t *testing.T) {
+	features := []projectstatus.Feature{
+		{Number: 7, Title: "zero-task", Stage: projectstatus.StageBacklog, TasksTotal: 0, TasksDone: 0},
+	}
+	cols := []projectstatus.Stage{projectstatus.StageBacklog}
+	cards := featureCards(features, cols, true)
+	if len(cards[projectstatus.StageBacklog]) != 1 {
+		t.Fatalf("expected 1 card; got %d", len(cards[projectstatus.StageBacklog]))
+	}
+	card := cards[projectstatus.StageBacklog][0]
+	if len(card.Lines) < 2 {
+		t.Fatalf("expected progress line on card; got lines %v", card.Lines)
+	}
+	got := card.Lines[1]
+	if got != "[] 0/0 tasks" {
+		t.Errorf("zero-task progress line = %q, want %q", got, "[] 0/0 tasks")
+	}
+}
+
+// TestFeatureCards_ProgressLinePartial verifies a partially-complete
+// feature renders the expected filled/empty block mix plus numeric.
+func TestFeatureCards_ProgressLinePartial(t *testing.T) {
+	features := []projectstatus.Feature{
+		{Number: 1, Title: "partial", Stage: projectstatus.StageInDevelopment, TasksTotal: 6, TasksDone: 3},
+	}
+	cols := []projectstatus.Stage{projectstatus.StageInDevelopment}
+	cards := featureCards(features, cols, true)
+	card := cards[projectstatus.StageInDevelopment][0]
+	if len(card.Lines) < 2 {
+		t.Fatalf("expected progress line; got %v", card.Lines)
+	}
+	got := card.Lines[1]
+	if got != "[■■■□□□] 3/6 tasks" {
+		t.Errorf("progress line = %q, want %q", got, "[■■■□□□] 3/6 tasks")
+	}
+}
+
+// TestFeatureCards_ProgressLineComplete verifies a fully-complete feature
+// renders all filled blocks.
+func TestFeatureCards_ProgressLineComplete(t *testing.T) {
+	features := []projectstatus.Feature{
+		{Number: 1, Title: "done", Stage: projectstatus.StageInReview, TasksTotal: 6, TasksDone: 6},
+	}
+	cards := featureCards(features, []projectstatus.Stage{projectstatus.StageInReview}, true)
+	got := cards[projectstatus.StageInReview][0].Lines[1]
+	if got != "[■■■■■■] 6/6 tasks" {
+		t.Errorf("progress line = %q, want %q", got, "[■■■■■■] 6/6 tasks")
+	}
+}
+
+// TestFeatureCards_ProgressLineBeyondCap verifies the > 20-task case: 20
+// blocks rendered, numeric carries the exact N/M.
+func TestFeatureCards_ProgressLineBeyondCap(t *testing.T) {
+	features := []projectstatus.Feature{
+		{Number: 1, Title: "big", Stage: projectstatus.StageInDevelopment, TasksTotal: 40, TasksDone: 23},
+	}
+	cards := featureCards(features, []projectstatus.Stage{projectstatus.StageInDevelopment}, true)
+	got := cards[projectstatus.StageInDevelopment][0].Lines[1]
+	// 23/40 = 57.5% → round(0.575 * 20) = 12 filled blocks
+	if !strings.HasSuffix(got, " 23/40 tasks") {
+		t.Errorf("expected numeric '23/40 tasks'; got %q", got)
+	}
+	totalBlocks := strings.Count(got, "■") + strings.Count(got, "□")
+	if totalBlocks != 20 {
+		t.Errorf("expected 20 blocks (cap); got %d in %q", totalBlocks, got)
+	}
+}
+
+// TestFeatureCards_ProgressLineASCIIFallback verifies the non-Unicode
+// rendering mode produces the documented ASCII characters.
+func TestFeatureCards_ProgressLineASCIIFallback(t *testing.T) {
+	features := []projectstatus.Feature{
+		{Number: 1, Title: "ascii", Stage: projectstatus.StageInDevelopment, TasksTotal: 4, TasksDone: 2},
+	}
+	cards := featureCards(features, []projectstatus.Stage{projectstatus.StageInDevelopment}, false)
+	got := cards[projectstatus.StageInDevelopment][0].Lines[1]
+	if got != "[##  ] 2/4 tasks" {
+		t.Errorf("ASCII progress line = %q, want %q", got, "[##  ] 2/4 tasks")
+	}
+	if strings.ContainsAny(got, "■□") {
+		t.Errorf("unicode glyph leaked into ASCII output: %q", got)
+	}
+}
+
+// TestRequirementCards_NoProgressLine verifies AC-9: requirement cards
+// carry no progress-bar line and no `tasks` suffix.
+func TestRequirementCards_NoProgressLine(t *testing.T) {
+	reqs := []projectstatus.Requirement{
+		{Number: 1, Title: "r", Stage: projectstatus.StageBacklog},
+		{Number: 2, Title: "r2", Stage: projectstatus.StageBacklog, Blocked: &projectstatus.BlockedInfo{BlockingRef: "x/y#3"}},
+	}
+	cards := requirementCards(reqs, []projectstatus.Stage{projectstatus.StageBacklog})
+	for _, c := range cards[projectstatus.StageBacklog] {
+		for _, line := range c.Lines {
+			// A requirement card must never contain the progress-bar glyphs
+			// or the "N/M tasks" suffix — even the bracketed zero form.
+			if strings.Contains(line, "■") || strings.Contains(line, "□") {
+				t.Errorf("requirement card should not contain block glyphs; got %q", line)
+			}
+			if strings.Contains(line, " tasks") {
+				t.Errorf("requirement card should not contain 'tasks' suffix; got %q", line)
+			}
+		}
+	}
+}
+
+// TestRunStatusFeatures_KanbanVerticalShowsProgress verifies the vertical
+// fallback renders includes the progress line — AC-5 applies to both
+// layouts.
+func TestRunStatusFeatures_KanbanVerticalShowsProgress(t *testing.T) {
+	originalWidth := terminalWidth
+	terminalWidth = func() int { return 80 }
+	defer func() { terminalWidth = originalWidth }()
+
+	// Inject task counts for feature #492 via a custom fake.
+	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
+	sd.psDeps.FetchSubIssues = func(_, _ string, n int) ([]projectstatus.TaskRef, error) {
+		if n == 492 {
+			return []projectstatus.TaskRef{
+				{Number: 1, Closed: true}, {Number: 2, Closed: true}, {Number: 3, Closed: false},
+			}, nil
+		}
+		return nil, nil
+	}
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "2/3 tasks") {
+		t.Errorf("expected '2/3 tasks' caption in vertical kanban; got:\n%s", out)
+	}
+}
+
+// TestRunStatusFeatures_KanbanHorizontalShowsProgress verifies the
+// horizontal layout also embeds the progress line per feature card.
+func TestRunStatusFeatures_KanbanHorizontalShowsProgress(t *testing.T) {
+	originalWidth := terminalWidth
+	terminalWidth = func() int { return 200 }
+	defer func() { terminalWidth = originalWidth }()
+
+	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
+	sd.psDeps.FetchSubIssues = func(_, _ string, n int) ([]projectstatus.TaskRef, error) {
+		if n == 492 {
+			return []projectstatus.TaskRef{
+				{Number: 1, Closed: true}, {Number: 2, Closed: false},
+			}, nil
+		}
+		return nil, nil
+	}
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, statusListFlags{kanban: true, horizontal: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "1/2 tasks") {
+		t.Errorf("expected '1/2 tasks' caption in horizontal kanban; got:\n%s", out)
+	}
+}
+
+// TestRunStatusRequirements_KanbanHasNoProgressLine verifies AC-9 from
+// the outer handler: the requirements kanban never emits block glyphs or
+// the `tasks` caption.
+func TestRunStatusRequirements_KanbanHasNoProgressLine(t *testing.T) {
+	originalWidth := terminalWidth
+	terminalWidth = func() int { return 200 }
+	defer func() { terminalWidth = originalWidth }()
+
+	sd := fakeStatusDeps(sampleRequirementIssues())
+	buf := &bytes.Buffer{}
+	if err := runStatusRequirements(buf, statusListFlags{kanban: true}, sd); err != nil {
+		t.Fatalf("runStatusRequirements: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "■") || strings.Contains(out, "□") {
+		t.Errorf("requirements kanban must not contain block glyphs; got:\n%s", out)
+	}
+	if strings.Contains(out, " tasks") {
+		t.Errorf("requirements kanban must not carry 'tasks' caption; got:\n%s", out)
 	}
 }
 
