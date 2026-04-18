@@ -116,6 +116,332 @@ exit-hands-to: null
 - `skills/session-init.md` — loads `CATALOGUE.md` (which is derived from this schema) instead of reading every skill body.
 - Skill authors (human and AI) — read this file before writing or classifying a skill.
 
+## Category Skeletons
+
+Each skeleton below is the minimal conformant body structure a new skill of
+that category should follow. Replace every `<…>` placeholder and every
+`<!-- comment -->` with real content; the resulting file — combined with the
+skeleton's frontmatter — is a valid skill.
+
+Skeletons are authoritative templates used by `skills/skill-creation.md` to
+generate new skill bodies, and by human authors writing skills by hand. They
+do not introduce any new category trait, frontmatter field, or rule — they
+only render the existing schema and taxonomy into a per-category starting
+point.
+
+Conventions used across all skeletons:
+
+- **Frontmatter** block is shown in full. Copy it verbatim and fill in
+  `<name>`, `<description>`, and any category-variable fields.
+- **Body headings** are the required sections for the category. Sections
+  marked *(optional)* may be omitted when there is nothing meaningful to put
+  under them; never emit an empty section.
+- **Exit block** placeholder appears only in Session and Recovery skeletons
+  (the two categories with `emits-exit-block: true`).
+- **Feedback block** placeholder appears in Operation skeletons — a short
+  completion report that is *not* an exit block.
+
+### Session skeleton
+
+```markdown
+---
+name: <name>
+description: <third-person, trigger-oriented description ending in "Use when …">
+category: Session
+triggers: <human-interactive | automation: <label>>
+loads:
+  - session-init
+  - <other-skills-this-session-invokes>
+  - session-exit
+emits-exit-block: true
+exit-hands-to: "<automation: <label> | human | next skill>"
+---
+
+# <Session Display Name> — <Phase Number or Name>
+
+## Purpose
+
+<!-- One paragraph: what pipeline phase this session drives and what artefact
+     it produces. -->
+
+## When to Run
+
+<!-- The trigger: human-initiated recipe, automation label, etc. Reference
+     the row in the RULEBOOK session table. -->
+
+## How to Start
+
+<!-- Concrete invocation path (recipe name, label applied, etc.). -->
+
+## What the Agent Does
+
+1. Print the session-start banner.
+2. <Step — typically load context, verify prerequisites, gather inputs.>
+3. <Step — produce the artefact(s), invoking ask-user inline at every
+    confirmation, classification, or choice moment.>
+4. <Step — wire labels, sub-issues, branches, or other state.>
+5. Emit the canonical exit block (see `skills/session-exit.md`):
+
+   ```
+   === <Session Display Name> — Completed ===
+
+   Produced:
+     - <artefact 1>
+     - <artefact 2>
+
+   Blocked: <none | reason>
+
+   Next: <automation trigger | human action | nothing>
+   ```
+
+6. Terminate the session per RULEBOOK — Session Termination.
+
+## Outputs
+
+<!-- Bulleted list of the artefacts produced on success. -->
+
+## Rules
+
+<!-- Session-specific rules. Do not restate framework-wide rules from
+     RULEBOOK. -->
+```
+
+### Recovery skeleton
+
+```markdown
+---
+name: <name>
+description: <third-person, trigger-oriented description ending in "Use when …">
+category: Recovery
+triggers: human-interactive
+loads:
+  - session-init
+  - <other-skills-this-session-invokes>
+  - session-exit
+emits-exit-block: true
+exit-hands-to: "human | automation: <label>"
+---
+
+# <Recovery Display Name>
+
+## Purpose
+
+<!-- One paragraph: which blocked pipeline state this session recovers, and
+     what the successful outcome looks like. -->
+
+## When to Run
+
+<!-- The human-triggered conditions under which this session is opened. -->
+
+## How to Start
+
+<!-- Concrete invocation path. -->
+
+## What the Agent Does
+
+1. Print the session-start banner.
+2. <Step — gather the exact error output or blocking condition.>
+3. <Step — diagnose; present candidate fixes to the human via ask-user.>
+4. <Step — apply the minimal fix; verify it resolved the block.>
+5. Emit the canonical exit block (see `skills/session-exit.md`) matching the
+    actual outcome.
+6. Terminate the session per RULEBOOK — Session Termination.
+
+## Outputs
+
+<!-- The fix applied, the artefact updated, or the explicit "nothing — human
+     decided not to proceed" outcome. -->
+
+## Rules
+
+<!-- Recovery-specific rules (e.g. "never edit a signed commit without human
+     approval"). -->
+```
+
+### Bootstrap skeleton
+
+```markdown
+---
+name: <name>
+description: <third-person, trigger-oriented description ending in "Use when …">
+category: Bootstrap
+triggers: <session-start | post-sync | on-demand>
+loads:
+  - <skills-this-bootstrap-invokes>
+emits-exit-block: false
+exit-hands-to: null
+---
+
+# <Bootstrap Display Name>
+
+## Purpose
+
+<!-- One paragraph: what environment state this skill prepares so the rest of
+     the session runs correctly. -->
+
+## When to Invoke
+
+<!-- The precise conditions under which this skill runs. Bootstrap skills are
+     invoked by the runtime or by another skill, never interactively. -->
+
+## What the Agent Does
+
+1. <Step — read/validate the artefact or condition this skill guards.>
+2. <Step — perform the preparation (mount, validate, repair, load).>
+3. Return control silently to the caller. Do not emit an exit block.
+
+## Outputs
+
+<!-- The environmental side-effects produced: files written, state loaded,
+     checks run. -->
+
+## Rules
+
+<!-- Bootstrap-specific rules: what must be idempotent, what must hard-fail,
+     what must never mutate. -->
+```
+
+### Operation skeleton
+
+```markdown
+---
+name: <name>
+description: <third-person, trigger-oriented description ending in "Use when …">
+category: Operation
+triggers: <on-demand | human-interactive>
+loads:
+  - <skills-this-operation-invokes>
+emits-exit-block: false
+exit-hands-to: null
+---
+
+# <Operation Display Name>
+
+## Purpose
+
+<!-- One paragraph: the input → output contract. What the operation takes in
+     and what artefact or side effect it produces. -->
+
+## When to Invoke
+
+<!-- The trigger: human request, inline invocation from another skill,
+     automation tick. -->
+
+## Procedure
+
+1. <Step — validate inputs; fail loudly on missing prerequisites.>
+2. <Step — perform the work, invoking ask-user inline for any required
+    human decision.>
+3. <Step — write the artefact or apply the side effect.>
+4. Emit the feedback block described below.
+5. Return control silently. Do not emit a session exit block.
+
+## Feedback Block
+
+The Operation reports completion with a short plain-text feedback block —
+**not** the Session/Recovery exit block. Shape:
+
+```
+=== <Operation Display Name> — Completed ===
+
+Produced:
+  - <artefact or side effect>
+
+Blocked: <none | short reason>
+
+Next: <informational note | nothing>
+```
+
+## Rules
+
+<!-- Operation-specific rules: idempotency, ordering, what must never be
+     silently skipped. -->
+```
+
+### Information skeleton
+
+```markdown
+---
+name: <name>
+description: <third-person, trigger-oriented description ending in "Use when …">
+category: Information
+triggers: <on-demand | automation: <label>>
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
+# <Information Display Name>
+
+## Purpose
+
+<!-- One paragraph: what context is surfaced and to whom (user, agent,
+     downstream artefact). -->
+
+## When to Invoke
+
+<!-- The trigger: notification moment, periodic status print, downstream
+     consumer asking for context. -->
+
+## What the Agent Produces
+
+<!-- The exact output shape — a formatted block, a notification payload, a
+     summary file. Show a worked example. -->
+
+## Procedure
+
+1. <Step — gather the inputs the output is derived from.>
+2. <Step — format the output per the shape above.>
+3. <Step — emit it to the correct destination (stdout, notifier, file).>
+4. Return control silently. Do not emit an exit block.
+
+## Rules
+
+<!-- Information-specific rules: sensitive-data redaction, truncation,
+     deterministic formatting, etc. -->
+```
+
+### Reference skeleton
+
+```markdown
+---
+name: <name>
+description: <third-person, trigger-oriented description ending in "Use when …">
+category: Reference
+triggers: on-demand
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
+# <Reference Display Name>
+
+## Purpose
+
+<!-- One paragraph: which rule, schema, pattern, or template this file
+     canonicalises — and why a single source of truth matters for it. -->
+
+## When to Invoke
+
+<!-- The inline-invocation contract: which consumer skills read this file,
+     under what condition. Reference skills are never standalone sessions. -->
+
+## <Rule / Template / Schema Content>
+
+<!-- The body is the rule or template itself, not a procedure. Examples of
+     appropriate content:
+       - A canonical shape (e.g. the exit block template).
+       - A label-to-status mapping table.
+       - A set of canonical prompt shapes.
+       - A schema definition.
+     Include worked examples when the shape is non-trivial. -->
+
+## Rules
+
+<!-- Rules about how consumers must use this reference: inline-only, no
+     drift, no duplication. -->
+```
+
 ## Rules
 
 - This file is the only place the category taxonomy is defined. Any apparent
