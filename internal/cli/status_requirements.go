@@ -4,14 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
+	"golang.org/x/term"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
+
+// terminalWidth returns the width in columns of the attached terminal, or
+// the fallback when os.Stdout is not a terminal (redirected output, CI).
+// It is a package-level var so tests can substitute a deterministic value.
+var terminalWidth = func() int {
+	if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width > 0 {
+		return width
+	}
+	return 80 // conservative fallback when output is piped
+}
 
 // statusDeps bundles the resources every status sub-command needs. It is
 // injectable so tests can supply deterministic fakes — defaultStatusDeps()
@@ -73,17 +86,15 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 
 // runStatusRequirements is the handler for `gh agentic status requirements`.
 // It resolves the project ID, fetches the list via projectstatus, optionally
-// narrows to the current repo, then renders either the human table or the
-// JSON envelope.
+// narrows to the current repo, then renders one of three forms:
+//
+//  1. --json — envelope {items, totals} regardless of other layout flags.
+//     --json silently wins over --kanban (documented in help).
+//  2. --kanban — stage-grouped view (vertical by default; --horizontal
+//     adds side-by-side rendering when the terminal is wide enough).
+//  3. Default — compact tabular list.
 func runStatusRequirements(w io.Writer, flags statusListFlags, deps statusDeps) error {
-	if flags.kanban {
-		// Kanban rendering lands in task #500. Until then, print a clear
-		// "not yet implemented" message so users who pass the flag see why
-		// nothing is happening. The flag itself is declared on the command
-		// (task #494) so automation can discover the surface area.
-		return fmt.Errorf("--kanban rendering is not yet implemented (see task #500)")
-	}
-	if flags.horizontal {
+	if flags.horizontal && !flags.kanban {
 		return fmt.Errorf("--horizontal requires --kanban")
 	}
 
@@ -109,9 +120,22 @@ func runStatusRequirements(w io.Writer, flags statusListFlags, deps statusDeps) 
 		reqs = filterRequirementsToRepo(reqs, currentRepo)
 	}
 
+	// --json is the highest-priority format — it wins silently over --kanban.
+	// The JSON schema is identical regardless of --kanban; consumers group
+	// by stage themselves if they need a kanban-shaped view.
 	if flags.json {
 		return writeRequirementsJSON(w, reqs)
 	}
+
+	if flags.kanban {
+		columns := columnsForRequirements(flags.includeDone)
+		cards := requirementCards(reqs, columns)
+		if flags.horizontal {
+			return writeHorizontalKanban(w, columns, cards, terminalWidth(), kanbanMinHorizontalWidthRequirements, ui.TerminalSupportsUTF8())
+		}
+		return writeVerticalKanban(w, "Requirements — Kanban", columns, cards)
+	}
+
 	return writeRequirementsTable(w, reqs, currentRepo)
 }
 

@@ -256,17 +256,29 @@ func TestRunStatusRequirements_NoProjectConfigured(t *testing.T) {
 	}
 }
 
-// TestRunStatusRequirements_KanbanFlagGuarded verifies --kanban returns the
-// scoped "not yet implemented" message so users are not confused when task
-// #500 has not yet shipped.
-func TestRunStatusRequirements_KanbanFlagGuarded(t *testing.T) {
+// TestRunStatusRequirements_KanbanVertical verifies --kanban renders the
+// stage-grouped vertical view with columns in canonical order and counts in
+// the section headings.
+func TestRunStatusRequirements_KanbanVertical(t *testing.T) {
 	sd := fakeStatusDeps(sampleRequirementIssues())
-	err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{kanban: true}, sd)
-	if err == nil {
-		t.Fatalf("expected error for --kanban, got nil")
+	buf := &bytes.Buffer{}
+	if err := runStatusRequirements(buf, statusListFlags{kanban: true}, sd); err != nil {
+		t.Fatalf("runStatusRequirements --kanban: %v", err)
 	}
-	if !strings.Contains(err.Error(), "--kanban") {
-		t.Errorf("error should mention --kanban; got %v", err)
+	out := buf.String()
+	for _, tok := range []string{
+		"Requirements — Kanban",
+		"## backlog (2)", // #447, #467
+		"## scoping (1)", // #457
+		"## scheduled (0)",
+		"(none)",
+		"#447",
+		"#457",
+		"#467",
+	} {
+		if !strings.Contains(out, tok) {
+			t.Errorf("expected %q in kanban output; got:\n%s", tok, out)
+		}
 	}
 }
 

@@ -9,18 +9,20 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // runStatusFeatures is the handler for `gh agentic status features`. It
 // resolves the project ID, fetches the list via projectstatus.FetchFeatures
 // (which aggregates across every repo linked to the project), optionally
-// narrows to the current repo, then renders either the table or JSON
-// envelope.
+// narrows to the current repo, then renders:
+//
+//  1. --json — envelope {items, totals}; silently takes precedence over --kanban.
+//  2. --kanban — stage-grouped view, vertical by default / side-by-side
+//     when --horizontal is also set and the terminal is wide enough.
+//  3. Default — compact tabular list.
 func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) error {
-	if flags.kanban {
-		return fmt.Errorf("--kanban rendering is not yet implemented (see task #500)")
-	}
-	if flags.horizontal {
+	if flags.horizontal && !flags.kanban {
 		return fmt.Errorf("--horizontal requires --kanban")
 	}
 
@@ -49,6 +51,16 @@ func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) erro
 	if flags.json {
 		return writeFeaturesJSON(w, features)
 	}
+
+	if flags.kanban {
+		columns := columnsForFeatures(flags.includeDone)
+		cards := featureCards(features, columns)
+		if flags.horizontal {
+			return writeHorizontalKanban(w, columns, cards, terminalWidth(), kanbanMinHorizontalWidthFeatures, ui.TerminalSupportsUTF8())
+		}
+		return writeVerticalKanban(w, "Features — Kanban", columns, cards)
+	}
+
 	return writeFeaturesTable(w, features, currentRepo)
 }
 

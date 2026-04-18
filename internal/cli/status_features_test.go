@@ -197,13 +197,27 @@ func TestRunStatusFeatures_NoProjectConfigured(t *testing.T) {
 	}
 }
 
-// TestRunStatusFeatures_KanbanFlagGuarded confirms --kanban produces the
-// scoped not-yet-implemented error.
-func TestRunStatusFeatures_KanbanFlagGuarded(t *testing.T) {
+// TestRunStatusFeatures_KanbanVertical verifies --kanban renders the
+// stage-grouped view for features.
+func TestRunStatusFeatures_KanbanVertical(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
-	err := runStatusFeatures(&bytes.Buffer{}, statusListFlags{kanban: true}, sd)
-	if err == nil || !strings.Contains(err.Error(), "--kanban") {
-		t.Errorf("expected --kanban error; got %v", err)
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, statusListFlags{kanban: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures --kanban: %v", err)
+	}
+	out := buf.String()
+	for _, tok := range []string{
+		"Features — Kanban",
+		"## backlog (0)",
+		"## in-design (0)",
+		"## in-development (2)", // #492, #511
+		"## in-review (0)",
+		"#492",
+		"#511",
+	} {
+		if !strings.Contains(out, tok) {
+			t.Errorf("expected %q; got:\n%s", tok, out)
+		}
 	}
 }
 

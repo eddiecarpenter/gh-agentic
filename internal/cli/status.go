@@ -125,7 +125,9 @@ the GitHub label name (backlog, scoping, scheduled, done). Items that are
 blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]' annotation.
 
 Pass --kanban for a stage-grouped view; see --horizontal for wide terminals.
-Pass --json to emit a stable structured payload for machine consumption.
+Pass --json to emit a stable structured payload for machine consumption —
+--json always wins over --kanban; the JSON shape is identical regardless of
+--kanban being passed so consumers group by stage themselves if needed.
 Pass --include-done to include completed requirements; by default only open
 items are listed.`,
 		Example: `  # Default list view
@@ -212,7 +214,9 @@ are blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]'
 annotation.
 
 Pass --kanban for a stage-grouped view; see --horizontal for wide terminals.
-Pass --json to emit a stable structured payload for machine consumption.
+Pass --json to emit a stable structured payload for machine consumption —
+--json always wins over --kanban; the JSON shape is identical regardless of
+--kanban being passed so consumers group by stage themselves if needed.
 Pass --include-done to include completed features; by default only open items
 are listed.`,
 		Example: `  # Default list view
