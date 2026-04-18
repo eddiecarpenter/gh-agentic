@@ -85,7 +85,6 @@ func TestStatusCmd_SubCommandsReturnNotImplemented(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"requirement", []string{"requirement", "42"}},
 		{"features", []string{"features"}},
 		{"feature", []string{"feature", "42"}},
 	}

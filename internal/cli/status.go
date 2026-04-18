@@ -150,8 +150,15 @@ items are listed.`,
 	return cmd
 }
 
-// newStatusRequirementCmd constructs the `gh agentic status requirement <N>` stub.
+// newStatusRequirementCmd constructs the `gh agentic status requirement <N>`
+// detail command using production dependencies.
 func newStatusRequirementCmd() *cobra.Command {
+	return newStatusRequirementCmdWithDeps(defaultStatusDeps())
+}
+
+// newStatusRequirementCmdWithDeps builds the detail command with an explicit
+// statusDeps for testing.
+func newStatusRequirementCmdWithDeps(deps statusDeps) *cobra.Command {
 	var flags statusDetailFlags
 	cmd := &cobra.Command{
 		Use:   "requirement <number>",
@@ -172,9 +179,11 @@ Pass --json to emit a stable structured object for machine consumption.`,
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = flags
-			_ = args
-			return errStatusNotImplemented
+			n, err := parseIssueNumberArg(args[0])
+			if err != nil {
+				return err
+			}
+			return runStatusRequirement(cmd.OutOrStdout(), n, flags, deps)
 		},
 	}
 
