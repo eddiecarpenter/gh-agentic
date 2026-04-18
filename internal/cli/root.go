@@ -52,8 +52,10 @@ steps.
 
 %s manages the Claude credentials used by the agent pipeline.
 
+%s shows pipeline state across requirements and features.
+
 Run 'gh agentic <command> --help' on any command for detailed usage.`,
-			b("init"), b("check"), b("repair"), b("mount"), b("upgrade"), b("project"), b("info"), b("auth")),
+			b("init"), b("check"), b("repair"), b("mount"), b("upgrade"), b("project"), b("info"), b("auth"), b("status")),
 		Version:       version,
 		SilenceErrors: true,
 	}
@@ -81,6 +83,7 @@ Run 'gh agentic <command> --help' on any command for detailed usage.`,
 	root.AddCommand(newProjectCmd())
 	root.AddCommand(newInfoCmd(version, date))
 	root.AddCommand(newAuthCmd())
+	root.AddCommand(newStatusCmd())
 
 	return root
 }
