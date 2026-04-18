@@ -88,17 +88,20 @@ func filterFeaturesToRepo(features []projectstatus.Feature, currentRepo string) 
 	return out
 }
 
-// writeFeaturesTable renders the UX-1 features table. The REPO column is
-// added when at least one row is cross-repo; otherwise the table is three
-// columns wide to match the single-repo case.
+// writeFeaturesTable renders the UX-1 features table. Every row carries a
+// compact TASKS column (values like `3/6`) so the list and the kanban
+// views surface equivalent progress information — the kanban shows a
+// block-bar glyph, the list shows just the numeric per AC-8. The REPO
+// column is added when at least one row is cross-repo; otherwise the
+// table is four columns wide (FEATURE / STAGE / TASKS / TITLE).
 func writeFeaturesTable(w io.Writer, features []projectstatus.Feature, currentRepo string) error {
 	showRepoCol := anyFeatureCrossRepo(features, currentRepo)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if showRepoCol {
-		fmt.Fprintln(tw, "FEATURE\tSTAGE\tTITLE\tREPO")
+		fmt.Fprintln(tw, "FEATURE\tSTAGE\tTASKS\tTITLE\tREPO")
 	} else {
-		fmt.Fprintln(tw, "FEATURE\tSTAGE\tTITLE")
+		fmt.Fprintln(tw, "FEATURE\tSTAGE\tTASKS\tTITLE")
 	}
 
 	blocked := 0
@@ -112,11 +115,12 @@ func writeFeaturesTable(w io.Writer, features []projectstatus.Feature, currentRe
 			title = fmt.Sprintf("%s [blocked by %s]", f.Title, f.Blocked.BlockingRef)
 		}
 		stageCol := stageDisplay(f.Stage)
+		tasksCol := fmt.Sprintf("%d/%d", f.TasksDone, f.TasksTotal)
 		if showRepoCol {
 			repoCol := repoDisplay(f.OwningRepo, currentRepo)
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", numberCol, stageCol, title, repoCol)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", numberCol, stageCol, tasksCol, title, repoCol)
 		} else {
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", numberCol, stageCol, title)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", numberCol, stageCol, tasksCol, title)
 		}
 	}
 	if err := tw.Flush(); err != nil {

@@ -225,6 +225,107 @@ func TestRunStatusFeatures_KanbanVertical(t *testing.T) {
 	}
 }
 
+// TestWriteFeaturesTable_TasksColumnAllCases verifies the compact N/M
+// column renders the documented format for zero-task, partial, and fully-
+// done features — a single render so the column layout is asserted once.
+func TestWriteFeaturesTable_TasksColumnAllCases(t *testing.T) {
+	features := []projectstatus.Feature{
+		{Number: 100, Title: "zero", Stage: projectstatus.StageBacklog, OwningRepo: "eddiecarpenter/gh-agentic", TasksTotal: 0, TasksDone: 0},
+		{Number: 200, Title: "partial", Stage: projectstatus.StageInDevelopment, OwningRepo: "eddiecarpenter/gh-agentic", TasksTotal: 6, TasksDone: 3},
+		{Number: 300, Title: "complete", Stage: projectstatus.StageInReview, OwningRepo: "eddiecarpenter/gh-agentic", TasksTotal: 6, TasksDone: 6},
+	}
+	buf := &bytes.Buffer{}
+	if err := writeFeaturesTable(buf, features, "eddiecarpenter/gh-agentic"); err != nil {
+		t.Fatalf("writeFeaturesTable: %v", err)
+	}
+	out := buf.String()
+	for _, tok := range []string{"TASKS", "0/0", "3/6", "6/6"} {
+		if !strings.Contains(out, tok) {
+			t.Errorf("expected %q in table output; got:\n%s", tok, out)
+		}
+	}
+}
+
+// TestWriteFeaturesTable_TasksColumnWithCrossRepo verifies the TASKS
+// column renders alongside the REPO column in the federated layout.
+func TestWriteFeaturesTable_TasksColumnWithCrossRepo(t *testing.T) {
+	features := []projectstatus.Feature{
+		{Number: 492, Title: "local", Stage: projectstatus.StageInDevelopment, OwningRepo: "eddiecarpenter/gh-agentic", TasksTotal: 6, TasksDone: 5},
+		{Number: 511, Title: "remote", Stage: projectstatus.StageBacklog, OwningRepo: "foo/domain-x", TasksTotal: 0, TasksDone: 0},
+	}
+	buf := &bytes.Buffer{}
+	if err := writeFeaturesTable(buf, features, "eddiecarpenter/gh-agentic"); err != nil {
+		t.Fatalf("writeFeaturesTable: %v", err)
+	}
+	out := buf.String()
+	for _, tok := range []string{"TASKS", "REPO", "5/6", "0/0", "foo/domain-x"} {
+		if !strings.Contains(out, tok) {
+			t.Errorf("expected %q in federated table output; got:\n%s", tok, out)
+		}
+	}
+}
+
+// TestRunStatusFeatures_ListPopulatesTasksColumn verifies the handler-level
+// plumbing: the FetchSubIssues dependency is consumed and the counts land
+// in the TASKS column without any change to --json output.
+func TestRunStatusFeatures_ListPopulatesTasksColumn(t *testing.T) {
+	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
+	sd.psDeps.FetchSubIssues = func(_, _ string, n int) ([]projectstatus.TaskRef, error) {
+		if n == 492 {
+			return []projectstatus.TaskRef{
+				{Number: 1, Closed: true}, {Number: 2, Closed: true},
+				{Number: 3, Closed: true}, {Number: 4, Closed: false},
+			}, nil
+		}
+		return nil, nil
+	}
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, statusListFlags{}, sd); err != nil {
+		t.Fatalf("runStatusFeatures: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "TASKS") {
+		t.Errorf("expected TASKS column header; got:\n%s", out)
+	}
+	if !strings.Contains(out, "3/4") {
+		t.Errorf("expected '3/4' cell for feature #492; got:\n%s", out)
+	}
+}
+
+// TestRunStatusFeatures_ListJSONShapeStableAfterTasksColumn verifies the
+// JSON output remains byte-identical in shape after the list renderer
+// grew a TASKS column — AC-10 reinforcement.
+func TestRunStatusFeatures_ListJSONShapeStableAfterTasksColumn(t *testing.T) {
+	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
+	sd.psDeps.FetchSubIssues = func(_, _ string, n int) ([]projectstatus.TaskRef, error) {
+		if n == 492 {
+			return []projectstatus.TaskRef{{Number: 1, Closed: true}}, nil
+		}
+		return nil, nil
+	}
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, statusListFlags{json: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures --json: %v", err)
+	}
+	raw := buf.String()
+	for _, forbidden := range []string{"tasks_total", "tasks_done", "TasksTotal", "TasksDone", "TASKS"} {
+		if strings.Contains(raw, forbidden) {
+			t.Errorf("unexpected key %q in --json output:\n%s", forbidden, raw)
+		}
+	}
+	// Parseable envelope check — items and totals, nothing else.
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(buf.Bytes(), &env); err != nil {
+		t.Fatalf("parse envelope: %v", err)
+	}
+	allowedTop := map[string]struct{}{"items": {}, "totals": {}}
+	for k := range env {
+		if _, ok := allowedTop[k]; !ok {
+			t.Errorf("unexpected top-level key %q", k)
+		}
+	}
+}
+
 // TestFeaturesTotalsLine covers singular / plural and blocked branches.
 func TestFeaturesTotalsLine(t *testing.T) {
 	cases := []struct {
