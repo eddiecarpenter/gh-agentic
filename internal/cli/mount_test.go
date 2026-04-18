@@ -154,6 +154,113 @@ func TestMountCmd_InvalidTag(t *testing.T) {
 	}
 }
 
+func TestMountCmd_FederatedMountsControlPlane(t *testing.T) {
+	root := t.TempDir()
+
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(root)
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	var cpCalls []string
+	syncCP := func(cpNameWithOwner, destDir string) error {
+		cpCalls = append(cpCalls, cpNameWithOwner)
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(destDir, "marker"), []byte(cpNameWithOwner), 0o644)
+	}
+
+	deps := mountDeps{
+		fetchReleases: mountFakeReleases(),
+		clone:         mountFakeClone(),
+		resolveVersion: func(root string) (string, error) {
+			return "v2.0.0", nil
+		},
+		resolveCP: func(root string) string { return "org/control-plane" },
+		syncCP:    syncCP,
+	}
+
+	cmd := newMountCmdWithDeps(deps)
+	rootCmd := newRootCmd("dev", "")
+	for _, c := range rootCmd.Commands() {
+		if strings.HasPrefix(c.Use, "mount") {
+			rootCmd.RemoveCommand(c)
+			break
+		}
+	}
+	rootCmd.AddCommand(cmd)
+
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetErr(&buf)
+	rootCmd.SetArgs([]string{"mount"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", err, buf.String())
+	}
+
+	if len(cpCalls) != 1 || cpCalls[0] != "org/control-plane" {
+		t.Errorf("expected one CP sync call for org/control-plane, got %v", cpCalls)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".cp", "marker")); os.IsNotExist(err) {
+		t.Error(".cp/marker should exist after federated mount")
+	}
+
+	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if !strings.Contains(string(gitignore), ".cp/") {
+		t.Errorf(".gitignore should contain .cp/ entry, got: %s", gitignore)
+	}
+}
+
+func TestMountCmd_NonFederatedSkipsControlPlane(t *testing.T) {
+	root := t.TempDir()
+
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(root)
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	var cpCalls int
+	syncCP := func(cpNameWithOwner, destDir string) error {
+		cpCalls++
+		return nil
+	}
+
+	deps := mountDeps{
+		fetchReleases: mountFakeReleases(),
+		clone:         mountFakeClone(),
+		resolveVersion: func(root string) (string, error) {
+			return "v2.0.0", nil
+		},
+		resolveCP: func(root string) string { return "" },
+		syncCP:    syncCP,
+	}
+
+	cmd := newMountCmdWithDeps(deps)
+	rootCmd := newRootCmd("dev", "")
+	for _, c := range rootCmd.Commands() {
+		if strings.HasPrefix(c.Use, "mount") {
+			rootCmd.RemoveCommand(c)
+			break
+		}
+	}
+	rootCmd.AddCommand(cmd)
+
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetErr(&buf)
+	rootCmd.SetArgs([]string{"mount"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v\nOutput:\n%s", err, buf.String())
+	}
+
+	if cpCalls != 0 {
+		t.Errorf("expected no CP sync calls for non-federated repo, got %d", cpCalls)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".cp")); !os.IsNotExist(err) {
+		t.Error(".cp/ should not be created for non-federated repos")
+	}
+}
+
 func TestMountCmd_NoVersionNoAIVersion(t *testing.T) {
 	root := t.TempDir()
 

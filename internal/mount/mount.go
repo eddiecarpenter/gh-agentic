@@ -96,6 +96,12 @@ func WriteAIVersion(root, version string) error {
 
 // EnsureGitignore ensures that ".ai/" is listed in .gitignore at root.
 func EnsureGitignore(root string) error {
+	return ensureGitignoreEntry(root, ".ai/")
+}
+
+// ensureGitignoreEntry appends entry to .gitignore if it is not already
+// present. The entry is matched line-for-line after trimming whitespace.
+func ensureGitignoreEntry(root, entry string) error {
 	gitignorePath := filepath.Join(root, ".gitignore")
 
 	var content string
@@ -105,17 +111,17 @@ func EnsureGitignore(root string) error {
 	}
 
 	for _, line := range strings.Split(content, "\n") {
-		if strings.TrimSpace(line) == ".ai/" {
+		if strings.TrimSpace(line) == entry {
 			return nil
 		}
 	}
 
-	entry := ".ai/\n"
+	toAppend := entry + "\n"
 	if content != "" && !strings.HasSuffix(content, "\n") {
-		entry = "\n" + entry
+		toAppend = "\n" + toAppend
 	}
 
-	return os.WriteFile(gitignorePath, []byte(content+entry), 0o644)
+	return os.WriteFile(gitignorePath, []byte(content+toAppend), 0o644)
 }
 
 // versionTagPattern matches @vX.Y.Z version tags in uses: lines for
