@@ -103,8 +103,17 @@ func registerStatusDetailFlags(cmd *cobra.Command, f *statusDetailFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 }
 
-// newStatusRequirementsCmd constructs the `gh agentic status requirements` stub.
+// newStatusRequirementsCmd constructs the `gh agentic status requirements`
+// command. It is a thin wrapper that resolves default dependencies and
+// delegates to newStatusRequirementsCmdWithDeps — tests construct the
+// command directly with injected fakes.
 func newStatusRequirementsCmd() *cobra.Command {
+	return newStatusRequirementsCmdWithDeps(defaultStatusDeps())
+}
+
+// newStatusRequirementsCmdWithDeps builds the command with an explicit
+// statusDeps for testing.
+func newStatusRequirementsCmdWithDeps(deps statusDeps) *cobra.Command {
 	var flags statusListFlags
 	cmd := &cobra.Command{
 		Use:   "requirements",
@@ -133,8 +142,7 @@ items are listed.`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = flags
-			return errStatusNotImplemented
+			return runStatusRequirements(cmd.OutOrStdout(), flags, deps)
 		},
 	}
 

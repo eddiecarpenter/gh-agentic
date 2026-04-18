@@ -79,11 +79,12 @@ func TestStatusCmd_BareInvocationShowsHelp(t *testing.T) {
 // Exact error shape is not important — later tasks replace these handlers —
 // but they must return some error so the scaffold is clearly a stub.
 func TestStatusCmd_SubCommandsReturnNotImplemented(t *testing.T) {
+	// Only the still-stubbed sub-commands are listed here. As each sub-command
+	// is implemented in a later task, its entry is removed from this table.
 	cases := []struct {
 		name string
 		args []string
 	}{
-		{"requirements", []string{"requirements"}},
 		{"requirement", []string{"requirement", "42"}},
 		{"features", []string{"features"}},
 		{"feature", []string{"feature", "42"}},

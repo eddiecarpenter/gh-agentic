@@ -68,43 +68,44 @@ func ParseStage(raw string) Stage {
 }
 
 // Requirement is a single requirement issue with its pipeline state and
-// linked features. Fields match the JSON schema locked in acceptance criteria.
+// linked features. Struct field tags pin the JSON wire format consumed by
+// `--json` output on the CLI.
 type Requirement struct {
-	Number             int
-	Title              string
-	Body               string
-	Stage              Stage
-	CreatedAt          time.Time
-	LastTransitionedAt time.Time
-	OwningRepo         string // "owner/name"
-	Blocked            *BlockedInfo
-	LinkedFeatures     []FeatureSummary
+	Number             int              `json:"number"`
+	Title              string           `json:"title"`
+	Body               string           `json:"body"`
+	Stage              Stage            `json:"stage"`
+	CreatedAt          time.Time        `json:"created_at"`
+	LastTransitionedAt time.Time        `json:"last_transitioned_at"`
+	OwningRepo         string           `json:"owning_repo"`
+	Blocked            *BlockedInfo     `json:"blocked"`
+	LinkedFeatures     []FeatureSummary `json:"linked_features"`
 }
 
 // Feature is a single feature issue with its pipeline state, parent
 // requirement reference, tasks, branch state, and PR state.
 type Feature struct {
-	Number             int
-	Title              string
-	Body               string
-	Stage              Stage
-	CreatedAt          time.Time
-	LastTransitionedAt time.Time
-	OwningRepo         string
-	Blocked            *BlockedInfo
-	ParentRequirement  *RequirementSummary
-	Tasks              []TaskRef
-	Branch             *BranchState
-	PR                 *PRState
+	Number             int                 `json:"number"`
+	Title              string              `json:"title"`
+	Body               string              `json:"body"`
+	Stage              Stage               `json:"stage"`
+	CreatedAt          time.Time           `json:"created_at"`
+	LastTransitionedAt time.Time           `json:"last_transitioned_at"`
+	OwningRepo         string              `json:"owning_repo"`
+	Blocked            *BlockedInfo        `json:"blocked"`
+	ParentRequirement  *RequirementSummary `json:"parent_requirement"`
+	Tasks              []TaskRef           `json:"tasks"`
+	Branch             *BranchState        `json:"branch"`
+	PR                 *PRState            `json:"pr"`
 }
 
 // RequirementSummary is the compact embedded form used when a feature
 // references its parent requirement.
 type RequirementSummary struct {
-	Number     int
-	Title      string
-	Stage      Stage
-	OwningRepo string
+	Number     int    `json:"number"`
+	Title      string `json:"title"`
+	Stage      Stage  `json:"stage"`
+	OwningRepo string `json:"owning_repo"`
 }
 
 // FeatureSummary is the compact embedded form used when a requirement
@@ -112,20 +113,20 @@ type RequirementSummary struct {
 // (e.g. "feature/x (merged)") for human list views; PR is the structured
 // state used by both list and JSON views.
 type FeatureSummary struct {
-	Number         int
-	Title          string
-	Stage          Stage
-	OwningRepo     string
-	BranchOneLiner string
-	PR             *PRState
+	Number         int      `json:"number"`
+	Title          string   `json:"title"`
+	Stage          Stage    `json:"stage"`
+	OwningRepo     string   `json:"owning_repo"`
+	BranchOneLiner string   `json:"branch_one_liner"`
+	PR             *PRState `json:"pr"`
 }
 
 // TaskRef is a sub-issue reference used when showing the task checklist of a
 // feature. Closed drives the ✓/☐ glyph in human output.
 type TaskRef struct {
-	Number int
-	Title  string
-	Closed bool
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Closed bool   `json:"closed"`
 }
 
 // BranchState describes whether a feature branch exists and whether it has
@@ -133,23 +134,40 @@ type TaskRef struct {
 // Merged=true means the ref (or a PR from it) has been merged into the default
 // branch.
 type BranchState struct {
-	Name   string
-	Exists bool
-	Merged bool
+	Name   string `json:"name"`
+	Exists bool   `json:"exists"`
+	Merged bool   `json:"merged"`
 }
 
 // PRState describes the PR associated with a feature branch. State is one of
 // "open", "merged", "closed".
 type PRState struct {
-	Number    int
-	State     string
-	Reviewers []string
+	Number    int      `json:"number"`
+	State     string   `json:"state"`
+	Reviewers []string `json:"reviewers"`
 }
 
 // BlockedInfo describes the dependency that blocks an issue. BlockingRef is a
 // stable string in "owner/repo#N" form; Reason is optional free-form text
 // supplied by the dependency mechanism.
 type BlockedInfo struct {
-	BlockingRef string
-	Reason      string
+	BlockingRef string `json:"blocking_ref"`
+	Reason      string `json:"reason"`
+}
+
+// ListEnvelope is the JSON wrapper emitted by list sub-commands. Items is a
+// deliberately untyped slice so the same envelope type serves both the
+// requirements and features endpoints; the CLI layer populates it with the
+// appropriate typed slice.
+type ListEnvelope struct {
+	Items  interface{} `json:"items"`
+	Totals ListTotals  `json:"totals"`
+}
+
+// ListTotals carries the summary counts rendered at the bottom of list
+// views. Open is the number of items in the list; Blocked is the subset of
+// Open whose Blocked field is non-nil.
+type ListTotals struct {
+	Open    int `json:"open"`
+	Blocked int `json:"blocked"`
 }
