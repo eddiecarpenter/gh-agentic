@@ -4,9 +4,9 @@
 |---------------------|--------------------------------------------------|
 | Feature issue       | #492                                             |
 | Branch              | feature/492-gh-agentic-status                    |
-| Last commit         | d1307b7                                          |
+| Last commit         | ce463e5                                          |
 | Total tasks         | 11                                               |
-| Last updated        | 2026-04-18T12:10:00Z                             |
+| Last updated        | 2026-04-18T12:20:00Z                             |
 
 ## Completed Tasks
 
@@ -19,13 +19,13 @@
 ### #500 — Implement --kanban renderer (vertical + horizontal)
 ### #501 — Wire blocked-by dependency detection
 ### #502 — Extend 'gh agentic check' for AGENTIC_PROJECT_ID reachability
-- **Implemented:** checkProjectReachability runs on every topology. Pass surfaces the
-  project title; Fail carries actionable remediation. FetchProjectTitle is injectable
-  via CheckDeps for tests.
-- **Files:** internal/doctorv2/checks.go + test; internal/cli/check.go wired to
-  project.DefaultFetchProjectTitle.
+### #503 — Centralised error renderer for status commands
+- **Implemented:** renderStatusError maps every error class (ErrProjectNotConfigured,
+  ErrProjectUnreachable, ErrIssueNotFound, *ErrWrongType, network/auth/rate-limit/5xx,
+  narrow-terminal horizontal kanban) to a concrete stderr message and returns
+  cli.ErrSilent. All four status sub-commands rewired to route failures through it.
+- **Files:** internal/cli/status_errors.go + test; status.go RunE bodies updated.
 
 ## Remaining Tasks
 
-- [ ] #503 — Add centralised error renderer for status commands ← current
-- [ ] #504 — Lock JSON schema fixtures and add end-to-end integration tests
+- [ ] #504 — Lock JSON schema fixtures and add end-to-end integration tests ← current
