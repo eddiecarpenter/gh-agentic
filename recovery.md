@@ -4,31 +4,32 @@
 |---------------------|------------------------------------|
 | Feature issue       | #468                               |
 | Branch              | feature/468-skill-taxonomy-catalogue-exit-protocol |
-| Last commit         | e9c6a52                            |
+| Last commit         | 00e9a19                            |
 | Total tasks         | 11                                 |
-| Last updated        | 2026-04-18T03:00:00Z               |
+| Last updated        | 2026-04-18T03:05:00Z               |
 
 ## Completed Tasks
 
 ### #469 — Verify Anthropic Claude Skills canonical frontmatter spec
-- **Implemented:** Verified Anthropic's current Claude Skills spec via live docs fetch. Confirmed `name` and `description` remain the only canonical required fields — no drift since January 2026 scoping. Posted findings as comment on #468.
-- **Files changed:** No code changes.
-- **Decisions:** Keep scoped schema. Do not adopt Claude Code-specific extensions.
+- **Files changed:** None (research task; comment on #468).
+- **Decisions:** Keep scoped schema.
 
-### #470 — Create skills/skill-categories.md defining the six-category taxonomy and frontmatter schema
-- **Implemented:** Six categories defined with trait table and full frontmatter field reference.
+### #470 — skills/skill-categories.md
 - **Files changed:** skills/skill-categories.md (new)
-- **Decisions:** Consistency rules enforce category/emits-exit-block/exit-hands-to alignment — validators in Task #477 will enforce these.
+- **Decisions:** Consistency rules enforce category↔emits-exit-block↔exit-hands-to alignment.
 
-### #471 — Create skills/session-exit.md with canonical exit block templates
-- **Implemented:** Canonical three-section (Produced/Blocked/Next) exit block template with rules and five worked examples covering clean handoff, some-held, all-held, dev-session, and foreground-recovery variants. Reference-category frontmatter, non-terminating.
+### #471 — skills/session-exit.md
 - **Files changed:** skills/session-exit.md (new)
-- **Decisions:** Canonical header line (`=== <Skill Name> — Completed ===`) is the anchor tooling will use to detect session termination — must be preserved verbatim.
+- **Decisions:** Canonical header line is the anchor for tooling — preserve verbatim.
+
+### #472 — RULEBOOK.md minimal taxonomy pointer and session-termination rule
+- **Implemented:** Added +20 lines to RULEBOOK.md — one Skill Taxonomy subsection (pointer only, 6 lines including blank) and one Session Termination subsection (~12 lines). No category trait detail, no exit block template, no catalogue detail, no schema detail leaked to RULEBOOK.
+- **Files changed:** RULEBOOK.md
+- **Decisions:** Both sections slotted inside the existing Session Initialisation section rather than creating a new top-level section — keeps RULEBOOK's top-level structure intact.
 
 ## Remaining Tasks
 
-- [ ] #472 — Update RULEBOOK.md with minimal taxonomy pointer and session-termination rule ← current
-- [ ] #473 — Add YAML frontmatter to every existing skill and classify each into a category
+- [ ] #473 — Add YAML frontmatter to every existing skill and classify each into a category ← current
 - [ ] #474 — Roll out the universal exit block across all session-ending skills
 - [ ] #475 — Create skills/build-catalogue.md defining the CATALOGUE.md regeneration procedure
 - [ ] #476 — Generate initial CATALOGUE.md from the now-classified skills
