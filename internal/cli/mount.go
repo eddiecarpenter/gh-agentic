@@ -19,6 +19,8 @@ type mountDeps struct {
 	clone          mount.CloneFunc
 	confirm        mount.ConfirmFunc
 	resolveVersion func(root string) (string, error)
+	resolveCP      func(root string) string
+	syncCP         mount.CPSyncFunc
 }
 
 // newMountCmd constructs the `gh agentic mount` subcommand with production deps.
@@ -30,6 +32,8 @@ func newMountCmd() *cobra.Command {
 		resolveVersion: func(root string) (string, error) {
 			return resolveMountVersion(root)
 		},
+		resolveCP: resolveFederatedCP,
+		syncCP:    mount.DefaultCPSync,
 	})
 }
 
@@ -45,6 +49,9 @@ func newMountCmdWithDeps(deps mountDeps) *cobra.Command {
 For single topology repos, mounts at the version recorded in .ai-version.
 For federated domain repos, reads AGENTIC_FRAMEWORK_VERSION from the control
 plane and mounts that version — keeping all domain repos in sync automatically.
+Federated domain repos additionally get a read-only .cp/ mount — a sparse
+checkout of the control plane repo's docs/ tracking main — providing
+system-level knowledge.
 
 Use 'project switch version <version>' on the control plane repo to upgrade
 the framework version for the whole federation.
@@ -90,19 +97,33 @@ Use --yes to skip the confirmation prompt when switching versions (for scripts).
 			}
 
 			if aiVersionErr != nil {
-				// No .ai-version — first-time mount.
-				return mount.RunFirstTime(w, root, version, deps.clone)
+				if err := mount.RunFirstTime(w, root, version, deps.clone); err != nil {
+					return err
+				}
+			} else if currentVersion == version {
+				if err := mount.RunRemount(w, root, version, deps.clone); err != nil {
+					return err
+				}
+			} else {
+				confirm := deps.confirm
+				if yes {
+					confirm = nil
+				}
+				if err := mount.RunSwitch(w, root, currentVersion, version, deps.clone, confirm); err != nil {
+					return err
+				}
 			}
 
-			if currentVersion == version {
-				return mount.RunRemount(w, root, version, deps.clone)
+			// Federated domain repos also need the control plane knowledge mount.
+			if deps.resolveCP != nil {
+				if cpNameWithOwner := deps.resolveCP(root); cpNameWithOwner != "" {
+					if err := mount.MountControlPlane(w, root, cpNameWithOwner, deps.syncCP); err != nil {
+						return err
+					}
+				}
 			}
 
-			confirm := deps.confirm
-			if yes {
-				confirm = nil
-			}
-			return mount.RunSwitch(w, root, currentVersion, version, deps.clone, confirm)
+			return nil
 		},
 	}
 
@@ -115,38 +136,12 @@ Use --yes to skip the confirmation prompt when switching versions (for scripts).
 // For federated domain repos: reads AGENTIC_FRAMEWORK_VERSION from the control plane.
 // For all other cases: falls back to the local .ai-version.
 func resolveMountVersion(root string) (string, error) {
-	// Try to detect topology from repo context.
-	currentRepo, err := repository.Current()
-	if err != nil {
-		// Not in a GitHub repo — fall back to local .ai-version.
-		return localVersionFallback(root)
-	}
-
-	// Check if this repo is a federated domain repo.
-	topology, _ := project.DefaultGetRepoVariable(currentRepo.Owner, currentRepo.Name, project.TopologyVarName)
-	if topology != "federated" {
-		// Single topology or control plane — use local .ai-version.
-		return localVersionFallback(root)
-	}
-
-	// Federated domain repo — find the control plane and read its version.
-	projectID, err := project.DefaultGetRepoVariable(currentRepo.Owner, currentRepo.Name, project.ProjectVarName)
-	if err != nil || projectID == "" {
-		return localVersionFallback(root)
-	}
-
-	linked, err := project.DefaultFetchLinkedRepos(projectID)
-	if err != nil {
-		return localVersionFallback(root)
-	}
-
-	cp, ok := project.ControlPlaneRepo(linked)
+	cp, ok := detectFederatedCP()
 	if !ok {
 		return localVersionFallback(root)
 	}
 
-	// Parse "owner/repo" from NameWithOwner.
-	parts := strings.SplitN(cp.NameWithOwner, "/", 2)
+	parts := strings.SplitN(cp, "/", 2)
 	if len(parts) != 2 {
 		return localVersionFallback(root)
 	}
@@ -157,6 +152,52 @@ func resolveMountVersion(root string) (string, error) {
 	}
 
 	return cpVersion, nil
+}
+
+// resolveFederatedCP returns the control plane repo (owner/name) for a
+// federated domain repo, or "" for any other topology or on any lookup
+// failure. Callers treat empty as "no .cp/ mount needed".
+func resolveFederatedCP(root string) string {
+	cp, _ := detectFederatedCP()
+	return cp
+}
+
+// detectFederatedCP returns the control plane repo's NameWithOwner when the
+// current working directory is a federated domain repo. Returns ("", false)
+// for single topology, control plane itself, or any lookup failure.
+func detectFederatedCP() (string, bool) {
+	currentRepo, err := repository.Current()
+	if err != nil {
+		return "", false
+	}
+
+	topology, _ := project.DefaultGetRepoVariable(currentRepo.Owner, currentRepo.Name, project.TopologyVarName)
+	if topology != "federated" {
+		return "", false
+	}
+
+	projectID, err := project.DefaultGetRepoVariable(currentRepo.Owner, currentRepo.Name, project.ProjectVarName)
+	if err != nil || projectID == "" {
+		return "", false
+	}
+
+	linked, err := project.DefaultFetchLinkedRepos(projectID)
+	if err != nil {
+		return "", false
+	}
+
+	cp, ok := project.ControlPlaneRepo(linked)
+	if !ok {
+		return "", false
+	}
+
+	// On the control plane repo itself, don't self-mount.
+	currentNameWithOwner := currentRepo.Owner + "/" + currentRepo.Name
+	if strings.EqualFold(cp.NameWithOwner, currentNameWithOwner) {
+		return "", false
+	}
+
+	return cp.NameWithOwner, true
 }
 
 func localVersionFallback(root string) (string, error) {
