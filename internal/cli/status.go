@@ -191,8 +191,14 @@ Pass --json to emit a stable structured object for machine consumption.`,
 	return cmd
 }
 
-// newStatusFeaturesCmd constructs the `gh agentic status features` stub.
+// newStatusFeaturesCmd constructs the `gh agentic status features` command.
 func newStatusFeaturesCmd() *cobra.Command {
+	return newStatusFeaturesCmdWithDeps(defaultStatusDeps())
+}
+
+// newStatusFeaturesCmdWithDeps builds the command with an explicit statusDeps
+// for testing.
+func newStatusFeaturesCmdWithDeps(deps statusDeps) *cobra.Command {
 	var flags statusListFlags
 	cmd := &cobra.Command{
 		Use:   "features",
@@ -226,8 +232,7 @@ are listed.`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = flags
-			return errStatusNotImplemented
+			return runStatusFeatures(cmd.OutOrStdout(), flags, deps)
 		},
 	}
 
