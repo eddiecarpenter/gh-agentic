@@ -34,6 +34,26 @@ the session being run.
 | Issue Session | `issue-session.md` | Automatic — issue assigned to agent |
 | Foreground Recovery | `foreground-recovery.md` | Human (interactive) — any blocked state |
 
+### Skill Taxonomy
+
+Every skill belongs to exactly one of six categories: **Session**, **Recovery**,
+**Bootstrap**, **Operation**, **Information**, **Reference**. Category
+definitions, frontmatter schema, and classification criteria are defined in
+`skills/skill-categories.md` — read that file when authoring, classifying, or
+validating a skill.
+
+### Session Termination
+
+A session-ending skill (`category: Session` or `category: Recovery`, with
+`emits-exit-block: true`) **must terminate the session when it emits its exit
+block**. Immediately after the block:
+- If the host runtime exposes a session-close API, the agent invokes it.
+- Otherwise, the agent halts and performs no further work.
+
+Continuation in the same session after the exit block is forbidden — any
+further work must occur in a new session. See `skills/session-exit.md` for the
+exit block template.
+
 ---
 
 ## Git Rules
