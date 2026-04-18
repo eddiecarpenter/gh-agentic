@@ -4,27 +4,32 @@
 |---------------------|--------------------------------------------------|
 | Feature issue       | #492                                             |
 | Branch              | feature/492-gh-agentic-status                    |
-| Last commit         | 02a522d                                          |
+| Last commit         | a4c46db                                          |
 | Total tasks         | 11                                               |
-| Last updated        | 2026-04-18T10:45:00Z                             |
+| Last updated        | 2026-04-18T10:55:00Z                             |
 
 ## Completed Tasks
 
 ### #494 — Scaffold gh agentic status command group and four sub-command stubs
-- **Implemented:** Added Cobra command group `gh agentic status` with four leaf
-  sub-commands (requirements, requirement <N>, features, feature <N>) as stubs
-  returning `errStatusNotImplemented`. All downstream flags (`--json`, `--kanban`,
-  `--horizontal`, `--this-repo`, `--include-done`) declared. Wired into root.
-- **Files changed:** internal/cli/status.go (new), internal/cli/status_test.go (new),
-  internal/cli/root.go.
-- **Decisions:** Stubs return a shared sentinel error `errStatusNotImplemented` so
-  test assertions and later replacements stay simple. List vs detail flag sets split
-  into two helper registrars (`registerStatusListFlags`, `registerStatusDetailFlags`).
+- **Implemented:** Cobra command group with four leaf sub-commands as stubs.
+  All downstream flags declared. Wired into root.
+- **Files changed:** internal/cli/status.go, internal/cli/status_test.go, internal/cli/root.go
+- **Decisions:** Shared `errStatusNotImplemented` sentinel; flag registrars split into list vs detail.
+
+### #495 — Build internal/projectstatus package — types, GraphQL queries, typed errors
+- **Implemented:** Complete data model (Requirement, Feature, summaries, TaskRef, BranchState,
+  PRState, BlockedInfo) with canonical Stage enum. Injectable Deps with production GraphQL
+  implementations. Typed errors (ErrIssueNotFound, ErrWrongType, ErrProjectNotConfigured,
+  ErrProjectUnreachable) and ClassifyAPIError. Parent resolution prefers native trackedInIssues,
+  falls back to `Closes #N` in the body. Extensive unit tests with fake deps.
+- **Files changed:** internal/projectstatus/{types,deps,errors,queries,queries_default}.go + tests.
+- **Decisions:** Blocked annotation deferred to task #501 (field on struct already). Stage parsing
+  is the single chokepoint — ParseStage normalises spaces, hyphens, case. A bare `Closes #N` only
+  matches within the same owning repo to prevent cross-repo number collisions.
 
 ## Remaining Tasks
 
-- [ ] #495 — Build internal/projectstatus package — types, GraphQL queries, typed errors ← current
-- [ ] #496 — Implement 'gh agentic status requirements' list command
+- [ ] #496 — Implement 'gh agentic status requirements' list command ← current
 - [ ] #497 — Implement 'gh agentic status requirement <N>' detail command
 - [ ] #498 — Implement 'gh agentic status features' list command
 - [ ] #499 — Implement 'gh agentic status feature <N>' detail command
