@@ -130,15 +130,16 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 				}
 
 				pipelineCheckDeps := doctorv2.CheckDeps{
-					Root:         root,
-					RepoFullName: info.FullName,
-					Owner:        info.Owner,
-					RepoName:     info.RepoName,
-					OwnerType:    info.OwnerType,
-					Topology:     topology,
-					ProjectID:    projectID,
-					Run:          deps.run,
-					ReadCreds:    deps.readCreds,
+					Root:              root,
+					RepoFullName:      info.FullName,
+					Owner:             info.Owner,
+					RepoName:          info.RepoName,
+					OwnerType:         info.OwnerType,
+					Topology:          topology,
+					ProjectID:         projectID,
+					Run:               deps.run,
+					ReadCreds:         deps.readCreds,
+					FetchProjectTitle: project.DefaultFetchProjectTitle,
 				}
 				pipelineReport = doctorv2.RunAllChecksWithProgress(pipelineCheckDeps, setLabel)
 				return nil

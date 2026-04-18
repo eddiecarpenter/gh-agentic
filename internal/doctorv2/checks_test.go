@@ -354,3 +354,117 @@ func TestReport_HasWarnings(t *testing.T) {
 		t.Error("expected HasWarnings() true")
 	}
 }
+
+// TestCheckProjectReachability_ProjectIDPresentAndReachable verifies the
+// Pass case — variable set, GraphQL lookup returns a title.
+func TestCheckProjectReachability_ProjectIDPresentAndReachable(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName:      "owner/repo",
+		ProjectID:         "PVT_abc123",
+		FetchProjectTitle: func(id string) (string, error) { return "My Project", nil },
+	}
+	g := checkProjectReachability(deps)
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	if g.Results[0].Status != Pass {
+		t.Errorf("expected Pass, got %d (%s)", g.Results[0].Status, g.Results[0].Message)
+	}
+	if !strings.Contains(g.Results[0].Message, "My Project") {
+		t.Errorf("expected title in message; got %q", g.Results[0].Message)
+	}
+}
+
+// TestCheckProjectReachability_ProjectIDPresentButUnreachable verifies Fail
+// with the auth-aware remediation.
+func TestCheckProjectReachability_ProjectIDPresentButUnreachable(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "owner/repo",
+		ProjectID:    "PVT_revoked",
+		FetchProjectTitle: func(id string) (string, error) {
+			return "", &fakeHTTPError{code: 403, msg: "Forbidden"}
+		},
+	}
+	g := checkProjectReachability(deps)
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	if g.Results[0].Status != Fail {
+		t.Errorf("expected Fail, got %d (%s)", g.Results[0].Status, g.Results[0].Message)
+	}
+	if !strings.Contains(g.Results[0].Remediation, "gh auth status") {
+		t.Errorf("expected 'gh auth status' in remediation; got %q", g.Results[0].Remediation)
+	}
+}
+
+// TestCheckProjectReachability_ProjectIDAbsent verifies the Fail path with
+// the 'gh agentic project join' remediation.
+func TestCheckProjectReachability_ProjectIDAbsent(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "owner/repo",
+		ProjectID:    "",
+		Run: func(name string, args ...string) (string, error) {
+			return "", nil // variable lookup returns empty
+		},
+	}
+	g := checkProjectReachability(deps)
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	if g.Results[0].Status != Fail {
+		t.Errorf("expected Fail, got %d (%s)", g.Results[0].Status, g.Results[0].Message)
+	}
+	if !strings.Contains(g.Results[0].Remediation, "gh agentic project join") {
+		t.Errorf("expected 'gh agentic project join' in remediation; got %q", g.Results[0].Remediation)
+	}
+}
+
+// TestCheckProjectReachability_RunsForAllTopologies verifies the check is
+// wired into the topology list for single, federated-cp, and federated-domain.
+func TestCheckProjectReachability_RunsForAllTopologies(t *testing.T) {
+	topologies := []string{"single", "federated-cp", "federated-domain"}
+	for _, topo := range topologies {
+		t.Run(topo, func(t *testing.T) {
+			deps := CheckDeps{Topology: topo}
+			steps := checksForTopologyWithLabels(deps)
+			found := false
+			for _, s := range steps {
+				if s.label == "Checking project reachability..." {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("topology %q should include project-reachability check", topo)
+			}
+		})
+	}
+}
+
+// TestCheckProjectReachability_NoGraphQLClientWarns verifies the Warning
+// path when FetchProjectTitle is not wired (defensive — production always
+// wires it).
+func TestCheckProjectReachability_NoGraphQLClientWarns(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "owner/repo",
+		ProjectID:    "PVT_abc123",
+		// FetchProjectTitle intentionally nil.
+	}
+	g := checkProjectReachability(deps)
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	if g.Results[0].Status != Warning {
+		t.Errorf("expected Warning, got %d (%s)", g.Results[0].Status, g.Results[0].Message)
+	}
+}
+
+// fakeHTTPError is a stand-in for a 4xx/5xx error returned from the GraphQL
+// client in tests — implements the error interface, which is all that
+// checkProjectReachability cares about.
+type fakeHTTPError struct {
+	code int
+	msg  string
+}
+
+func (e *fakeHTTPError) Error() string { return e.msg }
