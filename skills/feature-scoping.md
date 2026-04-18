@@ -8,6 +8,7 @@ loads:
   - gh-agentic-tool
   - capture-feature
   - set-issue-status
+  - ask-user
   - session-exit
 emits-exit-block: true
 exit-hands-to: "automation: feature-design (in-design label on triggered features) | human (for held features)"
@@ -64,11 +65,16 @@ The full requirement label lifecycle: **Backlog → Scoping → Scheduled → Do
    **Present each artefact to the human and wait for explicit confirmation before
    proceeding to the next.** Do not batch artefacts or produce the next one until
    the human has approved or revised the current one.
-   - Raw idea summary
-   - Problem statement
-   - Feature definition — includes a user story statement in `As a [user], I want [goal], so that [benefit]` format
-   - MVP scope
-   - **Parallel/serial checkpoint** — asks whether all parts can be built independently or must be sequenced. Independent work → multiple features (parallel). Sequential work → one feature with ordered tasks (same branch, same PR). Never creates multiple features with implied serial dependencies.
+
+   Every artefact confirmation below is delegated to `skills/ask-user.md` — the
+   interaction shape, option constraints, and typed fallback behaviour live
+   there. Do not restate them here.
+
+   - **Raw idea summary** — invoke `skills/ask-user.md` with Shape 1 (confirm/revise) on the proposed summary.
+   - **Problem statement** — invoke `skills/ask-user.md` with Shape 1 (confirm/revise) on the proposed statement.
+   - **Feature definition** — includes a user story statement in `As a [user], I want [goal], so that [benefit]` format. Invoke `skills/ask-user.md` with Shape 1 (confirm/revise) on the proposed feature definition plus user story.
+   - **MVP scope** — invoke `skills/ask-user.md` with Shape 1 (confirm/revise) on the proposed MVP.
+   - **Parallel/serial checkpoint** — invoke `skills/ask-user.md` with Shape 2 (multi-choice) presenting *parallel features* vs. *single feature with ordered tasks*, with the recommended option flagged. Independent work → multiple features (parallel). Sequential work → one feature with ordered tasks (same branch, same PR). Never creates multiple features with implied serial dependencies.
 
      **Three-dimensional cost principle** — before recommending parallel features, weigh:
      - **Token cost**: each parallel feature requires its own full Design + Dev session
@@ -79,32 +85,32 @@ The full requirement label lifecycle: **Backlog → Scoping → Scheduled → Do
      with ordered tasks and explain the cost of splitting. Only recommend parallel features
      when the work is substantial enough that parallelism delivers real value. Record the
      recommendation and reasoning in the scoping summary.
-   - Acceptance criteria — use Given/When/Then format for every criterion (not checkboxes, not prose). Minimum three criteria: one success case, one failure case, and at least one edge case.
-   - UX design (if applicable)
-   - **Deployment strategy** — ask: *"How should this feature reach users once deployed?"*
-     Present the options and confirm the type:
+   - **Acceptance criteria** — use Given/When/Then format for every criterion (not checkboxes, not prose). Minimum three criteria: one success case, one failure case, and at least one edge case. Invoke `skills/ask-user.md` with Shape 1 (confirm/revise) on the proposed criteria.
+   - **UX design (if applicable)** — invoke `skills/ask-user.md` with Shape 1 (confirm/revise) on the proposed UX block.
+   - **Deployment strategy** — invoke `skills/ask-user.md` with Shape 2 (multi-choice) asking *"How should this feature reach users once deployed?"* with these options:
      - **No switch** — deployed and immediately live (appropriate for bug fixes, MVP phase, or infrastructure changes)
      - **Feature switch** — hidden until a release decision is made (default for features and enhancements)
-       - Confirm mode: `permanent disable` (code must not execute — use when work may be incomplete or breaking) or `toggle` (access control only — use when code is safe but release is pending)
-       - Agree on flag name
-       - Note: switch removal is a follow-up requirement after full rollout
      - **Functionality switch** — permanent, gated by licence or tier (enters pipeline as a requirement in its own right)
      - **Preview switch** — user opt-in to a new experience while old version remains (enters pipeline as a requirement in its own right)
 
-     If the human elects no switch for a feature or enhancement, ask for the reason and record it.
+     Downstream confirmations — each via `skills/ask-user.md`:
+     - If **Feature switch** is chosen → invoke Shape 2 to confirm mode (`permanent disable` when work may be incomplete or breaking; `toggle` when code is safe but release is pending); then invoke Shape 1 (confirm/revise) on the proposed flag name. Note: switch removal is a follow-up requirement after full rollout.
+     - If **No switch** is chosen for a feature or enhancement → invoke Shape 2 or free-text ask-user to capture the reason; record it in the issue body.
+
      See `concepts/feature-switches.md` for the full taxonomy.
-   - Parking lot review
+   - **Parking lot review** — invoke `skills/ask-user.md` with Shape 1 (confirm/revise) on the parking lot entries.
 6. **Impact delta on rejection or modification** — when the human rejects or modifies
    a proposed feature after others have already been accepted:
    - Re-evaluate all previously accepted features: does this rejection or change affect
      their scope, dependencies, or ordering?
-   - Surface only features flagged as affected and ask the human to re-confirm them
+   - Surface only features flagged as affected and invoke `skills/ask-user.md`
+     with Shape 1 (confirm/revise) for each affected feature, so the human
+     re-confirms or edits it
    - Features not flagged are not re-presented — they remain accepted as-is
 7. Verifies user story is present and complete before creating the issue
 8. Creates Feature issues in the domain repo with `feature` + `backlog` labels
 9. Wires sub-issue relationship: Feature → parent Requirement
-10. **Explicit trigger confirmation** — presents the full list of agreed features and asks:
-    *"Which of these features should be triggered for design now? (list numbers, or 'all')"*
+10. **Explicit trigger confirmation** — invoke `skills/ask-user.md` presenting the full list of agreed features and asking *"Which of these features should be triggered for design now?"* The human replies with a selection (numbers, `all`, or free text naming the features).
     - Apply `in-design` only to features the human explicitly selects — and remove the `backlog` label in the same operation. A feature carries one status label at a time.
     - **Inline status update** — for each feature that receives the `in-design` label,
       immediately set its project status to `In Design` following the pattern in
@@ -194,6 +200,7 @@ The full requirement label lifecycle: **Backlog → Scoping → Scheduled → Do
 - If an idea is out of scope, capture it in the parking lot
 - **Explicit trigger confirmation**: never apply `in-design` automatically to all agreed features. Present the list and apply only to features the human explicitly selects. Features not selected remain at `backlog`.
 - **Impact delta on changes**: when the human rejects or modifies a feature, re-evaluate previously accepted features for impact and re-confirm only those affected
+- **Interaction shape is delegated**: every confirmation, selection, and disambiguation moment invokes `skills/ask-user.md` inline. Do not restate option counts, label-length limits, free-text escape rules, or typed-fallback behaviour here — those live in `ask-user.md` and must not drift
 
 ## Notification
 
