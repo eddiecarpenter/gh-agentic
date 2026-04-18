@@ -56,8 +56,22 @@ Open Goose and select the **Requirements Session (Stage 1)** recipe.
    - **If no** — label the requirement `backlog` and exit; the human will run the
      Scoping Session separately
 
-8. Prints: `=== Requirements Session (Phase 1) — Completed ===`
-9. **EXIT. Do not proceed further — even if the next steps are obvious.**
+8. Emits the canonical exit block (see `skills/session-exit.md`):
+
+   ```
+   === Requirements Session (Phase 1) — Completed ===
+
+   Produced:
+     - Requirement issue #N created (labels: requirement, backlog)
+
+   Blocked: none
+
+   Next: human: run Feature Scoping (Stage 2) recipe when ready
+   ```
+
+9. **Terminate the session.** Immediately after the exit block, invoke the host
+   runtime's session-close API if exposed; otherwise halt. No continuation in
+   the same session (see RULEBOOK — Session Termination).
 
 ## Completing Scoping Early
 
@@ -74,24 +88,43 @@ When the scope is clear enough to define the Feature(s) without a separate sessi
 5. Apply `in-design` to features that are ready to proceed (cross-repo dependency rules apply)
 6. Transition requirement: `scoping` → `scheduled`
    (`done` is applied automatically by the feature-complete workflow when all child features are closed)
-7. Print one of the following:
+7. Emit the canonical exit block (see `skills/session-exit.md`) matching the
+   actual outcome. Both inline variants conform to the same shape.
 
    **All features triggered:**
    ```
-   --- Scoping completed inline ---
-   Feature(s) #N created and triggered for design — automation running, no action needed yet.
+   === Requirements Session (Phase 1) — Completed ===
+
+   Produced:
+     - Requirement issue #N created
+     - Feature issue #N created (triggered for design, inline)
+     - Requirement #N transitioned: scoping → scheduled
+
+   Blocked: none
+
+   Next: automation: feature-design (in-design label on #N)
    ```
 
    **Some features held (cross-repo dependency):**
    ```
-   --- Scoping completed inline ---
-   Feature(s) triggered: #N
-   Feature(s) held (dependency): #N — waiting for <feature/PR reference> to merge first.
+   === Requirements Session (Phase 1) — Completed ===
+
+   Produced:
+     - Requirement issue #N created
+     - Feature issue #N created (triggered for design, inline)
+     - Feature issue #N created (held at backlog — cross-repo dependency)
+     - Requirement #N transitioned: scoping → scheduled
+
+   Blocked: #N — depends on <feature/PR reference> to merge first
+
+   Next: automation: feature-design (in-design label on #N); human: re-trigger #N once the upstream PR merges
    ```
 
-8. **EXIT immediately after printing the summary. Do not proceed to Feature Design.**
-   The `in-design` label has been applied — GitHub Actions will run the next session.
-   Continuing into Feature Design or Dev Session from here is a defect.
+8. **Terminate the session.** Immediately after emitting the exit block, invoke
+   the host runtime's session-close API if exposed; otherwise halt. The
+   `in-design` label has been applied — GitHub Actions runs the next session.
+   Continuing into Feature Design or Dev Session from here is a defect (see
+   RULEBOOK — Session Termination).
 
 ## Outputs
 

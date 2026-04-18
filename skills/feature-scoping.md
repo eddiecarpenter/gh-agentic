@@ -126,27 +126,55 @@ The full requirement label lifecycle: **Backlog → Scoping → Scheduled → Do
     - Find or create the project item
     - Resolve the Status field and option IDs
     - Set status to `Scheduled`
-12. Prints one of the following exit summaries:
+12. Emits the canonical exit block (see `skills/session-exit.md`) matching the
+    actual outcome. All three variants conform to the same Produced / Blocked /
+    Next shape.
 
     **All features triggered:**
     ```
     === Feature Scoping Session (Phase 2) — Completed ===
-    Features triggered for design: #N, #N
-    Automation running — no action needed yet.
+
+    Produced:
+      - Feature issue #N created (triggered for design)
+      - Feature issue #N created (triggered for design)
+      - Requirement #N transitioned: scoping → scheduled
+
+    Blocked: none
+
+    Next: automation: feature-design (in-design label on #N, #N)
     ```
 
     **Some features held:**
     ```
     === Feature Scoping Session (Phase 2) — Completed ===
-    Features triggered for design: #N
-    Features held (dependency): #N — waiting for <feature/PR reference> to merge first.
+
+    Produced:
+      - Feature issue #N created (triggered for design)
+      - Feature issue #N created (held at backlog — cross-repo dependency)
+      - Requirement #N transitioned: scoping → scheduled
+
+    Blocked: #N — depends on <feature/PR reference> to merge first
+
+    Next: automation: feature-design (in-design label on #N); human: re-trigger #N once the upstream PR merges
     ```
 
     **No features triggered (all held):**
     ```
     === Feature Scoping Session (Phase 2) — Completed ===
-    No features triggered. All features are held pending dependencies — see issue(s) for details.
+
+    Produced:
+      - Feature issue #N created (held at backlog — cross-repo dependency)
+      - Feature issue #N created (held at backlog — cross-repo dependency)
+      - Requirement #N transitioned: scoping → scheduled
+
+    Blocked: #N, #N — all depend on <feature/PR reference> to merge first
+
+    Next: nothing — re-trigger each feature once the upstream PR merges
     ```
+
+13. **Terminate the session.** Immediately after emitting the exit block, invoke
+    the host runtime's session-close API if exposed; otherwise halt. No further
+    work may occur in this session (see RULEBOOK — Session Termination).
 
 ## Outputs
 
@@ -169,7 +197,7 @@ The full requirement label lifecycle: **Backlog → Scoping → Scheduled → Do
 
 ## Notification
 
-The exit summary (see step 11 above) serves as the session notification. No separate notification needed.
+The exit block (see step 12 above) serves as the session notification. No separate notification needed.
 
 ## Next Step
 

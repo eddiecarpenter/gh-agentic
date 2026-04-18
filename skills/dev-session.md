@@ -107,8 +107,27 @@ Triggered automatically by GitHub Actions when a Feature issue is labelled `in-d
      git commit -m "chore: archive recovery.md for #<feature-issue-number>"
      ```
    - This must happen *before* the branch is pushed and the PR is opened.
-8. When all tasks are closed and criteria verified — prints: `=== Dev Session — Completed ===`
-9. Exits cleanly — the workflow pushes and opens the PR automatically
+8. When all tasks are closed and criteria verified, emit the canonical exit
+   block (see `skills/session-exit.md`):
+
+   ```
+   === Dev Session — Completed ===
+
+   Produced:
+     - M tasks closed (#N–#N)
+     - M commits on feature/<N>-<description>
+     - Acceptance criteria coverage verified (K of K)
+     - recovery.md archived to recovery-logs/recovery-log-<N>.md
+
+   Blocked: none
+
+   Next: automation: workflow pushes branch and opens PR closing #<N>
+   ```
+
+9. **Terminate the session.** Immediately after the exit block, invoke the host
+   runtime's session-close API if exposed; otherwise halt. The workflow pushes
+   the branch and opens the PR automatically — no further work in this session
+   (see RULEBOOK — Session Termination).
 
 ## recovery.md Format
 

@@ -56,8 +56,25 @@ Triggered automatically by GitHub Actions when a Feature issue is labelled `in-d
    - Find or create the project item
    - Resolve the Status field and option IDs
    - Set status to `In Development`
-8. Prints: `=== Feature Design Session — Completed ===`
-9. Exits cleanly — no code written, no PR opened
+8. Emits the canonical exit block (see `skills/session-exit.md`):
+
+   ```
+   === Feature Design Session — Completed ===
+
+   Produced:
+     - M task sub-issues created (#N–#N) under Feature #N
+     - Feature branch feature/N-<description> created
+     - Acceptance-criteria-to-task coverage verified (all K criteria mapped)
+     - in-development label applied to Feature #N
+
+   Blocked: none
+
+   Next: automation: dev-session (in-development label on #N)
+   ```
+
+9. **Terminate the session.** Immediately after the exit block, invoke the host
+   runtime's session-close API if exposed; otherwise halt. No code is written,
+   no PR is opened (see RULEBOOK — Session Termination).
 
 ## Task Issue Format
 
