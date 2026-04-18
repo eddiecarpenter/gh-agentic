@@ -9,6 +9,7 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+	"github.com/eddiecarpenter/gh-agentic/internal/project"
 )
 
 // CheckDeps holds injectable dependencies for check functions.
@@ -22,6 +23,10 @@ type CheckDeps struct {
 	ProjectID    string // value of AGENTIC_PROJECT_ID if set
 	Run          auth.RunCommandFunc
 	ReadCreds    auth.ReadCredentialsFunc
+	// FetchProjectTitle is used by checkProjectReachability to confirm the
+	// configured AGENTIC_PROJECT_ID resolves via the GraphQL API. Tests
+	// substitute a fake; production wires project.DefaultFetchProjectTitle.
+	FetchProjectTitle project.FetchProjectTitleFunc
 }
 
 // checkGroupStep pairs a spinner label with a check function.
@@ -44,6 +49,10 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		base = append(base, checkGroupStep{"Checking workflows...", checkWorkflows})
 		base = append(base, checkGroupStep{"Checking variables and secrets...", checkVariablesAndSecrets})
 	}
+	// Project reachability applies to every topology — all of them consume the
+	// GitHub Project board via `gh agentic status`. Added last so it lands at
+	// the bottom of the report, near the "what the agent actually needs" view.
+	base = append(base, checkGroupStep{"Checking project reachability...", checkProjectReachability})
 	return base
 }
 
@@ -344,6 +353,66 @@ func checkProjectAffiliation(deps CheckDeps) Group {
 	result = checkVariable(deps, "AGENTIC_TOPOLOGY")
 	g.Results = append(g.Results, result)
 
+	return g
+}
+
+// checkProjectReachability verifies AGENTIC_PROJECT_ID is set and the
+// configured ProjectV2 node ID resolves via GraphQL. This catches two common
+// misconfigurations that otherwise surface as confusing runtime errors from
+// `gh agentic status`: the variable missing entirely, and the variable set
+// to a node ID that the authenticated user cannot access (revoked token,
+// deleted project, moved to a different org).
+//
+// Outcomes:
+//   - Variable missing → Fail with a 'gh agentic project join' remediation.
+//   - Variable set but GraphQL errors → Fail with an auth-aware remediation.
+//   - Variable set and query returns a title → Pass (includes the title so
+//     the human can confirm they're pointed at the project they expect).
+func checkProjectReachability(deps CheckDeps) Group {
+	g := Group{Name: "Project reachability"}
+
+	// Step 1 — verify AGENTIC_PROJECT_ID is present.
+	projectID := strings.TrimSpace(deps.ProjectID)
+	if projectID == "" && deps.Run != nil {
+		out, err := deps.Run("gh", "variable", "get", "AGENTIC_PROJECT_ID", "--repo", deps.RepoFullName)
+		if err == nil {
+			projectID = strings.TrimSpace(out)
+		}
+	}
+	if projectID == "" {
+		remediation := "Run 'gh agentic project join' to affiliate this repo, " +
+			"or 'gh agentic project create' to start a new project"
+		g.Results = append(g.Results, CheckResult{
+			Name: "project-id", Status: Fail,
+			Message:     "AGENTIC_PROJECT_ID not configured",
+			Remediation: remediation,
+		})
+		return g
+	}
+
+	// Step 2 — verify the node ID resolves.
+	if deps.FetchProjectTitle == nil {
+		g.Results = append(g.Results, CheckResult{
+			Name: "project-reachability", Status: Warning,
+			Message: "AGENTIC_PROJECT_ID set — skipping reachability (no GraphQL client)",
+		})
+		return g
+	}
+
+	title, err := deps.FetchProjectTitle(projectID)
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name: "project-reachability", Status: Fail,
+			Message:     fmt.Sprintf("AGENTIC_PROJECT_ID is set but GraphQL lookup failed: %v", err),
+			Remediation: "Run 'gh auth status' to verify credentials; confirm the project exists and is accessible",
+		})
+		return g
+	}
+
+	g.Results = append(g.Results, CheckResult{
+		Name: "project-reachability", Status: Pass,
+		Message: fmt.Sprintf("Project reachable: %s", title),
+	})
 	return g
 }
 

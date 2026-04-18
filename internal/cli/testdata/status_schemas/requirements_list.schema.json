@@ -1,0 +1,26 @@
+{
+  "description": "Schema for `gh agentic status requirements --json`. The CLI layer emits a ListEnvelope with items: []Requirement and totals: {open, blocked}.",
+  "envelope": {
+    "items": "array-of-object",
+    "totals": "object"
+  },
+  "totals_fields": {
+    "open": "number",
+    "blocked": "number"
+  },
+  "item_fields": {
+    "number": "number",
+    "title": "string",
+    "body": "string",
+    "stage": "string",
+    "created_at": "string",
+    "last_transitioned_at": "string",
+    "owning_repo": "string",
+    "blocked": "object-or-null",
+    "linked_features": "array"
+  },
+  "blocked_fields_when_present": {
+    "blocking_ref": "string",
+    "reason": "string"
+  }
+}

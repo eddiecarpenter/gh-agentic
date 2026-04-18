@@ -5,12 +5,32 @@ package ui
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+// TerminalSupportsUTF8 reports whether the current terminal can display
+// wide Unicode glyphs like ✓ and ☐. The heuristic follows the common CLI
+// convention: inspect LC_ALL, then LC_CTYPE, then LANG for a "UTF-8" (or
+// "utf8") substring. Absent locale variables default to false so the
+// output stays readable on bare / minimal environments.
+func TerminalSupportsUTF8() bool {
+	for _, key := range []string{"LC_ALL", "LC_CTYPE", "LANG"} {
+		v := os.Getenv(key)
+		if v == "" {
+			continue
+		}
+		lower := strings.ToLower(v)
+		if strings.Contains(lower, "utf-8") || strings.Contains(lower, "utf8") {
+			return true
+		}
+	}
+	return false
+}
 
 // GitHub colour palette — from docs/TUI_DESIGN.md.
 const (
