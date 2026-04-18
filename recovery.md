@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #508                               |
 | Branch              | feature/508-horizontal-kanban-default-progress-icons |
-| Last commit         | 1d614d6                            |
+| Last commit         | 5606ec2                            |
 | Total tasks         | 5                                  |
-| Last updated        | 2026-04-18T21:17:00Z               |
+| Last updated        | 2026-04-18T21:22:00Z               |
 
 ## Completed Tasks
 
@@ -25,7 +25,11 @@
 - **Files changed:** internal/ui/progress.go, internal/ui/progress_test.go
 - **Decisions:** ASCII empty glyph is a single space (not `.`) — fixed choice consistent with UX-4 mockup. Integer rounding used so math package is not needed: `(done*20 + total/2) / total`.
 
+### #513 — feat: render block-bar progress + N/M numeric count on feature kanban cards (horizontal + vertical)
+- **Implemented:** `featureCards` now takes a `unicode bool` flag and appends a `[blocks] N/M tasks` line to every feature card. Both `writeHorizontalKanban` and `writeVerticalKanban` paths show the line. Requirement cards are left strictly untouched (AC-9). New negative-assertion tests guard against bleed into the requirements kanban.
+- **Files changed:** internal/cli/kanban.go, internal/cli/kanban_test.go, internal/cli/status_features.go
+- **Decisions:** Progress line is the second line of each card — before the optional `[blocked by ...]` line — so card layout stays predictable.
+
 ## Remaining Tasks
 
-- [ ] #513 — feat: render block-bar progress + N/M numeric count on feature kanban cards (horizontal + vertical) ← current
-- [ ] #514 — feat: show compact N/M task count on feature list (non-kanban) view
+- [ ] #514 — feat: show compact N/M task count on feature list (non-kanban) view ← current
