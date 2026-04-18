@@ -418,6 +418,75 @@ type graphqlPRResponse struct {
 	} `json:"repository"`
 }
 
+// graphqlTrackedIssuesResponse mirrors the native issue-dependency lookup.
+// `trackedIssues` returns the set of issues the target issue depends on —
+// i.e. the blockers. We read the first non-closed blocker and surface its
+// title as the "reason".
+type graphqlTrackedIssuesResponse struct {
+	Repository struct {
+		Issue *struct {
+			TrackedIssues struct {
+				Nodes []struct {
+					Number     int    `json:"number"`
+					Title      string `json:"title"`
+					State      string `json:"state"`
+					Repository struct {
+						NameWithOwner string `json:"nameWithOwner"`
+					} `json:"repository"`
+				} `json:"nodes"`
+			} `json:"trackedIssues"`
+		} `json:"issue"`
+	} `json:"repository"`
+}
+
+// DefaultFetchBlocker queries the native GitHub issue-dependency relationship
+// (`trackedIssues` on the target issue) and returns the first open blocker.
+// A nil result with a nil error means the issue has no native blocker; the
+// caller then falls back to the structured convention in the body.
+func DefaultFetchBlocker(owner, repo string, number int) (*BlockedInfo, error) {
+	client, err := api.DefaultGraphQLClient()
+	if err != nil {
+		return nil, fmt.Errorf("creating GraphQL client: %w", err)
+	}
+
+	query := `query($owner: String!, $repo: String!, $number: Int!) {
+		repository(owner: $owner, name: $repo) {
+			issue(number: $number) {
+				trackedIssues(first: 10) {
+					nodes {
+						number title state
+						repository { nameWithOwner }
+					}
+				}
+			}
+		}
+	}`
+
+	var resp graphqlTrackedIssuesResponse
+	if err := client.Do(query, map[string]interface{}{"owner": owner, "repo": repo, "number": number}, &resp); err != nil {
+		// If the field is not supported on the target repo, the GraphQL
+		// error propagates to the caller — FetchBlocker wraps it; the CLI
+		// layer classifies into network / auth / server.
+		return nil, fmt.Errorf("querying trackedIssues for %s/%s#%d: %w", owner, repo, number, err)
+	}
+
+	iss := resp.Repository.Issue
+	if iss == nil {
+		return nil, nil
+	}
+	for _, n := range iss.TrackedIssues.Nodes {
+		if strings.EqualFold(n.State, "closed") {
+			continue
+		}
+		ref := fmt.Sprintf("%s#%d", n.Repository.NameWithOwner, n.Number)
+		if n.Repository.NameWithOwner == "" {
+			ref = fmt.Sprintf("#%d", n.Number)
+		}
+		return &BlockedInfo{BlockingRef: ref, Reason: n.Title}, nil
+	}
+	return nil, nil
+}
+
 // DefaultFetchPR returns the PR associated with the given head branch, or
 // nil when no PR exists for that ref. State is normalised to "open" |
 // "merged" | "closed".

@@ -38,7 +38,7 @@ func FetchRequirements(deps Deps, projectID string, includeDone bool) ([]Require
 		if !includeDone && (issue.State == "closed" || issue.Stage == StageDone) {
 			continue
 		}
-		reqs = append(reqs, Requirement{
+		r := Requirement{
 			Number:             issue.Number,
 			Title:              issue.Title,
 			Body:               issue.Body,
@@ -46,7 +46,9 @@ func FetchRequirements(deps Deps, projectID string, includeDone bool) ([]Require
 			CreatedAt:          issue.CreatedAt,
 			LastTransitionedAt: issue.LastTransitionedAt,
 			OwningRepo:         issue.OwningRepo,
-		})
+		}
+		populateBlocked(deps, &r.Blocked, issue.OwningRepo, issue.Number, issue.Body)
+		reqs = append(reqs, r)
 	}
 
 	sort.Slice(reqs, func(i, j int) bool { return reqs[i].Number < reqs[j].Number })
@@ -85,6 +87,7 @@ func FetchRequirement(deps Deps, projectID string, number int) (*Requirement, er
 		LastTransitionedAt: found.LastTransitionedAt,
 		OwningRepo:         found.OwningRepo,
 	}
+	populateBlocked(deps, &req.Blocked, found.OwningRepo, found.Number, found.Body)
 
 	// Build linked features — scan feature issues for a `Closes #<number>` marker.
 	linked := make([]FeatureSummary, 0)
@@ -138,7 +141,7 @@ func FetchFeatures(deps Deps, projectID string, includeDone bool) ([]Feature, er
 		if !includeDone && (issue.State == "closed" || issue.Stage == StageDone) {
 			continue
 		}
-		features = append(features, Feature{
+		f := Feature{
 			Number:             issue.Number,
 			Title:              issue.Title,
 			Body:               issue.Body,
@@ -146,7 +149,9 @@ func FetchFeatures(deps Deps, projectID string, includeDone bool) ([]Feature, er
 			CreatedAt:          issue.CreatedAt,
 			LastTransitionedAt: issue.LastTransitionedAt,
 			OwningRepo:         issue.OwningRepo,
-		})
+		}
+		populateBlocked(deps, &f.Blocked, issue.OwningRepo, issue.Number, issue.Body)
+		features = append(features, f)
 	}
 	sort.Slice(features, func(i, j int) bool { return features[i].Number < features[j].Number })
 	return features, nil
@@ -180,6 +185,7 @@ func FetchFeature(deps Deps, projectID string, number int) (*Feature, error) {
 		LastTransitionedAt: found.LastTransitionedAt,
 		OwningRepo:         found.OwningRepo,
 	}
+	populateBlocked(deps, &feature.Blocked, found.OwningRepo, found.Number, found.Body)
 
 	// Tasks — sub-issue relationship.
 	if deps.FetchSubIssues != nil && owner != "" && repo != "" {
@@ -411,6 +417,23 @@ func parseClosesReference(body, defaultOwner, defaultRepo string) (owner, repo s
 		return parts[0], parts[1], n, true
 	}
 	return defaultOwner, defaultRepo, n, true
+}
+
+// populateBlocked resolves the Blocked annotation for an issue and writes
+// the result into target. Errors from the blocker lookup are swallowed —
+// the UX treats a blocker-lookup failure as "no annotation" rather than
+// failing the whole list view. The CLI layer still surfaces the underlying
+// GraphQL error separately via ClassifyAPIError when it matters.
+func populateBlocked(deps Deps, target **BlockedInfo, owningRepo string, number int, body string) {
+	if target == nil {
+		return
+	}
+	owner, repo := splitOwnerRepo(owningRepo)
+	info, err := FetchBlocker(deps, owner, repo, number, body)
+	if err != nil || info == nil {
+		return
+	}
+	*target = info
 }
 
 // renderBranchOneLiner produces the compact string shown in a requirement's

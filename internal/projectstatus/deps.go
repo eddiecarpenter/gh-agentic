@@ -66,6 +66,7 @@ type Deps struct {
 	FetchParentIssue   FetchParentIssueFunc
 	FetchBranch        FetchBranchFunc
 	FetchPR            FetchPRFunc
+	FetchBlocker       FetchBlockerFunc
 }
 
 // DefaultDeps returns production dependencies wired to the GitHub GraphQL and
@@ -79,5 +80,6 @@ func DefaultDeps() Deps {
 		FetchParentIssue:   DefaultFetchParentIssue,
 		FetchBranch:        DefaultFetchBranch,
 		FetchPR:            DefaultFetchPR,
+		FetchBlocker:       DefaultFetchBlocker,
 	}
 }
