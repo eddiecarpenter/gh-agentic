@@ -2,13 +2,16 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/doctorv2"
+	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -118,11 +121,26 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			fmt.Fprintln(w, "  "+ui.Divider(48))
 			if pdepsErr != nil {
 				fmt.Fprintf(w, "  %s  Skipped: %v\n", ui.StatusWarning.Render("⚠"), pdepsErr)
-			} else if len(pipelineResult.Lines) == 0 {
+			} else if len(pipelineResult.Lines) == 0 && len(pipelineResult.PendingPrompts) == 0 {
 				fmt.Fprintf(w, "  %s  No pipeline issues found\n", ui.StatusOK.Render("✓"))
 			} else {
 				for _, line := range pipelineResult.Lines {
 					fmt.Fprintln(w, line)
+				}
+			}
+
+			// Phase 3: prompt for missing variables/secrets and apply them.
+			if pdepsErr == nil && len(pipelineResult.PendingPrompts) > 0 {
+				applied, err := promptAndApplyPending(w, pipelineDeps, pipelineResult.PendingPrompts)
+				if err != nil {
+					fmt.Fprintf(w, "\n  %s  Prompt cancelled: %v\n", ui.StatusWarning.Render("⚠"), err)
+					pipelineResult.Unrepaired += len(pipelineResult.PendingPrompts)
+				} else {
+					for _, line := range applied.Lines {
+						fmt.Fprintln(w, line)
+					}
+					pipelineResult.Repaired += applied.Repaired
+					pipelineResult.Unrepaired += applied.Unrepaired
 				}
 			}
 
@@ -202,4 +220,103 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctorv2.CheckDeps, error) {
 			return auth.ReadClaudeCredentialsDefault(r)
 		},
 	}, nil
+}
+
+// promptAndApplyPending presents one huh form per pending variable/secret,
+// then applies non-empty answers via gh. Each prompt is its own form so the
+// user can Esc out of one without losing the rest. Returns a partial result
+// (Lines + counts) for the caller to merge.
+func promptAndApplyPending(w io.Writer, deps doctorv2.CheckDeps, prompts []doctorv2.PendingPrompt) (doctorv2.RepairResult, error) {
+	res := doctorv2.RepairResult{}
+
+	fmt.Fprintln(w, "")
+	fmt.Fprintf(w, "  %s  %d value(s) need to be set. Leave blank to skip any.\n",
+		ui.Muted.Render("→"), len(prompts))
+	fmt.Fprintln(w, "")
+
+	for _, p := range prompts {
+		value, err := promptValue(p, deps)
+		if err != nil {
+			// User cancelled the form (Ctrl+C / Esc). Bail out — the caller
+			// counts remaining prompts as Unrepaired.
+			return res, err
+		}
+
+		// Empty answer + a non-empty default → use the default.
+		if strings.TrimSpace(value) == "" && p.Default != "" {
+			value = p.Default
+		}
+
+		applyErr := doctorv2.ApplyPendingPrompt(deps.Run, deps.RepoFullName, p, value)
+		res.Lines = append(res.Lines, doctorv2.FormatPromptApplied(p, applyErr))
+		if applyErr != nil {
+			res.Unrepaired++
+		} else {
+			res.Repaired++
+		}
+	}
+
+	return res, nil
+}
+
+// promptValue runs the appropriate huh form for a single pending prompt and
+// returns the user-supplied value. RUNNER_LABEL gets the same select-then-
+// custom flow used by `gh agentic init`; everything else uses a single text
+// input (with password masking for secrets).
+func promptValue(p doctorv2.PendingPrompt, deps doctorv2.CheckDeps) (string, error) {
+	if p.Name == "RUNNER_LABEL" {
+		return promptRunnerLabel(deps)
+	}
+
+	var value string
+	title := p.Name
+	if p.Description != "" {
+		title = p.Name + " — " + p.Description
+	}
+	input := huh.NewInput().Title(title).Value(&value)
+	if p.Default != "" {
+		input = input.Placeholder(p.Default)
+	}
+	if p.Kind == "secret" {
+		input = input.EchoMode(huh.EchoModePassword)
+	}
+	if err := huh.NewForm(huh.NewGroup(input)).Run(); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// promptRunnerLabel mirrors initv2.collectPipelineConfig's runner picker:
+// a select with sensible candidates, falling through to a custom-label input
+// when "other" is chosen.
+func promptRunnerLabel(deps doctorv2.CheckDeps) (string, error) {
+	value := initv2.DefaultRunnerLabel
+	options := initv2.BuildRunnerOptions(deps.RepoName, deps.Owner)
+
+	selectForm := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("RUNNER_LABEL").
+			Description("The GitHub Actions runner label for the agentic pipeline").
+			Options(options...).
+			Value(&value),
+	))
+	if err := selectForm.Run(); err != nil {
+		return "", err
+	}
+
+	if value != initv2.RunnerOther {
+		return value, nil
+	}
+
+	value = ""
+	customForm := huh.NewForm(huh.NewGroup(
+		huh.NewInput().
+			Title("Custom runner label").
+			Description("Enter your custom GitHub Actions runner label").
+			Value(&value),
+	))
+	if err := customForm.Run(); err != nil {
+		return "", err
+	}
+	return value, nil
 }

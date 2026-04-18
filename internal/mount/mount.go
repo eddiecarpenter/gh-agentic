@@ -131,16 +131,26 @@ var versionTagPattern = regexp.MustCompile(`(eddiecarpenter/gh-agentic/\.github/
 // UpdateWorkflowVersions scans all .yml files in .github/workflows/ and
 // replaces gh-agentic version tags with the new version.
 func UpdateWorkflowVersions(root, newVersion string) error {
+	_, err := UpdateWorkflowVersionsCount(root, newVersion)
+	return err
+}
+
+// UpdateWorkflowVersionsCount is like UpdateWorkflowVersions but reports the
+// number of files actually rewritten. Returns 0 when the workflows in
+// .github/workflows/ don't reference gh-agentic reusable workflows at all
+// (the current framework template uses inlined steps, not @vX.Y.Z refs).
+func UpdateWorkflowVersionsCount(root, newVersion string) (int, error) {
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 
 	entries, err := os.ReadDir(workflowsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return 0, nil
 		}
-		return fmt.Errorf("reading workflows directory: %w", err)
+		return 0, fmt.Errorf("reading workflows directory: %w", err)
 	}
 
+	rewrites := 0
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -153,16 +163,17 @@ func UpdateWorkflowVersions(root, newVersion string) error {
 		path := filepath.Join(workflowsDir, name)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("reading %s: %w", name, err)
+			return rewrites, fmt.Errorf("reading %s: %w", name, err)
 		}
 
 		updated := versionTagPattern.ReplaceAllString(string(data), "${1}@"+newVersion)
 		if updated != string(data) {
 			if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
-				return fmt.Errorf("writing %s: %w", name, err)
+				return rewrites, fmt.Errorf("writing %s: %w", name, err)
 			}
+			rewrites++
 		}
 	}
 
-	return nil
+	return rewrites, nil
 }

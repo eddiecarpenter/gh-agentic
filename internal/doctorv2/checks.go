@@ -276,19 +276,25 @@ func checkWorkflows(deps CheckDeps) Group {
 			continue
 		}
 
-		if version != "" && strings.Contains(string(data), "@"+version) {
+		// Only enforce the framework version tag if the workflow actually
+		// references gh-agentic via a 'uses:' line. Inlined workflows (the
+		// current framework template) don't reference gh-agentic at all and
+		// don't need a version tag.
+		referencesFramework := strings.Contains(string(data), "eddiecarpenter/gh-agentic")
+		switch {
+		case version == "" || !referencesFramework:
+			g.Results = append(g.Results, CheckResult{
+				Name: wf, Status: Pass, Message: wf + " present",
+			})
+		case strings.Contains(string(data), "@"+version):
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Pass, Message: fmt.Sprintf("%s → @%s", wf, version),
 			})
-		} else if version != "" {
+		default:
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Fail,
 				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, version),
 				Remediation: "Run 'gh agentic mount'",
-			})
-		} else {
-			g.Results = append(g.Results, CheckResult{
-				Name: wf, Status: Pass, Message: wf + " present",
 			})
 		}
 	}
