@@ -212,6 +212,40 @@ func TestCheckWorkflows_VersionMatch(t *testing.T) {
 	}
 }
 
+// TestCheckWorkflows_InlinedNoFrameworkRefs documents the regression that
+// previously broke `gh agentic check` for repos whose workflows are inlined
+// (no `eddiecarpenter/gh-agentic/...@v...` reference). Such workflows do not
+// need a framework version tag and must pass.
+func TestCheckWorkflows_InlinedNoFrameworkRefs(t *testing.T) {
+	root := t.TempDir()
+	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.1.0")
+	_ = mount.WriteAIVersion(root, "v2.1.0")
+
+	workflowsDir := filepath.Join(root, ".github", "workflows")
+	_ = os.MkdirAll(workflowsDir, 0o755)
+	// Inlined workflow with only third-party action refs — no gh-agentic ref.
+	inlined := `name: Agentic Pipeline
+on: [push]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+`
+	_ = os.WriteFile(filepath.Join(workflowsDir, "agentic-pipeline.yml"), []byte(inlined), 0o644)
+	_ = os.WriteFile(filepath.Join(workflowsDir, "release.yml"), []byte(inlined), 0o644)
+
+	deps := CheckDeps{Root: root}
+	g := checkWorkflows(deps)
+
+	for _, r := range g.Results {
+		if r.Status != Pass {
+			t.Errorf("expected %s to Pass (inlined workflow, no framework ref), got %v: %s",
+				r.Name, r.Status, r.Message)
+		}
+	}
+}
+
 func TestCheckAgentFiles_AllPresent(t *testing.T) {
 	root := setupHealthyRepo(t)
 	deps := CheckDeps{Root: root}
