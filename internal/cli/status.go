@@ -144,7 +144,10 @@ items are listed.`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatusRequirements(cmd.OutOrStdout(), flags, deps)
+			if err := runStatusRequirements(cmd.OutOrStdout(), flags, deps); err != nil {
+				return renderStatusError(cmd, err)
+			}
+			return nil
 		},
 	}
 
@@ -185,7 +188,10 @@ Pass --json to emit a stable structured object for machine consumption.`,
 			if err != nil {
 				return err
 			}
-			return runStatusRequirement(cmd.OutOrStdout(), n, flags, deps)
+			if err := runStatusRequirement(cmd.OutOrStdout(), n, flags, deps); err != nil {
+				return renderStatusError(cmd, err)
+			}
+			return nil
 		},
 	}
 
@@ -236,7 +242,10 @@ are listed.`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatusFeatures(cmd.OutOrStdout(), flags, deps)
+			if err := runStatusFeatures(cmd.OutOrStdout(), flags, deps); err != nil {
+				return renderStatusError(cmd, err)
+			}
+			return nil
 		},
 	}
 
@@ -278,7 +287,10 @@ Pass --json to emit a stable structured object for machine consumption.`,
 			if err != nil {
 				return err
 			}
-			return runStatusFeature(cmd.OutOrStdout(), n, flags, deps)
+			if err := runStatusFeature(cmd.OutOrStdout(), n, flags, deps); err != nil {
+				return renderStatusError(cmd, err)
+			}
+			return nil
 		},
 	}
 
