@@ -4,35 +4,32 @@
 |---------------------|--------------------------------------------------|
 | Feature issue       | #492                                             |
 | Branch              | feature/492-gh-agentic-status                    |
-| Last commit         | bd19f4d                                          |
+| Last commit         | cea2560                                          |
 | Total tasks         | 11                                               |
-| Last updated        | 2026-04-18T11:05:00Z                             |
+| Last updated        | 2026-04-18T11:15:00Z                             |
 
 ## Completed Tasks
 
 ### #494 — Scaffold gh agentic status command group and four sub-command stubs
-- **Implemented:** Cobra command group with four leaf sub-commands as stubs.
 - **Files:** internal/cli/status.go, status_test.go, root.go
-- **Decisions:** Shared `errStatusNotImplemented` sentinel; flag registrars split list/detail.
+- **Decisions:** Shared `errStatusNotImplemented` sentinel.
 
-### #495 — Build internal/projectstatus package — types, GraphQL queries, typed errors
-- **Implemented:** Complete data model + injectable Deps + ClassifyAPIError.
+### #495 — Build internal/projectstatus package
 - **Files:** internal/projectstatus/{types,deps,errors,queries,queries_default}.go + tests.
-- **Decisions:** Blocked annotation deferred to #501. Stage parsing normalises spaces/hyphens/case.
 
-### #496 — Implement 'gh agentic status requirements' list command
-- **Implemented:** Handler + renderer (table + JSON envelope). --include-done / --this-repo /
-  --json wired. --kanban and --horizontal return scoped not-yet-implemented until task #500.
-- **Files:** internal/cli/status_requirements.go + test; internal/cli/status.go updated to
-  wire newStatusRequirementsCmdWithDeps. types.go gained JSON tags for the stable schema.
-- **Decisions:** statusDeps struct is the shared CLI-layer injectable. REPO column shows only
-  when at least one row is cross-repo. Totals line uses singular/plural form and a `(N blocked)`
-  suffix when applicable.
+### #496 — Implement 'gh agentic status requirements' list
+- **Files:** internal/cli/status_requirements.go + test; status.go updated.
+
+### #497 — Implement 'gh agentic status requirement <N>' detail
+- **Implemented:** Handler + renderer. UX-3 layout (title, stage/dates, optional Blocked line,
+  body, `---` separator, linked features with branch/PR one-liners). JSON single-object.
+  ErrIssueNotFound annotated with current repo; *ErrWrongType passes through.
+- **Files:** internal/cli/status_requirement.go + test; status.go wired.
+- **Decisions:** parseIssueNumberArg tolerates `#N` and plain `N`; rejects zero/negative.
 
 ## Remaining Tasks
 
-- [ ] #497 — Implement 'gh agentic status requirement <N>' detail command ← current
-- [ ] #498 — Implement 'gh agentic status features' list command
+- [ ] #498 — Implement 'gh agentic status features' list command ← current
 - [ ] #499 — Implement 'gh agentic status feature <N>' detail command
 - [ ] #500 — Implement --kanban renderer (vertical + --horizontal) with --json precedence
 - [ ] #501 — Wire blocked-by dependency detection
