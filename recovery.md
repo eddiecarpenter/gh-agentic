@@ -4,33 +4,27 @@
 |---------------------|--------------------------------------------------|
 | Feature issue       | #492                                             |
 | Branch              | feature/492-gh-agentic-status                    |
-| Last commit         | cea2560                                          |
+| Last commit         | ed1bb4d                                          |
 | Total tasks         | 11                                               |
-| Last updated        | 2026-04-18T11:15:00Z                             |
+| Last updated        | 2026-04-18T11:25:00Z                             |
 
 ## Completed Tasks
 
-### #494 — Scaffold gh agentic status command group and four sub-command stubs
-- **Files:** internal/cli/status.go, status_test.go, root.go
-- **Decisions:** Shared `errStatusNotImplemented` sentinel.
-
+### #494 — Scaffold status command group and stubs
 ### #495 — Build internal/projectstatus package
-- **Files:** internal/projectstatus/{types,deps,errors,queries,queries_default}.go + tests.
-
 ### #496 — Implement 'gh agentic status requirements' list
-- **Files:** internal/cli/status_requirements.go + test; status.go updated.
-
 ### #497 — Implement 'gh agentic status requirement <N>' detail
-- **Implemented:** Handler + renderer. UX-3 layout (title, stage/dates, optional Blocked line,
-  body, `---` separator, linked features with branch/PR one-liners). JSON single-object.
-  ErrIssueNotFound annotated with current repo; *ErrWrongType passes through.
-- **Files:** internal/cli/status_requirement.go + test; status.go wired.
-- **Decisions:** parseIssueNumberArg tolerates `#N` and plain `N`; rejects zero/negative.
+### #498 — Implement 'gh agentic status features' list
+- **Implemented:** runStatusFeatures + renderer. REPO column shown when cross-repo.
+  --this-repo, --include-done, --json wired; --kanban guarded.
+- **Files:** internal/cli/status_features.go + test; status.go wired.
+- **Decisions:** Feature JSON items include all struct fields (parent_requirement, tasks,
+  branch, pr) — list-view callers see those as empty or null but the schema is identical
+  to detail items.
 
 ## Remaining Tasks
 
-- [ ] #498 — Implement 'gh agentic status features' list command ← current
-- [ ] #499 — Implement 'gh agentic status feature <N>' detail command
+- [ ] #499 — Implement 'gh agentic status feature <N>' detail command ← current
 - [ ] #500 — Implement --kanban renderer (vertical + --horizontal) with --json precedence
 - [ ] #501 — Wire blocked-by dependency detection
 - [ ] #502 — Extend 'gh agentic check' to verify AGENTIC_PROJECT_ID reachability
