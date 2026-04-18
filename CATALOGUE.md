@@ -1,0 +1,70 @@
+# Skill Catalogue
+
+Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by hand.
+
+## Session skills
+
+- **dev-session** — Implements every open Task sub-issue on the feature branch in order, commits per task, verifies acceptance criteria coverage, and exits cleanly so the workflow can open the PR. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-development label — never run interactively.
+  Triggers: automation: in-development
+
+- **feature-design** — Decomposes a Feature issue into ordered Task sub-issues that cover every acceptance criterion, creates the feature branch, and hands off to Dev Session via the in-development label. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-design label — never run interactively.
+  Triggers: automation: in-design
+
+- **feature-scoping** — Decomposes a Requirement issue into one or more well-formed Feature issues with acceptance criteria, UX design, and deployment strategy, and hands selected features to Feature Design via the in-design label. Use when a human opens the Feature Scoping (Stage 2) recipe to scope a backlog requirement into features.
+  Triggers: human-interactive
+
+- **issue-session** — Handles a GitHub Issue assigned to the agent — routes by label to either fix a bug on a new branch or answer a question as a comment, and exits cleanly so the workflow can open a PR if code changed. Use when GitHub Actions triggers this session automatically on an issue being assigned to the agent user — never run interactively.
+  Triggers: automation: issue-assigned
+
+- **pr-review-session** — Processes inline review comments on a PR — answers questions, implements change requests with tests, and escalates ambiguous or scope-changing feedback via the needs-foreground-review label. Use when GitHub Actions triggers this session automatically on a PR review being submitted — never run interactively.
+  Triggers: automation: pr-review-submitted
+
+- **requirements-session** — Captures a new business need as a Requirement issue in GitHub and, when the scope is clear, completes Feature Scoping inline. Use when a human opens the Requirements Session (Stage 1) recipe to record a new idea, need, or enhancement request.
+  Triggers: human-interactive
+
+## Recovery skills
+
+- **foreground-recovery** — The human-driven escape hatch for any blocked pipeline state — diagnoses failures from exact error output, applies minimal fixes, and optionally rewinds to an earlier pipeline phase with explicit human confirmation. Use when the automated pipeline is blocked (red build, failing tests, merge conflict, silent workflow failure, or any situation requiring manual intervention) and a human opens the Foreground Recovery recipe.
+  Triggers: human-interactive
+
+## Bootstrap skills
+
+- **post-sync** — Handles post-sync upgrade actions left behind in POST_SYNC.md — runs required migration steps (commands, config changes, file renames) in interactive sessions, or warns and exits in automated sessions. Use only when session-init detects POST_SYNC.md at the repo root — never invoke directly.
+  Triggers: post-sync
+
+- **session-init** — Loads the project environment at the start of every session — reads the project brief, runs gh agentic check, loads standards and the skill catalogue, and handles post-sync actions. Use at every session start before any other skill, and again after a template sync is reported mid-session.
+  Triggers: session-start, post-sync
+
+## Operation skills
+
+- **build-catalogue** — Regenerates CATALOGUE.md from every skill's YAML frontmatter in a deterministic, diff-friendly order (grouped by category, alphabetical within category). Use when CATALOGUE.md is missing or stale (any skill mtime newer than the catalogue), or after a skill has been added, removed, or had its frontmatter edited.
+  Triggers: on-demand
+
+- **release-notes** — Generates human-readable, well-structured release notes from git commit history and updates the GitHub release body with the AI-written notes. Use when the Release recipe fires on a version tag being pushed to main and the release body needs categorised (Features/Fixes/Documentation/Chores) notes.
+  Triggers: on-demand
+
+- **update-project-template** — Extracts the live GitHub Project configuration (shortDescription, readme, status field options, and views) and writes it as the canonical .ai/project-template.json so board customisations flow to downstream environments via gh agentic sync. Use when the human asks to save the current project config as the template or to update the project template from the live project (template repo only).
+  Triggers: human-interactive
+
+## Information skills
+
+- **notify-user** — Sends an OS-level notification (macOS osascript or Linux notify-send) to alert the human that human action is required or a long-running session has completed. Use when the pipeline reaches a point where a human must act (PR ready for review, fix pushed awaiting workflow restart) or a session has run longer than the configured completion threshold.
+  Triggers: on-demand
+
+## Reference skills
+
+- **capture-feature** — Defines the canonical markdown body template for every Feature issue created during scoping — user story, context, scope, acceptance criteria in Given/When/Then format, deployment strategy, UX design, notes, and parent link. Use when authoring the body of any new Feature issue, or when reviewing that a Feature issue conforms to the required shape.
+  Triggers: on-demand
+
+- **gh-agentic-tool** — Authoritative command reference for the gh agentic CLI extension — describes every command (info, project check/repair/info/create/join/unlink, mount, auth check/login/refresh, doctor), when to use each, and the agent's decision logic for common situations. Use whenever the agent needs to interact with the agentic framework from the command line or diagnose project health.
+  Triggers: on-demand
+
+- **session-exit** — Defines the canonical universal exit block emitted by every Session and Recovery skill at termination, with the three fixed sections (Produced, Blocked, Next) and worked variants. Use when authoring or updating any session-ending skill, or when verifying that an exit block conforms to the framework shape.
+  Triggers: on-demand
+
+- **set-issue-status** — Authoritative pattern for setting a GitHub Project V2 status on an issue via the gh CLI GraphQL API — includes the label-to-status mapping and the exact four-step sequence (resolve node ID, find/create project item, resolve field IDs, update status). Use whenever a pipeline label is applied to an issue (always in the same operation, never as a separate step).
+  Triggers: on-demand
+
+- **skill-categories** — Authoritatively defines the six-category skill taxonomy (Session, Recovery, Bootstrap, Operation, Information, Reference) and the YAML frontmatter schema every skill must conform to. Use when authoring a new skill, classifying an existing skill, validating frontmatter, or reasoning about which exit protocol applies to a skill.
+  Triggers: on-demand
+
