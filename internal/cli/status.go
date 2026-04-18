@@ -78,6 +78,7 @@ type statusListFlags struct {
 	json        bool
 	kanban      bool
 	horizontal  bool
+	vertical    bool
 	thisRepo    bool
 	includeDone bool
 }
@@ -87,8 +88,9 @@ type statusListFlags struct {
 // surface area — the implementations land in later tasks.
 func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
-	cmd.Flags().BoolVar(&f.kanban, "kanban", false, "render a vertical stage-grouped kanban view")
-	cmd.Flags().BoolVar(&f.horizontal, "horizontal", false, "render the kanban horizontally (requires --kanban; wide terminals only)")
+	cmd.Flags().BoolVar(&f.kanban, "kanban", false, "render a stage-grouped kanban view (horizontal by default; auto-falls-back to vertical on narrow terminals)")
+	cmd.Flags().BoolVar(&f.horizontal, "horizontal", false, "force horizontal kanban regardless of terminal width (requires --kanban; no-op on wide terminals)")
+	cmd.Flags().BoolVar(&f.vertical, "vertical", false, "force vertical kanban regardless of terminal width (requires --kanban)")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
 	cmd.Flags().BoolVar(&f.includeDone, "include-done", false, "include items in the 'done' stage")
 }
@@ -124,7 +126,10 @@ Default output is a compact one-line-per-item table. Stage is shown verbatim as
 the GitHub label name (backlog, scoping, scheduled, done). Items that are
 blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]' annotation.
 
-Pass --kanban for a stage-grouped view; see --horizontal for wide terminals.
+Pass --kanban for a stage-grouped view. Kanban defaults to horizontal layout;
+on narrow terminals it auto-falls-back to vertical with a one-line notice.
+Pass --horizontal to force horizontal layout even on narrow terminals, or
+--vertical to force vertical layout regardless of width.
 Pass --json to emit a stable structured payload for machine consumption —
 --json always wins over --kanban; the JSON shape is identical regardless of
 --kanban being passed so consumers group by stage themselves if needed.
@@ -133,8 +138,11 @@ items are listed.`,
 		Example: `  # Default list view
   gh agentic status requirements
 
-  # Vertical kanban
+  # Kanban (horizontal by default; auto-falls-back to vertical on narrow terminals)
   gh agentic status requirements --kanban
+
+  # Force vertical kanban
+  gh agentic status requirements --kanban --vertical
 
   # JSON for scripting
   gh agentic status requirements --json
@@ -219,7 +227,10 @@ The owning repo is shown when it differs from the current repo. Features that
 are blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]'
 annotation.
 
-Pass --kanban for a stage-grouped view; see --horizontal for wide terminals.
+Pass --kanban for a stage-grouped view. Kanban defaults to horizontal layout;
+on narrow terminals it auto-falls-back to vertical with a one-line notice.
+Pass --horizontal to force horizontal layout even on narrow terminals, or
+--vertical to force vertical layout regardless of width.
 Pass --json to emit a stable structured payload for machine consumption —
 --json always wins over --kanban; the JSON shape is identical regardless of
 --kanban being passed so consumers group by stage themselves if needed.
@@ -228,10 +239,13 @@ are listed.`,
 		Example: `  # Default list view
   gh agentic status features
 
-  # Vertical kanban
+  # Kanban (horizontal by default; auto-falls-back to vertical on narrow terminals)
   gh agentic status features --kanban
 
-  # Horizontal kanban (wide terminals)
+  # Force vertical kanban
+  gh agentic status features --kanban --vertical
+
+  # Force horizontal kanban (even on narrow terminals)
   gh agentic status features --kanban --horizontal
 
   # JSON for scripting

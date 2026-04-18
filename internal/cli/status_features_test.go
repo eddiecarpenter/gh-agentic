@@ -197,13 +197,13 @@ func TestRunStatusFeatures_NoProjectConfigured(t *testing.T) {
 	}
 }
 
-// TestRunStatusFeatures_KanbanVertical verifies --kanban renders the
-// stage-grouped view for features.
+// TestRunStatusFeatures_KanbanVertical verifies --kanban --vertical renders
+// the stage-grouped view for features.
 func TestRunStatusFeatures_KanbanVertical(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures --kanban: %v", err)
+	if err := runStatusFeatures(buf, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures --kanban --vertical: %v", err)
 	}
 	out := buf.String()
 	for _, tok := range []string{
@@ -218,6 +218,10 @@ func TestRunStatusFeatures_KanbanVertical(t *testing.T) {
 		if !strings.Contains(out, tok) {
 			t.Errorf("expected %q; got:\n%s", tok, out)
 		}
+	}
+	// --vertical must not emit the auto-fallback notice.
+	if strings.Contains(out, "horizontal kanban needs ≥") {
+		t.Errorf("--vertical should not emit the fallback notice; got:\n%s", out)
 	}
 }
 

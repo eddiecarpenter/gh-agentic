@@ -256,14 +256,14 @@ func TestRunStatusRequirements_NoProjectConfigured(t *testing.T) {
 	}
 }
 
-// TestRunStatusRequirements_KanbanVertical verifies --kanban renders the
-// stage-grouped vertical view with columns in canonical order and counts in
-// the section headings.
+// TestRunStatusRequirements_KanbanVertical verifies --kanban --vertical
+// renders the stage-grouped vertical view with columns in canonical order
+// and counts in the section headings.
 func TestRunStatusRequirements_KanbanVertical(t *testing.T) {
 	sd := fakeStatusDeps(sampleRequirementIssues())
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true}, sd); err != nil {
-		t.Fatalf("runStatusRequirements --kanban: %v", err)
+	if err := runStatusRequirements(buf, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
+		t.Fatalf("runStatusRequirements --kanban --vertical: %v", err)
 	}
 	out := buf.String()
 	for _, tok := range []string{
@@ -280,6 +280,10 @@ func TestRunStatusRequirements_KanbanVertical(t *testing.T) {
 			t.Errorf("expected %q in kanban output; got:\n%s", tok, out)
 		}
 	}
+	// --vertical must not emit the auto-fallback notice.
+	if strings.Contains(out, "horizontal kanban needs ≥") {
+		t.Errorf("--vertical should not emit the fallback notice; got:\n%s", out)
+	}
 }
 
 // TestRunStatusRequirements_HorizontalRequiresKanban verifies the standalone
@@ -289,6 +293,16 @@ func TestRunStatusRequirements_HorizontalRequiresKanban(t *testing.T) {
 	err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{horizontal: true}, sd)
 	if err == nil {
 		t.Fatalf("expected error for bare --horizontal, got nil")
+	}
+}
+
+// TestRunStatusRequirements_VerticalRequiresKanban verifies the standalone
+// --vertical flag errors rather than silently being ignored.
+func TestRunStatusRequirements_VerticalRequiresKanban(t *testing.T) {
+	sd := fakeStatusDeps(sampleRequirementIssues())
+	err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{vertical: true}, sd)
+	if err == nil {
+		t.Fatalf("expected error for bare --vertical, got nil")
 	}
 }
 

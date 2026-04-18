@@ -94,8 +94,18 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 //     adds side-by-side rendering when the terminal is wide enough).
 //  3. Default — compact tabular list.
 func runStatusRequirements(w io.Writer, flags statusListFlags, deps statusDeps) error {
-	if flags.horizontal && !flags.kanban {
-		return fmt.Errorf("--horizontal requires --kanban")
+	if (flags.horizontal || flags.vertical) && !flags.kanban {
+		return fmt.Errorf("--horizontal and --vertical require --kanban")
+	}
+	// Resolve layout early so mutually-exclusive flags fail fast before any
+	// network call.
+	var layout kanbanLayout
+	if flags.kanban {
+		var err error
+		layout, err = resolveKanbanLayout(flags, terminalWidth(), requirementKanbanMinWidth)
+		if err != nil {
+			return err
+		}
 	}
 
 	currentRepo, err := deps.currentRepo()
@@ -130,10 +140,10 @@ func runStatusRequirements(w io.Writer, flags statusListFlags, deps statusDeps) 
 	if flags.kanban {
 		columns := columnsForRequirements(flags.includeDone)
 		cards := requirementCards(reqs, columns)
-		if flags.horizontal {
-			return writeHorizontalKanban(w, columns, cards, terminalWidth(), kanbanMinHorizontalWidthRequirements, ui.TerminalSupportsUTF8())
+		if layout.horizontal {
+			return writeHorizontalKanban(w, columns, cards, terminalWidth(), requirementKanbanMinWidth, ui.TerminalSupportsUTF8())
 		}
-		return writeVerticalKanban(w, "Requirements — Kanban", columns, cards)
+		return writeVerticalKanban(w, "Requirements — Kanban", columns, cards, layout.notice)
 	}
 
 	return writeRequirementsTable(w, reqs, currentRepo)

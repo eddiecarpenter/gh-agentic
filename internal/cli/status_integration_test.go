@@ -388,19 +388,45 @@ func TestIntegration_KanbanHorizontalWide(t *testing.T) {
 	}
 }
 
-// TestIntegration_KanbanHorizontalNarrowErrors verifies the narrow-terminal
-// path produces the documented error message.
-func TestIntegration_KanbanHorizontalNarrowErrors(t *testing.T) {
+// TestIntegration_KanbanHorizontalNarrowStillRenders verifies that an
+// explicit --horizontal on a narrow terminal renders horizontal without
+// error — the user's choice is honoured even if the table overflows.
+func TestIntegration_KanbanHorizontalNarrowStillRenders(t *testing.T) {
 	originalWidth := terminalWidth
 	terminalWidth = func() int { return 80 }
 	defer func() { terminalWidth = originalWidth }()
 
-	err := runStatusFeatures(&bytes.Buffer{}, statusListFlags{kanban: true, horizontal: true}, buildFixtureDeps())
-	if err == nil {
-		t.Fatalf("expected narrow-terminal error")
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, statusListFlags{kanban: true, horizontal: true}, buildFixtureDeps()); err != nil {
+		t.Fatalf("--horizontal on narrow terminal should not error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Current terminal: 80") {
-		t.Errorf("error should name current width; got %v", err)
+	out := buf.String()
+	if !strings.ContainsAny(out, "┌+") {
+		t.Errorf("expected horizontal borders; got:\n%s", out)
+	}
+	if strings.Contains(out, "horizontal kanban needs ≥") {
+		t.Errorf("--horizontal must not emit the fallback notice; got:\n%s", out)
+	}
+}
+
+// TestIntegration_KanbanDefaultNarrowAutoFallsBack verifies the features
+// kanban default on a narrow terminal auto-falls-back to vertical with a
+// notice and exits without error.
+func TestIntegration_KanbanDefaultNarrowAutoFallsBack(t *testing.T) {
+	originalWidth := terminalWidth
+	terminalWidth = func() int { return 80 }
+	defer func() { terminalWidth = originalWidth }()
+
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
+		t.Fatalf("default narrow kanban should not error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "## backlog") {
+		t.Errorf("expected vertical fallback section headings; got:\n%s", out)
+	}
+	if !strings.Contains(out, "terminal 80 cols") {
+		t.Errorf("expected fallback notice naming current width; got:\n%s", out)
 	}
 }
 

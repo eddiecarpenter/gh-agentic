@@ -22,8 +22,18 @@ import (
 //     when --horizontal is also set and the terminal is wide enough.
 //  3. Default — compact tabular list.
 func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) error {
-	if flags.horizontal && !flags.kanban {
-		return fmt.Errorf("--horizontal requires --kanban")
+	if (flags.horizontal || flags.vertical) && !flags.kanban {
+		return fmt.Errorf("--horizontal and --vertical require --kanban")
+	}
+	// Resolve layout early so mutually-exclusive flags fail fast before any
+	// network call.
+	var layout kanbanLayout
+	if flags.kanban {
+		var err error
+		layout, err = resolveKanbanLayout(flags, terminalWidth(), featureKanbanMinWidth)
+		if err != nil {
+			return err
+		}
 	}
 
 	currentRepo, err := deps.currentRepo()
@@ -55,10 +65,10 @@ func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) erro
 	if flags.kanban {
 		columns := columnsForFeatures(flags.includeDone)
 		cards := featureCards(features, columns)
-		if flags.horizontal {
-			return writeHorizontalKanban(w, columns, cards, terminalWidth(), kanbanMinHorizontalWidthFeatures, ui.TerminalSupportsUTF8())
+		if layout.horizontal {
+			return writeHorizontalKanban(w, columns, cards, terminalWidth(), featureKanbanMinWidth, ui.TerminalSupportsUTF8())
 		}
-		return writeVerticalKanban(w, "Features — Kanban", columns, cards)
+		return writeVerticalKanban(w, "Features — Kanban", columns, cards, layout.notice)
 	}
 
 	return writeFeaturesTable(w, features, currentRepo)
