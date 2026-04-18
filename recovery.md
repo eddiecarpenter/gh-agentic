@@ -4,19 +4,18 @@
 |---------------------|------------------------------------|
 | Feature issue       | #468                               |
 | Branch              | feature/468-skill-taxonomy-catalogue-exit-protocol |
-| Last commit         | eac52e2                            |
+| Last commit         | dbdfd5d                            |
 | Total tasks         | 11                                 |
-| Last updated        | 2026-04-18T03:45:00Z               |
+| Last updated        | 2026-04-18T03:55:00Z               |
 
 ## Completed Tasks
 
-### #469–#476 — done
-### #477 — gh agentic check extension — done
-- **Implemented:** New internal/doctorv2/skills.go with checkSkillFrontmatter (validates every .md under skills/ or .ai/skills/ against the schema in skills/skill-categories.md) and checkCatalogueStatus (reports missing/stale/up-to-date as informational Warning/Pass). Wired into checksForTopologyWithLabels so it runs in all topologies. 12 new unit tests; all 30 tests in doctorv2 pass; full go build/vet/test pass.
-- **Files changed:** internal/doctorv2/skills.go (new), internal/doctorv2/skills_test.go (new), internal/doctorv2/checks.go (one line added to wire the group).
-- **Decisions:** Validator is strict — unknown fields are rejected. Error messages include `see: skills/skill-categories.md` pointer. Catalogue check is informational (Warning, not Fail) because session-init self-heals on the next run. When skills/ is absent entirely (e.g. a repo without local skills), we emit a Warning, not a Fail — some domain repos may legitimately have no local skills.
+### #469–#477 — done
+### #478 — session-init lazy-load + self-heal — done
+- **Implemented:** Replaced the eager "read every skill body" step with a two-step sequence: (8) catalogue self-heal (mtime-based staleness → build-catalogue regeneration, halt on regeneration failure with pointer to gh agentic check) and (9) lazy load via CATALOGUE.md only (skill bodies read on demand; local skill override preserved; automation-only refusal driven by catalogue trigger field). Step 9 renumbered to step 10. Rules section documents self-heal and lazy-loading as first-class and names mtime as the V1 staleness heuristic.
+- **Files changed:** skills/session-init.md
+- **Decisions:** Added `build-catalogue` to session-init's `loads` list (the catalogue is regenerated via that skill on demand). CATALOGUE.md regenerated to verify idempotence — byte-identical.
 
 ## Remaining Tasks
 
-- [ ] #478 — Update session-init.md with self-healing catalogue detection and lazy skill loading ← current
-- [ ] #479 — End-to-end verification: check passes, catalogue self-heals, exit block emits
+- [ ] #479 — End-to-end verification: check passes, catalogue self-heals, exit block emits ← current
