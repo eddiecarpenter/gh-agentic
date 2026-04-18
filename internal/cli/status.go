@@ -240,8 +240,15 @@ are listed.`,
 	return cmd
 }
 
-// newStatusFeatureCmd constructs the `gh agentic status feature <N>` stub.
+// newStatusFeatureCmd constructs the `gh agentic status feature <N>` detail
+// command using production dependencies.
 func newStatusFeatureCmd() *cobra.Command {
+	return newStatusFeatureCmdWithDeps(defaultStatusDeps())
+}
+
+// newStatusFeatureCmdWithDeps builds the command with an explicit statusDeps
+// for testing.
+func newStatusFeatureCmdWithDeps(deps statusDeps) *cobra.Command {
 	var flags statusDetailFlags
 	cmd := &cobra.Command{
 		Use:   "feature <number>",
@@ -263,9 +270,11 @@ Pass --json to emit a stable structured object for machine consumption.`,
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = flags
-			_ = args
-			return errStatusNotImplemented
+			n, err := parseIssueNumberArg(args[0])
+			if err != nil {
+				return err
+			}
+			return runStatusFeature(cmd.OutOrStdout(), n, flags, deps)
 		},
 	}
 

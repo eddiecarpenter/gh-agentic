@@ -81,12 +81,13 @@ func TestStatusCmd_BareInvocationShowsHelp(t *testing.T) {
 func TestStatusCmd_SubCommandsReturnNotImplemented(t *testing.T) {
 	// Only the still-stubbed sub-commands are listed here. As each sub-command
 	// is implemented in a later task, its entry is removed from this table.
+	// All four sub-commands are now wired (tasks #494–#499). This table
+	// remains in the suite as a guard — if a future refactor re-introduces a
+	// stub, add it here so the regression is caught.
 	cases := []struct {
 		name string
 		args []string
-	}{
-		{"feature", []string{"feature", "42"}},
-	}
+	}{}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
