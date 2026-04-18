@@ -1,3 +1,17 @@
+---
+name: pr-review-session
+description: Processes inline review comments on a PR — answers questions, implements change requests with tests, and escalates ambiguous or scope-changing feedback via the needs-foreground-review label. Use when GitHub Actions triggers this session automatically on a PR review being submitted — never run interactively.
+category: Session
+triggers: "automation: pr-review-submitted"
+loads:
+  - session-init
+  - gh-agentic-tool
+  - session-exit
+  - notify-user
+emits-exit-block: true
+exit-hands-to: "automation: github-actions pushes fixes if any | human: re-review PR"
+---
+
 # PR Review Session — Stage 4b
 
 ## ⛔ Automation-Only — Do Not Execute Interactively

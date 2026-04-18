@@ -1,3 +1,13 @@
+---
+name: set-issue-status
+description: Authoritative pattern for setting a GitHub Project V2 status on an issue via the gh CLI GraphQL API — includes the label-to-status mapping and the exact four-step sequence (resolve node ID, find/create project item, resolve field IDs, update status). Use whenever a pipeline label is applied to an issue (always in the same operation, never as a separate step).
+category: Reference
+triggers: on-demand
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
 # Set Issue Status — Reference Skill
 
 ## Purpose

@@ -1,3 +1,16 @@
+---
+name: issue-session
+description: Handles a GitHub Issue assigned to the agent — routes by label to either fix a bug on a new branch or answer a question as a comment, and exits cleanly so the workflow can open a PR if code changed. Use when GitHub Actions triggers this session automatically on an issue being assigned to the agent user — never run interactively.
+category: Session
+triggers: "automation: issue-assigned"
+loads:
+  - session-init
+  - gh-agentic-tool
+  - session-exit
+emits-exit-block: true
+exit-hands-to: "automation: github-actions opens PR if code changed | human: review comment/PR"
+---
+
 # Issue Session — Stage 4c
 
 ## ⛔ Automation-Only — Do Not Execute Interactively

@@ -1,3 +1,17 @@
+---
+name: feature-design
+description: Decomposes a Feature issue into ordered Task sub-issues that cover every acceptance criterion, creates the feature branch, and hands off to Dev Session via the in-development label. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-design label — never run interactively.
+category: Session
+triggers: "automation: in-design"
+loads:
+  - session-init
+  - gh-agentic-tool
+  - set-issue-status
+  - session-exit
+emits-exit-block: true
+exit-hands-to: "automation: dev-session (in-development label)"
+---
+
 # Feature Design — Stage 3
 
 ## ⛔ Automation-Only — Do Not Execute Interactively

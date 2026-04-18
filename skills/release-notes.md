@@ -1,3 +1,13 @@
+---
+name: release-notes
+description: Generates human-readable, well-structured release notes from git commit history and updates the GitHub release body with the AI-written notes. Use when the Release recipe fires on a version tag being pushed to main and the release body needs categorised (Features/Fixes/Documentation/Chores) notes.
+category: Operation
+triggers: on-demand
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
 # Release Notes
 
 ## Purpose

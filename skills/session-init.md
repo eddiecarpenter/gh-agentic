@@ -1,3 +1,18 @@
+---
+name: session-init
+description: Loads the project environment at the start of every session — reads the project brief, runs gh agentic check, loads standards and the skill catalogue, and handles post-sync actions. Use at every session start before any other skill, and again after a template sync is reported mid-session.
+category: Bootstrap
+triggers:
+  - session-start
+  - post-sync
+loads:
+  - post-sync
+  - gh-agentic-tool
+  - set-issue-status
+emits-exit-block: false
+exit-hands-to: null
+---
+
 # Session Init
 
 ## Purpose

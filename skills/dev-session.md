@@ -1,3 +1,18 @@
+---
+name: dev-session
+description: Implements every open Task sub-issue on the feature branch in order, commits per task, verifies acceptance criteria coverage, and exits cleanly so the workflow can open the PR. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-development label — never run interactively.
+category: Session
+triggers: "automation: in-development"
+loads:
+  - session-init
+  - gh-agentic-tool
+  - set-issue-status
+  - session-exit
+  - notify-user
+emits-exit-block: true
+exit-hands-to: "automation: github-actions pushes branch and opens PR"
+---
+
 # Dev Session — Stage 4
 
 ## ⛔ Automation-Only — Do Not Execute Interactively

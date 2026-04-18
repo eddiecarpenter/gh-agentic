@@ -1,3 +1,17 @@
+---
+name: foreground-recovery
+description: The human-driven escape hatch for any blocked pipeline state — diagnoses failures from exact error output, applies minimal fixes, and optionally rewinds to an earlier pipeline phase with explicit human confirmation. Use when the automated pipeline is blocked (red build, failing tests, merge conflict, silent workflow failure, or any situation requiring manual intervention) and a human opens the Foreground Recovery recipe.
+category: Recovery
+triggers: human-interactive
+loads:
+  - session-init
+  - gh-agentic-tool
+  - session-exit
+  - notify-user
+emits-exit-block: true
+exit-hands-to: "automation: dev-session re-triggers on push | human: re-apply in-development label if workflow does not restart"
+---
+
 # Foreground Recovery
 
 ## Purpose

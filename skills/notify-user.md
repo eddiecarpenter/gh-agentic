@@ -1,3 +1,13 @@
+---
+name: notify-user
+description: Sends an OS-level notification (macOS osascript or Linux notify-send) to alert the human that human action is required or a long-running session has completed. Use when the pipeline reaches a point where a human must act (PR ready for review, fix pushed awaiting workflow restart) or a session has run longer than the configured completion threshold.
+category: Information
+triggers: on-demand
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
 # Notify User
 
 ## Purpose

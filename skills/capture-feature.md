@@ -1,3 +1,13 @@
+---
+name: capture-feature
+description: Defines the canonical markdown body template for every Feature issue created during scoping — user story, context, scope, acceptance criteria in Given/When/Then format, deployment strategy, UX design, notes, and parent link. Use when authoring the body of any new Feature issue, or when reviewing that a Feature issue conforms to the required shape.
+category: Reference
+triggers: on-demand
+loads: []
+emits-exit-block: false
+exit-hands-to: null
+---
+
 # Capture Feature — Issue Body Template
 
 ## Purpose

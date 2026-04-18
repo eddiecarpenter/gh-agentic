@@ -1,3 +1,18 @@
+---
+name: feature-scoping
+description: Decomposes a Requirement issue into one or more well-formed Feature issues with acceptance criteria, UX design, and deployment strategy, and hands selected features to Feature Design via the in-design label. Use when a human opens the Feature Scoping (Stage 2) recipe to scope a backlog requirement into features.
+category: Session
+triggers: human-interactive
+loads:
+  - session-init
+  - gh-agentic-tool
+  - capture-feature
+  - set-issue-status
+  - session-exit
+emits-exit-block: true
+exit-hands-to: "automation: feature-design (in-design label on triggered features) | human (for held features)"
+---
+
 # Feature Scoping — Stage 2
 
 ## Purpose

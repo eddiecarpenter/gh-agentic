@@ -1,3 +1,18 @@
+---
+name: requirements-session
+description: Captures a new business need as a Requirement issue in GitHub and, when the scope is clear, completes Feature Scoping inline. Use when a human opens the Requirements Session (Stage 1) recipe to record a new idea, need, or enhancement request.
+category: Session
+triggers: human-interactive
+loads:
+  - session-init
+  - gh-agentic-tool
+  - capture-feature
+  - set-issue-status
+  - session-exit
+emits-exit-block: true
+exit-hands-to: "automation: feature-design (if in-design applied inline) | human: run Feature Scoping Session"
+---
+
 # Requirements Session — Stage 1
 
 ## Purpose
