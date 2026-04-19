@@ -62,15 +62,7 @@ Triggered automatically by GitHub Actions when a Feature issue is labelled `in-d
        - Skip those tasks in step 5 — resume from the first incomplete task
 5. For each Task in order (skipping tasks completed in recovery mode):
    - Reads the task issue and understands what must be built
-   - **Reuse & Refactor Check.** Invoke skills/refactor-assessment.md before
-     writing any new code. For **each new function, type, module, or schema**
-     the task will introduce, record one of the three outcomes defined in
-     `refactor-assessment.md` (as-is / via-refactor / none). If the task
-     introduces no new symbols, record `n/a` with a one-line description.
-     **The check must be performed before any new symbol is written.** If the
-     agent finds it has not performed the check, the session **halts** for
-     that task and reports the error — silent progression is forbidden. "I
-     didn't look" is not a permitted outcome.
+   - **Reuse & Refactor Check.** Invoke skills/refactor-assessment.md before writing any new code. For **each new function, type, module, or schema** the task will introduce, record one of the three outcomes defined in `refactor-assessment.md` (as-is / via-refactor / none). If the task introduces no new symbols, record `n/a` with a one-line description. **The check must be performed before any new symbol is written.** If the agent finds it has not performed the check, the session **halts** for that task and reports the error — silent progression is forbidden. "I didn't look" is not a permitted outcome.
    - Implements the work described — after each significant step (file created,
      function complete, tests written), writes an intra-task checkpoint to `recovery.md`
      with a `## Current Task` section and pushes immediately:
