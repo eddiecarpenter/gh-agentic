@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -158,7 +160,7 @@ func TestPipelineCmd_HelpListsFlags(t *testing.T) {
 // help-output check in case the long-description wording drifts.
 func TestPipelineCmd_AllFlagsRegistered(t *testing.T) {
 	cmd := newPipelineCmd()
-	for _, name := range []string{"requirements", "features", "horizontal", "vertical", "include-done", "this-repo", "json"} {
+	for _, name := range []string{"requirements", "features", "horizontal", "vertical", "include-done", "this-repo", "json", "raw"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("flag --%s not registered", name)
 		}
@@ -576,4 +578,104 @@ func keysOfRaw(m map[string]json.RawMessage) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestRunPipeline_RawCombinedShape verifies the bare `pipeline --raw`
+// invocation emits both sections separated by a blank line, that each
+// section uses the Task 1 list TSV header + rows, and that the rendered
+// bytes match the combined golden.
+func TestRunPipeline_RawCombinedShape(t *testing.T) {
+	sd := pipelineSampleDeps()
+	buf := &bytes.Buffer{}
+	if err := runPipeline(buf, io.Discard, pipelineFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runPipeline --raw: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_combined.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("combined --raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// Both section markers must be present and in order.
+	out := string(got)
+	reqIdx := strings.Index(out, "# requirements")
+	feaIdx := strings.Index(out, "# features")
+	if reqIdx < 0 || feaIdx < 0 {
+		t.Fatalf("expected both '# requirements' and '# features' markers; got:\n%s", out)
+	}
+	if reqIdx >= feaIdx {
+		t.Errorf("requirements section must precede features section")
+	}
+}
+
+// TestRunPipeline_RawRequirementsSelector verifies the `--requirements`
+// selector emits only the `# requirements` section — no `# features`
+// marker anywhere in the output.
+func TestRunPipeline_RawRequirementsSelector(t *testing.T) {
+	sd := pipelineSampleDeps()
+	buf := &bytes.Buffer{}
+	if err := runPipeline(buf, io.Discard, pipelineFlags{raw: true, requirements: true}, sd); err != nil {
+		t.Fatalf("runPipeline --raw --requirements: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_requirements.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("requirements --raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+	if strings.Contains(string(got), "# features") {
+		t.Errorf("requirements selector must not emit '# features' marker; got:\n%s", string(got))
+	}
+}
+
+// TestRunPipeline_RawFeaturesSelector verifies the `--features` selector
+// emits only the `# features` section — no `# requirements` marker.
+func TestRunPipeline_RawFeaturesSelector(t *testing.T) {
+	sd := pipelineSampleDeps()
+	buf := &bytes.Buffer{}
+	if err := runPipeline(buf, io.Discard, pipelineFlags{raw: true, features: true}, sd); err != nil {
+		t.Fatalf("runPipeline --raw --features: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_features.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("features --raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+	if strings.Contains(string(got), "# requirements") {
+		t.Errorf("features selector must not emit '# requirements' marker; got:\n%s", string(got))
+	}
+}
+
+// TestRunPipeline_RawIgnoresLayoutFlags verifies that --horizontal /
+// --vertical are no-ops under --raw — the rendered bytes match the
+// layout-free combined golden regardless of the layout selector.
+func TestRunPipeline_RawIgnoresLayoutFlags(t *testing.T) {
+	sd := pipelineSampleDeps()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_combined.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	for _, layout := range []pipelineFlags{
+		{raw: true, horizontal: true},
+		{raw: true, vertical: true},
+	} {
+		buf := &bytes.Buffer{}
+		if err := runPipeline(buf, io.Discard, layout, sd); err != nil {
+			t.Fatalf("runPipeline --raw layout=%+v: %v", layout, err)
+		}
+		if !bytes.Equal(buf.Bytes(), wantBytes) {
+			t.Errorf("layout %+v under --raw should be a no-op; bytes diverged", layout)
+		}
+	}
 }

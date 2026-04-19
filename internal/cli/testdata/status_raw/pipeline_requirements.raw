@@ -1,0 +1,5 @@
+# requirements
+number	stage	title	blocked_by	owning_repo
+447	backlog	feat: project lifecycle management	-	eddiecarpenter/gh-agentic
+457	scoping	feat: single-pane pipeline status view	-	eddiecarpenter/gh-agentic
+467	backlog	feat: skill-publishing	-	eddiecarpenter/gh-agentic

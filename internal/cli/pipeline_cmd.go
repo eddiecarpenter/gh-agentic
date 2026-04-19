@@ -25,6 +25,7 @@ type pipelineFlags struct {
 	includeDone  bool
 	thisRepo     bool
 	json         bool
+	raw          bool
 }
 
 // registerPipelineFlags declares every flag the pipeline command accepts.
@@ -39,6 +40,7 @@ func registerPipelineFlags(cmd *cobra.Command, f *pipelineFlags) {
 	cmd.Flags().BoolVar(&f.includeDone, "include-done", false, "include items in the 'done' stage")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
+	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (tab-separated sections per selector); --horizontal/--vertical are no-ops under --raw")
 }
 
 // newPipelineCmd constructs the `gh agentic status pipeline` command with
@@ -134,8 +136,12 @@ func runPipeline(w io.Writer, stderr io.Writer, flags pipelineFlags, deps status
 	// fail fast before any network call. The widths differ by entity
 	// (requirements fit in 100 columns; features need 120) so each
 	// pipeline has its own resolution.
+	//
+	// Both `--json` and `--raw` skip layout resolution because their
+	// renderers are layout-free; `--horizontal` and `--vertical` are
+	// documented as no-ops under `--raw`.
 	var reqLayout, feaLayout pipelineLayout
-	if !flags.json {
+	if !flags.json && !flags.raw {
 		if flags.requirements || !flags.features {
 			var err error
 			reqLayout, err = resolvePipelineLayout(pipelineToStatusListFlags(flags), terminalWidth(), requirementPipelineMinWidth)
@@ -200,6 +206,10 @@ func runPipeline(w io.Writer, stderr io.Writer, flags pipelineFlags, deps status
 		if fetchFeats {
 			features = filterFeaturesToRepo(features, currentRepo)
 		}
+	}
+
+	if flags.raw {
+		return writePipelineRaw(w, reqs, features, fetchReqs, fetchFeats)
 	}
 
 	if flags.json {
@@ -356,6 +366,49 @@ func writePipelineJSON(w io.Writer, reqs []projectstatus.Requirement, features [
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(envelope); err != nil {
 		return fmt.Errorf("encoding JSON: %w", err)
+	}
+	return nil
+}
+
+// writePipelineRaw emits the agent-oriented combined / selector form of the
+// pipeline per the `--raw` contract:
+//
+//	# requirements
+//	<list TSV header>
+//	<requirement rows>
+//	<blank line>
+//	# features
+//	<list TSV header>
+//	<feature rows>
+//
+// The selector form (--requirements or --features) drops the irrelevant
+// section entirely — no marker, no trailing blank line. The per-section
+// row shape is delegated to writeRequirementsRaw / writeFeaturesRaw so the
+// pipeline `--raw` row layout cannot drift from the list-command goldens.
+func writePipelineRaw(w io.Writer, reqs []projectstatus.Requirement, features []projectstatus.Feature, includeReqs, includeFeats bool) error {
+	if includeReqs {
+		if _, err := fmt.Fprintln(w, "# requirements"); err != nil {
+			return fmt.Errorf("writing raw requirements marker: %w", err)
+		}
+		if err := writeRequirementsRaw(w, reqs); err != nil {
+			return err
+		}
+	}
+	if includeReqs && includeFeats {
+		// Single blank line between the two sections — the `# features`
+		// marker that follows is sufficient visual separation; never use
+		// glyphs / borders under --raw.
+		if _, err := fmt.Fprintln(w); err != nil {
+			return fmt.Errorf("writing raw section separator: %w", err)
+		}
+	}
+	if includeFeats {
+		if _, err := fmt.Fprintln(w, "# features"); err != nil {
+			return fmt.Errorf("writing raw features marker: %w", err)
+		}
+		if err := writeFeaturesRaw(w, features); err != nil {
+			return err
+		}
 	}
 	return nil
 }
