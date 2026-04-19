@@ -1,5 +1,5 @@
 {
-  "description": "Schema for `gh agentic kanban --json` — the combined envelope introduced by feature #518. Inner per-item shapes reuse the existing Requirement / Feature schemas verbatim; only the top-level envelope and totals object are new. Selector flags (--requirements / --features) drop the unselected top-level key entirely, not set to null.",
+  "description": "Schema for `gh agentic status kanban --json` — the combined envelope introduced by feature #518 and moved under `status` by feature #549. Inner per-item shapes reuse the existing Requirement / Feature schemas verbatim; only the top-level envelope and totals object are new. Selector flags (--requirements / --features) drop the unselected top-level key entirely, not set to null.",
   "envelope_default": {
     "requirements": "array-of-object",
     "features": "array-of-object",

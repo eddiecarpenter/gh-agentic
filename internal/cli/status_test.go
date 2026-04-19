@@ -22,13 +22,15 @@ func findChild(parent *cobra.Command, use string) *cobra.Command {
 	return nil
 }
 
-// TestStatusCmd_RegistersFourSubCommands verifies the command tree wiring:
-// requirements, requirement, features, feature are all registered as direct
-// children of 'status'.
-func TestStatusCmd_RegistersFourSubCommands(t *testing.T) {
+// TestStatusCmd_RegistersExpectedSubCommands verifies the command tree
+// wiring: requirements, requirement, features, feature, and kanban are
+// all registered as direct children of 'status'. Feature #549 moved the
+// previously top-level `kanban` command under `status`; the expected
+// list was extended accordingly.
+func TestStatusCmd_RegistersExpectedSubCommands(t *testing.T) {
 	cmd := newStatusCmd()
 
-	wanted := []string{"requirements", "requirement", "features", "feature"}
+	wanted := []string{"requirements", "requirement", "features", "feature", "kanban"}
 	for _, name := range wanted {
 		if findChild(cmd, name) == nil {
 			t.Errorf("status: expected sub-command %q to be registered, but it was not", name)
@@ -63,9 +65,10 @@ func TestStatusCmd_BareInvocationShowsHelp(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Help output should mention each of the four sub-commands so the human
-	// knows what they can run.
-	for _, token := range []string{"requirements", "requirement", "features", "feature"} {
+	// Help output should mention each of the five sub-commands so the human
+	// knows what they can run. `kanban` was added under `status` by feature
+	// #549.
+	for _, token := range []string{"requirements", "requirement", "features", "feature", "kanban"} {
 		if !strings.Contains(out, token) {
 			t.Errorf("status bare help missing sub-command %q in output:\n%s", token, out)
 		}
@@ -111,7 +114,8 @@ func TestStatusCmd_SubCommandsReturnNotImplemented(t *testing.T) {
 // TestStatusCmd_ListFlagsRegistered verifies every stable flag the list
 // sub-commands expose is declared on both. After feature #518 the kanban
 // layout flags (--kanban, --horizontal, --vertical) no longer live on
-// these commands — they have moved to `gh agentic kanban`.
+// these commands — they have moved to `gh agentic status kanban` (moved
+// back under `status` by feature #549).
 func TestStatusCmd_ListFlagsRegistered(t *testing.T) {
 	expected := []string{"json", "this-repo", "include-done"}
 
@@ -243,8 +247,8 @@ func TestStatusCmd_KanbanFlagProducesMigrationError(t *testing.T) {
 		args           []string
 		expectContains string
 	}{
-		{"requirements", []string{"requirements", "--kanban"}, "gh agentic kanban --requirements"},
-		{"features", []string{"features", "--kanban"}, "gh agentic kanban --features"},
+		{"requirements", []string{"requirements", "--kanban"}, "gh agentic status kanban --requirements"},
+		{"features", []string{"features", "--kanban"}, "gh agentic status kanban --features"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -13,9 +13,11 @@ import (
 
 // errKanbanFlagRemoved is returned by the status list handlers when the
 // caller passes the legacy --kanban flag. suggestedCommand is the
-// migration pointer the user sees (e.g. "gh agentic kanban --requirements").
-// The renderer (renderStatusError) formats it as the two-line message
-// documented in §6 of the feature #518 scope.
+// migration pointer the user sees (e.g. "gh agentic status kanban
+// --requirements"). The renderer (renderStatusError) formats it as the
+// two-line message documented in §6 of the feature #518 scope; feature
+// #549 moved the kanban command under `status`, so the pointer text was
+// updated accordingly.
 type errKanbanFlagRemoved struct {
 	suggestedCommand string
 }

@@ -52,13 +52,12 @@ steps.
 
 %s manages the Claude credentials used by the agent pipeline.
 
-%s shows pipeline state across requirements and features.
-
-%s renders requirements and features together as a kanban — the
-top-level, first-class way to answer "where are we?" at a glance.
+%s shows pipeline state across requirements and features, including the
+kanban sub-view that renders requirements and features together — the
+first-class way to answer "where are we?" at a glance.
 
 Run 'gh agentic <command> --help' on any command for detailed usage.`,
-			b("init"), b("check"), b("repair"), b("mount"), b("upgrade"), b("project"), b("info"), b("auth"), b("status"), b("kanban")),
+			b("init"), b("check"), b("repair"), b("mount"), b("upgrade"), b("project"), b("info"), b("auth"), b("status")),
 		Version:       version,
 		SilenceErrors: true,
 	}
@@ -87,7 +86,6 @@ Run 'gh agentic <command> --help' on any command for detailed usage.`,
 	root.AddCommand(newInfoCmd(version, date))
 	root.AddCommand(newAuthCmd())
 	root.AddCommand(newStatusCmd())
-	root.AddCommand(newKanbanCmd())
 
 	return root
 }
