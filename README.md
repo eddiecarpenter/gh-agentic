@@ -86,11 +86,14 @@ on demand and not committed.
 
 ```bash
 gh agentic mount v2.0.0    # first-time mount at a specific version
-gh agentic mount            # remount at current .ai-version
+gh agentic mount            # remount / restore at the currently pinned version
 gh agentic mount v2.1.0    # switch to a new version (prompts for confirmation)
 ```
 
-The pinned version is stored in `.ai-version` (committed to the repo).
+The pinned framework version is the `AGENTIC_FRAMEWORK_VERSION` repo variable
+on the control-plane repo (single or federated CP). Domain repos derive their
+version from the CP through the canonical `project.Resolve` resolver — no
+flat file at the repo root stores the pin.
 
 ## Auth
 

@@ -67,11 +67,14 @@ change membership, or --force to re-run setup from scratch.`,
 				return err
 			}
 
-			// Guard: already initialised? (bypass with --force)
+			// Guard: already initialised? (bypass with --force). Route the
+			// existence check through project.Resolve so "am I already
+			// affiliated?" flows through the same single source of truth
+			// the rest of the CLI uses.
 			if !force {
-				existing, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, project.ProjectVarName)
-				if existing != "" {
-					name := project.ProjectDisplayName(deps, existing)
+				ctx, _ := project.Resolve(deps)
+				if ctx != nil && ctx.ProjectID != "" {
+					name := project.ProjectDisplayName(deps, ctx.ProjectID)
 					fmt.Fprintf(w, "  %s  Repo is already part of agentic project %q\n", ui.StatusWarning.Render("⚠"), name)
 					fmt.Fprintf(w, "       → Use 'gh agentic project switch' to change project membership\n")
 					fmt.Fprintf(w, "       → Or re-run with --force to overwrite the current configuration\n\n")
@@ -120,8 +123,10 @@ change membership, or --force to re-run setup from scratch.`,
 					}
 					return err
 				}
-				// Set topology variable.
-				_ = deps.SetRepoVariable(deps.Owner, deps.RepoName, project.TopologyVarName, "single")
+				// Single-topology init no longer writes AGENTIC_TOPOLOGY
+				// automatically (task #585). The resolver infers topology
+				// from the project-linked-repo graph; the variable remains
+				// an optional explicit override only.
 				return nil
 			}
 

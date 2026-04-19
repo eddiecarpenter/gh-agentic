@@ -196,16 +196,25 @@ func RepairTopologyWithChoice(deps Deps, topology string) RepairResult {
 	return result
 }
 
-// repairTopologyVars ensures AGENTIC_TOPOLOGY and AGENTIC_FRAMEWORK_VERSION are set correctly.
-// If topology is non-empty it is used directly (user-supplied). If empty, the function
-// attempts to auto-detect; when auto-detection is ambiguous it returns ErrTopologyAmbiguous.
+// repairTopologyVars ensures AGENTIC_TOPOLOGY and AGENTIC_FRAMEWORK_VERSION
+// are set correctly. If topology is non-empty it is used directly
+// (user-supplied via `--topology`); the repair writes AGENTIC_TOPOLOGY in
+// that case only.
+//
+// Per feature #571 / task #585 the auto-repair path no longer writes
+// AGENTIC_TOPOLOGY automatically — the canonical resolver infers topology
+// from the project-linked-repo graph, so the variable is optional (kept
+// only as an explicit override). Federated control planes still need
+// AGENTIC_FRAMEWORK_VERSION set to broadcast the pinned version to domain
+// repos; that write continues to happen.
 func repairTopologyVars(w io.Writer, deps Deps, topology string) error {
 	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
 	if err != nil || projectID == "" {
 		return fmt.Errorf(ProjectVarName + " not set — cannot repair topology")
 	}
 
-	// Detect topology from linked repos.
+	// Detect topology from linked repos — the canonical inference the
+	// resolver uses. Same graph query, same result.
 	linked, err := deps.FetchLinkedRepos(projectID)
 	if err != nil {
 		return fmt.Errorf("fetching linked repos: %w", err)
@@ -216,46 +225,46 @@ func repairTopologyVars(w io.Writer, deps Deps, topology string) error {
 	fwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
 	topoVal, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName)
 
-	// Determine the correct topology value.
-	correctTopo := topology // use caller-supplied choice when provided
-	if correctTopo == "" {
-		if topo == TopologySingle && (fwVer != "" || len(linked) > 1) {
-			// Multiple repos in project, or AGENTIC_FRAMEWORK_VERSION already set →
-			// this is the federated CP (current or legacy).
-			correctTopo = "federated"
-		} else if topo == TopologySingle && len(linked) == 1 && fwVer == "" {
-			// Cannot distinguish single from federated CP without more context.
-			return ErrTopologyAmbiguous
-		} else if topo == TopologySingle {
-			correctTopo = "single"
-		} else {
-			correctTopo = "federated"
-		}
-	}
-
-	if topoVal != correctTopo {
-		// Refuse to commit the repo to federated topology under a user
-		// account. The guard runs before the SetRepoVariable call so no
-		// state is changed before we error out. DetectOwnerType is best-
-		// effort — if it fails we fall through and leave the legacy
-		// behaviour in place rather than blocking on a transient API error.
+	// Explicit-override path: caller supplied --topology. Honour it and
+	// write AGENTIC_TOPOLOGY; this is the only place the variable is
+	// written automatically now.
+	if topology != "" {
 		if ownerType, otErr := deps.DetectOwnerType(deps.Owner); otErr == nil {
-			if guardErr := EnsureFederatedOwnerIsOrg(correctTopo, deps.Owner, ownerType); guardErr != nil {
+			if guardErr := EnsureFederatedOwnerIsOrg(topology, deps.Owner, ownerType); guardErr != nil {
 				return guardErr
 			}
 		}
-		if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName, correctTopo); err != nil {
-			return fmt.Errorf("setting %s: %w", TopologyVarName, err)
+		if topoVal != topology {
+			if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName, topology); err != nil {
+				return fmt.Errorf("setting %s: %w", TopologyVarName, err)
+			}
+			if topoVal == "" {
+				fmt.Fprintf(w, "  %s  %s set to %q\n", ui.StatusOK.Render("✓"), TopologyVarName, topology)
+			} else {
+				fmt.Fprintf(w, "  %s  %s corrected from %q to %q\n", ui.StatusOK.Render("✓"), TopologyVarName, topoVal, topology)
+			}
+			topoVal = topology
 		}
-		if topoVal == "" {
-			fmt.Fprintf(w, "  %s  %s set to %q\n", ui.StatusOK.Render("✓"), TopologyVarName, correctTopo)
+	} else {
+		// Auto-detect path: derive the canonical topology but do NOT
+		// write AGENTIC_TOPOLOGY automatically. The resolver infers
+		// from linked repos + AGENTIC_FRAMEWORK_VERSION; leaving the
+		// variable unset is correct and what #571 wants.
+		if topo == TopologySingle && (fwVer != "" || len(linked) > 1) {
+			topoVal = "federated"
+		} else if topo == TopologySingle && len(linked) == 1 && fwVer == "" {
+			// Genuinely ambiguous — caller should prompt for --topology.
+			return ErrTopologyAmbiguous
+		} else if topo == TopologySingle {
+			topoVal = "single"
 		} else {
-			fmt.Fprintf(w, "  %s  %s corrected from %q to %q\n", ui.StatusOK.Render("✓"), TopologyVarName, topoVal, correctTopo)
+			topoVal = "federated"
 		}
-		topoVal = correctTopo
 	}
 
-	// For federated control planes, ensure AGENTIC_FRAMEWORK_VERSION is set.
+	// For federated control planes, ensure AGENTIC_FRAMEWORK_VERSION is set
+	// — that variable IS how the CP broadcasts the pinned version to domain
+	// repos, so it must remain a write path.
 	if topoVal == "federated" && fwVer == "" {
 		releases, err := deps.FetchReleases(mount.FrameworkRepo)
 		if err != nil || len(releases) == 0 {

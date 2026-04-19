@@ -1,6 +1,9 @@
 package project
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // TestResolveTopology_ChargingDomainRegression guards against the exact
 // misdetection observed in production against NewOpenBSS/charging-domain
@@ -63,5 +66,146 @@ func TestResolveTopology_ChargingDomainRegression(t *testing.T) {
 	// trip — check and repair are already chatty.
 	if fetchCalls != 1 {
 		t.Errorf("FetchLinkedRepos invocations: got %d, want 1 (must be cached within a single resolve)", fetchCalls)
+	}
+}
+
+// TestResolve_ChargingDomainEndToEnd locks in Feature #571 AC3: the bug
+// that produced 16 spurious errors on 2026-04-19 (requirement #569) cannot
+// recur. The test feeds project.Resolve the exact variable configuration
+// that tripped charging-domain and asserts the entire Context shape that
+// downstream commands consume — not just the topology string.
+//
+// Fails if a future change reinstates an ad-hoc AGENTIC_* read in mount /
+// check / repair (the boundary test at internal/project/boundary_test.go
+// covers that syntactically; this test covers the semantic outcome end-to-
+// end).
+func TestResolve_ChargingDomainEndToEnd(t *testing.T) {
+	// Variable store that mirrors the charging-domain repo on the day of
+	// the incident: AGENTIC_PROJECT_ID is set, AGENTIC_TOPOLOGY is NOT set
+	// (the stopgap), and AGENTIC_FRAMEWORK_VERSION is NOT set locally
+	// (it lives on the CP). Any lookup for an unset variable errors, as
+	// the go-gh 404 wrapper does.
+	store := newVariableStore(map[string]string{
+		ProjectVarName: "PVT_charging",
+	})
+
+	// The CP broadcasts its framework version via the same variable name
+	// on a different repo. The resolver must reach across repo owners to
+	// pick this up.
+	cpVersion := "v2.1.0"
+	linked := []LinkedRepo{
+		{Name: "charging-control-plane", NameWithOwner: "NewOpenBSS/charging-control-plane"},
+		{Name: "charging-domain", NameWithOwner: "NewOpenBSS/charging-domain"},
+		{Name: "billing-domain", NameWithOwner: "NewOpenBSS/billing-domain"},
+	}
+
+	fetchCalls := 0
+
+	deps := Deps{
+		Owner:        "NewOpenBSS",
+		RepoName:     "charging-domain",
+		RepoFullName: "NewOpenBSS/charging-domain",
+		Root:         "/fake/root",
+		GetRepoVariable: func(owner, repo, name string) (string, error) {
+			// Domain-side lookups go through the empty-store fake.
+			if owner == "NewOpenBSS" && repo == "charging-domain" {
+				return store.get(owner, repo, name)
+			}
+			// CP broadcasts AGENTIC_FRAMEWORK_VERSION on itself. Only
+			// this read is expected cross-repo.
+			if owner == "NewOpenBSS" && repo == "charging-control-plane" && name == FrameworkVersionVarName {
+				return cpVersion, nil
+			}
+			return "", errors.New("not found")
+		},
+		FetchLinkedRepos: func(projectID string) ([]LinkedRepo, error) {
+			fetchCalls++
+			if projectID != "PVT_charging" {
+				t.Errorf("FetchLinkedRepos: projectID=%q, want %q", projectID, "PVT_charging")
+			}
+			return linked, nil
+		},
+		FetchProjectTitle: func(projectID string) (string, error) {
+			return "Charging Project", nil
+		},
+		ReadAIVersion: func(root string) (string, error) {
+			// Domain repo has the clone at v2.0.5 — different from CP
+			// to prove VersionInSync is computed off FrameworkVersion,
+			// not LocalAIVersion.
+			return "v2.0.5", nil
+		},
+	}
+
+	ctx, err := Resolve(deps)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	// Full Context-shape assertion — AC3 "the resolver-derived Context is
+	// the exact shape check / mount / repair expect".
+	if ctx.Topology != TopologyStringFederatedDomain {
+		t.Errorf("Topology: got %q, want %q — the #569 regression misdetected this as single",
+			ctx.Topology, TopologyStringFederatedDomain)
+	}
+	if ctx.Role != RoleDomain {
+		t.Errorf("Role: got %q, want %q", ctx.Role, RoleDomain)
+	}
+	if ctx.ProjectID != "PVT_charging" {
+		t.Errorf("ProjectID: got %q, want %q", ctx.ProjectID, "PVT_charging")
+	}
+	if ctx.ProjectName != "Charging Project" {
+		t.Errorf("ProjectName: got %q, want %q", ctx.ProjectName, "Charging Project")
+	}
+	if ctx.ProjectDeleted {
+		t.Error("ProjectDeleted: got true, want false")
+	}
+
+	// The framework version must be sourced from the CP's broadcast, not
+	// from the domain repo itself (which never sets it).
+	if ctx.FrameworkVersion != cpVersion {
+		t.Errorf("FrameworkVersion: got %q, want %q — resolver must read AGENTIC_FRAMEWORK_VERSION from the CP for a federated-domain repo",
+			ctx.FrameworkVersion, cpVersion)
+	}
+
+	// ControlPlane must be the CP LinkedRepo, NOT the current repo.
+	if ctx.ControlPlane.NameWithOwner != "NewOpenBSS/charging-control-plane" {
+		t.Errorf("ControlPlane: got %q, want %q",
+			ctx.ControlPlane.NameWithOwner, "NewOpenBSS/charging-control-plane")
+	}
+
+	// LinkedRepos must contain all three federation members so pipeline
+	// commands can iterate if needed.
+	if len(ctx.LinkedRepos) != 3 {
+		t.Errorf("LinkedRepos length: got %d, want 3", len(ctx.LinkedRepos))
+	}
+
+	// Helper methods consumed by the CLI — these are the "is this the
+	// federated CP?" / "am I a domain?" checks that mount, auth, and
+	// init rely on. The bug-day misdetection made all three wrong.
+	if !ctx.IsFederatedDomain() {
+		t.Error("IsFederatedDomain(): got false, want true")
+	}
+	if ctx.IsFederatedControlPlane() {
+		t.Error("IsFederatedControlPlane(): got true, want false")
+	}
+	if ctx.IsSingle() {
+		t.Error("IsSingle(): got true, want false")
+	}
+
+	// LocalAIVersion reflects the disk state independently of the
+	// authoritative FrameworkVersion. VersionInSync is computed off
+	// FrameworkVersion — not equal here, so VersionInSync must be false.
+	if ctx.LocalAIVersion != "v2.0.5" {
+		t.Errorf("LocalAIVersion: got %q, want %q", ctx.LocalAIVersion, "v2.0.5")
+	}
+	if ctx.VersionInSync {
+		t.Error("VersionInSync: got true, want false — local v2.0.5 differs from CP v2.1.0, this is the 'domain out of sync' signal mount uses")
+	}
+
+	// Performance guard: the full resolve must not explode into N
+	// GraphQL calls. The topology + linked-repo inspection share the
+	// same fetch (one call).
+	if fetchCalls != 1 {
+		t.Errorf("FetchLinkedRepos: got %d calls, want 1", fetchCalls)
 	}
 }

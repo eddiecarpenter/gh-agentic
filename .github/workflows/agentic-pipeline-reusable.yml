@@ -1,8 +1,9 @@
 name: Agentic Pipeline (Reusable)
 
 # This is the v2 reusable workflow. Domain repos call this from their
-# wrapper workflows. It reads .ai-version from the domain repo checkout,
-# mounts the framework at that version, and runs the pipeline.
+# wrapper workflows. It reads AGENTIC_FRAMEWORK_VERSION from the domain
+# repo's Actions variables, mounts the framework at that version, and
+# runs the pipeline.
 
 on:
   workflow_call:
@@ -28,14 +29,16 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
 
-      - name: Read .ai-version
+      - name: Resolve framework version
         id: version
+        env:
+          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
         run: |
-          if [ ! -f .ai-version ]; then
-            echo "::error::.ai-version not found. Run 'gh agentic -v2 mount <version>' first."
+          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
+            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Run 'gh agentic mount <version>' on the control plane to pin the framework version."
             exit 1
           fi
-          VERSION=$(cat .ai-version | tr -d '[:space:]')
+          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Framework version: ${VERSION}"
 

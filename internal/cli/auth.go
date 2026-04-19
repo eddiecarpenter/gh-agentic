@@ -46,26 +46,19 @@ func controlPlaneAuthError(w interface{ Write([]byte) (int, error) }) error {
 //
 // Single-topology repos are also "control planes" structurally, but they do run
 // agents (the repo is CP + code combined), so they should not be blocked.
+//
+// Routes through project.Resolve so topology detection stays on the single
+// canonical code path — no direct AGENTIC_* reads here.
 func isFederatedControlPlane() bool {
 	deps, err := resolveProjectDeps()
 	if err != nil {
 		return false
 	}
-	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, project.ProjectVarName)
-	if err != nil || projectID == "" {
+	ctx, err := project.Resolve(deps)
+	if err != nil || ctx == nil {
 		return false
 	}
-	topoVal, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, project.TopologyVarName)
-	if topoVal != "federated" {
-		return false
-	}
-	linked, err := deps.FetchLinkedRepos(projectID)
-	if err != nil {
-		return false
-	}
-	// In a federated setup, the control plane is the repo that appears in the
-	// project's linked repos (DetectTopology returns TopologySingle for it).
-	return project.DetectTopology(deps.RepoFullName, linked) == project.TopologySingle
+	return ctx.IsFederatedControlPlane()
 }
 
 // newAuthCmdWithDeps constructs the auth command with injectable dependencies.

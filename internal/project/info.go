@@ -3,7 +3,6 @@ package project
 import (
 	"fmt"
 	"io"
-	"strings"
 )
 
 // ProjectState holds the resolved state of a repo's project affiliation.
@@ -19,75 +18,45 @@ type ProjectState struct {
 	VersionInSync                bool   // true if local and control plane versions match
 }
 
-// ResolveState reads AGENTIC_PROJECT_ID, queries the API, and derives topology.
-// Returns an error if the repo has no project affiliation.
+// ResolveState is retained as a thin wrapper over Resolve for call sites that
+// still consume the legacy ProjectState shape. New code should call Resolve
+// directly and consume the richer Context. ResolveState preserves the
+// historic contract that an unaffiliated repo is an error — Resolve
+// intentionally relaxes this so callers can inspect ctx.ProjectID
+// themselves.
 func ResolveState(deps Deps) (*ProjectState, error) {
-	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
+	ctx, err := Resolve(deps)
 	if err != nil {
-		return nil, fmt.Errorf("this repo is not part of an agentic project (%s not set): %w", ProjectVarName, err)
+		return nil, err
 	}
-	if projectID == "" {
+	if ctx.ProjectID == "" {
 		return nil, fmt.Errorf("this repo is not part of an agentic project (%s is empty)", ProjectVarName)
 	}
 
-	// Resolve project title and detect deletion.
-	// If FetchProjectTitle is wired and returns empty/error, the project node no
-	// longer exists — flag it as deleted regardless of other API results.
-	projectName := projectID // safe fallback
-	projectDeleted := false
-	if deps.FetchProjectTitle != nil {
-		if title, err := deps.FetchProjectTitle(projectID); err != nil || title == "" {
-			projectDeleted = true
-		} else {
-			projectName = title
-		}
-	}
+	// The legacy Topology enum answers "is the current repo the single
+	// linked repo on this project, or is the control plane elsewhere?"
+	// which is a graph question, not the canonical-string question the
+	// new Context.Topology answers. Compute it from the linked graph so
+	// existing consumers (info.PrintInfo, info_test.go) see the same
+	// result they always have.
+	legacyTopology := DetectTopology(deps.RepoFullName, ctx.LinkedRepos)
+	legacyCP, _ := ControlPlaneRepo(ctx.LinkedRepos)
 
-	linked, err := deps.FetchLinkedRepos(projectID)
-	if err != nil || projectDeleted {
-		// Project is inaccessible or confirmed deleted.
-		aiVersion, _ := deps.ReadAIVersion(deps.Root)
-		return &ProjectState{
-			ProjectID:      projectID,
-			ProjectName:    projectName,
-			ProjectDeleted: true,
-			AIVersion:      aiVersion,
-		}, nil
-	}
-
-	topo := DetectTopology(deps.RepoFullName, linked)
-	cp, _ := ControlPlaneRepo(linked)
-	aiVersion, _ := deps.ReadAIVersion(deps.Root)
-
-	// Fetch control plane framework version.
-	var cpFrameworkVersion string
-	if len(linked) > 0 {
-		var cpOwner, cpRepo string
-		if topo == TopologyFederated {
-			if cp.NameWithOwner != "" {
-				parts := strings.SplitN(cp.NameWithOwner, "/", 2)
-				if len(parts) == 2 {
-					cpOwner, cpRepo = parts[0], parts[1]
-				}
-			}
-		} else {
-			cpOwner, cpRepo = deps.Owner, deps.RepoName
-		}
-		if cpOwner != "" {
-			cpFrameworkVersion, _ = deps.GetRepoVariable(cpOwner, cpRepo, FrameworkVersionVarName)
-		}
-	}
+	// ResolveState exposes the local AIVersion (from .ai-version) rather
+	// than the authoritative FrameworkVersion — preserving the historic
+	// shape until .ai-version is removed in #585.
+	aiVersion := ctx.LocalAIVersion
 
 	return &ProjectState{
-		ProjectID:                    projectID,
-		ProjectName:                  projectName,
-		ProjectDeleted:               projectDeleted,
-		Topology:                     topo,
-		ControlPlane:                 cp,
-		LinkedRepos:                  linked,
+		ProjectID:                    ctx.ProjectID,
+		ProjectName:                  ctx.ProjectName,
+		ProjectDeleted:               ctx.ProjectDeleted,
+		Topology:                     legacyTopology,
+		ControlPlane:                 legacyCP,
+		LinkedRepos:                  ctx.LinkedRepos,
 		AIVersion:                    aiVersion,
-		ControlPlaneFrameworkVersion: cpFrameworkVersion,
-		VersionInSync:                aiVersion == cpFrameworkVersion || cpFrameworkVersion == "",
+		ControlPlaneFrameworkVersion: ctx.FrameworkVersion,
+		VersionInSync:                aiVersion == ctx.FrameworkVersion || ctx.FrameworkVersion == "",
 	}, nil
 }
 

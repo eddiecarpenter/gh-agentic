@@ -76,24 +76,6 @@ func DownloadFramework(destRoot, version string, clone CloneFunc) error {
 	return nil
 }
 
-// ReadAIVersion reads the .ai-version file from the given root directory.
-func ReadAIVersion(root string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(root, ".ai-version"))
-	if err != nil {
-		return "", err
-	}
-	v := strings.TrimSpace(string(data))
-	if v == "" {
-		return "", fmt.Errorf(".ai-version is empty")
-	}
-	return v, nil
-}
-
-// WriteAIVersion writes the version string to .ai-version in the given root.
-func WriteAIVersion(root, version string) error {
-	return os.WriteFile(filepath.Join(root, ".ai-version"), []byte(version+"\n"), 0o644)
-}
-
 // EnsureGitignore ensures that ".ai/" is listed in .gitignore at root.
 func EnsureGitignore(root string) error {
 	return ensureGitignoreEntry(root, ".ai/")
