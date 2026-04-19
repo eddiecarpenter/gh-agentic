@@ -7,7 +7,7 @@ package project
 //
 // The implementation lives in internal/scope to break the import cycle
 // that would otherwise form between project and its downstream callers
-// (internal/initv2, internal/auth).
+// (internal/init, internal/auth).
 
 import "github.com/eddiecarpenter/gh-agentic/internal/scope"
 

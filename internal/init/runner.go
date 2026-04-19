@@ -1,4 +1,4 @@
-package initv2
+package init
 
 import "github.com/charmbracelet/huh"
 

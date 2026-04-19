@@ -1,4 +1,4 @@
-package initv2
+package init
 
 import (
 	"errors"
@@ -34,7 +34,7 @@ type FormDeps struct {
 // DefaultFormDeps returns production dependencies for the interactive form.
 func DefaultFormDeps() FormDeps {
 	return FormDeps{
-		RunForm:    DefaultFormRun,
+		RunForm: DefaultFormRun,
 		DetectOwnerType: func(owner string) (string, error) {
 			return auth.OwnerTypeUser, nil // fallback; real detection below
 		},

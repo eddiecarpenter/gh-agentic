@@ -33,7 +33,7 @@ const FederatedRequiresOrgMessage = "Federated topology requires a GitHub Organi
 // account. Returns an error with the verbatim FederatedRequiresOrgMessage
 // otherwise.
 func EnsureFederatedOwnerIsOrg(topology, owner, ownerType string) error {
-	// Tolerate capitalised topology strings (the initv2 form emits
+	// Tolerate capitalised topology strings (the init form emits
 	// "Single"/"Federated"). The stricter scope.IsFederatedTopology helper
 	// used by ScopeFor stays case-sensitive to avoid accidental scope
 	// widening.

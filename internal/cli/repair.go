@@ -11,7 +11,7 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/doctorv2"
-	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
+	initpkg "github.com/eddiecarpenter/gh-agentic/internal/init"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -329,12 +329,12 @@ func huhConfirm(title, description string) (bool, error) {
 	return confirmed, nil
 }
 
-// promptRunnerLabel mirrors initv2.collectPipelineConfig's runner picker:
+// promptRunnerLabel mirrors initpkg.collectPipelineConfig's runner picker:
 // a select with sensible candidates, falling through to a custom-label input
 // when "other" is chosen.
 func promptRunnerLabel(deps doctorv2.CheckDeps) (string, error) {
-	value := initv2.DefaultRunnerLabel
-	options := initv2.BuildRunnerOptions(deps.RepoName, deps.Owner)
+	value := initpkg.DefaultRunnerLabel
+	options := initpkg.BuildRunnerOptions(deps.RepoName, deps.Owner)
 
 	selectForm := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
@@ -347,7 +347,7 @@ func promptRunnerLabel(deps doctorv2.CheckDeps) (string, error) {
 		return "", err
 	}
 
-	if value != initv2.RunnerOther {
+	if value != initpkg.RunnerOther {
 		return value, nil
 	}
 
