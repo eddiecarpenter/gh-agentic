@@ -123,9 +123,10 @@ change membership, or --force to re-run setup from scratch.`,
 					}
 					return err
 				}
-				// Set topology variable. Identity-variable writes are
-				// sanctioned per feature #571 (audit doc Section B).
-				_ = deps.SetRepoVariable(deps.Owner, deps.RepoName, project.TopologyVarName, "single") // boundary-allow: write path
+				// Single-topology init no longer writes AGENTIC_TOPOLOGY
+				// automatically (task #585). The resolver infers topology
+				// from the project-linked-repo graph; the variable remains
+				// an optional explicit override only.
 				return nil
 			}
 

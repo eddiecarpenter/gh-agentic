@@ -79,7 +79,12 @@ Use --yes to skip the confirmation prompt when switching versions (for scripts).
 				return vErr
 			}
 
-			currentVersion, aiVersionErr := mount.ReadAIVersion(root)
+			// Detect first-time vs remount vs switch by inspecting the
+			// current .ai/ mount. ReadAIVersionFromGit returns an error
+			// when the directory or its git metadata is absent — that
+			// is the first-time signal now that the flat .ai-version
+			// file is gone (#585).
+			currentVersion, aiVersionErr := mount.ReadAIVersionFromGit(root)
 
 			var releases []mount.Release
 			if rErr := ui.RunWithSpinner(w, "Fetching available releases...", func() error {
@@ -182,8 +187,12 @@ func resolveContextForMount(root string) (*project.Context, error) {
 	return project.Resolve(deps)
 }
 
+// localVersionFallback returns the version the current .ai/ mount is
+// pinned to, derived from the clone's .git metadata. With the flat
+// .ai-version file removed (#585), this is the only local fallback when
+// the resolver produces no authoritative AGENTIC_FRAMEWORK_VERSION.
 func localVersionFallback(root string) (string, error) {
-	v, err := mount.ReadAIVersion(root)
+	v, err := mount.ReadAIVersionFromGit(root)
 	if err != nil {
 		return "", fmt.Errorf("no version found — run 'gh agentic project init' to set up this repo")
 	}

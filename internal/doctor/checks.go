@@ -361,6 +361,13 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 // AGENTIC_* variables directly. The check's purpose is to surface a clear
 // diagnostic when the domain repo is missing affiliation; the resolver
 // already validated the variables on the way in.
+//
+// After feature #571 / task #585, AGENTIC_TOPOLOGY is no longer written
+// automatically. Its presence is optional — the resolver infers topology
+// from the project-linked-repo graph. If the variable IS set but agrees
+// with what the resolver would compute, this check emits a Warning
+// pointing to its now-redundant status so operators can remove the
+// stopgap cleanly (the #571 non-goal for domain-repo cleanup).
 func checkProjectAffiliation(deps CheckDeps) Group {
 	g := Group{Name: "Agentic project membership"}
 
@@ -377,23 +384,69 @@ func checkProjectAffiliation(deps CheckDeps) Group {
 		})
 	}
 
-	// When the resolver produced a topology, AGENTIC_TOPOLOGY was readable
-	// on this repo (or the linked-repos signal short-circuited to a
-	// canonical value). Surface a diagnostic based on that.
-	if strings.TrimSpace(deps.Topology) == "" {
-		g.Results = append(g.Results, CheckResult{
-			Name: "AGENTIC_TOPOLOGY", Status: Fail,
-			Message:     "AGENTIC_TOPOLOGY not configured",
-			Remediation: remediationSet("variable", "AGENTIC_TOPOLOGY", deps),
-		})
-	} else {
-		g.Results = append(g.Results, CheckResult{
-			Name: "AGENTIC_TOPOLOGY", Status: Pass,
-			Message: "AGENTIC_TOPOLOGY configured",
-		})
-	}
+	// AGENTIC_TOPOLOGY is optional after #585 — a federated-domain repo
+	// resolves correctly without it via the linked-repo signal. When it is
+	// set but the resolver's output matches, flag it as a redundant
+	// stopgap that can be deleted.
+	g.Results = append(g.Results, checkTopologyStopgap(deps))
 
 	return g
+}
+
+// checkTopologyStopgap returns a CheckResult describing the current state of
+// the AGENTIC_TOPOLOGY variable relative to what the resolver would infer.
+// Three outcomes:
+//   - Variable absent: Pass ("AGENTIC_TOPOLOGY not set — resolver infers").
+//   - Variable set, matches the resolver's inferred value: Warning ("redundant
+//     stopgap — safe to delete").
+//   - Variable set, disagrees with the resolver: Pass with an informational
+//     message ("explicit override — honoured").
+//
+// deps.Run is consulted once to read the variable; if the run func is absent
+// the check falls back to a Warning that the stopgap status cannot be
+// determined. This keeps the scanner honest under fully-fake test harnesses.
+func checkTopologyStopgap(deps CheckDeps) CheckResult {
+	if deps.Run == nil {
+		return CheckResult{
+			Name:    "AGENTIC_TOPOLOGY",
+			Status:  Warning,
+			Message: "AGENTIC_TOPOLOGY stopgap status — unable to check (no run func)",
+		}
+	}
+	out, err := deps.Run("gh", "variable", "get", "AGENTIC_TOPOLOGY", "--repo", deps.RepoFullName)
+	val := strings.TrimSpace(out)
+	if err != nil || val == "" {
+		return CheckResult{
+			Name:    "AGENTIC_TOPOLOGY",
+			Status:  Pass,
+			Message: "AGENTIC_TOPOLOGY not set — resolver infers topology from project graph",
+		}
+	}
+
+	// Map the canonical deps.Topology ("single" / "federated-cp" /
+	// "federated-domain") back to the variable's two legal values
+	// ("single" / "federated"). If the variable agrees, it is a redundant
+	// stopgap; otherwise treat it as an explicit override.
+	inferred := ""
+	switch deps.Topology {
+	case "single":
+		inferred = "single"
+	case "federated-cp", "federated-domain":
+		inferred = "federated"
+	}
+	if inferred != "" && val == inferred {
+		return CheckResult{
+			Name:    "AGENTIC_TOPOLOGY",
+			Status:  Warning,
+			Message: "AGENTIC_TOPOLOGY=" + val + " is redundant — the resolver infers the same value; safe to delete",
+			Remediation: "gh variable delete AGENTIC_TOPOLOGY --repo " + deps.RepoFullName,
+		}
+	}
+	return CheckResult{
+		Name:    "AGENTIC_TOPOLOGY",
+		Status:  Pass,
+		Message: "AGENTIC_TOPOLOGY=" + val + " — explicit override honoured",
+	}
 }
 
 // checkProjectReachability verifies AGENTIC_PROJECT_ID is set and the

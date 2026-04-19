@@ -180,12 +180,11 @@ func fetchLatest(fetchReleases func(repo string) ([]mount.Release, error), local
 	return latest, "  " + ui.StatusWarning.Render("⚠ update available")
 }
 
-// localFrameworkVersion reads the locally mounted framework version from disk.
+// localFrameworkVersion reads the locally mounted framework version from
+// the .ai/ git metadata — the only local source of truth now that the
+// .ai-version flat file has been removed (#585).
 func localFrameworkVersion(root string) string {
 	if v, err := mount.ReadAIVersionFromGit(root); err == nil {
-		return v
-	}
-	if v, err := mount.ReadAIVersion(root); err == nil {
 		return v
 	}
 	return ""

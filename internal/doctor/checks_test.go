@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
 
 // setupAIGitRepo initialises aiDir as a git repo tagged at version,
@@ -38,8 +37,8 @@ func setupHealthyRepo(t *testing.T) string {
 	_ = os.WriteFile(filepath.Join(aiDir, "RULEBOOK.md"), []byte("# Rules"), 0o644)
 	setupAIGitRepo(t, aiDir, "v2.0.0")
 
-	// .ai-version (fallback).
-	_ = mount.WriteAIVersion(root, "v2.0.0")
+	// The .ai-version flat file is gone (#585); .ai/.git metadata is the
+	// only local version source, installed by setupAIGitRepo above.
 
 	// .gitignore.
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".ai/\n"), 0o644)
@@ -168,7 +167,8 @@ func TestCheckFramework_NotMounted(t *testing.T) {
 func TestCheckWorkflows_VersionMismatch(t *testing.T) {
 	root := t.TempDir()
 	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.0.0")
-	_ = mount.WriteAIVersion(root, "v2.0.0")
+	// Version is stored in .ai/.git (installed by setupAIGitRepo); no
+	// flat .ai-version file (#585).
 
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	_ = os.MkdirAll(workflowsDir, 0o755)
@@ -196,7 +196,8 @@ func TestCheckWorkflows_VersionMismatch(t *testing.T) {
 func TestCheckWorkflows_VersionMatch(t *testing.T) {
 	root := t.TempDir()
 	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.0.0")
-	_ = mount.WriteAIVersion(root, "v2.0.0")
+	// Version is stored in .ai/.git (installed by setupAIGitRepo); no
+	// flat .ai-version file (#585).
 
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	_ = os.MkdirAll(workflowsDir, 0o755)
@@ -223,7 +224,7 @@ func TestCheckWorkflows_VersionMatch(t *testing.T) {
 func TestCheckWorkflows_InlinedNoFrameworkRefs(t *testing.T) {
 	root := t.TempDir()
 	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.1.0")
-	_ = mount.WriteAIVersion(root, "v2.1.0")
+	// Version stored in .ai/.git; no flat file (#585).
 
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	_ = os.MkdirAll(workflowsDir, 0o755)
@@ -924,5 +925,78 @@ func TestCheckVariable_Federated_SharedAtNeither_FailWithOrgRemediation(t *testi
 	wantHint := "gh variable set AGENT_USER --org acme"
 	if res.Remediation != wantHint {
 		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
+	}
+}
+
+// TestCheckTopologyStopgap_NotSet covers the post-#585 norm: the variable
+// is absent and the resolver infers topology. The check reports Pass.
+func TestCheckTopologyStopgap_NotSet(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		Run: func(name string, args ...string) (string, error) {
+			return "", nil // variable absent
+		},
+	}
+	res := checkTopologyStopgap(deps)
+	if res.Status != Pass {
+		t.Fatalf("status: got %d (%s), want Pass", res.Status, res.Message)
+	}
+	if !strings.Contains(res.Message, "not set") {
+		t.Errorf("message: got %q, want 'not set' mention", res.Message)
+	}
+}
+
+// TestCheckTopologyStopgap_RedundantFederated covers the stopgap cleanup
+// path: AGENTIC_TOPOLOGY=federated agrees with the resolver's federated-*
+// inference, so the variable is redundant and can be deleted.
+func TestCheckTopologyStopgap_RedundantFederated(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		Run: func(name string, args ...string) (string, error) {
+			return "federated\n", nil
+		},
+	}
+	res := checkTopologyStopgap(deps)
+	if res.Status != Warning {
+		t.Fatalf("status: got %d (%s), want Warning", res.Status, res.Message)
+	}
+	if !strings.Contains(res.Message, "redundant") {
+		t.Errorf("message: got %q, want 'redundant' mention", res.Message)
+	}
+	if !strings.Contains(res.Remediation, "gh variable delete AGENTIC_TOPOLOGY") {
+		t.Errorf("remediation: got %q, want delete command", res.Remediation)
+	}
+}
+
+// TestCheckTopologyStopgap_RedundantSingle covers the same path for single
+// topology.
+func TestCheckTopologyStopgap_RedundantSingle(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "user/solo", Owner: "user", Topology: "single",
+		Run: func(name string, args ...string) (string, error) {
+			return "single\n", nil
+		},
+	}
+	res := checkTopologyStopgap(deps)
+	if res.Status != Warning {
+		t.Fatalf("status: got %d (%s), want Warning", res.Status, res.Message)
+	}
+}
+
+// TestCheckTopologyStopgap_ExplicitOverride covers the case where the
+// variable disagrees with the resolver — treat as an intentional override.
+func TestCheckTopologyStopgap_ExplicitOverride(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
+		Run: func(name string, args ...string) (string, error) {
+			return "single\n", nil // disagrees with resolver
+		},
+	}
+	res := checkTopologyStopgap(deps)
+	if res.Status != Pass {
+		t.Fatalf("status: got %d (%s), want Pass", res.Status, res.Message)
+	}
+	if !strings.Contains(res.Message, "explicit override") {
+		t.Errorf("message: got %q, want 'explicit override' mention", res.Message)
 	}
 }

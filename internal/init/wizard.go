@@ -283,10 +283,16 @@ func parseRepoFromURL(url string) string {
 	return ""
 }
 
-// CheckAIVersionExists returns true if .ai-version exists in root.
+// CheckAIVersionExists returns true if a framework mount is present at
+// root — i.e. the .ai/ directory exists. The legacy flat .ai-version file
+// was removed in #585; the presence of a mounted .ai/ is now the
+// equivalent "already initialised?" signal.
 func CheckAIVersionExists(root string) bool {
-	_, err := os.Stat(filepath.Join(root, ".ai-version"))
-	return err == nil
+	info, err := os.Stat(filepath.Join(root, ".ai"))
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
 }
 
 // Helper string functions to avoid importing strings for simple ops.

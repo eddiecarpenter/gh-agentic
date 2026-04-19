@@ -108,9 +108,15 @@ func TestAGENTSMDTemplate_BootstrapRule(t *testing.T) {
 }
 
 func TestAGENTSMDTemplate_BootstrapRuleCommand(t *testing.T) {
-	// AC 9: bootstrap rule must reference the mount command with .ai-version.
-	if !strings.Contains(agentsMDTemplate, "gh agentic mount $(cat .ai-version)") {
-		t.Error("AGENTS.md bootstrap rule should reference 'gh agentic mount $(cat .ai-version)'")
+	// Bootstrap rule references the argument-less mount command — the
+	// framework version is resolved from AGENTIC_FRAMEWORK_VERSION (or the
+	// latest release) by project.Resolve, so callers do not supply a version
+	// at the command line.
+	if !strings.Contains(agentsMDTemplate, "gh agentic mount") {
+		t.Error("AGENTS.md bootstrap rule should reference 'gh agentic mount'")
+	}
+	if strings.Contains(agentsMDTemplate, "$(cat .ai-version)") {
+		t.Error("AGENTS.md bootstrap rule must not embed $(cat .ai-version) — the file is gone (#585)")
 	}
 }
 
@@ -144,8 +150,11 @@ func TestAGENTSMDTemplateFile_MatchesEmbeddedTemplate(t *testing.T) {
 	content := string(data)
 
 	// Both should have the same bootstrap rule elements.
-	if !strings.Contains(content, "gh agentic mount $(cat .ai-version)") {
+	if !strings.Contains(content, "gh agentic mount") {
 		t.Error("template file should reference mount command")
+	}
+	if strings.Contains(content, "$(cat .ai-version)") {
+		t.Error("template file must not embed $(cat .ai-version) — the file is gone (#585)")
 	}
 	if !strings.Contains(content, "Interactive context") {
 		t.Error("template file should distinguish interactive context")

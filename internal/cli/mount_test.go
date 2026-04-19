@@ -93,13 +93,10 @@ func TestMountCmd_FirstTimeMount(t *testing.T) {
 		t.Error(".ai/RULEBOOK.md should exist")
 	}
 
-	v, err := mount.ReadAIVersion(root)
-	if err != nil {
-		t.Fatalf("reading .ai-version: %v", err)
-	}
-	if v != "v2.0.0" {
-		t.Errorf("expected v2.0.0, got %q", v)
-	}
+	// The flat .ai-version file was removed in #585; the mounted version
+	// is tracked via .ai/.git metadata. We can't read that here because
+	// the fake clone does not set up a git repo, so the success-message
+	// assertion above is our "the right version flowed through" proof.
 
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if !strings.Contains(string(gitignore), ".ai/") {

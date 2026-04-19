@@ -30,14 +30,10 @@ func TestRunFirstTime_AllFilesCreated(t *testing.T) {
 		t.Error(".ai/RULEBOOK.md should exist")
 	}
 
-	// Verify .ai-version.
-	v, err := ReadAIVersion(root)
-	if err != nil {
-		t.Fatalf("reading .ai-version: %v", err)
-	}
-	if v != "v2.0.0" {
-		t.Errorf("expected v2.0.0, got %q", v)
-	}
+	// The .ai-version flat file was removed in #585; firsttime no longer
+	// writes one. The clone is driven by the mocked CloneFunc, so we
+	// cannot assert on .ai/.git metadata here — the download step's
+	// success is evidence enough that the version flowed through.
 
 	// Verify .gitignore.
 	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))

@@ -7,14 +7,18 @@ import (
 	"path/filepath"
 )
 
-// RunFirstTime orchestrates the first-time mount flow when no .ai-version
-// file exists. It:
+// RunFirstTime orchestrates the first-time mount flow when no .ai/
+// directory exists yet. It:
 //  1. Downloads and extracts the framework to .ai/
-//  2. Creates .ai-version with the specified version
-//  3. Adds .ai/ to .gitignore
-//  4. Generates CLAUDE.md
-//  5. Generates AGENTS.md with bootstrap rule
-//  6. Generates wrapper workflows in .github/workflows/
+//  2. Adds .ai/ to .gitignore
+//  3. Generates CLAUDE.md
+//  4. Generates AGENTS.md with bootstrap rule
+//  5. Generates wrapper workflows in .github/workflows/
+//
+// The mounted version is recorded by the clone's git metadata inside
+// .ai/.git — no flat file is written. Callers that need to broadcast the
+// version (federated CP, single CP) write AGENTIC_FRAMEWORK_VERSION
+// through the canonical project.SetRepoVariable path.
 //
 // No confirmation prompt is shown for first-time mount.
 func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
@@ -26,19 +30,13 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 		return fmt.Errorf("mounting framework: %w", err)
 	}
 
-	// Step 2: Create .ai-version.
-	fmt.Fprintf(w, "  ✓ .ai-version created (%s)\n", version)
-	if err := WriteAIVersion(root, version); err != nil {
-		return fmt.Errorf("creating .ai-version: %w", err)
-	}
-
-	// Step 3: Add .ai/ to .gitignore.
+	// Step 2: Add .ai/ to .gitignore.
 	fmt.Fprintln(w, "  ✓ .ai/ added to .gitignore")
 	if err := EnsureGitignore(root); err != nil {
 		return fmt.Errorf("updating .gitignore: %w", err)
 	}
 
-	// Step 4: Generate CLAUDE.md (only if it doesn't exist).
+	// Step 3: Generate CLAUDE.md (only if it doesn't exist).
 	claudePath := filepath.Join(root, "CLAUDE.md")
 	if _, err := os.Stat(claudePath); os.IsNotExist(err) {
 		fmt.Fprintln(w, "  ✓ CLAUDE.md created")
@@ -47,7 +45,7 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 		}
 	}
 
-	// Step 5: Generate AGENTS.md (only if it doesn't exist).
+	// Step 4: Generate AGENTS.md (only if it doesn't exist).
 	agentsPath := filepath.Join(root, "AGENTS.md")
 	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
 		fmt.Fprintln(w, "  ✓ AGENTS.md created")
@@ -56,7 +54,7 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 		}
 	}
 
-	// Step 6: Generate wrapper workflows.
+	// Step 5: Generate wrapper workflows.
 	fmt.Fprintln(w, "  ✓ Wrapper workflows created")
 	if err := generateWorkflows(w, root, version); err != nil {
 		return fmt.Errorf("creating workflows: %w", err)
