@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #562                               |
 | Branch              | feature/562-rename-kanban-pipeline |
-| Last commit         | 0095e52                            |
+| Last commit         | 2697e6c                            |
 | Total tasks         | 4                                  |
-| Last updated        | 2026-04-19T05:06:00Z               |
+| Last updated        | 2026-04-19T05:09:00Z               |
 
 ## Completed Tasks
 
@@ -25,6 +25,11 @@
 - **Files changed:** README.md, docs/PROJECT_BRIEF.md, docs/ARCHITECTURE.md, docs/status-verification.md, LOCALRULES.md.
 - **Decisions:** Preserved the "Requirements Kanban" / "Features Kanban" view names in `internal/project/assets/project-template.json` (and their mirrored test fixtures + the illustrative example in `skills/update-project-template.md`). Two reasons documented in the commit message: (1) deployed projects already carry views with these literal names — renaming would cause `gh agentic repair` to create new Pipeline-named views, orphaning the old Kanban-named ones; (2) "Requirements Kanban" honestly describes a GitHub Projects `BOARD_LAYOUT` (kanban-style) view so the word sits on the boundary of GitHub-API-imposed terminology.
 
+### #566 — Final verification: catalogue regeneration, grep audit, build & test
+- **Implemented:** Verification-only task, no code changes. CATALOGUE.md verified fresh (task #565 did not modify any skill frontmatter; mtimes unchanged). `go build ./...` — clean. `go vet ./...` — clean. `go test ./... -count=1` — all 13 Go packages pass including the new rune-alignment regression test. Full feature-level acceptance-criteria grep audit documented in the task commit message, classifying every residual `kanban`/`Kanban` hit against the legacy `--kanban` flag intercept surface (preserved by #563), historical context comments, the project-template view names (preserved by #565), or the manual-verification legacy-flag reference.
+- **Files changed:** none (verification-only; empty commit records the summary).
+- **Decisions:** None new — all preservation decisions were made and documented in #563 and #565.
+
 ## Remaining Tasks
 
-- [ ] #566 — Final verification: catalogue regeneration, grep audit, build & test ← current
+(none — feature complete)
