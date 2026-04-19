@@ -1,99 +1,29 @@
 package project
 
-// scope.go — single source of truth for routing a variable or secret write to
-// the correct `gh` CLI scope (--org or --repo) based on topology.
+// scope.go — re-exports the scope-routing API from internal/scope so
+// callers that already depend on the project package (e.g. internal/cli)
+// can use the familiar project.ScopeFor form without importing the lower-
+// level package directly.
 //
-// Under federated topology, variables and secrets that are shared across a
-// control plane and its domain repos live at the organisation level. The
-// moment we write a shared value with `--repo` we silently shadow the org
-// inheritance — the whole point of this feature is to stop doing that.
-//
-// Per-repo identity values (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY,
-// AGENTIC_FRAMEWORK_VERSION) always live on the individual repository, since
-// they describe that repo's membership.
+// The implementation lives in internal/scope to break the import cycle
+// that would otherwise form between project and its downstream callers
+// (internal/initv2, internal/auth).
 
-// Scope flag constants — the string the gh CLI expects on its --org / --repo
-// flags. Kept as constants so every site uses the exact same literal.
+import "github.com/eddiecarpenter/gh-agentic/internal/scope"
+
+// Scope flag constants re-exported from internal/scope.
 const (
-	ScopeFlagOrg  = "--org"
-	ScopeFlagRepo = "--repo"
+	ScopeFlagOrg  = scope.ScopeFlagOrg
+	ScopeFlagRepo = scope.ScopeFlagRepo
 )
 
-// sharedNames enumerates variable/secret names that, under federated
-// topology, belong at the organisation level rather than on the individual
-// control-plane or domain repo. Under single topology they continue to live
-// on the repo (there is no org above a single-repo deployment to pin them
-// to).
-var sharedNames = map[string]struct{}{
-	"AGENT_USER":              {},
-	"RUNNER_LABEL":            {},
-	"GOOSE_PROVIDER":          {},
-	"GOOSE_MODEL":             {},
-	"GOOSE_AGENT_PAT":         {},
-	"CLAUDE_CREDENTIALS_JSON": {},
-}
-
-// identityNames enumerates variable names that describe the repo itself —
-// its project affiliation, its topology role, and the framework version it
-// should mount. These are always repo-scoped regardless of topology.
-var identityNames = map[string]struct{}{
-	"AGENTIC_PROJECT_ID":        {},
-	"AGENTIC_TOPOLOGY":          {},
-	"AGENTIC_FRAMEWORK_VERSION": {},
-}
-
-// IsSharedName reports whether the given variable/secret name is a shared
-// value that should live at the organisation level under federated topology.
-func IsSharedName(name string) bool {
-	_, ok := sharedNames[name]
-	return ok
-}
-
-// IsIdentityName reports whether the given variable name is a per-repo
-// identity value that must always be written at the repository level.
-func IsIdentityName(name string) bool {
-	_, ok := identityNames[name]
-	return ok
-}
-
-// isFederatedTopology reports whether the given topology string represents
-// any federated variant — the bare "federated" marker written by project
-// create, or the explicit "federated-cp"/"federated-domain" roles emitted by
-// the repair / doctor pipeline.
-func isFederatedTopology(topology string) bool {
-	switch topology {
-	case "federated", "federated-cp", "federated-domain":
-		return true
-	default:
-		return false
-	}
-}
-
-// ScopeFor returns the gh CLI scope flag ("--org" or "--repo") and the
-// matching target (org login or owner/repo) for a given variable or secret
-// name under a given topology.
-//
-// Rules:
-//   - Shared names (AGENT_USER, RUNNER_LABEL, GOOSE_PROVIDER, GOOSE_MODEL,
-//     GOOSE_AGENT_PAT, CLAUDE_CREDENTIALS_JSON) route to --org under any
-//     federated topology variant and to --repo under single.
-//   - Per-repo identity names (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY,
-//     AGENTIC_FRAMEWORK_VERSION) always route to --repo.
-//   - Any other (unknown) name defaults to --repo to preserve current
-//     behaviour — the router must never silently decide to push an unknown
-//     value to the organisation level.
-//   - Unknown topology values are treated as "not federated" — everything
-//     stays at --repo so we do not widen scope by accident.
-//
-// Parameters:
-//   - name         — the variable or secret name.
-//   - topology     — one of "single", "federated", "federated-cp",
-//     "federated-domain", or an empty/unknown value.
-//   - owner        — the GitHub owner login (used as the --org target).
-//   - repoFullName — the "owner/repo" slug (used as the --repo target).
+// ScopeFor re-exports scope.ScopeFor. See that function for full docs.
 func ScopeFor(name, topology, owner, repoFullName string) (flag, target string) {
-	if IsSharedName(name) && isFederatedTopology(topology) {
-		return ScopeFlagOrg, owner
-	}
-	return ScopeFlagRepo, repoFullName
+	return scope.ScopeFor(name, topology, owner, repoFullName)
 }
+
+// IsSharedName re-exports scope.IsSharedName.
+func IsSharedName(name string) bool { return scope.IsSharedName(name) }
+
+// IsIdentityName re-exports scope.IsIdentityName.
+func IsIdentityName(name string) bool { return scope.IsIdentityName(name) }

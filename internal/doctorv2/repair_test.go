@@ -106,6 +106,140 @@ func TestRepairPipeline_FixesGitignoreAndWorkflowTags(t *testing.T) {
 	}
 }
 
+// capturedGH holds every gh invocation a fake run function received, so
+// routing tests can assert exactly which scope flag/target was used.
+type capturedGH struct {
+	called [][]string
+}
+
+func (c *capturedGH) run(name string, args ...string) (string, error) {
+	if name == "gh" {
+		c.called = append(c.called, append([]string{}, args...))
+	}
+	return "", nil
+}
+
+// assertGHScope asserts that the last captured gh invocation used the
+// expected scope flag and target. The test relies on the invocation being
+// the write (`gh variable set ...` / `gh secret set ...`), so make sure
+// nothing else ran afterwards.
+func assertGHScope(t *testing.T, c *capturedGH, wantFlag, wantTarget string) {
+	t.Helper()
+	if len(c.called) == 0 {
+		t.Fatalf("no gh invocations captured")
+	}
+	last := c.called[len(c.called)-1]
+	for i := 0; i < len(last)-1; i++ {
+		if last[i] == wantFlag {
+			if last[i+1] != wantTarget {
+				t.Fatalf("scope target mismatch: got %q, want %q (full cmd: %v)", last[i+1], wantTarget, last)
+			}
+			return
+		}
+	}
+	t.Fatalf("scope flag %q not found in cmd: %v", wantFlag, last)
+}
+
+func TestApplyPendingPrompt_Federated_SharedName_RoutesToOrg(t *testing.T) {
+	shared := []string{"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON"}
+	for _, name := range shared {
+		t.Run(name, func(t *testing.T) {
+			c := &capturedGH{}
+			kind := "variable"
+			if name == "GOOSE_AGENT_PAT" || name == "CLAUDE_CREDENTIALS_JSON" {
+				kind = "secret"
+			}
+			p := PendingPrompt{
+				Name:     name,
+				Kind:     kind,
+				Topology: "federated-cp",
+				Owner:    "acme",
+			}
+			if err := ApplyPendingPrompt(c.run, "acme/repo", p, "v"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			assertGHScope(t, c, "--org", "acme")
+		})
+	}
+}
+
+func TestApplyPendingPrompt_Federated_IdentityName_StaysAtRepo(t *testing.T) {
+	for _, name := range []string{"AGENTIC_PROJECT_ID", "AGENTIC_TOPOLOGY", "AGENTIC_FRAMEWORK_VERSION"} {
+		t.Run(name, func(t *testing.T) {
+			c := &capturedGH{}
+			p := PendingPrompt{
+				Name:     name,
+				Kind:     "variable",
+				Topology: "federated-cp",
+				Owner:    "acme",
+			}
+			if err := ApplyPendingPrompt(c.run, "acme/repo", p, "v"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			assertGHScope(t, c, "--repo", "acme/repo")
+		})
+	}
+}
+
+func TestApplyPendingPrompt_Single_AllNames_StayAtRepo(t *testing.T) {
+	all := []string{
+		"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL",
+		"GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON",
+		"AGENTIC_PROJECT_ID", "AGENTIC_TOPOLOGY", "AGENTIC_FRAMEWORK_VERSION",
+	}
+	for _, name := range all {
+		t.Run(name, func(t *testing.T) {
+			c := &capturedGH{}
+			kind := "variable"
+			if name == "GOOSE_AGENT_PAT" || name == "CLAUDE_CREDENTIALS_JSON" {
+				kind = "secret"
+			}
+			p := PendingPrompt{
+				Name:     name,
+				Kind:     kind,
+				Topology: "single",
+				Owner:    "eddie",
+			}
+			if err := ApplyPendingPrompt(c.run, "eddie/repo", p, "v"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			assertGHScope(t, c, "--repo", "eddie/repo")
+		})
+	}
+}
+
+func TestRepairPipeline_PopulatesTopologyAndOwnerOnPendingPrompts(t *testing.T) {
+	// RepairPipeline must carry topology/owner onto PendingPrompt so the
+	// later ApplyPendingPrompt call routes correctly.
+	root := setupHealthyRepo(t)
+
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/cp",
+		Owner:        "acme",
+		RepoName:     "cp",
+		OwnerType:    "Organization",
+		Topology:     "federated-cp",
+		Run:          fakeRunMissingVarsAndSecret,
+		ReadCreds: func(run auth.RunCommandFunc) ([]byte, error) {
+			return []byte(`{"token":"abc"}`), nil
+		},
+	}
+
+	result := RepairPipeline(deps, nil)
+	if len(result.PendingPrompts) == 0 {
+		t.Fatal("expected pending prompts for missing shared values under federated-cp")
+	}
+	for _, p := range result.PendingPrompts {
+		if p.Topology != "federated-cp" {
+			t.Errorf("prompt %q topology: got %q, want %q", p.Name, p.Topology, "federated-cp")
+		}
+		if p.Owner != "acme" {
+			t.Errorf("prompt %q owner: got %q, want %q", p.Name, p.Owner, "acme")
+		}
+	}
+}
+
 func TestRepairPipeline_NoFailures(t *testing.T) {
 	root := setupHealthyRepo(t)
 

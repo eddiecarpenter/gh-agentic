@@ -8,9 +8,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -93,11 +95,23 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 }
 
 // ConfigureRepo sets up GitHub secrets, variables, and collaborator access.
+//
+// Under federated topology the shared names (AGENT_USER, RUNNER_LABEL,
+// GOOSE_PROVIDER, GOOSE_MODEL, GOOSE_AGENT_PAT, CLAUDE_CREDENTIALS_JSON)
+// are routed to the organisation level via `scope.ScopeFor`. Per-repo
+// identity names (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY, and so on) stay at
+// `--repo`. Under single topology everything stays at `--repo` — the
+// routing is identical to the pre-scope behaviour.
 func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	repo := cfg.RepoFullName
 	if repo == "" {
 		return nil // No repo context — skip remote configuration.
 	}
+
+	// cfg.Topology carries the wizard's capitalised value ("Single" /
+	// "Federated"); scope.ScopeFor expects the lowercase form.
+	topology := strings.ToLower(cfg.Topology)
+	owner := cfg.Owner
 
 	// Set variables.
 	variables := map[string]string{
@@ -111,33 +125,38 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 		if value == "" {
 			continue
 		}
-		if _, err := run("gh", "variable", "set", name, "--body", value, "--repo", repo); err != nil {
+		flag, target := scope.ScopeFor(name, topology, owner, repo)
+		if _, err := run("gh", "variable", "set", name, "--body", value, flag, target); err != nil {
 			return fmt.Errorf("setting variable %s: %w", name, err)
 		}
-		fmt.Fprintf(w, "  ✓ %s saved as repository variable\n", name)
+		fmt.Fprintf(w, "  ✓ %s saved as %s\n", name, describeScope(flag, "variable"))
 	}
 
 	// Set secrets.
 	if cfg.GooseAgentPAT != "" {
-		if _, err := run("gh", "secret", "set", "GOOSE_AGENT_PAT", "--body", cfg.GooseAgentPAT, "--repo", repo); err != nil {
+		flag, target := scope.ScopeFor("GOOSE_AGENT_PAT", topology, owner, repo)
+		if _, err := run("gh", "secret", "set", "GOOSE_AGENT_PAT", "--body", cfg.GooseAgentPAT, flag, target); err != nil {
 			return fmt.Errorf("setting GOOSE_AGENT_PAT: %w", err)
 		}
-		fmt.Fprintln(w, "  ✓ GOOSE_AGENT_PAT saved as repository secret")
+		fmt.Fprintf(w, "  ✓ GOOSE_AGENT_PAT saved as %s\n", describeScope(flag, "secret"))
 	}
 
 	if cfg.ClaudeCreds != "" {
-		if _, err := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", cfg.ClaudeCreds, "--repo", repo); err != nil {
+		flag, target := scope.ScopeFor("CLAUDE_CREDENTIALS_JSON", topology, owner, repo)
+		if _, err := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", cfg.ClaudeCreds, flag, target); err != nil {
 			return fmt.Errorf("setting CLAUDE_CREDENTIALS_JSON: %w", err)
 		}
-		fmt.Fprintln(w, "  ✓ CLAUDE_CREDENTIALS_JSON saved as repository secret")
+		fmt.Fprintf(w, "  ✓ CLAUDE_CREDENTIALS_JSON saved as %s\n", describeScope(flag, "secret"))
 	}
 
-	// Set project ID variable.
+	// Set project ID variable. Identity names always route to --repo
+	// regardless of topology.
 	if cfg.ProjectID != "" {
-		if _, err := run("gh", "variable", "set", "AGENTIC_PROJECT_ID", "--body", cfg.ProjectID, "--repo", repo); err != nil {
+		flag, target := scope.ScopeFor("AGENTIC_PROJECT_ID", topology, owner, repo)
+		if _, err := run("gh", "variable", "set", "AGENTIC_PROJECT_ID", "--body", cfg.ProjectID, flag, target); err != nil {
 			return fmt.Errorf("setting AGENTIC_PROJECT_ID: %w", err)
 		}
-		fmt.Fprintln(w, "  ✓ AGENTIC_PROJECT_ID saved as repository variable")
+		fmt.Fprintf(w, "  ✓ AGENTIC_PROJECT_ID saved as %s\n", describeScope(flag, "variable"))
 	}
 
 	// Grant agent user write access.
@@ -152,6 +171,16 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	}
 
 	return nil
+}
+
+// describeScope turns the gh scope flag into a human-readable phrase for
+// the "saved as ..." output line — preserving the pre-ScopeFor messaging
+// where org-scoped values are clearly labelled as such.
+func describeScope(flag, kind string) string {
+	if flag == scope.ScopeFlagOrg {
+		return "organisation " + kind
+	}
+	return "repository " + kind
 }
 
 // DetectRepoFromRemote detects the repo full name from git remote.

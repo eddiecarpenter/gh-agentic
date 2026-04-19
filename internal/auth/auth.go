@@ -10,6 +10,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 )
 
 // RunCommandFunc is a function type for running shell commands.
@@ -149,6 +150,13 @@ func Check(w io.Writer, deps Deps) (CheckResult, error) {
 }
 
 // uploadCredentials reads local credentials and uploads them to GitHub.
+//
+// Scope routing is handled by scope.ScopeFor against a synthetic "federated"
+// topology when the owner is an organisation, preserving the prior
+// ownerType-driven behaviour while centralising the routing logic. User-owned
+// repos (personal accounts) stay at --repo — a user account cannot host
+// org-scoped secrets, and the pre-ScopeFor code already defaulted to --repo
+// for that case.
 func uploadCredentials(w io.Writer, deps Deps) error {
 	data, err := deps.ReadCredentials(deps.Run)
 	if err != nil {
@@ -157,18 +165,18 @@ func uploadCredentials(w io.Writer, deps Deps) error {
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	var ghArgs []string
+	topology := "single"
 	if deps.OwnerType == OwnerTypeOrg {
-		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--org", deps.Owner}
-	} else {
-		ghArgs = []string{"secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", encoded, "--repo", deps.RepoFullName}
+		topology = "federated"
 	}
+	flag, target := scope.ScopeFor(secretName, topology, deps.Owner, deps.RepoFullName)
+	ghArgs := []string{"secret", "set", secretName, "--body", encoded, flag, target}
 
 	if _, setErr := deps.Run("gh", ghArgs...); setErr != nil {
 		return fmt.Errorf("failed to set secret: %w", setErr)
 	}
 
-	fmt.Fprintf(w, "  ✓ CLAUDE_CREDENTIALS_JSON updated in %s\n", deps.RepoFullName)
+	fmt.Fprintf(w, "  ✓ %s updated in %s\n", secretName, deps.RepoFullName)
 	return nil
 }
 

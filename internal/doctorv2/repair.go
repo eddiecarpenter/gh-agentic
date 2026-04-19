@@ -6,6 +6,7 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -27,17 +28,24 @@ func pendingKind(r CheckResult) (string, bool) {
 // ApplyPendingPrompt sets a single GitHub variable or secret using the
 // supplied run function. The CLI layer calls this after collecting values
 // from the user via huh. Empty values are treated as a skip.
+//
+// Scope routing follows scope.ScopeFor: under federated topology the
+// shared names are written at `--org <owner>`, while per-repo identity
+// names and all names under single topology stay at `--repo
+// <owner/repo>`. The federated-cp/federated-domain distinction is carried
+// on the PendingPrompt (which RepairPipeline fills from CheckDeps).
 func ApplyPendingPrompt(run auth.RunCommandFunc, repoFullName string, p PendingPrompt, value string) error {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return fmt.Errorf("skipped (no value supplied)")
 	}
+	flag, target := scope.ScopeFor(p.Name, p.Topology, p.Owner, repoFullName)
 	switch p.Kind {
 	case "variable":
-		_, err := run("gh", "variable", "set", p.Name, "--repo", repoFullName, "--body", value)
+		_, err := run("gh", "variable", "set", p.Name, flag, target, "--body", value)
 		return err
 	case "secret":
-		_, err := run("gh", "secret", "set", p.Name, "--repo", repoFullName, "--body", value)
+		_, err := run("gh", "secret", "set", p.Name, flag, target, "--body", value)
 		return err
 	default:
 		return fmt.Errorf("unknown pending kind %q", p.Kind)
@@ -67,11 +75,17 @@ type RepairResult struct {
 // value. RepairPipeline collects these so the CLI layer can prompt for values
 // after the spinner phase finishes (the spinner can't share the terminal with
 // an interactive form).
+//
+// Topology and Owner are carried so ApplyPendingPrompt can route the eventual
+// write through scope.ScopeFor without re-deriving them. They are populated
+// by RepairPipeline from CheckDeps.
 type PendingPrompt struct {
 	Name        string // GitHub variable or secret name
 	Kind        string // "variable" or "secret"
 	Description string // shown in the form
 	Default     string // suggested default value (may be empty)
+	Topology    string // topology string accepted by scope.ScopeFor
+	Owner       string // GitHub owner login (--org target under federated)
 }
 
 // pendingDescriptions maps known variable/secret names to short descriptions
@@ -186,6 +200,8 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 						Kind:        kind,
 						Description: meta.Description,
 						Default:     meta.Default,
+						Topology:    deps.Topology,
+						Owner:       deps.Owner,
 					})
 					continue
 				}
