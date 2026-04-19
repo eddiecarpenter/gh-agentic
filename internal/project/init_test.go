@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
+	initpkg "github.com/eddiecarpenter/gh-agentic/internal/init"
 )
 
 // TestInitRepo_FederatedUserOwner_RefusesWithVerbatimError verifies the
@@ -77,7 +77,7 @@ func TestInitRepo_SingleUserOwner_DoesNotRefuse(t *testing.T) {
 	// RepoFullName empty so ConfigureRepo is a no-op (no Run shelling out).
 	err := InitRepo(&buf, deps, InitRepoConfig{
 		Mode:    InitModeSingle,
-		InitCfg: &initv2.InitConfig{Version: "v2.0.10"},
+		InitCfg: &initpkg.InitConfig{Version: "v2.0.10"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error for single init on user-owned repo: %v", err)

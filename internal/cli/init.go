@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
+	initpkg "github.com/eddiecarpenter/gh-agentic/internal/init"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
@@ -101,21 +101,21 @@ change membership, or --force to re-run setup from scratch.`,
 			}
 
 			if topology == "single" {
-				// Single path: full wizard via initv2.
-				initDeps := initv2.Deps{
+				// Single path: full wizard via the init package.
+				initDeps := initpkg.Deps{
 					Run:   auth.DefaultRunCommand,
 					Clone: mount.DefaultClone,
-					CollectConfig: func(w io.Writer, repo string) (*initv2.InitConfig, error) {
-						return initv2.CollectConfigInteractive(w, repo, initv2.FormDeps{
-							RunForm:         initv2.DefaultFormRun,
+					CollectConfig: func(w io.Writer, repo string) (*initpkg.InitConfig, error) {
+						return initpkg.CollectConfigInteractive(w, repo, initpkg.FormDeps{
+							RunForm:         initpkg.DefaultFormRun,
 							RunCommand:      auth.DefaultRunCommand,
 							DetectOwnerType: defaultDetectOwnerType,
 							FetchReleases:   mount.DefaultFetchReleases,
 						})
 					},
 				}
-				if err := initv2.Run(w, root, force, initDeps); err != nil {
-					if errors.Is(err, initv2.ErrAlreadyInitialised) {
+				if err := initpkg.Run(w, root, force, initDeps); err != nil {
+					if errors.Is(err, initpkg.ErrAlreadyInitialised) {
 						return ErrSilent
 					}
 					return err
@@ -152,8 +152,8 @@ change membership, or --force to re-run setup from scratch.`,
 			}
 
 			// Collect configuration.
-			initCfg, err := initv2.CollectConfigInteractive(w, deps.RepoFullName, initv2.FormDeps{
-				RunForm:         initv2.DefaultFormRun,
+			initCfg, err := initpkg.CollectConfigInteractive(w, deps.RepoFullName, initpkg.FormDeps{
+				RunForm:         initpkg.DefaultFormRun,
 				RunCommand:      auth.DefaultRunCommand,
 				DetectOwnerType: defaultDetectOwnerType,
 				FetchReleases:   mount.DefaultFetchReleases,
@@ -163,8 +163,8 @@ change membership, or --force to re-run setup from scratch.`,
 			}
 
 			// Wire the production Confirm for the org-visibility gate in
-			// initv2.ConfigureRepo. Tests inject their own ConfirmFunc.
-			initCfg.Confirm = initv2.HuhConfirm
+			// initpkg.ConfigureRepo. Tests inject their own ConfirmFunc.
+			initCfg.Confirm = initpkg.HuhConfirm
 
 			return project.InitRepo(w, deps, project.InitRepoConfig{
 				Mode:      project.InitModeFederated,

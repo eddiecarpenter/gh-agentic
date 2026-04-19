@@ -32,7 +32,7 @@ func TerminalSupportsUTF8() bool {
 	return false
 }
 
-// GitHub colour palette — from docs/TUI_DESIGN.md.
+// GitHub colour palette — aligned with the official GitHub UI.
 const (
 	ColorPrimary = "#0969DA" // Headings, prompts, cursors, spinners, URLs
 	ColorSuccess = "#1A7F37" // ✔ check marks, final summary border
@@ -83,7 +83,7 @@ var (
 )
 
 // Divider returns a muted horizontal rule of the given width.
-// Typically 48 dashes, matching the TUI_DESIGN.md specification.
+// Typically 48 dashes wide.
 func Divider(width int) string {
 	line := ""
 	for i := 0; i < width; i++ {

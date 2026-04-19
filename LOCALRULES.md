@@ -27,9 +27,16 @@ Template: eddiecarpenter/ai-native-delivery
 
 | Command | Description |
 |---|---|
-| `gh agentic bootstrap` | Phase 0a — bootstrap a new agentic environment |
-| `gh agentic inception` | Phase 0b — register a new domain or tool repo |
-| `gh agentic sync` | Sync .ai/ from upstream template |
+| `gh agentic init` | Interactive wizard to initialise a new agentic environment |
+| `gh agentic check` | Verify project membership and pipeline readiness |
+| `gh agentic repair` | Auto-fix issues reported by `check` |
+| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
+| `gh agentic upgrade` | Change the framework version (control plane only) |
+| `gh agentic project` | Manage project membership — create, join, switch, unlink |
+| `gh agentic info` | Show the current state of this repo's agentic setup |
+| `gh agentic auth` | Manage Claude credentials (login, refresh, check) |
+| `gh agentic status` | Show pipeline state across requirements and features |
+| `gh agentic kanban` | Render requirements and features as a kanban view |
 
 ## Key Libraries
 

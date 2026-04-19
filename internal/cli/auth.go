@@ -19,7 +19,7 @@ type authDeps struct {
 	claudeRefresh   auth.ClaudeRefreshFunc
 }
 
-// newAuthCmd constructs the `gh agentic --v2 auth` command with production deps.
+// newAuthCmd constructs the `gh agentic auth` command with production deps.
 func newAuthCmd() *cobra.Command {
 	return newAuthCmdWithDeps(authDeps{
 		run: auth.DefaultRunCommand,

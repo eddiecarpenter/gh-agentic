@@ -3,7 +3,7 @@
 // topology.
 //
 // It lives in its own package — separate from internal/project — so that
-// lower-level callers (internal/auth, internal/initv2) can import it
+// lower-level callers (internal/auth, internal/init) can import it
 // without pulling in the broader project package, which would create an
 // import cycle. The internal/project package re-exports these symbols so
 // callers that already depend on project may continue to use the

@@ -1,4 +1,4 @@
-// Package mount implements the core framework mount logic for v2.
+// Package mount implements the core framework mount logic.
 // It clones the AI-Native Delivery Framework from a versioned tag of gh-agentic.
 package mount
 

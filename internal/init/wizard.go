@@ -1,6 +1,6 @@
-// Package initv2 implements the v2 init wizard that replaces bootstrap.
+// Package init implements the interactive init wizard.
 // It collects configuration interactively and calls mount internally.
-package initv2
+package init
 
 import (
 	"errors"
@@ -61,13 +61,13 @@ type RunCommandFunc = auth.RunCommandFunc
 
 // Deps holds injectable dependencies for the init wizard.
 type Deps struct {
-	Run          RunCommandFunc
+	Run   RunCommandFunc
 	Clone mount.CloneFunc
 	// CollectConfig gathers configuration interactively (or from test injection).
 	CollectConfig func(w io.Writer, repoFullName string) (*InitConfig, error)
 }
 
-// Run executes the v2 init wizard.
+// Run executes the init wizard.
 // It requires a git repository with no existing .ai/ directory (unless --force).
 func Run(w io.Writer, root string, force bool, deps Deps) error {
 	// Must be inside a git repository.
@@ -106,7 +106,7 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Next steps:")
 	fmt.Fprintln(w, "  1. Review and commit the generated files")
-	fmt.Fprintln(w, "  2. Run 'gh agentic -v2 doctor' to verify")
+	fmt.Fprintln(w, "  2. Run 'gh agentic check' to verify")
 
 	return nil
 }

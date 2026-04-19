@@ -65,7 +65,7 @@ func TestRunFirstTime_AllFilesCreated(t *testing.T) {
 	if !strings.Contains(string(agents), "@.ai/RULEBOOK.md") {
 		t.Errorf("AGENTS.md should reference @.ai/RULEBOOK.md, got: %s", agents)
 	}
-	if !strings.Contains(string(agents), "gh agentic --v2 mount") {
+	if !strings.Contains(string(agents), "gh agentic mount") {
 		t.Errorf("AGENTS.md should contain bootstrap rule, got: %s", agents)
 	}
 

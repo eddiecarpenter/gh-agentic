@@ -1,4 +1,4 @@
-package initv2
+package init
 
 import (
 	"bytes"
@@ -69,7 +69,7 @@ func TestRun_Success(t *testing.T) {
 			setCalls = append(setCalls, name+" "+strings.Join(args, " "))
 			return "", nil
 		},
-		Clone:  fakeCloneFunc(),
+		Clone:         fakeCloneFunc(),
 		CollectConfig: fakeCollectConfig(cfg),
 	}
 
@@ -119,7 +119,7 @@ func TestRun_BlockedWithoutForce(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
 
 	deps := Deps{
-		Run:          func(name string, args ...string) (string, error) { return "", nil },
+		Run:   func(name string, args ...string) (string, error) { return "", nil },
 		Clone: fakeCloneFunc(),
 		CollectConfig: fakeCollectConfig(&InitConfig{
 			Version: "v2.0.0",
@@ -155,7 +155,7 @@ func TestRun_ProceedsWithForce(t *testing.T) {
 
 	deps := Deps{
 		Run:           func(name string, args ...string) (string, error) { return "", nil },
-		Clone:  fakeCloneFunc(),
+		Clone:         fakeCloneFunc(),
 		CollectConfig: fakeCollectConfig(cfg),
 	}
 
@@ -177,7 +177,7 @@ func TestRun_NoRepoContext(t *testing.T) {
 
 	deps := Deps{
 		Run:           func(name string, args ...string) (string, error) { return "", nil },
-		Clone:  fakeCloneFunc(),
+		Clone:         fakeCloneFunc(),
 		CollectConfig: fakeCollectConfig(cfg),
 	}
 

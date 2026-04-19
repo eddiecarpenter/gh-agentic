@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/doctorv2"
-	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
+	"github.com/eddiecarpenter/gh-agentic/internal/doctor"
+	initpkg "github.com/eddiecarpenter/gh-agentic/internal/init"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -107,10 +107,10 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 
 			// Phase 2: pipeline-side checks and auto-repairs.
 			pipelineDeps, pdepsErr := buildPipelineCheckDeps(deps)
-			var pipelineResult doctorv2.RepairResult
+			var pipelineResult doctor.RepairResult
 			if pdepsErr == nil {
 				_ = ui.RunWithDynamicSpinner(w, "Running pipeline checks...", func(setLabel func(string)) error {
-					pipelineResult = doctorv2.RepairPipeline(pipelineDeps, setLabel)
+					pipelineResult = doctor.RepairPipeline(pipelineDeps, setLabel)
 					return nil
 				})
 			}
@@ -158,7 +158,7 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			// live outside the spinner phase so huh.NewConfirm can own the
 			// terminal. One confirmation covers the whole batch.
 			if pdepsErr == nil && pipelineResult.ShadowBatch != nil {
-				shadowRes := doctorv2.RepairShadowValues(
+				shadowRes := doctor.RepairShadowValues(
 					pipelineResult.ShadowBatch.Items,
 					pipelineDeps.Run,
 					huhConfirm,
@@ -194,12 +194,12 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 	return cmd
 }
 
-// buildPipelineCheckDeps constructs the doctorv2.CheckDeps used for the
+// buildPipelineCheckDeps constructs the doctor.CheckDeps used for the
 // pipeline-side health checks, mirroring how `gh agentic check` resolves them.
-func buildPipelineCheckDeps(pdeps project.Deps) (doctorv2.CheckDeps, error) {
+func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 	root, err := os.Getwd()
 	if err != nil {
-		return doctorv2.CheckDeps{}, fmt.Errorf("resolving working directory: %w", err)
+		return doctor.CheckDeps{}, fmt.Errorf("resolving working directory: %w", err)
 	}
 
 	repoFullName := pdeps.RepoFullName
@@ -233,7 +233,7 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctorv2.CheckDeps, error) {
 		}
 	}
 
-	return doctorv2.CheckDeps{
+	return doctor.CheckDeps{
 		Root:         root,
 		RepoFullName: repoFullName,
 		Owner:        owner,
@@ -252,8 +252,8 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctorv2.CheckDeps, error) {
 // then applies non-empty answers via gh. Each prompt is its own form so the
 // user can Esc out of one without losing the rest. Returns a partial result
 // (Lines + counts) for the caller to merge.
-func promptAndApplyPending(w io.Writer, deps doctorv2.CheckDeps, prompts []doctorv2.PendingPrompt) (doctorv2.RepairResult, error) {
-	res := doctorv2.RepairResult{}
+func promptAndApplyPending(w io.Writer, deps doctor.CheckDeps, prompts []doctor.PendingPrompt) (doctor.RepairResult, error) {
+	res := doctor.RepairResult{}
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintf(w, "  %s  %d value(s) need to be set. Leave blank to skip any.\n",
@@ -273,8 +273,8 @@ func promptAndApplyPending(w io.Writer, deps doctorv2.CheckDeps, prompts []docto
 			value = p.Default
 		}
 
-		applyErr := doctorv2.ApplyPendingPrompt(deps.Run, deps.RepoFullName, p, value)
-		res.Lines = append(res.Lines, doctorv2.FormatPromptApplied(p, applyErr))
+		applyErr := doctor.ApplyPendingPrompt(deps.Run, deps.RepoFullName, p, value)
+		res.Lines = append(res.Lines, doctor.FormatPromptApplied(p, applyErr))
 		if applyErr != nil {
 			res.Unrepaired++
 		} else {
@@ -289,7 +289,7 @@ func promptAndApplyPending(w io.Writer, deps doctorv2.CheckDeps, prompts []docto
 // returns the user-supplied value. RUNNER_LABEL gets the same select-then-
 // custom flow used by `gh agentic init`; everything else uses a single text
 // input (with password masking for secrets).
-func promptValue(p doctorv2.PendingPrompt, deps doctorv2.CheckDeps) (string, error) {
+func promptValue(p doctor.PendingPrompt, deps doctor.CheckDeps) (string, error) {
 	if p.Name == "RUNNER_LABEL" {
 		return promptRunnerLabel(deps)
 	}
@@ -329,12 +329,12 @@ func huhConfirm(title, description string) (bool, error) {
 	return confirmed, nil
 }
 
-// promptRunnerLabel mirrors initv2.collectPipelineConfig's runner picker:
+// promptRunnerLabel mirrors initpkg.collectPipelineConfig's runner picker:
 // a select with sensible candidates, falling through to a custom-label input
 // when "other" is chosen.
-func promptRunnerLabel(deps doctorv2.CheckDeps) (string, error) {
-	value := initv2.DefaultRunnerLabel
-	options := initv2.BuildRunnerOptions(deps.RepoName, deps.Owner)
+func promptRunnerLabel(deps doctor.CheckDeps) (string, error) {
+	value := initpkg.DefaultRunnerLabel
+	options := initpkg.BuildRunnerOptions(deps.RepoName, deps.Owner)
 
 	selectForm := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
@@ -347,7 +347,7 @@ func promptRunnerLabel(deps doctorv2.CheckDeps) (string, error) {
 		return "", err
 	}
 
-	if value != initv2.RunnerOther {
+	if value != initpkg.RunnerOther {
 		return value, nil
 	}
 

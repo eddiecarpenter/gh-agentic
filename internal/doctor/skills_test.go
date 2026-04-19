@@ -1,4 +1,4 @@
-package doctorv2
+package doctor
 
 import (
 	"os"

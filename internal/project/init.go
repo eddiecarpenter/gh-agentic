@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/initv2"
+	initpkg "github.com/eddiecarpenter/gh-agentic/internal/init"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -17,15 +17,15 @@ import (
 type InitMode int
 
 const (
-	InitModeSingle   InitMode = iota // Create new project, set up as control plane.
-	InitModeFederated                // Join existing federated project.
+	InitModeSingle    InitMode = iota // Create new project, set up as control plane.
+	InitModeFederated                 // Join existing federated project.
 )
 
 // InitRepoConfig holds the collected configuration for project init.
 type InitRepoConfig struct {
 	Mode      InitMode
-	ProjectID string          // Federated mode only — selected project.
-	InitCfg   *initv2.InitConfig // Full wizard config.
+	ProjectID string              // Federated mode only — selected project.
+	InitCfg   *initpkg.InitConfig // Full wizard config.
 }
 
 // InitRepo performs first-time setup for a repo.
@@ -62,7 +62,7 @@ func InitRepo(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 }
 
 // initSingle creates a new project and sets up this repo as the control plane.
-func initSingle(w io.Writer, deps Deps, cfg *initv2.InitConfig) error {
+func initSingle(w io.Writer, deps Deps, cfg *initpkg.InitConfig) error {
 	fmt.Fprintln(w, "  Setting up single control plane...")
 	fmt.Fprintln(w)
 
@@ -81,7 +81,7 @@ func initSingle(w io.Writer, deps Deps, cfg *initv2.InitConfig) error {
 
 	// Configure secrets, variables, and agent access.
 	if cfg != nil && cfg.RepoFullName != "" {
-		if err := initv2.ConfigureRepo(w, cfg, deps.Run); err != nil {
+		if err := initpkg.ConfigureRepo(w, cfg, deps.Run); err != nil {
 			return fmt.Errorf("configuring repo: %w", err)
 		}
 	}
@@ -148,7 +148,7 @@ func initFederated(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 
 	// Configure secrets, variables, and agent access.
 	if cfg.InitCfg != nil && cfg.InitCfg.RepoFullName != "" {
-		if err := initv2.ConfigureRepo(w, cfg.InitCfg, deps.Run); err != nil {
+		if err := initpkg.ConfigureRepo(w, cfg.InitCfg, deps.Run); err != nil {
 			return fmt.Errorf("configuring repo: %w", err)
 		}
 	}
