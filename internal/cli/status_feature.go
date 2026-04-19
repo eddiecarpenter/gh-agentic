@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -12,7 +11,8 @@ import (
 
 // runStatusFeature is the handler for `gh agentic status feature <N>`. It
 // resolves the project ID, fetches the feature via projectstatus, and
-// renders either the human detail view or the self-contained JSON object.
+// renders either the human detail view or the agent-oriented --raw form.
+// The --json flag was removed by feature #589.
 //
 // stderr receives the busy-indicator rendered by deps.busy while the fetch
 // is in flight; stdout (w) receives the final output. Non-TTY writers
@@ -43,9 +43,6 @@ func runStatusFeature(w io.Writer, stderr io.Writer, number int, flags statusDet
 
 	if flags.raw {
 		return writeFeatureRaw(w, feature, flags.verbose)
-	}
-	if flags.json {
-		return writeFeatureJSON(w, feature)
 	}
 	return writeFeatureDetail(w, feature, ui.TerminalSupportsUTF8())
 }
@@ -245,21 +242,6 @@ func rawTasksDoneTotalValue(tasks []projectstatus.TaskRef) string {
 		}
 	}
 	return fmt.Sprintf("%d/%d", done, len(tasks))
-}
-
-// writeFeatureJSON emits the single-object payload with nullable collections
-// normalised so consumers see [] instead of null.
-func writeFeatureJSON(w io.Writer, f *projectstatus.Feature) error {
-	payload := *f
-	if payload.Tasks == nil {
-		payload.Tasks = []projectstatus.TaskRef{}
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(payload); err != nil {
-		return fmt.Errorf("encoding JSON: %w", err)
-	}
-	return nil
 }
 
 // parentRequirementOneLiner renders the `#466 [done]  feat: ...` form used

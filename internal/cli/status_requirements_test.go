@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -96,60 +95,6 @@ func TestRunStatusRequirements_IncludeDonePullsInClosed(t *testing.T) {
 	}
 }
 
-// TestRunStatusRequirements_JSONEnvelopeShape verifies --json produces the
-// {items, totals} envelope and that the shape is parseable and matches the
-// locked field names.
-func TestRunStatusRequirements_JSONEnvelopeShape(t *testing.T) {
-	buf := &bytes.Buffer{}
-	err := runStatusRequirements(buf, io.Discard, statusListFlags{json: true}, fakeStatusDeps(sampleRequirementIssues()))
-	if err != nil {
-		t.Fatalf("runStatusRequirements: %v", err)
-	}
-
-	var parsed struct {
-		Items  []map[string]interface{} `json:"items"`
-		Totals struct {
-			Open    int `json:"open"`
-			Blocked int `json:"blocked"`
-		} `json:"totals"`
-	}
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("--json output did not parse: %v\nraw:\n%s", err, buf.String())
-	}
-	if parsed.Totals.Open != 3 {
-		t.Errorf("totals.open = %d, want 3", parsed.Totals.Open)
-	}
-	if parsed.Totals.Blocked != 0 {
-		t.Errorf("totals.blocked = %d, want 0", parsed.Totals.Blocked)
-	}
-	if len(parsed.Items) != 3 {
-		t.Fatalf("len(items) = %d, want 3", len(parsed.Items))
-	}
-	// Field-name check — every item must declare the documented keys so the
-	// schema is stable across runs.
-	requiredKeys := []string{"number", "title", "body", "stage", "created_at", "last_transitioned_at", "owning_repo", "blocked", "linked_features"}
-	for i, item := range parsed.Items {
-		for _, k := range requiredKeys {
-			if _, ok := item[k]; !ok {
-				t.Errorf("item[%d] missing required key %q; keys = %v", i, k, keysOf(item))
-			}
-		}
-	}
-}
-
-// TestRunStatusRequirements_JSONEnvelopeEmpty verifies the envelope renders
-// "items": [] rather than null when no requirements match.
-func TestRunStatusRequirements_JSONEnvelopeEmpty(t *testing.T) {
-	buf := &bytes.Buffer{}
-	err := runStatusRequirements(buf, io.Discard, statusListFlags{json: true}, fakeStatusDeps(nil))
-	if err != nil {
-		t.Fatalf("runStatusRequirements: %v", err)
-	}
-	if !strings.Contains(buf.String(), `"items": []`) {
-		t.Errorf("expected empty envelope to contain \"items\": []; got:\n%s", buf.String())
-	}
-}
-
 // TestRunStatusRequirements_ThisRepoNarrows verifies --this-repo drops
 // items from other repos.
 func TestRunStatusRequirements_ThisRepoNarrows(t *testing.T) {
@@ -172,39 +117,11 @@ func TestRunStatusRequirements_ThisRepoNarrows(t *testing.T) {
 }
 
 // TestRunStatusRequirements_BlockedAnnotation verifies the inline
-// [blocked by owner/repo#N] annotation renders in both table and JSON paths,
-// and that the blocked totals count is incremented.
+// [blocked by owner/repo#N] annotation renders in the table renderer and
+// the totals count reflects the blocked subset. The JSON path was removed
+// by feature #589; the raw-shape coverage of the blocked column lives in
+// TestRunStatusRequirements_RawTSVShape.
 func TestRunStatusRequirements_BlockedAnnotation(t *testing.T) {
-	issues := []projectstatus.ProjectIssue{
-		{Number: 111, Title: "blocked-req", Type: "requirement", Stage: projectstatus.StageScoping, State: "open", OwningRepo: "eddiecarpenter/gh-agentic"},
-	}
-	// Inject a blocked annotation via a custom projectstatus.Deps that
-	// annotates the fetched requirement. We do it by wrapping the fake.
-	deps := fakeProjectstatusDeps(issues)
-	originalFetch := deps.FetchProjectIssues
-	deps.FetchProjectIssues = func(projectID string) ([]projectstatus.ProjectIssue, error) {
-		items, err := originalFetch(projectID)
-		return items, err
-	}
-	// We cannot write Blocked onto a ProjectIssue (the field is on Requirement
-	// itself). Instead, write a blocked Requirement via a post-fetch hook:
-	// swap in a projectstatus.Deps with a patched FetchProjectIssues.
-	// Since the fetcher returns ProjectIssue (no Blocked field), the
-	// production wiring uses a separate blocked-by layer (task #501). For
-	// this test we exercise the renderer directly by building a Requirement
-	// slice.
-	sd := statusDeps{
-		currentRepo:      func() (string, error) { return "eddiecarpenter/gh-agentic", nil },
-		resolveProjectID: func(string) (string, error) { return "PROJ_ID", nil },
-		psDeps:           deps,
-		busy:             testutil.NoopBusy,
-	}
-
-	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, io.Discard, statusListFlags{}, sd); err != nil {
-		t.Fatalf("runStatusRequirements: %v", err)
-	}
-
 	// Direct renderer test — construct a blocked Requirement and render it.
 	reqs := []projectstatus.Requirement{{
 		Number:     222,
@@ -222,28 +139,6 @@ func TestRunStatusRequirements_BlockedAnnotation(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "1 open requirement (1 blocked)") {
 		t.Errorf("expected blocked totals; got:\n%s", out.String())
-	}
-
-	// JSON path — confirm the blocked totals increment and the item carries
-	// the blocked payload.
-	jsonBuf := &bytes.Buffer{}
-	if err := writeRequirementsJSON(jsonBuf, reqs); err != nil {
-		t.Fatalf("writeRequirementsJSON: %v", err)
-	}
-	var parsed struct {
-		Items []struct {
-			Blocked *projectstatus.BlockedInfo `json:"blocked"`
-		} `json:"items"`
-		Totals projectstatus.ListTotals `json:"totals"`
-	}
-	if err := json.Unmarshal(jsonBuf.Bytes(), &parsed); err != nil {
-		t.Fatalf("json decode: %v\nraw: %s", err, jsonBuf.String())
-	}
-	if parsed.Totals.Blocked != 1 {
-		t.Errorf("totals.blocked = %d, want 1", parsed.Totals.Blocked)
-	}
-	if parsed.Items[0].Blocked == nil || parsed.Items[0].Blocked.BlockingRef != "foo/bar#99" {
-		t.Errorf("blocked payload wrong: %+v", parsed.Items[0].Blocked)
 	}
 }
 

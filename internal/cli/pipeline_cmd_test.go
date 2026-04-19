@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"os"
 	"strings"
@@ -147,7 +146,6 @@ func TestPipelineCmd_HelpListsFlags(t *testing.T) {
 		"--vertical",
 		"--include-done",
 		"--this-repo",
-		"--json",
 		"--raw",
 		"--verbose",
 	} {
@@ -162,7 +160,7 @@ func TestPipelineCmd_HelpListsFlags(t *testing.T) {
 // help-output check in case the long-description wording drifts.
 func TestPipelineCmd_AllFlagsRegistered(t *testing.T) {
 	cmd := newPipelineCmd()
-	for _, name := range []string{"requirements", "features", "horizontal", "vertical", "include-done", "this-repo", "json", "raw", "verbose"} {
+	for _, name := range []string{"requirements", "features", "horizontal", "vertical", "include-done", "this-repo", "raw", "verbose"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("flag --%s not registered", name)
 		}
@@ -430,99 +428,6 @@ func TestRunPipeline_BothFlagsLayoutConflict(t *testing.T) {
 	}
 }
 
-// TestRunPipeline_JSONDefaultEnvelopeShape verifies --json with no
-// selector emits {requirements, features, totals} — AC-6.
-func TestRunPipeline_JSONDefaultEnvelopeShape(t *testing.T) {
-	buf := &bytes.Buffer{}
-	err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true}, pipelineSampleDeps())
-	if err != nil {
-		t.Fatalf("runPipeline --json: %v", err)
-	}
-	var parsed map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("unmarshal: %v; raw:\n%s", err, buf.String())
-	}
-	for _, key := range []string{"requirements", "features", "totals"} {
-		if _, ok := parsed[key]; !ok {
-			t.Errorf("envelope missing key %q; keys = %v", key, keysOfRaw(parsed))
-		}
-	}
-	// Inner totals must have the three locked fields and no extras.
-	var totals map[string]interface{}
-	if err := json.Unmarshal(parsed["totals"], &totals); err != nil {
-		t.Fatalf("totals: %v", err)
-	}
-	want := map[string]bool{"open_requirements": true, "open_features": true, "blocked": true}
-	for k := range totals {
-		if !want[k] {
-			t.Errorf("unexpected totals key %q", k)
-		}
-	}
-	for k := range want {
-		if _, ok := totals[k]; !ok {
-			t.Errorf("totals missing key %q; got %v", k, keysOf(totals))
-		}
-	}
-}
-
-// TestRunPipeline_JSONRequirementsSelectorOmitsFeatures verifies AC-7 for
-// the --requirements selector: the `features` key is absent, not null.
-func TestRunPipeline_JSONRequirementsSelectorOmitsFeatures(t *testing.T) {
-	buf := &bytes.Buffer{}
-	err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true, requirements: true}, pipelineSampleDeps())
-	if err != nil {
-		t.Fatalf("runPipeline --json --requirements: %v", err)
-	}
-	var parsed map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("unmarshal: %v; raw:\n%s", err, buf.String())
-	}
-	if _, present := parsed["features"]; present {
-		t.Errorf("features key must be absent with --requirements; keys = %v", keysOfRaw(parsed))
-	}
-	if _, present := parsed["requirements"]; !present {
-		t.Errorf("requirements key must be present; keys = %v", keysOfRaw(parsed))
-	}
-	// Totals should carry open_requirements but not open_features.
-	var totals map[string]interface{}
-	if err := json.Unmarshal(parsed["totals"], &totals); err != nil {
-		t.Fatalf("totals: %v", err)
-	}
-	if _, present := totals["open_features"]; present {
-		t.Errorf("open_features must be absent under --requirements; got %v", keysOf(totals))
-	}
-	if _, present := totals["open_requirements"]; !present {
-		t.Errorf("open_requirements must be present; got %v", keysOf(totals))
-	}
-}
-
-// TestRunPipeline_JSONFeaturesSelectorOmitsRequirements is the symmetric
-// check to TestRunPipeline_JSONRequirementsSelectorOmitsFeatures.
-func TestRunPipeline_JSONFeaturesSelectorOmitsRequirements(t *testing.T) {
-	buf := &bytes.Buffer{}
-	err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true, features: true}, pipelineSampleDeps())
-	if err != nil {
-		t.Fatalf("runPipeline --json --features: %v", err)
-	}
-	var parsed map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("unmarshal: %v; raw:\n%s", err, buf.String())
-	}
-	if _, present := parsed["requirements"]; present {
-		t.Errorf("requirements key must be absent with --features; keys = %v", keysOfRaw(parsed))
-	}
-	if _, present := parsed["features"]; !present {
-		t.Errorf("features key must be present; keys = %v", keysOfRaw(parsed))
-	}
-	var totals map[string]interface{}
-	if err := json.Unmarshal(parsed["totals"], &totals); err != nil {
-		t.Fatalf("totals: %v", err)
-	}
-	if _, present := totals["open_requirements"]; present {
-		t.Errorf("open_requirements must be absent under --features; got %v", keysOf(totals))
-	}
-}
-
 // TestRunPipeline_InvokesBusyWrapper verifies the pipeline handler wraps
 // its fetch via deps.busy with the appropriate label — AC-9 / AC-11.
 func TestRunPipeline_InvokesBusyWrapper(t *testing.T) {
@@ -570,16 +475,6 @@ func TestRunPipeline_NonTTYStderrProducesNoSpinnerBytes(t *testing.T) {
 	if stderr.Len() != 0 {
 		t.Errorf("non-TTY stderr must be empty; got %q", stderr.String())
 	}
-}
-
-// keysOfRaw returns the keys of a map[string]json.RawMessage for
-// human-readable failure messages.
-func keysOfRaw(m map[string]json.RawMessage) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }
 
 // TestRunPipeline_RawCombinedShape verifies the bare `pipeline --raw`

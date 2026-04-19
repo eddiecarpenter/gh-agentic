@@ -68,8 +68,9 @@ func ParseStage(raw string) Stage {
 }
 
 // Requirement is a single requirement issue with its pipeline state and
-// linked features. Struct field tags pin the JSON wire format consumed by
-// `--json` output on the CLI.
+// linked features. JSON struct tags are retained for internal serialisation
+// callers; the CLI no longer emits a JSON output (the `--json` flag was
+// removed by feature #589).
 type Requirement struct {
 	Number             int              `json:"number"`
 	Title              string           `json:"title"`
@@ -87,9 +88,9 @@ type Requirement struct {
 //
 // TasksTotal and TasksDone are internal fields used by list-context
 // renderers (the progress bar on pipeline cards and the N/M column on the
-// feature list). They are deliberately tagged `json:"-"` so the `--json`
-// output retains the schema locked by feature #492 — machine consumers
-// compute progress themselves from the `tasks` array on the detail payload.
+// feature list). They are tagged `json:"-"` to keep them out of any
+// internal JSON serialisation; the `--json` CLI flag was removed by
+// feature #589.
 type Feature struct {
 	Number             int                 `json:"number"`
 	Title              string              `json:"title"`
@@ -104,7 +105,7 @@ type Feature struct {
 	Branch             *BranchState        `json:"branch"`
 	PR                 *PRState            `json:"pr"`
 
-	// Internal — not serialised to --json; used by list/pipeline renderers.
+	// Internal — used by list/pipeline renderers only; never serialised.
 	TasksTotal int `json:"-"`
 	TasksDone  int `json:"-"`
 }
@@ -165,19 +166,3 @@ type BlockedInfo struct {
 	Reason      string `json:"reason"`
 }
 
-// ListEnvelope is the JSON wrapper emitted by list sub-commands. Items is a
-// deliberately untyped slice so the same envelope type serves both the
-// requirements and features endpoints; the CLI layer populates it with the
-// appropriate typed slice.
-type ListEnvelope struct {
-	Items  interface{} `json:"items"`
-	Totals ListTotals  `json:"totals"`
-}
-
-// ListTotals carries the summary counts rendered at the bottom of list
-// views. Open is the number of items in the list; Blocked is the subset of
-// Open whose Blocked field is non-nil.
-type ListTotals struct {
-	Open    int `json:"open"`
-	Blocked int `json:"blocked"`
-}

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -60,9 +59,6 @@ func runStatusRequirement(w io.Writer, stderr io.Writer, number int, flags statu
 
 	if flags.raw {
 		return writeRequirementRaw(w, req, flags.verbose)
-	}
-	if flags.json {
-		return writeRequirementJSON(w, req)
 	}
 	return writeRequirementDetail(w, req)
 }
@@ -243,23 +239,6 @@ func rawLinkedFeaturesValue(features []projectstatus.FeatureSummary) string {
 		parts = append(parts, fmt.Sprintf("%d", f.Number))
 	}
 	return strings.Join(parts, " ")
-}
-
-// writeRequirementJSON emits the single-object payload with indentation for
-// readability and Go's default time.Time RFC3339 serialisation.
-func writeRequirementJSON(w io.Writer, r *projectstatus.Requirement) error {
-	// Normalise nullable collections so consumers see [] instead of null for
-	// LinkedFeatures — matches the list envelope convention.
-	payload := *r
-	if payload.LinkedFeatures == nil {
-		payload.LinkedFeatures = []projectstatus.FeatureSummary{}
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(payload); err != nil {
-		return fmt.Errorf("encoding JSON: %w", err)
-	}
-	return nil
 }
 
 // formatISODate returns the ISO-8601 date portion of t. Zero times render as

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 
@@ -24,7 +23,6 @@ type pipelineFlags struct {
 	vertical     bool
 	includeDone  bool
 	thisRepo     bool
-	json         bool
 	raw          bool
 	verbose      bool
 }
@@ -40,7 +38,6 @@ func registerPipelineFlags(cmd *cobra.Command, f *pipelineFlags) {
 	cmd.Flags().BoolVar(&f.vertical, "vertical", false, "force vertical pipeline regardless of terminal width")
 	cmd.Flags().BoolVar(&f.includeDone, "include-done", false, "include items in the 'done' stage")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
-	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (tab-separated sections per selector); --horizontal/--vertical are no-ops under --raw")
 	cmd.Flags().BoolVar(&f.verbose, "verbose", false, "include timestamps in --raw output (no-op without --raw)")
 }
@@ -71,8 +68,11 @@ The layout flags mirror the semantics of the earlier list-flag form:
 --horizontal forces horizontal layout, --vertical forces vertical, and
 omitting both auto-picks based on terminal width. --include-done appends
 the 'done' column. --this-repo narrows the federated view to the current
-repository. --json emits a stable structured payload suitable for jq,
-dashboards, and scripting.`,
+repository.
+
+Pass --raw for an agent-oriented payload — two TSV sections (one per
+selector, '# requirements' and '# features' markers) with the same row
+shape as the list commands. Layout flags are no-ops under --raw.`,
 		Example: `  # Both pipelines stacked
   gh agentic status pipeline
 
@@ -82,8 +82,8 @@ dashboards, and scripting.`,
   # Features only, horizontal layout, include closed features
   gh agentic status pipeline --features --horizontal --include-done
 
-  # JSON for scripting
-  gh agentic status pipeline --json`,
+  # Agent-oriented raw TSV (combined sections)
+  gh agentic status pipeline --raw`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -101,49 +101,26 @@ dashboards, and scripting.`,
 	return cmd
 }
 
-// pipelineJSONTotals is the totals object embedded in the combined pipeline
-// JSON envelope. All numeric fields are `omitempty` so a selector-scoped
-// payload drops the unrelated count rather than emitting 0 — callers can
-// distinguish "not requested" from "requested and zero" by key presence
-// (as locked by AC-7 of the feature scope).
-type pipelineJSONTotals struct {
-	OpenRequirements int `json:"open_requirements,omitempty"`
-	OpenFeatures     int `json:"open_features,omitempty"`
-	Blocked          int `json:"blocked"`
-}
-
-// pipelineJSONEnvelope is the top-level shape emitted by `pipeline --json`.
-// The Requirements and Features slices use `omitempty` so the relevant
-// selector drops the unselected key entirely — not present with a `null`
-// value. The inner per-item objects marshal via the existing
-// projectstatus.Requirement / projectstatus.Feature tags, so the
-// locked status schemas are reused verbatim and no new per-item fields
-// are introduced (AC-14).
-type pipelineJSONEnvelope struct {
-	Requirements []projectstatus.Requirement `json:"requirements,omitempty"`
-	Features     []projectstatus.Feature     `json:"features,omitempty"`
-	Totals       pipelineJSONTotals          `json:"totals"`
-}
-
 // runPipeline is the command handler for `gh agentic status pipeline`. It
 // resolves the project ID, fetches requirements and/or features (as selected
 // by the selector flags) through deps.busy so long-running federated queries
-// show a delayed indicator on stderr, then renders either the documented
-// JSON envelope or the stacked / selector pipeline view.
+// show a delayed indicator on stderr, then renders either the agent-oriented
+// `--raw` form or the stacked / selector human pipeline view. The `--json`
+// flag was removed by feature #589.
 //
-// stdout (w) receives the final human or JSON output. stderr receives
-// the busy indicator rendered by deps.busy while the fetch is in flight.
+// stdout (w) receives the final output. stderr receives the busy
+// indicator rendered by deps.busy while the fetch is in flight.
 func runPipeline(w io.Writer, stderr io.Writer, flags pipelineFlags, deps statusDeps) error {
 	// Resolve layout early for each pipeline so mutually-exclusive flags
 	// fail fast before any network call. The widths differ by entity
 	// (requirements fit in 100 columns; features need 120) so each
 	// pipeline has its own resolution.
 	//
-	// Both `--json` and `--raw` skip layout resolution because their
-	// renderers are layout-free; `--horizontal` and `--vertical` are
-	// documented as no-ops under `--raw`.
+	// `--raw` skips layout resolution because its renderer is layout-free;
+	// `--horizontal` and `--vertical` are documented as no-ops under
+	// `--raw`.
 	var reqLayout, feaLayout pipelineLayout
-	if !flags.json && !flags.raw {
+	if !flags.raw {
 		if flags.requirements || !flags.features {
 			var err error
 			reqLayout, err = resolvePipelineLayout(pipelineToStatusListFlags(flags), terminalWidth(), requirementPipelineMinWidth)
@@ -214,10 +191,6 @@ func runPipeline(w io.Writer, stderr io.Writer, flags pipelineFlags, deps status
 		return writePipelineRaw(w, reqs, features, fetchReqs, fetchFeats, flags.verbose)
 	}
 
-	if flags.json {
-		return writePipelineJSON(w, reqs, features, fetchReqs, fetchFeats)
-	}
-
 	return writePipelineHuman(w, reqs, features, fetchReqs, fetchFeats, flags, reqLayout, feaLayout)
 }
 
@@ -234,7 +207,6 @@ func pipelineToStatusListFlags(f pipelineFlags) statusListFlags {
 		vertical:    f.vertical,
 		thisRepo:    f.thisRepo,
 		includeDone: f.includeDone,
-		json:        f.json,
 	}
 }
 
@@ -323,53 +295,6 @@ func writeHorizontalPipelineWithHeading(w io.Writer, heading string, columns []p
 	fmt.Fprintln(w, "=== "+heading+" ===")
 	fmt.Fprintln(w, "")
 	return writeHorizontalPipeline(w, columns, cards, actualWidth, minWidth, unicode)
-}
-
-// writePipelineJSON emits the combined envelope per AC-6 / AC-7. Selector
-// flags control key presence: a --requirements run omits the `features`
-// key entirely (not set to `null`), and vice versa. The `totals` object
-// is always present; its `open_*` fields are `omitempty`-tagged so the
-// irrelevant count drops cleanly.
-func writePipelineJSON(w io.Writer, reqs []projectstatus.Requirement, features []projectstatus.Feature, includeReqs, includeFeats bool) error {
-	var envelope pipelineJSONEnvelope
-	blocked := 0
-	if includeReqs {
-		// Normalise nullable LinkedFeatures so each requirement marshals
-		// with `[]` rather than `null` for consistency with the status
-		// command JSON envelope contract.
-		if reqs == nil {
-			reqs = []projectstatus.Requirement{}
-		}
-		for i := range reqs {
-			if reqs[i].LinkedFeatures == nil {
-				reqs[i].LinkedFeatures = []projectstatus.FeatureSummary{}
-			}
-		}
-		envelope.Requirements = reqs
-		envelope.Totals.OpenRequirements = len(reqs)
-		blocked += blockedCountRequirements(reqs)
-	}
-	if includeFeats {
-		if features == nil {
-			features = []projectstatus.Feature{}
-		}
-		for i := range features {
-			if features[i].Tasks == nil {
-				features[i].Tasks = []projectstatus.TaskRef{}
-			}
-		}
-		envelope.Features = features
-		envelope.Totals.OpenFeatures = len(features)
-		blocked += blockedCountFeatures(features)
-	}
-	envelope.Totals.Blocked = blocked
-
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(envelope); err != nil {
-		return fmt.Errorf("encoding JSON: %w", err)
-	}
-	return nil
 }
 
 // writePipelineRaw emits the agent-oriented combined / selector form of the

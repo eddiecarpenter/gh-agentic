@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -181,39 +180,6 @@ func TestRunStatusFeature_UnicodeGlyphs(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "✓") || !strings.Contains(buf.String(), "☐") {
 		t.Errorf("expected unicode glyphs; got:\n%s", buf.String())
-	}
-}
-
-// TestRunStatusFeature_JSONSchema verifies --json emits a single object with
-// every nested resource present (or null when absent).
-func TestRunStatusFeature_JSONSchema(t *testing.T) {
-	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
-	issues := []projectstatus.ProjectIssue{
-		{Number: 492, Title: "feat: status command", Body: "b", Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
-	}
-	sd := featureDetailFixture(issues, nil, nil, nil, nil)
-
-	buf := &bytes.Buffer{}
-	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{json: true}, sd); err != nil {
-		t.Fatalf("runStatusFeature: %v", err)
-	}
-	var parsed map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("json parse: %v; raw:\n%s", err, buf.String())
-	}
-	for _, key := range []string{"number", "title", "body", "stage", "created_at", "last_transitioned_at", "owning_repo", "blocked", "parent_requirement", "tasks", "branch", "pr"} {
-		if _, ok := parsed[key]; !ok {
-			t.Errorf("JSON missing key %q; keys = %v", key, keysOf(parsed))
-		}
-	}
-	if parsed["parent_requirement"] != nil {
-		t.Errorf("parent_requirement = %v, want null", parsed["parent_requirement"])
-	}
-	if parsed["pr"] != nil {
-		t.Errorf("pr = %v, want null", parsed["pr"])
-	}
-	if _, ok := parsed["tasks"].([]interface{}); !ok {
-		t.Errorf("tasks should be [] (non-null); got %v", parsed["tasks"])
 	}
 }
 

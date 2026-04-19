@@ -109,7 +109,7 @@ func TestRunStatusFeature_InvokesBusyWrapper(t *testing.T) {
 // TestStatusCommands_NoSpinnerBytesOnNonTTYStderr verifies that running a
 // status handler through the real ui.BusyRun against a bytes.Buffer (which
 // is not an *os.File, so the suppression check triggers) produces zero
-// spinner bytes on the stderr writer. Protects the --json-piped-to-jq
+// spinner bytes on the stderr writer. Protects the --raw-piped-to-pipe
 // workflow from spinner noise — explicit regression test for AC-11.
 func TestStatusCommands_NoSpinnerBytesOnNonTTYStderr(t *testing.T) {
 	sd := fakeStatusDeps(sampleRequirementIssues())

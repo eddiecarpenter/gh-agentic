@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -126,49 +125,6 @@ func TestRunStatusFeatures_IncludeDone(t *testing.T) {
 	}
 }
 
-// TestRunStatusFeatures_JSONSchema verifies --json emits the envelope with the
-// documented field names on every item.
-func TestRunStatusFeatures_JSONSchema(t *testing.T) {
-	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures: %v", err)
-	}
-	var parsed struct {
-		Items  []map[string]interface{} `json:"items"`
-		Totals struct {
-			Open    int `json:"open"`
-			Blocked int `json:"blocked"`
-		} `json:"totals"`
-	}
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("json parse: %v; raw:\n%s", err, buf.String())
-	}
-	if parsed.Totals.Open != 2 {
-		t.Errorf("totals.open = %d, want 2", parsed.Totals.Open)
-	}
-	requiredKeys := []string{"number", "title", "body", "stage", "created_at", "last_transitioned_at", "owning_repo", "blocked", "parent_requirement", "tasks", "branch", "pr"}
-	for i, item := range parsed.Items {
-		for _, k := range requiredKeys {
-			if _, ok := item[k]; !ok {
-				t.Errorf("item[%d] missing required key %q; keys = %v", i, k, keysOf(item))
-			}
-		}
-	}
-}
-
-// TestRunStatusFeatures_EmptyEnvelope verifies no-results returns items: [].
-func TestRunStatusFeatures_EmptyEnvelope(t *testing.T) {
-	sd := fakeFeaturesDeps(nil, nil)
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures: %v", err)
-	}
-	if !strings.Contains(buf.String(), `"items": []`) {
-		t.Errorf("expected 'items: []'; got:\n%s", buf.String())
-	}
-}
-
 // TestRunStatusFeatures_BlockedAnnotation exercises the renderer directly
 // with a blocked feature to verify the inline annotation and totals.
 func TestRunStatusFeatures_BlockedAnnotation(t *testing.T) {
@@ -244,7 +200,7 @@ func TestWriteFeaturesTable_TasksColumnWithCrossRepo(t *testing.T) {
 
 // TestRunStatusFeatures_ListPopulatesTasksColumn verifies the handler-level
 // plumbing: the FetchSubIssues dependency is consumed and the counts land
-// in the TASKS column without any change to --json output.
+// in the TASKS column.
 func TestRunStatusFeatures_ListPopulatesTasksColumn(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	sd.psDeps.FetchSubIssues = func(_, _ string, n int) ([]projectstatus.TaskRef, error) {
@@ -266,40 +222,6 @@ func TestRunStatusFeatures_ListPopulatesTasksColumn(t *testing.T) {
 	}
 	if !strings.Contains(out, "3/4") {
 		t.Errorf("expected '3/4' cell for feature #492; got:\n%s", out)
-	}
-}
-
-// TestRunStatusFeatures_ListJSONShapeStableAfterTasksColumn verifies the
-// JSON output remains byte-identical in shape after the list renderer
-// grew a TASKS column — AC-10 reinforcement.
-func TestRunStatusFeatures_ListJSONShapeStableAfterTasksColumn(t *testing.T) {
-	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
-	sd.psDeps.FetchSubIssues = func(_, _ string, n int) ([]projectstatus.TaskRef, error) {
-		if n == 492 {
-			return []projectstatus.TaskRef{{Number: 1, Closed: true}}, nil
-		}
-		return nil, nil
-	}
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures --json: %v", err)
-	}
-	raw := buf.String()
-	for _, forbidden := range []string{"tasks_total", "tasks_done", "TasksTotal", "TasksDone", "TASKS"} {
-		if strings.Contains(raw, forbidden) {
-			t.Errorf("unexpected key %q in --json output:\n%s", forbidden, raw)
-		}
-	}
-	// Parseable envelope check — items and totals, nothing else.
-	var env map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &env); err != nil {
-		t.Fatalf("parse envelope: %v", err)
-	}
-	allowedTop := map[string]struct{}{"items": {}, "totals": {}}
-	for k := range env {
-		if _, ok := allowedTop[k]; !ok {
-			t.Errorf("unexpected top-level key %q", k)
-		}
 	}
 }
 

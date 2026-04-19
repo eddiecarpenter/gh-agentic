@@ -25,8 +25,13 @@ release.
       TITLE), totals line, no REPO column when all items are local.
 - [ ] `gh agentic status requirements --include-done` — adds closed items,
       totals increment.
-- [ ] `gh agentic status requirements --json` — valid JSON envelope
-      `{items, totals}`; parseable via `| jq`.
+- [ ] `gh agentic status requirements --raw` — tab-separated header
+      `number\tstage\ttitle\tblocked_by\towning_repo` plus one row per item;
+      sparse cells render as `-`. No totals line. Pipe to `awk -F'\t'` to
+      verify column count.
+- [ ] `gh agentic status requirements --raw --verbose` — appends
+      `created_at` and `last_transitioned_at` columns (ISO date) to the
+      header and to every row; column count grows by exactly 2.
 - [ ] `gh agentic status requirements --this-repo` — identical to default in a
       single-repo topology; narrowed in a federated one.
 - [ ] `gh agentic status features` — as above, but features.
@@ -43,8 +48,15 @@ release.
       not a requirement" with the suggested command.
 - [ ] `gh agentic status feature <N>` for the current feature — parent
       requirement, branch one-liner, PR one-liner, task checklist.
-- [ ] `gh agentic status feature <N> --json` — valid JSON, `parent_requirement`
-      / `branch` / `pr` are `null` when absent; `tasks` is always an array.
+- [ ] `gh agentic status feature <N> --raw` — frontmatter-style header
+      (`number:`, `stage:`, `title:`, `owning_repo:`, `blocked_by:`,
+      `parent_requirement:`, `branch:`, `pr:`, `tasks_done_total:`),
+      then `---`, then the verbatim issue body — markdown headings,
+      fenced code, and unicode characters (e.g. `→`) survive without
+      escaping.
+- [ ] `gh agentic status feature <N> --raw --verbose` — inserts
+      `created_at` and `last_transitioned_at` lines after `owning_repo`;
+      body is unchanged.
 
 ## Pipeline
 
@@ -59,8 +71,9 @@ release.
       (< 120 cols) — clean error naming required vs current widths.
 - [ ] `LANG=C gh agentic status feature <N>` — task checklist glyphs switch
       to `[x]` / `[ ]` ASCII fallback.
-- [ ] `gh agentic status pipeline --features --json` — JSON wins; no pipeline
-      headings in output.
+- [ ] `gh agentic status pipeline --raw` — `# requirements` section, blank
+      line, `# features` section; both sections use the list TSV header
+      and rows. `--horizontal` / `--vertical` are no-ops under `--raw`.
 - [ ] `gh agentic status requirements --kanban` (legacy flag) — migration
       error pointing at `gh agentic status pipeline --requirements`.
 - [ ] `gh agentic status pipeline` with a card title containing `→` on a

@@ -25,8 +25,9 @@ func newStatusCmd() *cobra.Command {
 		Long: fmt.Sprintf(`Single-pane pipeline status view for the agentic project.
 
 Answers "where are we?" without hunting across issues, labels, branches, and PRs.
-All sub-commands accept --json for a stable structured payload suitable for
-scripting, dashboards, or downstream skills.
+All sub-commands accept --raw for an agent-oriented payload (tab-separated
+list rows or frontmatter+verbatim-body details) suitable for scripting and
+downstream skills.
 
 By default the view aggregates across every active repo in the federation
 (control plane and domain repos). Use --this-repo on any sub-command to narrow
@@ -52,8 +53,8 @@ Run 'gh agentic status <sub-command> --help' for detailed usage.`,
 		Example: `  # List open requirements with stage
   gh agentic status requirements
 
-  # Detail for one requirement, as JSON
-  gh agentic status requirement 457 --json
+  # Detail for one requirement, in agent-oriented raw form
+  gh agentic status requirement 457 --raw
 
   # Pipeline of requirements and features together
   gh agentic status pipeline
@@ -79,7 +80,6 @@ Run 'gh agentic status <sub-command> --help' for detailed usage.`,
 // Declared once so every list command registers the same shape; downstream
 // tasks wire the actual behaviour behind each flag.
 type statusListFlags struct {
-	json        bool
 	raw         bool
 	verbose     bool
 	kanban      bool
@@ -98,7 +98,6 @@ type statusListFlags struct {
 // on the status list commands so the handler can intercept it and emit a
 // guided migration error.
 func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
-	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (tab-separated for lists, frontmatter + markdown for details) and suppress human output")
 	cmd.Flags().BoolVar(&f.verbose, "verbose", false, "include timestamps in --raw output (no-op without --raw)")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
@@ -119,14 +118,12 @@ func registerRemovedKanbanFlag(cmd *cobra.Command, kanban *bool) {
 
 // statusDetailFlags captures the shared flag set for detail sub-commands.
 type statusDetailFlags struct {
-	json    bool
 	raw     bool
 	verbose bool
 }
 
 // registerStatusDetailFlags declares the shared flag set for detail sub-commands.
 func registerStatusDetailFlags(cmd *cobra.Command, f *statusDetailFlags) {
-	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (frontmatter header + '---' + verbatim markdown body) and suppress human output")
 	cmd.Flags().BoolVar(&f.verbose, "verbose", false, "include timestamps in --raw output (no-op without --raw)")
 }
@@ -152,7 +149,9 @@ Default output is a compact one-line-per-item table. Stage is shown verbatim as
 the GitHub label name (backlog, scoping, scheduled, done). Items that are
 blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]' annotation.
 
-Pass --json to emit a stable structured payload for machine consumption.
+Pass --raw to emit an agent-oriented tab-separated payload (header row +
+one row per item, sparse cells render as '-'). Pass --raw --verbose to
+append created_at and last_transitioned_at columns.
 Pass --include-done to include completed requirements; by default only open
 items are listed.
 
@@ -161,8 +160,8 @@ For the pipeline view, use 'gh agentic status pipeline --requirements'. The
 		Example: `  # Default list view
   gh agentic status requirements
 
-  # JSON for scripting
-  gh agentic status requirements --json
+  # Agent-oriented raw TSV (no header glyphs, no totals)
+  gh agentic status requirements --raw
 
   # Include closed requirements
   gh agentic status requirements --include-done
@@ -204,12 +203,14 @@ The issue number is a plain integer (e.g. 466); no '#' prefix is required. The
 command errors with a clear message if the issue does not exist or if the issue
 is a feature rather than a requirement.
 
-Pass --json to emit a stable structured object for machine consumption.`,
+Pass --raw to emit a frontmatter-style header (key: value lines), a literal
+'---' separator, and the verbatim issue body — suitable for agent ingestion.
+Pass --raw --verbose to insert created_at and last_transitioned_at header lines.`,
 		Example: `  # Default detail view
   gh agentic status requirement 466
 
-  # JSON for scripting
-  gh agentic status requirement 466 --json`,
+  # Agent-oriented raw frontmatter + verbatim body
+  gh agentic status requirement 466 --raw`,
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -248,7 +249,9 @@ The owning repo is shown when it differs from the current repo. Features that
 are blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]'
 annotation.
 
-Pass --json to emit a stable structured payload for machine consumption.
+Pass --raw to emit an agent-oriented tab-separated payload (header row +
+one row per item, sparse cells render as '-'). Pass --raw --verbose to
+append created_at and last_transitioned_at columns.
 Pass --include-done to include completed features; by default only open items
 are listed.
 
@@ -257,8 +260,8 @@ For the pipeline view, use 'gh agentic status pipeline --features'. The
 		Example: `  # Default list view
   gh agentic status features
 
-  # JSON for scripting
-  gh agentic status features --json
+  # Agent-oriented raw TSV (no header glyphs, no totals)
+  gh agentic status features --raw
 
   # Narrow to the current repo
   gh agentic status features --this-repo
@@ -301,12 +304,14 @@ The issue number is a plain integer (e.g. 492); no '#' prefix is required. The
 command errors with a clear message if the issue does not exist or if the issue
 is a requirement rather than a feature.
 
-Pass --json to emit a stable structured object for machine consumption.`,
+Pass --raw to emit a frontmatter-style header (key: value lines), a literal
+'---' separator, and the verbatim issue body — suitable for agent ingestion.
+Pass --raw --verbose to insert created_at and last_transitioned_at header lines.`,
 		Example: `  # Default detail view
   gh agentic status feature 492
 
-  # JSON for scripting
-  gh agentic status feature 492 --json`,
+  # Agent-oriented raw frontmatter + verbatim body
+  gh agentic status feature 492 --raw`,
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

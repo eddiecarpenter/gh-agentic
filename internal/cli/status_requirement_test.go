@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -96,40 +95,6 @@ func TestRunStatusRequirement_NoLinkedFeaturesShowsNone(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "(none)") {
 		t.Errorf("expected '(none)' for zero linked features; got:\n%s", buf.String())
-	}
-}
-
-// TestRunStatusRequirement_JSONObjectShape verifies --json emits a single
-// self-contained object with the locked field names.
-func TestRunStatusRequirement_JSONObjectShape(t *testing.T) {
-	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
-	issues := []projectstatus.ProjectIssue{
-		{Number: 466, Title: "requirement-title", Body: "body", Stage: projectstatus.StageDone, Type: "requirement", State: "closed", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
-	}
-	sd := requirementDetailFixture(issues, nil, nil)
-
-	buf := &bytes.Buffer{}
-	err := runStatusRequirement(buf, io.Discard, 466, statusDetailFlags{json: true}, sd)
-	if err != nil {
-		t.Fatalf("runStatusRequirement: %v", err)
-	}
-	var parsed map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("json decode: %v; raw:\n%s", err, buf.String())
-	}
-	for _, key := range []string{"number", "title", "body", "stage", "created_at", "last_transitioned_at", "owning_repo", "blocked", "linked_features"} {
-		if _, ok := parsed[key]; !ok {
-			t.Errorf("JSON missing key %q; keys = %v", key, keysOf(parsed))
-		}
-	}
-	// Blocked must be null (absent), not missing.
-	if parsed["blocked"] != nil {
-		t.Errorf("blocked = %v, want null", parsed["blocked"])
-	}
-	// linked_features must be [] not null — consumers can iterate uniformly.
-	lf, ok := parsed["linked_features"].([]interface{})
-	if !ok || lf == nil {
-		t.Errorf("linked_features missing or wrong type: %v", parsed["linked_features"])
 	}
 }
 

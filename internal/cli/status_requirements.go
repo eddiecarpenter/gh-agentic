@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -93,8 +92,9 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 
 // runStatusRequirements is the handler for `gh agentic status requirements`.
 // It resolves the project ID, fetches the list via projectstatus, optionally
-// narrows to the current repo, then renders either the --json envelope or
-// the compact tabular list.
+// narrows to the current repo, then renders either the --raw TSV form or
+// the compact tabular human list. The --json flag was removed by feature
+// #589 in favour of the agent-oriented --raw shape.
 //
 // The legacy --kanban flag was removed by feature #518. If the caller
 // passes --kanban (hidden on this command for interception), the handler
@@ -103,8 +103,8 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 // `status` and feature #562 renamed it from `kanban` to `pipeline`.
 //
 // stderr receives the busy-indicator rendered by deps.busy while the
-// fetch is in flight; stdout (w) receives the final human or JSON output.
-// Non-TTY writers suppress the indicator — see ui.BusyRun.
+// fetch is in flight; stdout (w) receives the final output. Non-TTY
+// writers suppress the indicator — see ui.BusyRun.
 func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
 	if flags.kanban {
 		return &errPipelineCommandRenamed{suggestedCommand: "gh agentic status pipeline --requirements"}
@@ -124,8 +124,8 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 	}
 
 	// Wrap the network-bound fetch in the shared busy indicator. The
-	// indicator writes to stderr so --json consumers piping stdout to jq
-	// get clean output; non-TTY writers suppress the glyphs entirely.
+	// indicator writes to stderr so --raw consumers piping stdout get
+	// clean output; non-TTY writers suppress the glyphs entirely.
 	var reqs []projectstatus.Requirement
 	err = deps.busy(stderr, "Fetching requirements…", func() error {
 		var fetchErr error
@@ -142,10 +142,6 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 
 	if flags.raw {
 		return writeRequirementsRaw(w, reqs, flags.verbose)
-	}
-
-	if flags.json {
-		return writeRequirementsJSON(w, reqs)
 	}
 
 	return writeRequirementsTable(w, reqs, currentRepo)
@@ -283,47 +279,6 @@ func rawTimestampField(t time.Time) string {
 		return rawAbsentValue
 	}
 	return t.Format("2006-01-02")
-}
-
-// writeRequirementsJSON marshals the envelope {items, totals} as pretty
-// JSON. Items is a concrete slice rather than interface{} so the marshalled
-// shape includes every Requirement field — callers relying on schema
-// stability get a deterministic payload.
-func writeRequirementsJSON(w io.Writer, reqs []projectstatus.Requirement) error {
-	// Ensure a non-nil slice so the JSON always contains "items": [] rather
-	// than "items": null for the empty case.
-	if reqs == nil {
-		reqs = []projectstatus.Requirement{}
-	}
-	// Ensure LinkedFeatures is a non-nil slice per Requirement so the JSON
-	// emits [] rather than null — consumers parse items uniformly.
-	for i := range reqs {
-		if reqs[i].LinkedFeatures == nil {
-			reqs[i].LinkedFeatures = []projectstatus.FeatureSummary{}
-		}
-	}
-	envelope := projectstatus.ListEnvelope{
-		Items:  reqs,
-		Totals: countRequirementsTotals(reqs),
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(envelope); err != nil {
-		return fmt.Errorf("encoding JSON: %w", err)
-	}
-	return nil
-}
-
-// countRequirementsTotals computes the Open / Blocked counts rendered into
-// the list envelope totals.
-func countRequirementsTotals(reqs []projectstatus.Requirement) projectstatus.ListTotals {
-	blocked := 0
-	for _, r := range reqs {
-		if r.Blocked != nil {
-			blocked++
-		}
-	}
-	return projectstatus.ListTotals{Open: len(reqs), Blocked: blocked}
 }
 
 // anyRequirementCrossRepo returns true when any row has an owning repo that

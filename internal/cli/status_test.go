@@ -118,9 +118,10 @@ func TestStatusCmd_SubCommandsReturnNotImplemented(t *testing.T) {
 // layout flags (--kanban, --horizontal, --vertical) no longer live on
 // these commands — they have moved to `gh agentic status pipeline` (moved
 // back under `status` by feature #549 and renamed from `kanban` to
-// `pipeline` by feature #562).
+// `pipeline` by feature #562). The `--json` flag was removed by feature
+// #589 in favour of `--raw` / `--raw --verbose`.
 func TestStatusCmd_ListFlagsRegistered(t *testing.T) {
-	expected := []string{"json", "this-repo", "include-done"}
+	expected := []string{"raw", "verbose", "this-repo", "include-done"}
 
 	for _, parent := range []string{"requirements", "features"} {
 		t.Run(parent, func(t *testing.T) {
@@ -134,8 +135,8 @@ func TestStatusCmd_ListFlagsRegistered(t *testing.T) {
 					t.Errorf("status %s: expected flag --%s to be declared, but it was not", parent, name)
 				}
 			}
-			// Removed layout flags must not appear in help output.
-			for _, removed := range []string{"horizontal", "vertical"} {
+			// Removed layout / JSON flags must not appear in help output.
+			for _, removed := range []string{"horizontal", "vertical", "json"} {
 				if child.Flags().Lookup(removed) != nil {
 					t.Errorf("status %s: flag --%s should have been removed but is still declared", parent, removed)
 				}
@@ -145,12 +146,9 @@ func TestStatusCmd_ListFlagsRegistered(t *testing.T) {
 }
 
 // TestStatusCmd_DetailFlagsRegistered verifies the detail sub-commands declare
-// at least --json. They do not use --kanban etc. — detail is always either
-// rendered or JSON.
+// the agent-oriented flags (--raw, --verbose). The `--json` flag was removed
+// by feature #589.
 func TestStatusCmd_DetailFlagsRegistered(t *testing.T) {
-	for _, parent := range []string{"requirement", "features"} {
-		_ = parent
-	}
 	for _, parent := range []string{"requirement", "feature"} {
 		t.Run(parent, func(t *testing.T) {
 			cmd := newStatusCmd()
@@ -158,8 +156,13 @@ func TestStatusCmd_DetailFlagsRegistered(t *testing.T) {
 			if child == nil {
 				t.Fatalf("status: sub-command %q not found", parent)
 			}
-			if child.Flags().Lookup("json") == nil {
-				t.Errorf("status %s: expected flag --json to be declared, but it was not", parent)
+			for _, name := range []string{"raw", "verbose"} {
+				if child.Flags().Lookup(name) == nil {
+					t.Errorf("status %s: expected flag --%s to be declared, but it was not", parent, name)
+				}
+			}
+			if child.Flags().Lookup("json") != nil {
+				t.Errorf("status %s: --json should have been removed but is still declared", parent)
 			}
 		})
 	}
