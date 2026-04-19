@@ -12,7 +12,7 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
-// kanbanFlags captures the flag surface of the new `gh agentic kanban`
+// kanbanFlags captures the flag surface of the `gh agentic status kanban`
 // command. Selector flags (--requirements, --features) are mutually
 // exclusive; the remaining fields mirror the inherited kanban layout
 // flags so users can invoke the new command with the same semantics they
@@ -41,8 +41,8 @@ func registerKanbanFlags(cmd *cobra.Command, f *kanbanFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 }
 
-// newKanbanCmd constructs the `gh agentic kanban` command with production
-// dependencies. Tests use newKanbanCmdWithDeps to inject fakes.
+// newKanbanCmd constructs the `gh agentic status kanban` command with
+// production dependencies. Tests use newKanbanCmdWithDeps to inject fakes.
 func newKanbanCmd() *cobra.Command {
 	return newKanbanCmdWithDeps(defaultStatusDeps())
 }
@@ -70,16 +70,16 @@ appends the 'done' column. --this-repo narrows the federated view to
 the current repository. --json emits a stable structured payload
 suitable for jq, dashboards, and scripting.`,
 		Example: `  # Both kanbans stacked
-  gh agentic kanban
+  gh agentic status kanban
 
   # Requirements only
-  gh agentic kanban --requirements
+  gh agentic status kanban --requirements
 
   # Features only, horizontal layout, include closed features
-  gh agentic kanban --features --horizontal --include-done
+  gh agentic status kanban --features --horizontal --include-done
 
   # JSON for scripting
-  gh agentic kanban --json`,
+  gh agentic status kanban --json`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -121,7 +121,7 @@ type kanbanJSONEnvelope struct {
 	Totals       kanbanJSONTotals            `json:"totals"`
 }
 
-// runKanban is the command handler for `gh agentic kanban`. It resolves
+// runKanban is the command handler for `gh agentic status kanban`. It resolves
 // the project ID, fetches requirements and/or features (as selected by
 // the selector flags) through deps.busy so long-running federated
 // queries show a delayed indicator on stderr, then renders either the

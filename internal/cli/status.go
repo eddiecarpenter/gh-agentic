@@ -89,10 +89,11 @@ type statusListFlags struct {
 
 // registerStatusListFlags declares the shared flag set for list sub-commands.
 // After feature #518 the list sub-commands no longer carry kanban-rendering
-// flags (`--kanban`, `--horizontal`, `--vertical`) — those live on the new
-// top-level `gh agentic kanban` command. registerRemovedKanbanFlag declares
-// `--kanban` as a hidden boolean on the status commands so the handler can
-// intercept it and emit a guided migration error.
+// flags (`--kanban`, `--horizontal`, `--vertical`) — those live on the
+// `gh agentic status kanban` command (promoted to top-level by #518 and
+// moved back under `status` by #549). registerRemovedKanbanFlag declares
+// `--kanban` as a hidden boolean on the status list commands so the handler
+// can intercept it and emit a guided migration error.
 func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
@@ -105,7 +106,7 @@ func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
 // deliberate breaking change — no deprecation grace period, per §6 of the
 // feature scope — but the migration error message is actionable.
 func registerRemovedKanbanFlag(cmd *cobra.Command, kanban *bool) {
-	cmd.Flags().BoolVar(kanban, "kanban", false, "removed — use 'gh agentic kanban' instead")
+	cmd.Flags().BoolVar(kanban, "kanban", false, "removed — use 'gh agentic status kanban' instead")
 	_ = cmd.Flags().MarkHidden("kanban")
 }
 
@@ -144,8 +145,8 @@ Pass --json to emit a stable structured payload for machine consumption.
 Pass --include-done to include completed requirements; by default only open
 items are listed.
 
-For the kanban view, use 'gh agentic kanban --requirements'. The --kanban
-flag has been removed from this command.`,
+For the kanban view, use 'gh agentic status kanban --requirements'. The
+--kanban flag has been removed from this command.`,
 		Example: `  # Default list view
   gh agentic status requirements
 
@@ -155,8 +156,8 @@ flag has been removed from this command.`,
   # Include closed requirements
   gh agentic status requirements --include-done
 
-  # Kanban view — use the top-level command instead
-  gh agentic kanban --requirements`,
+  # Kanban view — use the status subcommand instead
+  gh agentic status kanban --requirements`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -240,8 +241,8 @@ Pass --json to emit a stable structured payload for machine consumption.
 Pass --include-done to include completed features; by default only open items
 are listed.
 
-For the kanban view, use 'gh agentic kanban --features'. The --kanban flag
-has been removed from this command.`,
+For the kanban view, use 'gh agentic status kanban --features'. The
+--kanban flag has been removed from this command.`,
 		Example: `  # Default list view
   gh agentic status features
 
@@ -251,8 +252,8 @@ has been removed from this command.`,
   # Narrow to the current repo
   gh agentic status features --this-repo
 
-  # Kanban view — use the top-level command instead
-  gh agentic kanban --features`,
+  # Kanban view — use the status subcommand instead
+  gh agentic status kanban --features`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

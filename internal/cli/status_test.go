@@ -114,7 +114,8 @@ func TestStatusCmd_SubCommandsReturnNotImplemented(t *testing.T) {
 // TestStatusCmd_ListFlagsRegistered verifies every stable flag the list
 // sub-commands expose is declared on both. After feature #518 the kanban
 // layout flags (--kanban, --horizontal, --vertical) no longer live on
-// these commands — they have moved to `gh agentic kanban`.
+// these commands — they have moved to `gh agentic status kanban` (moved
+// back under `status` by feature #549).
 func TestStatusCmd_ListFlagsRegistered(t *testing.T) {
 	expected := []string{"json", "this-repo", "include-done"}
 
@@ -246,8 +247,8 @@ func TestStatusCmd_KanbanFlagProducesMigrationError(t *testing.T) {
 		args           []string
 		expectContains string
 	}{
-		{"requirements", []string{"requirements", "--kanban"}, "gh agentic kanban --requirements"},
-		{"features", []string{"features", "--kanban"}, "gh agentic kanban --features"},
+		{"requirements", []string{"requirements", "--kanban"}, "gh agentic status kanban --requirements"},
+		{"features", []string{"features", "--kanban"}, "gh agentic status kanban --features"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

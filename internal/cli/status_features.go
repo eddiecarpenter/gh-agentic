@@ -19,14 +19,15 @@ import (
 //
 // The legacy --kanban flag was removed by feature #518. If the caller
 // passes --kanban (hidden on this command for interception), the handler
-// returns errKanbanFlagRemoved pointing at `gh agentic kanban --features`.
+// returns errKanbanFlagRemoved pointing at `gh agentic status kanban
+// --features` — feature #549 moved the kanban command under `status`.
 //
 // stderr receives the busy-indicator rendered by deps.busy while the
 // federated fetch is in flight; stdout (w) receives the final output.
 // Non-TTY writers suppress the indicator — see ui.BusyRun.
 func runStatusFeatures(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
 	if flags.kanban {
-		return &errKanbanFlagRemoved{suggestedCommand: "gh agentic kanban --features"}
+		return &errKanbanFlagRemoved{suggestedCommand: "gh agentic status kanban --features"}
 	}
 
 	currentRepo, err := deps.currentRepo()

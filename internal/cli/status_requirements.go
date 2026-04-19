@@ -97,14 +97,15 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 //
 // The legacy --kanban flag was removed by feature #518. If the caller
 // passes --kanban (hidden on this command for interception), the handler
-// returns errKanbanFlagRemoved pointing at `gh agentic kanban --requirements`.
+// returns errKanbanFlagRemoved pointing at `gh agentic status kanban
+// --requirements` — feature #549 moved the kanban command under `status`.
 //
 // stderr receives the busy-indicator rendered by deps.busy while the
 // fetch is in flight; stdout (w) receives the final human or JSON output.
 // Non-TTY writers suppress the indicator — see ui.BusyRun.
 func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
 	if flags.kanban {
-		return &errKanbanFlagRemoved{suggestedCommand: "gh agentic kanban --requirements"}
+		return &errKanbanFlagRemoved{suggestedCommand: "gh agentic status kanban --requirements"}
 	}
 
 	currentRepo, err := deps.currentRepo()
