@@ -35,7 +35,7 @@ gh-agentic/
 │   │   ├── project.go           ← `gh agentic project` subcommand tree
 │   │   ├── info.go              ← `gh agentic info` subcommand
 │   │   ├── status.go            ← `gh agentic status` subcommand
-│   │   └── kanban.go            ← `gh agentic kanban` subcommand
+│   │   └── pipeline.go          ← `gh agentic status pipeline` subcommand
 │   ├── init/                    ← init wizard logic
 │   ├── mount/                   ← mount logic (first-time, remount, switch)
 │   │   └── templates/           ← embedded templates for generated files
@@ -181,7 +181,7 @@ available to CI runners without manual configuration.
 | `gh agentic info` | Show the current state of this repo's agentic setup |
 | `gh agentic auth` | Manage Claude credentials used by the agent pipeline (login, refresh, check) |
 | `gh agentic status` | Show pipeline state across requirements and features |
-| `gh agentic kanban` | Render requirements and features as a kanban view |
+| `gh agentic status pipeline` | Render requirements and features as a side-by-side pipeline view |
 
 ---
 

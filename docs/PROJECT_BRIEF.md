@@ -41,7 +41,7 @@ phases that genuinely require reasoning (requirements, design, development).
 | `gh agentic auth refresh` | Push current local credentials to repo secret |
 | `gh agentic auth check` | Verify credentials are present and not expired |
 | `gh agentic status` | Show pipeline state across requirements and features |
-| `gh agentic kanban` | Render requirements and features as a kanban view |
+| `gh agentic status pipeline` | Render requirements and features as a side-by-side pipeline view |
 
 ## Separation of concerns
 

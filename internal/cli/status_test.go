@@ -23,14 +23,15 @@ func findChild(parent *cobra.Command, use string) *cobra.Command {
 }
 
 // TestStatusCmd_RegistersExpectedSubCommands verifies the command tree
-// wiring: requirements, requirement, features, feature, and kanban are
+// wiring: requirements, requirement, features, feature, and pipeline are
 // all registered as direct children of 'status'. Feature #549 moved the
-// previously top-level `kanban` command under `status`; the expected
-// list was extended accordingly.
+// previously top-level kanban command under `status`; feature #562
+// renamed it from `kanban` to `pipeline`. The expected list reflects
+// the post-#562 surface.
 func TestStatusCmd_RegistersExpectedSubCommands(t *testing.T) {
 	cmd := newStatusCmd()
 
-	wanted := []string{"requirements", "requirement", "features", "feature", "kanban"}
+	wanted := []string{"requirements", "requirement", "features", "feature", "pipeline"}
 	for _, name := range wanted {
 		if findChild(cmd, name) == nil {
 			t.Errorf("status: expected sub-command %q to be registered, but it was not", name)
@@ -66,9 +67,10 @@ func TestStatusCmd_BareInvocationShowsHelp(t *testing.T) {
 
 	out := buf.String()
 	// Help output should mention each of the five sub-commands so the human
-	// knows what they can run. `kanban` was added under `status` by feature
-	// #549.
-	for _, token := range []string{"requirements", "requirement", "features", "feature", "kanban"} {
+	// knows what they can run. The pipeline sub-command was added under
+	// `status` by feature #549 and renamed from `kanban` to `pipeline` by
+	// feature #562.
+	for _, token := range []string{"requirements", "requirement", "features", "feature", "pipeline"} {
 		if !strings.Contains(out, token) {
 			t.Errorf("status bare help missing sub-command %q in output:\n%s", token, out)
 		}
@@ -112,10 +114,11 @@ func TestStatusCmd_SubCommandsReturnNotImplemented(t *testing.T) {
 }
 
 // TestStatusCmd_ListFlagsRegistered verifies every stable flag the list
-// sub-commands expose is declared on both. After feature #518 the kanban
+// sub-commands expose is declared on both. After feature #518 the pipeline
 // layout flags (--kanban, --horizontal, --vertical) no longer live on
-// these commands — they have moved to `gh agentic status kanban` (moved
-// back under `status` by feature #549).
+// these commands — they have moved to `gh agentic status pipeline` (moved
+// back under `status` by feature #549 and renamed from `kanban` to
+// `pipeline` by feature #562).
 func TestStatusCmd_ListFlagsRegistered(t *testing.T) {
 	expected := []string{"json", "this-repo", "include-done"}
 
@@ -240,15 +243,17 @@ func TestStatusCmd_KanbanFlagHiddenOnList(t *testing.T) {
 
 // TestStatusCmd_KanbanFlagProducesMigrationError verifies that passing the
 // legacy --kanban flag to 'status requirements' / 'status features' fails
-// with the documented two-line migration message and exits non-zero.
+// with the documented two-line migration message and exits non-zero. The
+// suggested command points at the `pipeline` sub-command (the command
+// was renamed from `kanban` to `pipeline` by feature #562).
 func TestStatusCmd_KanbanFlagProducesMigrationError(t *testing.T) {
 	cases := []struct {
 		name           string
 		args           []string
 		expectContains string
 	}{
-		{"requirements", []string{"requirements", "--kanban"}, "gh agentic status kanban --requirements"},
-		{"features", []string{"features", "--kanban"}, "gh agentic status kanban --features"},
+		{"requirements", []string{"requirements", "--kanban"}, "gh agentic status pipeline --requirements"},
+		{"features", []string{"features", "--kanban"}, "gh agentic status pipeline --features"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

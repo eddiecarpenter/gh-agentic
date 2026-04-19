@@ -8,31 +8,31 @@ import (
 	"testing"
 )
 
-// kanbanSchema is the parsed form of
-// testdata/status_schemas/kanban_combined_envelope.schema.json. Tests
+// pipelineSchema is the parsed form of
+// testdata/status_schemas/pipeline_combined_envelope.schema.json. Tests
 // assert key presence against this shape rather than byte-comparing
 // payloads — the fixture is the authoritative key list.
-type kanbanSchema struct {
-	EnvelopeDefault                      map[string]string `json:"envelope_default"`
-	EnvelopeRequirementsSelector         map[string]string `json:"envelope_requirements_selector"`
-	EnvelopeFeaturesSelector             map[string]string `json:"envelope_features_selector"`
-	TotalsFieldsDefault                  map[string]string `json:"totals_fields_default"`
-	TotalsFieldsRequirementsSelector     map[string]string `json:"totals_fields_requirements_selector"`
-	TotalsFieldsFeaturesSelector         map[string]string `json:"totals_fields_features_selector"`
-	InnerRequirementFields               map[string]string `json:"inner_requirement_fields"`
-	InnerFeatureFields                   map[string]string `json:"inner_feature_fields"`
+type pipelineSchema struct {
+	EnvelopeDefault                  map[string]string `json:"envelope_default"`
+	EnvelopeRequirementsSelector     map[string]string `json:"envelope_requirements_selector"`
+	EnvelopeFeaturesSelector         map[string]string `json:"envelope_features_selector"`
+	TotalsFieldsDefault              map[string]string `json:"totals_fields_default"`
+	TotalsFieldsRequirementsSelector map[string]string `json:"totals_fields_requirements_selector"`
+	TotalsFieldsFeaturesSelector     map[string]string `json:"totals_fields_features_selector"`
+	InnerRequirementFields           map[string]string `json:"inner_requirement_fields"`
+	InnerFeatureFields               map[string]string `json:"inner_feature_fields"`
 }
 
-// loadKanbanSchema reads the fixture once and returns a parsed struct.
+// loadPipelineSchema reads the fixture once and returns a parsed struct.
 // Test authors can call this from any test rather than re-parsing.
-func loadKanbanSchema(t *testing.T) kanbanSchema {
+func loadPipelineSchema(t *testing.T) pipelineSchema {
 	t.Helper()
-	path := filepath.Join("testdata", "status_schemas", "kanban_combined_envelope.schema.json")
+	path := filepath.Join("testdata", "status_schemas", "pipeline_combined_envelope.schema.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read schema fixture: %v", err)
 	}
-	var schema kanbanSchema
+	var schema pipelineSchema
 	if err := json.Unmarshal(body, &schema); err != nil {
 		t.Fatalf("decode schema fixture: %v", err)
 	}
@@ -56,16 +56,16 @@ func keysExactly(t *testing.T, context string, got map[string]json.RawMessage, w
 	}
 }
 
-// TestKanbanJSON_CombinedEnvelopeSchema verifies the default
-// (`kanban --json`) envelope has exactly the {requirements, features,
+// TestPipelineJSON_CombinedEnvelopeSchema verifies the default
+// (`pipeline --json`) envelope has exactly the {requirements, features,
 // totals} top-level keys and the totals object has exactly
 // {open_requirements, open_features, blocked}. AC-6 / AC-14 lock.
-func TestKanbanJSON_CombinedEnvelopeSchema(t *testing.T) {
-	schema := loadKanbanSchema(t)
+func TestPipelineJSON_CombinedEnvelopeSchema(t *testing.T) {
+	schema := loadPipelineSchema(t)
 
 	buf := &bytes.Buffer{}
-	if err := runKanban(buf, &bytes.Buffer{}, kanbanFlags{json: true}, kanbanSampleDeps()); err != nil {
-		t.Fatalf("runKanban --json: %v", err)
+	if err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true}, pipelineSampleDeps()); err != nil {
+		t.Fatalf("runPipeline --json: %v", err)
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
@@ -80,15 +80,15 @@ func TestKanbanJSON_CombinedEnvelopeSchema(t *testing.T) {
 	keysExactly(t, "default totals", totals, schema.TotalsFieldsDefault)
 }
 
-// TestKanbanJSON_CombinedEnvelopeInnerRequirementFields verifies the
+// TestPipelineJSON_CombinedEnvelopeInnerRequirementFields verifies the
 // per-requirement object inside the envelope uses the locked key set —
 // guards against new fields leaking into the contract.
-func TestKanbanJSON_CombinedEnvelopeInnerRequirementFields(t *testing.T) {
-	schema := loadKanbanSchema(t)
+func TestPipelineJSON_CombinedEnvelopeInnerRequirementFields(t *testing.T) {
+	schema := loadPipelineSchema(t)
 
 	buf := &bytes.Buffer{}
-	if err := runKanban(buf, &bytes.Buffer{}, kanbanFlags{json: true}, kanbanSampleDeps()); err != nil {
-		t.Fatalf("runKanban --json: %v", err)
+	if err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true}, pipelineSampleDeps()); err != nil {
+		t.Fatalf("runPipeline --json: %v", err)
 	}
 	var envelope struct {
 		Requirements []map[string]json.RawMessage `json:"requirements"`
@@ -104,14 +104,14 @@ func TestKanbanJSON_CombinedEnvelopeInnerRequirementFields(t *testing.T) {
 	}
 }
 
-// TestKanbanJSON_CombinedEnvelopeInnerFeatureFields is the feature-side
-// counterpart to TestKanbanJSON_CombinedEnvelopeInnerRequirementFields.
-func TestKanbanJSON_CombinedEnvelopeInnerFeatureFields(t *testing.T) {
-	schema := loadKanbanSchema(t)
+// TestPipelineJSON_CombinedEnvelopeInnerFeatureFields is the feature-side
+// counterpart to TestPipelineJSON_CombinedEnvelopeInnerRequirementFields.
+func TestPipelineJSON_CombinedEnvelopeInnerFeatureFields(t *testing.T) {
+	schema := loadPipelineSchema(t)
 
 	buf := &bytes.Buffer{}
-	if err := runKanban(buf, &bytes.Buffer{}, kanbanFlags{json: true}, kanbanSampleDeps()); err != nil {
-		t.Fatalf("runKanban --json: %v", err)
+	if err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true}, pipelineSampleDeps()); err != nil {
+		t.Fatalf("runPipeline --json: %v", err)
 	}
 	var envelope struct {
 		Features []map[string]json.RawMessage `json:"features"`
@@ -127,15 +127,15 @@ func TestKanbanJSON_CombinedEnvelopeInnerFeatureFields(t *testing.T) {
 	}
 }
 
-// TestKanbanJSON_RequirementsSelectorOmitsFeaturesKey verifies the
+// TestPipelineJSON_RequirementsSelectorOmitsFeaturesKey verifies the
 // features key is absent (not null) under --requirements — AC-7.
 // Totals is scoped accordingly (no open_features key).
-func TestKanbanJSON_RequirementsSelectorOmitsFeaturesKey(t *testing.T) {
-	schema := loadKanbanSchema(t)
+func TestPipelineJSON_RequirementsSelectorOmitsFeaturesKey(t *testing.T) {
+	schema := loadPipelineSchema(t)
 
 	buf := &bytes.Buffer{}
-	if err := runKanban(buf, &bytes.Buffer{}, kanbanFlags{json: true, requirements: true}, kanbanSampleDeps()); err != nil {
-		t.Fatalf("runKanban: %v", err)
+	if err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true, requirements: true}, pipelineSampleDeps()); err != nil {
+		t.Fatalf("runPipeline: %v", err)
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
@@ -150,14 +150,14 @@ func TestKanbanJSON_RequirementsSelectorOmitsFeaturesKey(t *testing.T) {
 	keysExactly(t, "requirements-selector totals", totals, schema.TotalsFieldsRequirementsSelector)
 }
 
-// TestKanbanJSON_FeaturesSelectorOmitsRequirementsKey is the symmetric
+// TestPipelineJSON_FeaturesSelectorOmitsRequirementsKey is the symmetric
 // selector check — AC-7.
-func TestKanbanJSON_FeaturesSelectorOmitsRequirementsKey(t *testing.T) {
-	schema := loadKanbanSchema(t)
+func TestPipelineJSON_FeaturesSelectorOmitsRequirementsKey(t *testing.T) {
+	schema := loadPipelineSchema(t)
 
 	buf := &bytes.Buffer{}
-	if err := runKanban(buf, &bytes.Buffer{}, kanbanFlags{json: true, features: true}, kanbanSampleDeps()); err != nil {
-		t.Fatalf("runKanban: %v", err)
+	if err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true, features: true}, pipelineSampleDeps()); err != nil {
+		t.Fatalf("runPipeline: %v", err)
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
@@ -172,14 +172,14 @@ func TestKanbanJSON_FeaturesSelectorOmitsRequirementsKey(t *testing.T) {
 	keysExactly(t, "features-selector totals", totals, schema.TotalsFieldsFeaturesSelector)
 }
 
-// TestKanbanJSON_JQParseableOutput verifies that the default envelope is
-// valid JSON that can be decoded — a regression guard for AC-12 which
+// TestPipelineJSON_JQParseableOutput verifies that the default envelope
+// is valid JSON that can be decoded — a regression guard for AC-12 which
 // the manual smoke test pipes through jq. Running the decoder in-process
 // is equivalent coverage without the shelling-out.
-func TestKanbanJSON_JQParseableOutput(t *testing.T) {
+func TestPipelineJSON_JQParseableOutput(t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := runKanban(buf, &bytes.Buffer{}, kanbanFlags{json: true}, kanbanSampleDeps()); err != nil {
-		t.Fatalf("runKanban: %v", err)
+	if err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true}, pipelineSampleDeps()); err != nil {
+		t.Fatalf("runPipeline: %v", err)
 	}
 	var anyShape interface{}
 	dec := json.NewDecoder(buf)

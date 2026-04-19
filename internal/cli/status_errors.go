@@ -11,21 +11,24 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
 )
 
-// errKanbanFlagRemoved is returned by the status list handlers when the
-// caller passes the legacy --kanban flag. suggestedCommand is the
-// migration pointer the user sees (e.g. "gh agentic status kanban
-// --requirements"). The renderer (renderStatusError) formats it as the
-// two-line message documented in §6 of the feature #518 scope; feature
-// #549 moved the kanban command under `status`, so the pointer text was
-// updated accordingly.
-type errKanbanFlagRemoved struct {
+// errPipelineCommandRenamed is returned by the status list handlers when
+// the caller passes the legacy --kanban flag. The flag was removed by
+// feature #518 in favour of a dedicated sub-command, which was moved
+// under `status` by #549 and renamed from `kanban` to `pipeline` by
+// feature #562. suggestedCommand is the migration pointer the user sees
+// (e.g. "gh agentic status pipeline --requirements"). The renderer
+// (renderStatusError) formats it as a two-line message: the first line
+// says the flag has been removed from this command, the second line
+// suggests the new invocation.
+type errPipelineCommandRenamed struct {
 	suggestedCommand string
 }
 
 // Error satisfies the error interface. The terse phrase mirrors the first
 // line of the rendered output — callers that log err.Error() directly
-// still get a sensible message.
-func (e *errKanbanFlagRemoved) Error() string {
+// still get a sensible message. The string `--kanban` is preserved
+// because that is the legacy flag the user actually typed.
+func (e *errPipelineCommandRenamed) Error() string {
 	return "--kanban has been removed from this command"
 }
 
@@ -68,10 +71,10 @@ func renderStatusError(cmd *cobra.Command, err error) error {
 		return ErrSilent
 	}
 
-	var kfr *errKanbanFlagRemoved
-	if errors.As(err, &kfr) {
+	var pcr *errPipelineCommandRenamed
+	if errors.As(err, &pcr) {
 		fmt.Fprintln(w, "Error: --kanban has been removed from this command.")
-		fmt.Fprintln(w, "Use: "+kfr.suggestedCommand)
+		fmt.Fprintln(w, "Use: "+pcr.suggestedCommand)
 		return ErrSilent
 	}
 
@@ -91,7 +94,7 @@ func renderStatusError(cmd *cobra.Command, err error) error {
 		return ErrSilent
 	}
 
-	// --horizontal narrow terminal — the kanban renderer raises a plain
+	// --horizontal narrow terminal — the pipeline renderer raises a plain
 	// fmt.Errorf; recognise its prefix and pass through the message
 	// unchanged so the user sees the concrete width mismatch.
 	if strings.HasPrefix(err.Error(), "--horizontal requires at least") {

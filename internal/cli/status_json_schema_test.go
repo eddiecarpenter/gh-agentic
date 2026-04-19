@@ -11,7 +11,7 @@ import (
 // TestStatusJSON_FeaturesListDoesNotLeakInternalFields verifies the
 // `gh agentic status features --json` envelope contains exactly the keys
 // locked by feature #492 and no new keys — especially the internal
-// TasksTotal / TasksDone counts introduced for kanban rendering.
+// TasksTotal / TasksDone counts introduced for pipeline rendering.
 //
 // Consumers compute progress themselves from the `tasks` array on the
 // detail payload; the list envelope must remain byte-compatible.

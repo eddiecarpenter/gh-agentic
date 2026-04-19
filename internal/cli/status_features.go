@@ -19,15 +19,16 @@ import (
 //
 // The legacy --kanban flag was removed by feature #518. If the caller
 // passes --kanban (hidden on this command for interception), the handler
-// returns errKanbanFlagRemoved pointing at `gh agentic status kanban
-// --features` — feature #549 moved the kanban command under `status`.
+// returns errPipelineCommandRenamed pointing at `gh agentic status
+// pipeline --features` — feature #549 moved the sub-command under
+// `status` and feature #562 renamed it from `kanban` to `pipeline`.
 //
 // stderr receives the busy-indicator rendered by deps.busy while the
 // federated fetch is in flight; stdout (w) receives the final output.
 // Non-TTY writers suppress the indicator — see ui.BusyRun.
 func runStatusFeatures(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
 	if flags.kanban {
-		return &errKanbanFlagRemoved{suggestedCommand: "gh agentic status kanban --features"}
+		return &errPipelineCommandRenamed{suggestedCommand: "gh agentic status pipeline --features"}
 	}
 
 	currentRepo, err := deps.currentRepo()
@@ -81,8 +82,8 @@ func filterFeaturesToRepo(features []projectstatus.Feature, currentRepo string) 
 }
 
 // writeFeaturesTable renders the UX-1 features table. Every row carries a
-// compact TASKS column (values like `3/6`) so the list and the kanban
-// views surface equivalent progress information — the kanban shows a
+// compact TASKS column (values like `3/6`) so the list and the pipeline
+// views surface equivalent progress information — the pipeline shows a
 // block-bar glyph, the list shows just the numeric per AC-8. The REPO
 // column is added when at least one row is cross-repo; otherwise the
 // table is four columns wide (FEATURE / STAGE / TASKS / TITLE).

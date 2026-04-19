@@ -88,7 +88,7 @@ func TestRenderStatusError_AllClasses(t *testing.T) {
 		},
 		{
 			name:      "horizontal narrow",
-			err:       errors.New("--horizontal requires at least 120 columns. Current terminal: 80. Try without --horizontal for vertical kanban."),
+			err:       errors.New("--horizontal requires at least 120 columns. Current terminal: 80. Try without --horizontal for vertical pipeline."),
 			mustMatch: []string{"--horizontal requires at least 120 columns", "Current terminal: 80"},
 		},
 	}

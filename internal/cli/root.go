@@ -53,7 +53,7 @@ steps.
 %s manages the Claude credentials used by the agent pipeline.
 
 %s shows pipeline state across requirements and features, including the
-kanban sub-view that renders requirements and features together — the
+pipeline sub-view that renders requirements and features together — the
 first-class way to answer "where are we?" at a glance.
 
 Run 'gh agentic <command> --help' on any command for detailed usage.`,

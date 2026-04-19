@@ -86,7 +86,7 @@ type Requirement struct {
 // requirement reference, tasks, branch state, and PR state.
 //
 // TasksTotal and TasksDone are internal fields used by list-context
-// renderers (the progress bar on kanban cards and the N/M column on the
+// renderers (the progress bar on pipeline cards and the N/M column on the
 // feature list). They are deliberately tagged `json:"-"` so the `--json`
 // output retains the schema locked by feature #492 — machine consumers
 // compute progress themselves from the `tasks` array on the detail payload.
@@ -104,7 +104,7 @@ type Feature struct {
 	Branch             *BranchState        `json:"branch"`
 	PR                 *PRState            `json:"pr"`
 
-	// Internal — not serialised to --json; used by list/kanban renderers.
+	// Internal — not serialised to --json; used by list/pipeline renderers.
 	TasksTotal int `json:"-"`
 	TasksDone  int `json:"-"`
 }
