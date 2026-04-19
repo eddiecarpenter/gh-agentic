@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #538                               |
 | Branch              | feature/538-strip-v1-v2-vocabulary |
-| Last commit         | 0afc3bd                            |
+| Last commit         | 3bc6f19                            |
 | Total tasks         | 8                                  |
-| Last updated        | 2026-04-19T03:54:37+00:00          |
+| Last updated        | 2026-04-19T03:56:23+00:00          |
 
 ## Completed Tasks
 
@@ -29,14 +29,17 @@
 - **Files changed:** docs/ARCHITECTURE.md
 
 ### #543 — Clean docs/PROJECT_BRIEF.md and README.md of v1/v2 framing
-- **Implemented:** Both files describe only the current single design. Single Commands table, plain command strings, no Legacy notice, no v1-deprecated section.
+- **Implemented:** Both files describe only the current single design.
 - **Files changed:** docs/PROJECT_BRIEF.md, README.md
 
 ### #544 — Resolve docs/TUI_DESIGN.md — delete it or strip the legacy v1 framing
-- **Implemented:** Deleted the file. It was pure v1 prototype history — described the retired `gh agentic bootstrap` / `gum` / `prototype.sh` flow, Embedded/Organisation topology wording, and a post-bootstrap 'Launch Goose' step, none of which apply to the current huh-based `gh agentic init` wizard. The GitHub colour palette it documented is now self-documenting in `internal/ui/styles.go`.
-- **Files changed:** deleted docs/TUI_DESIGN.md; updated docs/ARCHITECTURE.md (removed dangling tree entry), internal/ui/styles.go (two comments)
+- **Implemented:** Deleted. Purely v1 prototype history. Updated docs/ARCHITECTURE.md (removed tree entry) and internal/ui/styles.go (two stale comments).
+- **Files changed:** deleted docs/TUI_DESIGN.md; docs/ARCHITECTURE.md, internal/ui/styles.go
+
+### #545 — Audit CATALOGUE.md and LOCALRULES.md for v1/v2 vocabulary
+- **Implemented:** CATALOGUE.md required no changes — all remaining hits are `GitHub Project V2` GraphQL type, allow-listed. LOCALRULES.md's Commands table was replaced: the retired `gh agentic bootstrap` / `inception` / `sync` entries are gone, replaced with the current subcommand surface. The `github.com/cli/go-gh/v2` library path remains — allow-listed.
+- **Files changed:** LOCALRULES.md
 
 ## Remaining Tasks
 
-- [ ] #545 — Audit CATALOGUE.md and LOCALRULES.md ← current
-- [ ] #546 — Final verification
+- [ ] #546 — Final verification ← current
