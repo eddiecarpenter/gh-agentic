@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #555                               |
 | Branch              | feature/555-topology-resolver      |
-| Last commit         | cb592a3                            |
+| Last commit         | 5f1e600                            |
 | Total tasks         | 4                                  |
-| Last updated        | 2026-04-19T04:33:18Z               |
+| Last updated        | 2026-04-19T04:34:28Z               |
 
 ## Completed Tasks
 
@@ -20,7 +20,11 @@
 - **Files changed:** internal/cli/check.go, internal/cli/repair.go
 - **Decisions:** In `repair.go`, `pdeps.GetRepoVariable` / `pdeps.FetchLinkedRepos` are preferred when set (production and tests wire these on `project.Deps`); fall back to the run-func adapter + `project.DefaultFetchLinkedRepos` only if the caller has not. In `check.go`, a tiny adapter `checkGetRepoVariable(run)` converts the existing `auth.RunCommandFunc` into the project-package `GetRepoVariableFunc`.
 
+### #558 — Add regression test reproducing charging-domain misdetection
+- **Implemented:** Added `TestResolveTopology_ChargingDomainRegression` in `internal/project/topology_regression_test.go` that reconstructs the exact production scenario from NewOpenBSS/charging-domain (no local AGENTIC_TOPOLOGY, no local AGENTIC_FRAMEWORK_VERSION, project with >1 linked repos including a CP) and asserts `federated-domain`.
+- **Files changed:** internal/project/topology_regression_test.go
+- **Decisions:** Kept the regression in its own file so the docstring and history clearly reference Feature #555; the test also asserts FetchLinkedRepos is invoked exactly once to protect the caching contract.
+
 ## Remaining Tasks
 
-- [ ] #558 — Add regression test reproducing charging-domain misdetection ← current
-- [ ] #559 — Final verification and PR manual sanity-check note
+- [ ] #559 — Final verification and PR manual sanity-check note ← current
