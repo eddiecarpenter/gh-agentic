@@ -4,29 +4,32 @@
 |---------------------|----------------------------------------------------|
 | Feature issue       | #518                                               |
 | Branch              | feature/518-kanban-command-busy-spinner            |
-| Last commit         | (pending task 5 commit)                            |
+| Last commit         | (pending task 6 commit)                            |
 | Total tasks         | 6                                                  |
-| Last updated        | 2026-04-19T02:45:00Z                               |
+| Last updated        | 2026-04-19T02:55:00Z                               |
 
 ## Completed Tasks
 
 ### #519 — Add busy-spinner utility (delayed, non-TTY guarded) — internal/ui/busy.go
-- **Implemented:** `BusyRun`, `NoopBusy`, all tests. 500ms delay / suppression precedence / auto-clear / mutex.
+- **Implemented:** BusyRun/NoopBusy with full suppression precedence + auto-clear.
 
 ### #521 — Wire busy spinner into existing status fetch commands
-- **Implemented:** `statusDeps.busy` field, threaded stderr, recordingBusy tests, non-TTY regression.
+- **Implemented:** deps.busy threaded through four handlers with stderr plumbing.
 
 ### #522 — Scaffold gh agentic kanban Cobra command
-- **Implemented:** `newKanbanCmd`, flag surface, help, stub handler.
+- **Implemented:** Full flag surface + stub handler.
 
 ### #523 — Implement gh agentic kanban behaviour
-- **Implemented:** Full runtime, JSON envelope with omitempty key-absence semantics, 15 behavioural tests.
+- **Implemented:** Real handler, combined JSON envelope with selector-scoped key omission, 15 behavioural tests.
 
 ### #524 — Remove --kanban flag from status requirements / status features
-- **Implemented:** Split `registerStatusListFlags` (now only `--json`, `--this-repo`, `--include-done`). Added `registerRemovedKanbanFlag` that declares `--kanban` as hidden on status list commands. Added `errKanbanFlagRemoved` typed error with `suggestedCommand` field; `renderStatusError` renders it as the documented two-line message ("Error: --kanban has been removed from this command." / "Use: gh agentic kanban --<selector>"). `runStatusRequirements` / `runStatusFeatures` short-circuit to this error when `flags.kanban` is true. Stripped the dead `--kanban` / `--horizontal` / `--vertical` code paths from both handlers. Updated help Long/Example text to direct users to the new command. Deleted 15 legacy kanban-on-status tests across kanban_test.go, status_requirements_test.go, status_features_test.go, status_integration_test.go (equivalent coverage lives in kanban_cmd_test.go). Updated `TestStatusCmd_ListFlagsRegistered` to expect the reduced flag set; added `TestStatusCmd_KanbanFlagHiddenOnList` and `TestStatusCmd_KanbanFlagProducesMigrationError` asserting the breaking-change contract.
-- **Files changed:** internal/cli/status.go, status_requirements.go, status_features.go, status_errors.go, status_test.go, kanban_test.go, status_requirements_test.go, status_features_test.go, status_integration_test.go
-- **Decisions:** Kept `--kanban` declared-but-hidden (rather than fully removed) so we can intercept with a guided message rather than falling back to Cobra's "unknown flag" default. `--horizontal` and `--vertical` are fully removed from the status surface; unrecognised-flag errors are acceptable for those (they never made sense without --kanban). `statusListFlags` retains its kanban/horizontal/vertical fields because the kanban command still constructs a `statusListFlags` via `kanbanToStatusListFlags` to feed `resolveKanbanLayout` — the field is dead on status but live on kanban.
+- **Implemented:** Hidden --kanban flag with guided migration error; dead layout flags stripped.
+
+### #525 — End-to-end verification + JSON schema fixture for combined kanban envelope
+- **Implemented:** New fixture `internal/cli/testdata/status_schemas/kanban_combined_envelope.schema.json` locking the default and selector envelopes plus the inner Requirement/Feature key sets (verbatim match to the existing status schemas per AC-14). New `internal/cli/kanban_json_schema_test.go` with 6 schema-bound tests: `TestKanbanJSON_CombinedEnvelopeSchema`, `*InnerRequirementFields`, `*InnerFeatureFields`, `*RequirementsSelectorOmitsFeaturesKey`, `*FeaturesSelectorOmitsRequirementsKey`, `*JQParseableOutput`. Smoke run against compiled binary verified: `kanban --help`, `status requirements --help` / `status features --help` (no layout flags), `status requirements --kanban` / `status features --kanban` (exit 1 + guided error). All ACs 1–14 now have test coverage; summary posted as closing comment on #525.
+- **Files changed:** internal/cli/testdata/status_schemas/kanban_combined_envelope.schema.json, internal/cli/kanban_json_schema_test.go
+- **Decisions:** Schema fixture captures key sets for three envelope shapes (default / --requirements selector / --features selector) and six key-set variants (plus inner Requirement / Feature). `keysExactly` helper enforces bidirectional conformance — missing-key and extra-key violations both fatal. Live federated smoke (hitting GitHub) not run — environment has no gh session; covered via build + unit tests and binary help/error paths.
 
 ## Remaining Tasks
 
-- [ ] #525 — End-to-end verification + JSON schema fixture for combined kanban envelope ← current
+(none)
