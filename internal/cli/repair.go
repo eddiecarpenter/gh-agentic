@@ -154,6 +154,22 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 				}
 			}
 
+			// Phase 4: shadow-vars batch confirm + delete. The prompt must
+			// live outside the spinner phase so huh.NewConfirm can own the
+			// terminal. One confirmation covers the whole batch.
+			if pdepsErr == nil && pipelineResult.ShadowBatch != nil {
+				shadowRes := doctorv2.RepairShadowValues(
+					pipelineResult.ShadowBatch.Items,
+					pipelineDeps.Run,
+					huhConfirm,
+				)
+				for _, line := range shadowRes.Lines {
+					fmt.Fprintln(w, line)
+				}
+				pipelineResult.Repaired += shadowRes.Repaired
+				pipelineResult.Unrepaired += shadowRes.Unrepaired
+			}
+
 			totalRepaired := projectResult.Repaired + pipelineResult.Repaired
 			totalUnrepaired := projectResult.Unrepaired + pipelineResult.Unrepaired
 
@@ -294,6 +310,23 @@ func promptValue(p doctorv2.PendingPrompt, deps doctorv2.CheckDeps) (string, err
 		return "", err
 	}
 	return value, nil
+}
+
+// huhConfirm is the production ConfirmFunc used by shadow-vars repair.
+// The description shows the bulleted list of names under the title so the
+// human sees exactly what will be removed before answering.
+func huhConfirm(title, description string) (bool, error) {
+	var confirmed bool
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title(title).
+			Description(description).
+			Value(&confirmed),
+	))
+	if err := form.Run(); err != nil {
+		return false, err
+	}
+	return confirmed, nil
 }
 
 // promptRunnerLabel mirrors initv2.collectPipelineConfig's runner picker:

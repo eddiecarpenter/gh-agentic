@@ -1,6 +1,7 @@
 package doctorv2
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -238,6 +239,196 @@ func TestRepairPipeline_PopulatesTopologyAndOwnerOnPendingPrompts(t *testing.T) 
 			t.Errorf("prompt %q owner: got %q, want %q", p.Name, p.Owner, "acme")
 		}
 	}
+}
+
+// --- RepairShadowValues tests (task #533) ---
+
+// shadowRunRecorder captures every gh invocation so tests can assert the
+// exact commands and order. Errors can be injected per key so a single
+// delete failure in the batch can be simulated.
+type shadowRunRecorder struct {
+	calls [][]string
+	errs  map[string]error // key: "kind|name"
+}
+
+func (r *shadowRunRecorder) run(name string, args ...string) (string, error) {
+	r.calls = append(r.calls, append([]string{}, args...))
+	if len(args) >= 3 && args[1] == "delete" {
+		key := args[0] + "|" + args[2]
+		if err, ok := r.errs[key]; ok {
+			return "", err
+		}
+	}
+	return "", nil
+}
+
+// recordedConfirm captures a single confirmation invocation and returns a
+// pre-arranged yes/no answer.
+type recordedConfirm struct {
+	called int
+	title  string
+	body   string
+	yes    bool
+	err    error
+}
+
+func (c *recordedConfirm) run(title, body string) (bool, error) {
+	c.called++
+	c.title = title
+	c.body = body
+	return c.yes, c.err
+}
+
+func makeShadowItems() []ShadowValue {
+	return []ShadowValue{
+		{Name: "AGENT_USER", Kind: "variable", DeleteCommand: "gh variable delete --repo acme/cp AGENT_USER"},
+		{Name: "GOOSE_AGENT_PAT", Kind: "secret", DeleteCommand: "gh secret delete --repo acme/cp GOOSE_AGENT_PAT"},
+	}
+}
+
+func TestRepairShadowValues_ConfirmYes_AllDeletesSucceed(t *testing.T) {
+	items := makeShadowItems()
+	run := &shadowRunRecorder{}
+	confirm := &recordedConfirm{yes: true}
+
+	res := RepairShadowValues(items, run.run, confirm.run)
+
+	if confirm.called != 1 {
+		t.Errorf("confirm called %d times, want exactly 1", confirm.called)
+	}
+	if res.Repaired != 2 {
+		t.Errorf("Repaired = %d, want 2", res.Repaired)
+	}
+	if res.Unrepaired != 0 {
+		t.Errorf("Unrepaired = %d, want 0", res.Unrepaired)
+	}
+	if len(run.calls) != 2 {
+		t.Fatalf("gh called %d times, want 2: %v", len(run.calls), run.calls)
+	}
+	// Delete commands use the injected runner with the right scope and name.
+	wantFirst := []string{"variable", "delete", "AGENT_USER", "--repo", "acme/cp"}
+	wantSecond := []string{"secret", "delete", "GOOSE_AGENT_PAT", "--repo", "acme/cp"}
+	if !reflectDeepEqualStrings(run.calls[0], wantFirst) {
+		t.Errorf("call 0: got %v, want %v", run.calls[0], wantFirst)
+	}
+	if !reflectDeepEqualStrings(run.calls[1], wantSecond) {
+		t.Errorf("call 1: got %v, want %v", run.calls[1], wantSecond)
+	}
+}
+
+func TestRepairShadowValues_ConfirmYes_OneFailureDoesNotAbortBatch(t *testing.T) {
+	items := makeShadowItems()
+	run := &shadowRunRecorder{
+		errs: map[string]error{
+			"variable|AGENT_USER": fmt.Errorf("boom"),
+		},
+	}
+	confirm := &recordedConfirm{yes: true}
+
+	res := RepairShadowValues(items, run.run, confirm.run)
+
+	// Both items attempted despite the first failing.
+	if len(run.calls) != 2 {
+		t.Fatalf("want 2 gh invocations, got %d: %v", len(run.calls), run.calls)
+	}
+	if res.Repaired != 1 {
+		t.Errorf("Repaired = %d, want 1 (secret succeeded)", res.Repaired)
+	}
+	if res.Unrepaired != 1 {
+		t.Errorf("Unrepaired = %d, want 1 (variable failed)", res.Unrepaired)
+	}
+	// The error message must appear in the output.
+	var sawError bool
+	for _, l := range res.Lines {
+		if strings.Contains(l, "boom") {
+			sawError = true
+		}
+	}
+	if !sawError {
+		t.Errorf("expected 'boom' in output, got:\n%v", res.Lines)
+	}
+}
+
+func TestRepairShadowValues_ConfirmNo_NoDeletesIssued(t *testing.T) {
+	items := makeShadowItems()
+	run := &shadowRunRecorder{}
+	confirm := &recordedConfirm{yes: false}
+
+	res := RepairShadowValues(items, run.run, confirm.run)
+
+	if len(run.calls) != 0 {
+		t.Errorf("expected zero gh invocations on No, got %v", run.calls)
+	}
+	if res.Repaired != 0 {
+		t.Errorf("Repaired = %d, want 0", res.Repaired)
+	}
+	if res.Unrepaired != 2 {
+		t.Errorf("Unrepaired = %d, want 2", res.Unrepaired)
+	}
+	// Each item surfaces with its original delete command (manual remedy).
+	for _, it := range items {
+		found := false
+		for _, l := range res.Lines {
+			if strings.Contains(l, it.DeleteCommand) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("manual command for %q missing from output: %v", it.Name, res.Lines)
+		}
+	}
+}
+
+func TestRepairShadowValues_EmptyItems_NoWork_NoPrompt(t *testing.T) {
+	run := &shadowRunRecorder{}
+	confirm := &recordedConfirm{yes: true}
+
+	res := RepairShadowValues(nil, run.run, confirm.run)
+
+	if confirm.called != 0 {
+		t.Errorf("expected confirm not called on empty items, was called %d", confirm.called)
+	}
+	if len(run.calls) != 0 {
+		t.Errorf("expected zero gh invocations, got %v", run.calls)
+	}
+	if res.Repaired != 0 || res.Unrepaired != 0 {
+		t.Errorf("expected zero counts, got Repaired=%d Unrepaired=%d", res.Repaired, res.Unrepaired)
+	}
+}
+
+func TestRepairShadowValues_ConfirmTitleInterpolatesCount(t *testing.T) {
+	items := makeShadowItems()
+	run := &shadowRunRecorder{}
+	confirm := &recordedConfirm{yes: false}
+
+	_ = RepairShadowValues(items, run.run, confirm.run)
+
+	// Sentence placeholder "N" is replaced with the item count.
+	if !strings.Contains(confirm.title, "Remove these 2 shadow values") {
+		t.Errorf("title: got %q, want count 2 interpolated", confirm.title)
+	}
+	// Body lists each name with its kind.
+	for _, it := range items {
+		needle := it.Name + " (" + it.Kind + ")"
+		if !strings.Contains(confirm.body, needle) {
+			t.Errorf("body missing %q; got:\n%s", needle, confirm.body)
+		}
+	}
+}
+
+// reflectDeepEqualStrings is a tiny helper so the repair tests avoid
+// pulling reflect into the package namespace.
+func reflectDeepEqualStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestRepairPipeline_NoFailures(t *testing.T) {
