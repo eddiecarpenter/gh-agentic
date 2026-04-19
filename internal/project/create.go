@@ -16,6 +16,12 @@ type CreateConfig struct {
 	Title string
 	// Version is the framework version tag to mount (e.g. "v2.0.10").
 	Version string
+	// Topology is the AGENTIC_TOPOLOGY marker to write for this repo.
+	// Empty value defaults to "federated" — Create's historical behaviour.
+	// Single-topology init sets this to "single" so the federated-owner guard
+	// does not fire on user-owned repos that are setting up a standalone
+	// control plane.
+	Topology string
 }
 
 // Create establishes this repository as a new project control plane.
@@ -23,17 +29,25 @@ type CreateConfig struct {
 // Guards:
 //   - Blocked if AGENTIC_PROJECT_ID is already set.
 //   - Blocked if the repo is already linked to a GitHub ProjectV2.
+//   - Blocked if cfg.Topology is federated and the owner is a user account.
 //
 // Steps:
 //  1. Check AGENTIC_PROJECT_ID is not already set.
 //  2. Check repo is not already linked to any project.
-//  3. Detect owner type; warn if personal account (proceed regardless).
+//  3. Detect owner type; refuse if federated+user, warn otherwise.
 //  4. Fetch owner and repo node IDs.
 //  5. Create the GitHub ProjectV2.
 //  6. Link the repo to the project.
 //  7. Set AGENTIC_PROJECT_ID repo variable.
 //  8. Clone the framework into .ai/.
 func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
+	// Default topology for control-plane creation is federated — matches the
+	// historical behaviour of this function and the CLI `project create`
+	// contract. initSingle passes "single" explicitly.
+	topology := cfg.Topology
+	if topology == "" {
+		topology = "federated"
+	}
 	// Guard 1: AGENTIC_PROJECT_ID must not already be set.
 	existing, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
 	if existing != "" {
@@ -50,13 +64,23 @@ func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 		return fmt.Errorf("repo is already linked to GitHub Project %q (%s) — unlink it first in GitHub Project settings", projects[0].Title, projects[0].ID)
 	}
 
-	// Step 3: Detect owner type and warn if personal account.
+	// Step 3: Detect owner type.
+	// Federated topology is a hard rule: it requires a GitHub Organization.
+	// Refuse here — before we create the project, write any variable, or
+	// mount the framework — if the owner is a user account. Under single
+	// topology a personal account is merely sub-optimal, so the legacy
+	// warning is preserved.
 	ownerType, err := deps.DetectOwnerType(deps.Owner)
 	if err != nil {
 		fmt.Fprintf(w, "  %s  could not detect owner type: %v\n", ui.StatusWarning.Render("⚠"), err)
-	} else if ownerType == auth.OwnerTypeUser {
-		fmt.Fprintf(w, "  %s  %s is a personal account — GitHub Projects work best on organisations\n",
-			ui.StatusWarning.Render("⚠"), deps.Owner)
+	} else {
+		if guardErr := EnsureFederatedOwnerIsOrg(topology, deps.Owner, ownerType); guardErr != nil {
+			return guardErr
+		}
+		if ownerType == auth.OwnerTypeUser {
+			fmt.Fprintf(w, "  %s  %s is a personal account — GitHub Projects work best on organisations\n",
+				ui.StatusWarning.Render("⚠"), deps.Owner)
+		}
 	}
 
 	// Step 4: Fetch owner and repo node IDs.
@@ -88,11 +112,13 @@ func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 	}
 	fmt.Fprintf(w, "  %s  %s set\n", ui.StatusOK.Render("✓"), ProjectVarName)
 
-	// Set topology marker — identifies this repo as a federated control plane.
-	if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName, "federated"); err != nil {
+	// Set topology marker. Defaults to "federated" when the caller did not
+	// specify one; single-topology init passes "single" to avoid the
+	// federated-owner guard on user-owned repos.
+	if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName, topology); err != nil {
 		return fmt.Errorf("setting %s: %w", TopologyVarName, err)
 	}
-	fmt.Fprintf(w, "  %s  %s set to federated\n", ui.StatusOK.Render("✓"), TopologyVarName)
+	fmt.Fprintf(w, "  %s  %s set to %s\n", ui.StatusOK.Render("✓"), TopologyVarName, topology)
 
 	// Set the canonical framework version for domain repos to read.
 	if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName, cfg.Version); err != nil {

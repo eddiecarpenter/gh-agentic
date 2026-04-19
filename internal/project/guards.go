@@ -1,9 +1,49 @@
 package project
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 )
+
+// FederatedRequiresOrgMessage is the verbatim user-facing message emitted when
+// a federated-topology operation is attempted against a user-owned repo.
+// Kept as a package-level format string so every call site speaks with one
+// voice and tests can assert the exact wording.
+const FederatedRequiresOrgMessage = "Federated topology requires a GitHub Organization. The owner '%s' is a user account, which cannot host org-scoped variables and secrets. Either move this repo under an organisation, or use `--topology single`."
+
+// EnsureFederatedOwnerIsOrg returns an error if a federated topology variant
+// has been chosen against a user-owned repo. A user account cannot host
+// org-scoped variables and secrets, so federated topology is refused before
+// any state-changing side effect is performed.
+//
+// Parameters:
+//   - topology  — one of "single", "federated", "federated-cp",
+//     "federated-domain", or empty. Only federated variants are guarded.
+//   - owner     — the GitHub owner login, interpolated into the error
+//     message so operators see which account tripped the guard.
+//   - ownerType — the string returned by auth.DetectOwnerType; one of
+//     auth.OwnerTypeUser ("User") or auth.OwnerTypeOrg ("Organization").
+//
+// Returns nil when topology is not federated or when ownerType is not a user
+// account. Returns an error with the verbatim FederatedRequiresOrgMessage
+// otherwise.
+func EnsureFederatedOwnerIsOrg(topology, owner, ownerType string) error {
+	// Tolerate capitalised topology strings (the initv2 form emits
+	// "Single"/"Federated"). The stricter isFederatedTopology helper used by
+	// ScopeFor stays case-sensitive to avoid accidental scope widening.
+	normalised := strings.ToLower(topology)
+	if !isFederatedTopology(normalised) {
+		return nil
+	}
+	if ownerType != auth.OwnerTypeUser {
+		return nil
+	}
+	return fmt.Errorf(FederatedRequiresOrgMessage, owner)
+}
 
 // JoinGuard describes the outcome of the guard evaluation for join/unlink operations.
 type JoinGuard int

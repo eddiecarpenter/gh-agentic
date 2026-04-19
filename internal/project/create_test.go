@@ -181,7 +181,10 @@ func TestCreate_ScaffoldsProjectFromEmbeddedTemplate(t *testing.T) {
 	}
 }
 
-func TestCreate_WarnsForPersonalAccount(t *testing.T) {
+func TestCreate_WarnsForPersonalAccount_SingleTopology(t *testing.T) {
+	// Under single topology a personal account is merely sub-optimal — the
+	// warning is preserved for discoverability. Federated + user is refused
+	// (see TestCreate_FederatedUserOwner_RefusesWithVerbatimError).
 	tmp := t.TempDir()
 
 	deps := testDeps("owner", "repo")
@@ -195,13 +198,140 @@ func TestCreate_WarnsForPersonalAccount(t *testing.T) {
 	deps.DetectOwnerType = func(owner string) (string, error) {
 		return "User", nil
 	}
+	deps.FetchOwnerAndRepoIDs = func(owner, repo string) (string, string, error) {
+		return "O_owner", "R_repo", nil
+	}
+	deps.CreateProject = func(ownerID, title string) (string, error) { return "PVT_x", nil }
+	deps.LinkRepoToProject = func(projectID, repoID string) error { return nil }
+	deps.SetRepoVariable = func(o, r, n, v string) error { return nil }
+	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
 
 	var buf bytes.Buffer
-	_ = Create(&buf, deps, CreateConfig{Title: "My Project", Version: "v2.0.10"})
+	_ = Create(&buf, deps, CreateConfig{Title: "My Project", Version: "v2.0.10", Topology: "single"})
 
 	out := buf.String()
 	if !strings.Contains(out, "personal account") {
 		t.Errorf("expected personal account warning in output, got:\n%s", out)
+	}
+}
+
+func TestCreate_FederatedUserOwner_RefusesWithVerbatimError(t *testing.T) {
+	tmp := t.TempDir()
+
+	var createProjectCalled bool
+
+	deps := testDeps("eddie", "repo")
+	deps.Root = tmp
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		return "", errors.New("not set")
+	}
+	deps.FetchProjectsForRepo = func(o, r string) ([]ProjectInfo, error) {
+		return nil, nil
+	}
+	deps.DetectOwnerType = func(owner string) (string, error) {
+		return "User", nil
+	}
+	deps.CreateProject = func(ownerID, title string) (string, error) {
+		createProjectCalled = true
+		return "PVT_shouldnt", nil
+	}
+
+	var buf bytes.Buffer
+	// Default topology is "federated" (no Topology field → historical behaviour).
+	err := Create(&buf, deps, CreateConfig{Title: "x", Version: "v2.0.10"})
+	if err == nil {
+		t.Fatal("expected error for federated+user owner")
+	}
+	want := "Federated topology requires a GitHub Organization. The owner 'eddie' is a user account, which cannot host org-scoped variables and secrets. Either move this repo under an organisation, or use `--topology single`."
+	if err.Error() != want {
+		t.Fatalf("error mismatch:\ngot:  %q\nwant: %q", err.Error(), want)
+	}
+	if createProjectCalled {
+		t.Error("CreateProject must not be called when guard refuses")
+	}
+}
+
+func TestCreate_SingleTopology_UserOwner_Proceeds(t *testing.T) {
+	// Single topology is still allowed on user accounts — only federated
+	// is hard-blocked. Verify the guard does not fire and the project is
+	// created as before.
+	tmp := t.TempDir()
+
+	var createProjectCalled bool
+	var topologyWritten string
+
+	deps := testDeps("eddie", "repo")
+	deps.Root = tmp
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		return "", errors.New("not set")
+	}
+	deps.FetchProjectsForRepo = func(o, r string) ([]ProjectInfo, error) {
+		return nil, nil
+	}
+	deps.DetectOwnerType = func(owner string) (string, error) {
+		return "User", nil
+	}
+	deps.FetchOwnerAndRepoIDs = func(owner, repo string) (string, string, error) {
+		return "O_e", "R_r", nil
+	}
+	deps.CreateProject = func(ownerID, title string) (string, error) {
+		createProjectCalled = true
+		return "PVT_single", nil
+	}
+	deps.LinkRepoToProject = func(projectID, repoID string) error { return nil }
+	deps.SetRepoVariable = func(o, r, n, v string) error {
+		if n == TopologyVarName {
+			topologyWritten = v
+		}
+		return nil
+	}
+	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
+
+	var buf bytes.Buffer
+	err := Create(&buf, deps, CreateConfig{Title: "x", Version: "v2.0.10", Topology: "single"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !createProjectCalled {
+		t.Error("expected CreateProject to be called for single-topology user owner")
+	}
+	if topologyWritten != "single" {
+		t.Errorf("expected AGENTIC_TOPOLOGY=single, got %q", topologyWritten)
+	}
+}
+
+func TestCreate_FederatedOrgOwner_Proceeds(t *testing.T) {
+	// Baseline: federated + org owner must still work.
+	tmp := t.TempDir()
+
+	var topologyWritten string
+
+	deps := testDeps("acme", "repo")
+	deps.Root = tmp
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		return "", errors.New("not set")
+	}
+	deps.FetchProjectsForRepo = func(o, r string) ([]ProjectInfo, error) { return nil, nil }
+	deps.DetectOwnerType = func(owner string) (string, error) { return "Organization", nil }
+	deps.FetchOwnerAndRepoIDs = func(owner, repo string) (string, string, error) {
+		return "O_a", "R_r", nil
+	}
+	deps.CreateProject = func(ownerID, title string) (string, error) { return "PVT_fed", nil }
+	deps.LinkRepoToProject = func(projectID, repoID string) error { return nil }
+	deps.SetRepoVariable = func(o, r, n, v string) error {
+		if n == TopologyVarName {
+			topologyWritten = v
+		}
+		return nil
+	}
+	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
+
+	var buf bytes.Buffer
+	if err := Create(&buf, deps, CreateConfig{Title: "x", Version: "v2.0.10"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if topologyWritten != "federated" {
+		t.Errorf("expected AGENTIC_TOPOLOGY=federated, got %q", topologyWritten)
 	}
 }
 

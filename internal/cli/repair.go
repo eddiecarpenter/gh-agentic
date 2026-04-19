@@ -85,6 +85,16 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			// If --topology was passed directly, force a topology repair even when
 			// the check didn't flag it (covers the "wrong value, undetectable" case).
 			if chosenTopology != "" {
+				// Refuse federated topology against a user-owned repo before
+				// any side effect runs. DetectOwnerType is best-effort — if
+				// it fails, the guard inside repairTopologyVars still enforces
+				// the rule when the detected type is available there.
+				if ownerType, otErr := deps.DetectOwnerType(deps.Owner); otErr == nil {
+					if guardErr := project.EnsureFederatedOwnerIsOrg(chosenTopology, deps.Owner, ownerType); guardErr != nil {
+						return guardErr
+					}
+				}
+
 				var topoResult project.RepairResult
 				_ = ui.RunWithDynamicSpinner(w, "Repairing topology variables...", func(setLabel func(string)) error {
 					topoResult = project.RepairTopologyWithChoice(deps, chosenTopology)
