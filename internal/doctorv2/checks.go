@@ -50,6 +50,11 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		base = append(base, checkGroupStep{"Checking workflows...", checkWorkflows})
 		base = append(base, checkGroupStep{"Checking variables and secrets...", checkVariablesAndSecrets})
 	}
+	// Shadow-vars runs under every federated variant; single topology
+	// gets a no-op result for uniformity (see checkShadowVars).
+	if scope.IsFederatedTopology(deps.Topology) {
+		base = append(base, checkGroupStep{"Checking for shadow values...", checkShadowVars})
+	}
 	// Project reachability applies to every topology — all of them consume the
 	// GitHub Project board via `gh agentic status`. Added last so it lands at
 	// the bottom of the report, near the "what the agent actually needs" view.
@@ -555,6 +560,149 @@ func containsSecretName(out, name string) bool {
 func remediationSet(kind, name string, deps CheckDeps) string {
 	flag, target := scope.ScopeFor(name, deps.Topology, deps.Owner, deps.RepoFullName)
 	return fmt.Sprintf("gh %s set %s %s %s", kind, name, flag, target)
+}
+
+// --- shadow-vars check ---
+
+// ShadowValue describes a shared variable or secret that is present at
+// both org and repo scope on a federated repo — the write at --repo
+// silently overrides the org-level value, which is the root cause of the
+// federated-org-scoped-vars feature. Emitted by FindShadowValues and
+// consumed by checkShadowVars' CheckResults and the repair pipeline.
+type ShadowValue struct {
+	// Name is the variable or secret name.
+	Name string
+	// Kind is "variable" or "secret".
+	Kind string
+	// DeleteCommand is the exact gh command that removes the shadow.
+	DeleteCommand string
+}
+
+// shadowGhListQuery is a fake-friendly seam: the code path always calls
+// deps.Run but the test harness can assert which list queries happened.
+
+// FindShadowValues returns every shared name that currently exists at
+// both `--org <owner>` and `--repo <owner/repo>` scope. Under single
+// topology (or any topology that is not a federated variant) no
+// consultation happens and the returned slice is nil — shadows are
+// meaningless when everything lives at the repo.
+//
+// This helper is used both by checkShadowVars (to populate CheckResults)
+// and by the repair pipeline (to drive the batch-delete confirmation
+// prompt). Callers that need both the check output and the repair data
+// may call this once and reuse the slice.
+func FindShadowValues(deps CheckDeps) []ShadowValue {
+	if !scope.IsFederatedTopology(deps.Topology) {
+		return nil
+	}
+	if deps.Run == nil {
+		return nil
+	}
+
+	// Query all four lists exactly once. On error we treat the listing as
+	// empty — if the org listing errors we cannot prove a shadow exists
+	// (which is the safer default than false-positive Fail).
+	varRepoOut, _ := deps.Run("gh", "variable", "list", "--repo", deps.RepoFullName)
+	varOrgOut, _ := deps.Run("gh", "variable", "list", "--org", deps.Owner)
+	secRepoOut, _ := deps.Run("gh", "secret", "list", "--repo", deps.RepoFullName)
+	secOrgOut, _ := deps.Run("gh", "secret", "list", "--org", deps.Owner)
+
+	// Ordered iteration so tests get deterministic output without relying
+	// on map iteration order. The names themselves come from scope's
+	// canonical shared set; we iterate a stable slice here.
+	shared := []string{
+		"AGENT_USER",
+		"RUNNER_LABEL",
+		"GOOSE_PROVIDER",
+		"GOOSE_MODEL",
+		"GOOSE_AGENT_PAT",
+		"CLAUDE_CREDENTIALS_JSON",
+	}
+
+	var shadows []ShadowValue
+	for _, name := range shared {
+		// Defensive: if scope stops treating a name as shared, skip it
+		// here too. Keeps this helper honest if the canonical list drifts.
+		if !scope.IsSharedName(name) {
+			continue
+		}
+		// Variables are usually ambient; secrets occasionally carry the
+		// same name under a different kind. The feature's contract is
+		// "shared name under federated lives at org", so we check each
+		// kind independently.
+		varAtRepo := containsVariableName(varRepoOut, name)
+		varAtOrg := containsVariableName(varOrgOut, name)
+		if varAtRepo && varAtOrg {
+			shadows = append(shadows, ShadowValue{
+				Name:          name,
+				Kind:          "variable",
+				DeleteCommand: fmt.Sprintf("gh variable delete --repo %s %s", deps.RepoFullName, name),
+			})
+		}
+		secAtRepo := containsSecretName(secRepoOut, name)
+		secAtOrg := containsSecretName(secOrgOut, name)
+		if secAtRepo && secAtOrg {
+			shadows = append(shadows, ShadowValue{
+				Name:          name,
+				Kind:          "secret",
+				DeleteCommand: fmt.Sprintf("gh secret delete --repo %s %s", deps.RepoFullName, name),
+			})
+		}
+	}
+	return shadows
+}
+
+// checkShadowVars reports whether any shared variable/secret exists at
+// both org and repo scope under federated topology. Under single topology
+// it returns an empty group — the concept does not apply.
+//
+// When shadows are present the group contains one Fail CheckResult per
+// shadow, each with the exact delete command as its Remediation. The
+// first such result also carries the structured []ShadowValue on
+// CheckResult.Data so the repair pipeline can consume the list without
+// re-querying.
+func checkShadowVars(deps CheckDeps) Group {
+	g := Group{Name: "Shadow values"}
+
+	if !scope.IsFederatedTopology(deps.Topology) {
+		// Not applicable under single or unknown topology — return a
+		// benign informational result that matches the pattern used by
+		// the other topology-conditional checks.
+		g.Results = append(g.Results, CheckResult{
+			Name:    "shadow-vars",
+			Status:  Pass,
+			Message: "shadow-vars — not applicable under single topology",
+		})
+		return g
+	}
+
+	shadows := FindShadowValues(deps)
+	if len(shadows) == 0 {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "shadow-vars",
+			Status:  Pass,
+			Message: "No repo-scoped shadow values found",
+		})
+		return g
+	}
+
+	// First result carries the structured data so repair can consume the
+	// slice directly.
+	g.Results = append(g.Results, CheckResult{
+		Name:    "shadow-vars",
+		Status:  Fail,
+		Message: fmt.Sprintf("%d shadow value(s) detected — repo-scoped values override org inheritance", len(shadows)),
+		Data:    shadows,
+	})
+	for _, s := range shadows {
+		g.Results = append(g.Results, CheckResult{
+			Name:        fmt.Sprintf("shadow-vars:%s:%s", s.Kind, s.Name),
+			Status:      Fail,
+			Message:     fmt.Sprintf("%s %q shadows the org-level value", s.Kind, s.Name),
+			Remediation: s.DeleteCommand,
+		})
+	}
+	return g
 }
 
 // fileExists returns true if the path exists and is a regular file.

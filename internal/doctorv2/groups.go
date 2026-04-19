@@ -28,6 +28,11 @@ type CheckResult struct {
 	Status      Status
 	Message     string
 	Remediation string // Optional command to fix the issue.
+	// Data optionally carries structured output for downstream consumers.
+	// checkShadowVars attaches the list of shadow values here so the
+	// repair pipeline can consume them without re-querying. Most checks
+	// leave this nil.
+	Data any
 }
 
 // Group holds a named group of check results.
