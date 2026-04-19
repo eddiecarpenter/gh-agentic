@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/spf13/cobra"
@@ -111,17 +110,16 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 				}
 
 				setLabel("Resolving pipeline topology...")
+				// Single canonical read through project.Resolve — every
+				// AGENTIC_* read in the check command now flows through
+				// the resolver so the pipeline-side CheckDeps stay in
+				// sync with project-side decisions.
+				ctx, _ := project.Resolve(projectDeps)
 				projectID := ""
 				topology := ""
-				if info.FullName != "" {
-					projectID, _ = runGetVariable(deps.run, info.FullName, project.ProjectVarName)
-					topology, _ = project.ResolveTopology(project.ResolveTopologyDeps{
-						Owner:            info.Owner,
-						Repo:             info.RepoName,
-						ProjectID:        projectID,
-						GetRepoVariable:  checkGetRepoVariable(deps.run),
-						FetchLinkedRepos: deps.fetchLinkedRepos,
-					})
+				if ctx != nil {
+					projectID = ctx.ProjectID
+					topology = ctx.Topology
 				}
 
 				pipelineCheckDeps := doctor.CheckDeps{
@@ -181,21 +179,3 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 	}
 }
 
-// runGetVariable reads a GitHub repo variable value using the gh CLI.
-func runGetVariable(run auth.RunCommandFunc, repoFullName, name string) (string, error) {
-	if run == nil {
-		return "", fmt.Errorf("no run func")
-	}
-	out, err := run("gh", "variable", "get", name, "--repo", repoFullName)
-	return strings.TrimSpace(out), err
-}
-
-// checkGetRepoVariable adapts an auth.RunCommandFunc into a
-// project.GetRepoVariableFunc so the shared topology resolver (which
-// takes owner + repo separately) can read repo variables via the gh CLI
-// without introducing a direct dependency on auth.RunCommandFunc.
-func checkGetRepoVariable(run auth.RunCommandFunc) project.GetRepoVariableFunc {
-	return func(owner, repo, name string) (string, error) {
-		return runGetVariable(run, owner+"/"+repo, name)
-	}
-}

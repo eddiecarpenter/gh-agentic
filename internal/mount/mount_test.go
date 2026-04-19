@@ -169,52 +169,9 @@ func TestDownloadFramework_CleansExistingAI(t *testing.T) {
 	}
 }
 
-func TestReadAIVersion_Exists(t *testing.T) {
-	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, ".ai-version"), []byte("v2.0.0\n"), 0o644)
-
-	v, err := ReadAIVersion(root)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != "v2.0.0" {
-		t.Errorf("expected v2.0.0, got %q", v)
-	}
-}
-
-func TestReadAIVersion_NotExists(t *testing.T) {
-	root := t.TempDir()
-	_, err := ReadAIVersion(root)
-	if err == nil {
-		t.Fatal("expected error when .ai-version does not exist")
-	}
-}
-
-func TestReadAIVersion_Empty(t *testing.T) {
-	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, ".ai-version"), []byte("  \n"), 0o644)
-
-	_, err := ReadAIVersion(root)
-	if err == nil {
-		t.Fatal("expected error for empty .ai-version")
-	}
-}
-
-func TestWriteAIVersion(t *testing.T) {
-	root := t.TempDir()
-	err := WriteAIVersion(root, "v2.1.0")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(root, ".ai-version"))
-	if err != nil {
-		t.Fatalf("reading .ai-version: %v", err)
-	}
-	if strings.TrimSpace(string(data)) != "v2.1.0" {
-		t.Errorf("expected v2.1.0, got %q", string(data))
-	}
-}
+// The .ai-version flat-file readers and writer were removed in #585 —
+// the mounted version lives in .ai/.git metadata, which ReadAIVersionFromGit
+// reads directly. No unit test is kept for the deleted helpers.
 
 func TestEnsureGitignore_Creates(t *testing.T) {
 	root := t.TempDir()

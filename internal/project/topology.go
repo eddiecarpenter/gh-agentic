@@ -1,7 +1,5 @@
 package project
 
-import "strings"
-
 // Canonical topology strings returned by ResolveTopology and consumed by
 // downstream checks/repairs.
 const (
@@ -31,96 +29,52 @@ type ResolveTopologyDeps struct {
 	FetchLinkedRepos FetchLinkedReposFunc
 }
 
-// ResolveTopology is the single source of truth for determining pipeline
-// topology for the current repository. Both `gh agentic check` and
-// `gh agentic repair` invoke it — no other code path should decide
-// topology locally.
+// ResolveTopology is retained as a thin wrapper over Resolve for call sites
+// that only need the topology string and do not yet carry a full project.Deps
+// bundle. New code should call Resolve directly.
 //
-// Precedence:
+// The canonical precedence — AGENTIC_TOPOLOGY override, then project-linked-
+// repos inspection, then the no-affiliation default — is defined in Resolve;
+// this wrapper forwards to the same internal implementation used there so
+// the two entry points never drift.
 //
-//  1. If AGENTIC_TOPOLOGY is set on the local repo, honour it:
-//     - "federated" → delegate to resolveTopologyMode (inspects
-//     AGENTIC_FRAMEWORK_VERSION to decide federated-cp vs
-//     federated-domain). The control plane is the only repo that sets
-//     AGENTIC_FRAMEWORK_VERSION on itself.
-//     - "single"    → return "single".
-//
-//  2. Otherwise, when ProjectID is known, inspect the project's linked
-//     repos:
-//     - 0 or 1 linked repos AND no local AGENTIC_FRAMEWORK_VERSION →
-//     "single" (the repo stands alone).
-//     - More than 1 linked repo → federated. Delegate to
-//     resolveTopologyMode.
-//
-//  3. No project affiliation (empty ProjectID) → "single". This
-//     preserves existing behaviour for un-affiliated repositories.
-//
-// The prior `federated-domain → single` downgrade is intentionally gone.
-// A federated domain repo that happens to lack AGENTIC_TOPOLOGY locally
-// (because only the control plane broadcasts shared values) must now be
-// detected correctly as "federated-domain".
-//
-// FetchLinkedRepos is called at most once per invocation — its result
-// (or error) is captured once and reused.
-//
-// Errors are propagated only when FetchLinkedRepos itself fails.
-// Missing/unset variables are treated as "not set" rather than errors,
-// because the gh CLI returns a non-zero exit code for a missing
-// variable and that is the common case, not an exceptional one.
+// Preserves the historic behaviour of this function:
+//   - FetchLinkedRepos is called at most once per invocation.
+//   - Missing/unset variables are treated as "not set" rather than errors.
+//   - Only a genuine FetchLinkedRepos failure propagates as an error.
 func ResolveTopology(deps ResolveTopologyDeps) (string, error) {
-	if deps.GetRepoVariable == nil {
-		// Without the ability to read variables, we cannot inspect the
-		// local signals at all — fall back to the safe default.
-		return TopologyStringSingle, nil
+	// Adapt the thin-slice ResolveTopologyDeps to the full project.Deps
+	// shape used by the shared helpers. Only the fields the topology
+	// decision reads are required; everything else is left at its zero
+	// value.
+	fullDeps := Deps{
+		Owner:            deps.Owner,
+		RepoName:         deps.Repo,
+		RepoFullName:     deps.Owner + "/" + deps.Repo,
+		GetRepoVariable:  deps.GetRepoVariable,
+		FetchLinkedRepos: deps.FetchLinkedRepos,
 	}
 
-	topoVal, _ := deps.GetRepoVariable(deps.Owner, deps.Repo, TopologyVarName)
-	switch strings.TrimSpace(topoVal) {
+	// The historic wrapper contract: FetchLinkedRepos must not be called
+	// on the variable-set path. Short-circuit here before any network
+	// call happens so that behaviour is preserved.
+	if fullDeps.GetRepoVariable == nil {
+		return TopologyStringSingle, nil
+	}
+	topoVal, _ := fullDeps.GetRepoVariable(deps.Owner, deps.Repo, TopologyVarName)
+	switch trim(topoVal) {
 	case "federated":
-		return resolveTopologyMode(deps), nil
+		return resolveFederatedMode(fullDeps), nil
 	case "single":
 		return TopologyStringSingle, nil
 	}
-
-	// AGENTIC_TOPOLOGY is unset — fall back to the project-linked-repos
-	// signal, which is how a federated domain repo is correctly
-	// identified even when it never sets the variable locally.
-	if deps.ProjectID == "" {
+	if deps.ProjectID == "" || deps.FetchLinkedRepos == nil {
 		return TopologyStringSingle, nil
 	}
-	if deps.FetchLinkedRepos == nil {
-		return TopologyStringSingle, nil
-	}
-
 	linked, err := deps.FetchLinkedRepos(deps.ProjectID)
 	if err != nil {
 		return "", err
 	}
-
-	versionVal, _ := deps.GetRepoVariable(deps.Owner, deps.Repo, FrameworkVersionVarName)
-	hasVersion := strings.TrimSpace(versionVal) != ""
-
-	if len(linked) <= 1 && !hasVersion {
-		return TopologyStringSingle, nil
-	}
-	return resolveTopologyMode(deps), nil
+	return resolveTopologyWithLinked(fullDeps, deps.ProjectID, linked, nil)
 }
 
-// resolveTopologyMode decides between "federated-cp" and
-// "federated-domain" by inspecting AGENTIC_FRAMEWORK_VERSION on the
-// current repo. Only the control plane sets that variable on itself,
-// so its presence is a reliable CP marker.
-//
-// This helper is internal to the resolver — callers must go through
-// ResolveTopology so that all the precedence rules (unset variable,
-// no project affiliation, linked-repo inspection) are applied.
-func resolveTopologyMode(deps ResolveTopologyDeps) string {
-	if deps.GetRepoVariable == nil {
-		return TopologyStringFederatedDomain
-	}
-	out, err := deps.GetRepoVariable(deps.Owner, deps.Repo, FrameworkVersionVarName)
-	if err == nil && strings.TrimSpace(out) != "" {
-		return TopologyStringFederatedCP
-	}
-	return TopologyStringFederatedDomain
-}

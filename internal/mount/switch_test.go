@@ -12,8 +12,9 @@ func TestRunSwitch_ConfirmAndUpdate(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	// Set up existing state.
-	_ = WriteAIVersion(root, "v1.5.6")
+	// Set up existing state. The flat .ai-version file was removed in
+	// #585 — the switch flow tracks version via .ai/.git metadata, so
+	// the test only needs the workflow files to verify the rewrite.
 	_ = os.MkdirAll(filepath.Join(root, ".github", "workflows"), 0o755)
 	_ = os.WriteFile(filepath.Join(root, ".github", "workflows", "agentic-pipeline.yml"),
 		[]byte(workflowTemplate("v1.5.6")), 0o644)
@@ -31,12 +32,6 @@ func TestRunSwitch_ConfirmAndUpdate(t *testing.T) {
 	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", fetch, confirm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Verify .ai-version updated.
-	v, _ := ReadAIVersion(root)
-	if v != "v2.0.0" {
-		t.Errorf("expected v2.0.0, got %q", v)
 	}
 
 	// Verify framework updated.
@@ -73,8 +68,6 @@ func TestRunSwitch_Declined(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	_ = WriteAIVersion(root, "v1.5.6")
-
 	fetch := fakeClone(map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
 	})
@@ -88,10 +81,10 @@ func TestRunSwitch_Declined(t *testing.T) {
 		t.Fatalf("expected nil error when declined, got: %v", err)
 	}
 
-	// Version should NOT have changed.
-	v, _ := ReadAIVersion(root)
-	if v != "v1.5.6" {
-		t.Errorf("version should remain v1.5.6, got %q", v)
+	// Nothing should have been downloaded. Absence of .ai/ proves the
+	// switch path did not run after decline.
+	if _, err := os.Stat(filepath.Join(root, ".ai")); err == nil {
+		t.Error(".ai/ should not be created when the switch is declined")
 	}
 }
 
@@ -99,7 +92,6 @@ func TestRunSwitch_NilConfirm(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	_ = WriteAIVersion(root, "v1.5.6")
 	_ = os.MkdirAll(filepath.Join(root, ".github", "workflows"), 0o755)
 	_ = os.WriteFile(filepath.Join(root, ".github", "workflows", "agentic-pipeline.yml"),
 		[]byte(workflowTemplate("v1.5.6")), 0o644)
@@ -114,17 +106,16 @@ func TestRunSwitch_NilConfirm(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	v, _ := ReadAIVersion(root)
-	if v != "v2.0.0" {
-		t.Errorf("expected v2.0.0, got %q", v)
+	// Verify the framework was remounted by checking the RULEBOOK content.
+	data, _ := os.ReadFile(filepath.Join(root, ".ai", "RULEBOOK.md"))
+	if !strings.Contains(string(data), "v2.0.0") {
+		t.Errorf("expected v2.0.0 in RULEBOOK, got: %s", data)
 	}
 }
 
 func TestRunSwitch_DownloadFailure(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
-
-	_ = WriteAIVersion(root, "v1.5.6")
 
 	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", fakeCloneError("network"), nil)
 	if err == nil {

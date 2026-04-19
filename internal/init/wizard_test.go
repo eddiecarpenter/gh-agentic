@@ -514,11 +514,16 @@ func TestParseRepoFromURL_HTTPS(t *testing.T) {
 func TestCheckAIVersionExists(t *testing.T) {
 	root := t.TempDir()
 	if CheckAIVersionExists(root) {
-		t.Error("should return false for non-existent .ai-version")
+		t.Error("should return false when .ai/ is not present")
 	}
 
-	_ = mount.WriteAIVersion(root, "v1.0.0")
+	// Create a .ai/ directory to simulate a mounted framework — the
+	// .ai-version flat file was removed in #585, so the init wizard
+	// uses directory presence as the "already initialised" signal.
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+		t.Fatalf("creating .ai/: %v", err)
+	}
 	if !CheckAIVersionExists(root) {
-		t.Error("should return true for existing .ai-version")
+		t.Error("should return true when .ai/ directory is present")
 	}
 }

@@ -441,6 +441,11 @@ func TestRepairPipeline_NoFailures(t *testing.T) {
 		RepoName:     "repo",
 		OwnerType:    "User",
 		Topology:     "single",
+		// ProjectID is supplied by the resolver in production; the
+		// doctor trusts it directly (task #583 removed the gh-CLI
+		// fallback read in checkProjectReachability).
+		ProjectID: "PVT_configured",
+		FetchProjectTitle: func(id string) (string, error) { return "Healthy", nil },
 		Run: func(name string, args ...string) (string, error) {
 			if name == "gh" && len(args) > 1 && args[0] == "variable" && args[1] == "get" {
 				return "configured", nil

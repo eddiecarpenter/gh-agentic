@@ -130,19 +130,21 @@ func initFederated(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 	}
 	fmt.Fprintf(w, "  %s  %s set\n", ui.StatusOK.Render("✓"), ProjectVarName)
 
-	// Mount the framework at the control plane version.
+	// Mount the framework at the control plane version. The mounted version
+	// is tracked via .ai/.git metadata — no flat .ai-version file is
+	// written (removed by feature #571 / task #585).
 	aiDir := filepath.Join(deps.Root, ".ai")
 	if _, err := os.Stat(aiDir); os.IsNotExist(err) {
 		fmt.Fprintf(w, "  Mounting framework %s...\n", cpVersion)
 		if err := mount.DownloadFramework(deps.Root, cpVersion, deps.Clone); err != nil {
 			return fmt.Errorf("mounting framework: %w", err)
 		}
-		if err := mount.WriteAIVersion(deps.Root, cpVersion); err != nil {
-			return fmt.Errorf("writing .ai-version: %w", err)
-		}
 		fmt.Fprintf(w, "  %s  Framework mounted at %s\n", ui.StatusOK.Render("✓"), cpVersion)
 	} else {
-		localVersion, _ := deps.ReadAIVersion(deps.Root)
+		localVersion, _ := mount.ReadAIVersionFromGit(deps.Root)
+		if localVersion == "" {
+			localVersion = "(unknown)"
+		}
 		fmt.Fprintf(w, "  %s  Framework already mounted at %s\n", ui.StatusOK.Render("✓"), localVersion)
 	}
 

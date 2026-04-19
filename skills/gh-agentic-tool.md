@@ -91,6 +91,13 @@ Flags:
 - `--yes` (`-y`) — skip the confirmation prompt when the version is
   changing (for scripts).
 
+**Version resolution:** `project.Resolve` is the single canonical source. On
+a single-topology or federated-CP repo, the pinned version comes from
+`AGENTIC_FRAMEWORK_VERSION` on the repo itself (falling back to the clone's
+`.ai/.git` metadata, and then to the latest release). On a federated domain
+repo, the pinned version is read from `AGENTIC_FRAMEWORK_VERSION` on the
+control-plane repo so every domain stays in lock-step with the CP.
+
 ### `gh agentic upgrade [version]`
 
 Change the framework version for the whole agentic project. Valid only on

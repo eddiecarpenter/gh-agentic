@@ -195,18 +195,16 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 }
 
 // buildPipelineCheckDeps constructs the doctor.CheckDeps used for the
-// pipeline-side health checks, mirroring how `gh agentic check` resolves them.
+// pipeline-side health checks. It routes every AGENTIC_* read through the
+// single canonical resolver (project.Resolve), so both the topology
+// decision and the ProjectID come from the same code path.
 func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 	root, err := os.Getwd()
 	if err != nil {
 		return doctor.CheckDeps{}, fmt.Errorf("resolving working directory: %w", err)
 	}
 
-	repoFullName := pdeps.RepoFullName
-	owner := pdeps.Owner
-	repoName := pdeps.RepoName
-
-	ownerType, otErr := auth.DefaultDetectOwnerType(owner)
+	ownerType, otErr := auth.DefaultDetectOwnerType(pdeps.Owner)
 	if otErr != nil {
 		ownerType = ""
 	}
@@ -216,35 +214,21 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 		run = auth.DefaultRunCommand
 	}
 
-	projectID, _ := runGetVariable(run, repoFullName, project.ProjectVarName)
-
-	// Resolve topology through the single source of truth. pdeps already
-	// provides the canonical variable-read and linked-repo-fetch funcs;
-	// pass them straight through so the resolver can honour the variable
-	// first and, when unset, fall back to inspecting the project's
-	// linked repos (the federated-domain path).
-	getRepoVariable := pdeps.GetRepoVariable
-	if getRepoVariable == nil {
-		getRepoVariable = checkGetRepoVariable(run)
+	// Single canonical read — project.Resolve handles variable precedence,
+	// linked-repo inspection, and the federated-domain fallback.
+	ctx, _ := project.Resolve(pdeps)
+	projectID := ""
+	topology := ""
+	if ctx != nil {
+		projectID = ctx.ProjectID
+		topology = ctx.Topology
 	}
-	fetchLinkedRepos := pdeps.FetchLinkedRepos
-	if fetchLinkedRepos == nil {
-		fetchLinkedRepos = project.DefaultFetchLinkedRepos
-	}
-
-	topology, _ := project.ResolveTopology(project.ResolveTopologyDeps{
-		Owner:            owner,
-		Repo:             repoName,
-		ProjectID:        projectID,
-		GetRepoVariable:  getRepoVariable,
-		FetchLinkedRepos: fetchLinkedRepos,
-	})
 
 	return doctor.CheckDeps{
 		Root:         root,
-		RepoFullName: repoFullName,
-		Owner:        owner,
-		RepoName:     repoName,
+		RepoFullName: pdeps.RepoFullName,
+		Owner:        pdeps.Owner,
+		RepoName:     pdeps.RepoName,
 		OwnerType:    ownerType,
 		Topology:     topology,
 		ProjectID:    projectID,

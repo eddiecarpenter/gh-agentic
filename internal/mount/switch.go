@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 )
 
-// RunSwitch handles the version switch flow when .ai-version exists and a
-// different version is requested. Shows a confirmation prompt before proceeding.
-// Updates .ai-version, remounts the framework, and updates wrapper workflow tags.
+// RunSwitch handles the version switch flow when a different framework
+// version is requested. Shows a confirmation prompt before proceeding.
+// Remounts the framework and updates wrapper workflow tags. The mounted
+// version is tracked via .ai/.git metadata — no flat file is written.
 func RunSwitch(w io.Writer, root, currentVersion, newVersion string, fetch CloneFunc, confirm ConfirmFunc) error {
 	if confirm != nil {
 		prompt := fmt.Sprintf("Switch AI-Native Delivery Framework from %s to %s?", currentVersion, newVersion)
@@ -29,11 +30,7 @@ func RunSwitch(w io.Writer, root, currentVersion, newVersion string, fetch Clone
 		return fmt.Errorf("switching framework: %w", err)
 	}
 	fmt.Fprintf(w, "  ✓ Mounting AI Framework (%s) at .ai/\n", newVersion)
-
-	if err := WriteAIVersion(root, newVersion); err != nil {
-		return fmt.Errorf("updating .ai-version: %w", err)
-	}
-	fmt.Fprintf(w, "  ✓ .ai-version updated (%s → %s)\n", currentVersion, newVersion)
+	fmt.Fprintf(w, "  ✓ Framework version updated (%s → %s)\n", currentVersion, newVersion)
 
 	if err := UpdateWorkflowVersions(root, newVersion); err != nil {
 		return fmt.Errorf("updating workflows: %w", err)

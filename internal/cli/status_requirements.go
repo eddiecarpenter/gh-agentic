@@ -66,28 +66,30 @@ func defaultCurrentRepoFullName() (string, error) {
 	return r.Owner + "/" + r.Name, nil
 }
 
-// defaultResolveProjectID reads the AGENTIC_PROJECT_ID repository variable.
-// An empty string with nil error means the variable is not set; a non-nil
-// error means the lookup itself failed (auth / network / unexpected API
-// response).
+// defaultResolveProjectID resolves the GitHub ProjectV2 node ID for the
+// given repository through the canonical project.Resolve resolver. An empty
+// string with nil error signals that no project affiliation is configured;
+// a non-nil error means the underlying resolve failed (auth / network).
+//
+// This routes through project.Resolve rather than reading the AGENTIC_*
+// variable directly so every status sub-command consumes project state from
+// the same single source of truth as mount, check, and repair.
 func defaultResolveProjectID(repoFullName string) (string, error) {
 	parts := strings.SplitN(repoFullName, "/", 2)
 	if len(parts) != 2 {
 		return "", fmt.Errorf("invalid repo full name %q", repoFullName)
 	}
-	value, err := project.DefaultGetRepoVariable(parts[0], parts[1], project.ProjectVarName)
+
+	root, _ := os.Getwd()
+	deps := project.DefaultDeps(parts[0], parts[1], root)
+	ctx, err := project.Resolve(deps)
 	if err != nil {
-		// go-gh returns a 404 HTTPError when the variable is absent. Rather
-		// than introspect the error here we surface an empty string — the
-		// caller treats empty as "not configured" and renders the friendly
-		// message. Task #503 will tighten this into a classified error.
-		if strings.Contains(strings.ToLower(err.Error()), "not found") ||
-			strings.Contains(strings.ToLower(err.Error()), "variable_not_found") {
-			return "", nil
-		}
 		return "", err
 	}
-	return strings.TrimSpace(value), nil
+	if ctx == nil {
+		return "", nil
+	}
+	return ctx.ProjectID, nil
 }
 
 // runStatusRequirements is the handler for `gh agentic status requirements`.
@@ -117,7 +119,7 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 
 	projectID, err := deps.resolveProjectID(currentRepo)
 	if err != nil {
-		return fmt.Errorf("reading %s for %s: %w", project.ProjectVarName, currentRepo, err)
+		return fmt.Errorf("reading AGENTIC_PROJECT_ID for %s: %w", currentRepo, err)
 	}
 	if projectID == "" {
 		return projectstatus.ErrProjectNotConfigured
