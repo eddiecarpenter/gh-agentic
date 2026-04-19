@@ -66,3 +66,7 @@ Do not reinvent what already exists in charging-domain. Adapt it.
 - **Self-hosted runner must be registered per repo for personal-space repos** — organisation
   runners are shared across all org repos, but personal repos each need their own registration.
   Register at: `github.com/eddiecarpenter/gh-agentic/settings/actions/runners`
+
+## Tool / Skill Sync
+
+When the `gh agentic` CLI surface changes (new command, removed command, new/removed/renamed flag, changed `--raw` output shape), `skills/gh-agentic-tool.md` must be updated in the same PR. CI enforces this via `TestGhAgenticToolSkillCoversCLI` — the build fails if the skill is out of sync with the CLI.
