@@ -353,86 +353,6 @@ func TestIntegration_HumanOutputHasFederatedRepoColumn(t *testing.T) {
 	}
 }
 
-// TestIntegration_KanbanVerticalPerEntity verifies the vertical kanban view
-// renders correctly for both entities.
-func TestIntegration_KanbanVerticalPerEntity(t *testing.T) {
-	// Requirements.
-	reqBuf := &bytes.Buffer{}
-	if err := runStatusRequirements(reqBuf, io.Discard, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("requirements kanban: %v", err)
-	}
-	if !strings.Contains(reqBuf.String(), "Requirements — Kanban") {
-		t.Errorf("missing requirements heading; got:\n%s", reqBuf.String())
-	}
-
-	// Features.
-	feaBuf := &bytes.Buffer{}
-	if err := runStatusFeatures(feaBuf, io.Discard, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("features kanban: %v", err)
-	}
-	if !strings.Contains(feaBuf.String(), "Features — Kanban") {
-		t.Errorf("missing features heading; got:\n%s", feaBuf.String())
-	}
-}
-
-// TestIntegration_KanbanHorizontalWide verifies horizontal kanban succeeds
-// on a wide terminal.
-func TestIntegration_KanbanHorizontalWide(t *testing.T) {
-	originalWidth := terminalWidth
-	terminalWidth = func() int { return 200 }
-	defer func() { terminalWidth = originalWidth }()
-
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, horizontal: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("wide horizontal kanban: %v", err)
-	}
-	if !strings.ContainsAny(buf.String(), "┌+") {
-		t.Errorf("expected box-drawing border; got:\n%s", buf.String())
-	}
-}
-
-// TestIntegration_KanbanHorizontalNarrowStillRenders verifies that an
-// explicit --horizontal on a narrow terminal renders horizontal without
-// error — the user's choice is honoured even if the table overflows.
-func TestIntegration_KanbanHorizontalNarrowStillRenders(t *testing.T) {
-	originalWidth := terminalWidth
-	terminalWidth = func() int { return 80 }
-	defer func() { terminalWidth = originalWidth }()
-
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, horizontal: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("--horizontal on narrow terminal should not error: %v", err)
-	}
-	out := buf.String()
-	if !strings.ContainsAny(out, "┌+") {
-		t.Errorf("expected horizontal borders; got:\n%s", out)
-	}
-	if strings.Contains(out, "horizontal kanban needs ≥") {
-		t.Errorf("--horizontal must not emit the fallback notice; got:\n%s", out)
-	}
-}
-
-// TestIntegration_KanbanDefaultNarrowAutoFallsBack verifies the features
-// kanban default on a narrow terminal auto-falls-back to vertical with a
-// notice and exits without error.
-func TestIntegration_KanbanDefaultNarrowAutoFallsBack(t *testing.T) {
-	originalWidth := terminalWidth
-	terminalWidth = func() int { return 80 }
-	defer func() { terminalWidth = originalWidth }()
-
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("default narrow kanban should not error: %v", err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "## backlog") {
-		t.Errorf("expected vertical fallback section headings; got:\n%s", out)
-	}
-	if !strings.Contains(out, "terminal 80 cols") {
-		t.Errorf("expected fallback notice naming current width; got:\n%s", out)
-	}
-}
-
 // TestIntegration_ThisRepoNarrowing verifies --this-repo filters to the
 // current repo on both list commands.
 func TestIntegration_ThisRepoNarrowing(t *testing.T) {
@@ -446,18 +366,6 @@ func TestIntegration_ThisRepoNarrowing(t *testing.T) {
 	}
 	if !strings.Contains(out, "#492") {
 		t.Errorf("--this-repo should include local feature #492; got:\n%s", out)
-	}
-}
-
-// TestIntegration_IncludeDoneAddsDoneColumn verifies --include-done surfaces
-// the done column in the kanban view and closed items in the list view.
-func TestIntegration_IncludeDoneAddsDoneColumn(t *testing.T) {
-	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true, includeDone: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("runStatusRequirements: %v", err)
-	}
-	if !strings.Contains(buf.String(), "## done") {
-		t.Errorf("expected '## done' column with --include-done; got:\n%s", buf.String())
 	}
 }
 
@@ -522,22 +430,6 @@ func TestIntegration_ErrorPaths(t *testing.T) {
 			t.Fatalf("expected ErrWrongType; got %v", err)
 		}
 	})
-}
-
-// TestIntegration_JSONKanbanPrecedence verifies --kanban with --json returns
-// JSON, not a kanban layout — the documented precedence.
-func TestIntegration_JSONKanbanPrecedence(t *testing.T) {
-	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true, json: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("runStatusRequirements: %v", err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, `"items":`) {
-		t.Errorf("expected JSON envelope; got:\n%s", out)
-	}
-	if strings.Contains(out, "## backlog") || strings.Contains(out, "Kanban") {
-		t.Errorf("kanban text leaked into JSON output:\n%s", out)
-	}
 }
 
 // TestIntegration_BareStatusPrintsHelp verifies `status` with no sub-command

@@ -261,56 +261,6 @@ func TestRunStatusRequirements_NoProjectConfigured(t *testing.T) {
 	}
 }
 
-// TestRunStatusRequirements_KanbanVertical verifies --kanban --vertical
-// renders the stage-grouped vertical view with columns in canonical order
-// and counts in the section headings.
-func TestRunStatusRequirements_KanbanVertical(t *testing.T) {
-	sd := fakeStatusDeps(sampleRequirementIssues())
-	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
-		t.Fatalf("runStatusRequirements --kanban --vertical: %v", err)
-	}
-	out := buf.String()
-	for _, tok := range []string{
-		"Requirements — Kanban",
-		"## backlog (2)", // #447, #467
-		"## scoping (1)", // #457
-		"## scheduled (0)",
-		"(none)",
-		"#447",
-		"#457",
-		"#467",
-	} {
-		if !strings.Contains(out, tok) {
-			t.Errorf("expected %q in kanban output; got:\n%s", tok, out)
-		}
-	}
-	// --vertical must not emit the auto-fallback notice.
-	if strings.Contains(out, "horizontal kanban needs ≥") {
-		t.Errorf("--vertical should not emit the fallback notice; got:\n%s", out)
-	}
-}
-
-// TestRunStatusRequirements_HorizontalRequiresKanban verifies the standalone
-// --horizontal flag errors rather than silently being ignored.
-func TestRunStatusRequirements_HorizontalRequiresKanban(t *testing.T) {
-	sd := fakeStatusDeps(sampleRequirementIssues())
-	err := runStatusRequirements(&bytes.Buffer{}, io.Discard, statusListFlags{horizontal: true}, sd)
-	if err == nil {
-		t.Fatalf("expected error for bare --horizontal, got nil")
-	}
-}
-
-// TestRunStatusRequirements_VerticalRequiresKanban verifies the standalone
-// --vertical flag errors rather than silently being ignored.
-func TestRunStatusRequirements_VerticalRequiresKanban(t *testing.T) {
-	sd := fakeStatusDeps(sampleRequirementIssues())
-	err := runStatusRequirements(&bytes.Buffer{}, io.Discard, statusListFlags{vertical: true}, sd)
-	if err == nil {
-		t.Fatalf("expected error for bare --vertical, got nil")
-	}
-}
-
 // TestRunStatusRequirements_ShowsRepoColumnWhenFederated verifies that the
 // REPO column appears only when some row is cross-repo, and "(this repo)" is
 // rendered for local rows.

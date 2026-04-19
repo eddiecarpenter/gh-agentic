@@ -84,15 +84,25 @@ type statusListFlags struct {
 }
 
 // registerStatusListFlags declares the shared flag set for list sub-commands.
-// Every downstream flag is declared here so the scaffold task exposes the full
-// surface area — the implementations land in later tasks.
+// After feature #518 the list sub-commands no longer carry kanban-rendering
+// flags (`--kanban`, `--horizontal`, `--vertical`) — those live on the new
+// top-level `gh agentic kanban` command. registerRemovedKanbanFlag declares
+// `--kanban` as a hidden boolean on the status commands so the handler can
+// intercept it and emit a guided migration error.
 func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
-	cmd.Flags().BoolVar(&f.kanban, "kanban", false, "render a stage-grouped kanban view (horizontal by default; auto-falls-back to vertical on narrow terminals)")
-	cmd.Flags().BoolVar(&f.horizontal, "horizontal", false, "force horizontal kanban regardless of terminal width (requires --kanban; no-op on wide terminals)")
-	cmd.Flags().BoolVar(&f.vertical, "vertical", false, "force vertical kanban regardless of terminal width (requires --kanban)")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
 	cmd.Flags().BoolVar(&f.includeDone, "include-done", false, "include items in the 'done' stage")
+}
+
+// registerRemovedKanbanFlag declares --kanban as a hidden boolean so the
+// parse layer still accepts it. The handler checks the flag and returns a
+// migration error pointing at the new top-level command. This is a
+// deliberate breaking change — no deprecation grace period, per §6 of the
+// feature scope — but the migration error message is actionable.
+func registerRemovedKanbanFlag(cmd *cobra.Command, kanban *bool) {
+	cmd.Flags().BoolVar(kanban, "kanban", false, "removed — use 'gh agentic kanban' instead")
+	_ = cmd.Flags().MarkHidden("kanban")
 }
 
 // statusDetailFlags captures the shared flag set for detail sub-commands.
@@ -126,29 +136,23 @@ Default output is a compact one-line-per-item table. Stage is shown verbatim as
 the GitHub label name (backlog, scoping, scheduled, done). Items that are
 blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]' annotation.
 
-Pass --kanban for a stage-grouped view. Kanban defaults to horizontal layout;
-on narrow terminals it auto-falls-back to vertical with a one-line notice.
-Pass --horizontal to force horizontal layout even on narrow terminals, or
---vertical to force vertical layout regardless of width.
-Pass --json to emit a stable structured payload for machine consumption —
---json always wins over --kanban; the JSON shape is identical regardless of
---kanban being passed so consumers group by stage themselves if needed.
+Pass --json to emit a stable structured payload for machine consumption.
 Pass --include-done to include completed requirements; by default only open
-items are listed.`,
+items are listed.
+
+For the kanban view, use 'gh agentic kanban --requirements'. The --kanban
+flag has been removed from this command.`,
 		Example: `  # Default list view
   gh agentic status requirements
-
-  # Kanban (horizontal by default; auto-falls-back to vertical on narrow terminals)
-  gh agentic status requirements --kanban
-
-  # Force vertical kanban
-  gh agentic status requirements --kanban --vertical
 
   # JSON for scripting
   gh agentic status requirements --json
 
   # Include closed requirements
-  gh agentic status requirements --include-done`,
+  gh agentic status requirements --include-done
+
+  # Kanban view — use the top-level command instead
+  gh agentic kanban --requirements`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -160,6 +164,7 @@ items are listed.`,
 	}
 
 	registerStatusListFlags(cmd, &flags)
+	registerRemovedKanbanFlag(cmd, &flags.kanban)
 	return cmd
 }
 
@@ -227,32 +232,23 @@ The owning repo is shown when it differs from the current repo. Features that
 are blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]'
 annotation.
 
-Pass --kanban for a stage-grouped view. Kanban defaults to horizontal layout;
-on narrow terminals it auto-falls-back to vertical with a one-line notice.
-Pass --horizontal to force horizontal layout even on narrow terminals, or
---vertical to force vertical layout regardless of width.
-Pass --json to emit a stable structured payload for machine consumption —
---json always wins over --kanban; the JSON shape is identical regardless of
---kanban being passed so consumers group by stage themselves if needed.
+Pass --json to emit a stable structured payload for machine consumption.
 Pass --include-done to include completed features; by default only open items
-are listed.`,
+are listed.
+
+For the kanban view, use 'gh agentic kanban --features'. The --kanban flag
+has been removed from this command.`,
 		Example: `  # Default list view
   gh agentic status features
-
-  # Kanban (horizontal by default; auto-falls-back to vertical on narrow terminals)
-  gh agentic status features --kanban
-
-  # Force vertical kanban
-  gh agentic status features --kanban --vertical
-
-  # Force horizontal kanban (even on narrow terminals)
-  gh agentic status features --kanban --horizontal
 
   # JSON for scripting
   gh agentic status features --json
 
   # Narrow to the current repo
-  gh agentic status features --this-repo`,
+  gh agentic status features --this-repo
+
+  # Kanban view — use the top-level command instead
+  gh agentic kanban --features`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -264,6 +260,7 @@ are listed.`,
 	}
 
 	registerStatusListFlags(cmd, &flags)
+	registerRemovedKanbanFlag(cmd, &flags.kanban)
 	return cmd
 }
 

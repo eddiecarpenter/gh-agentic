@@ -92,30 +92,19 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 
 // runStatusRequirements is the handler for `gh agentic status requirements`.
 // It resolves the project ID, fetches the list via projectstatus, optionally
-// narrows to the current repo, then renders one of three forms:
+// narrows to the current repo, then renders either the --json envelope or
+// the compact tabular list.
 //
-//  1. --json — envelope {items, totals} regardless of other layout flags.
-//     --json silently wins over --kanban (documented in help).
-//  2. --kanban — stage-grouped view (vertical by default; --horizontal
-//     adds side-by-side rendering when the terminal is wide enough).
-//  3. Default — compact tabular list.
+// The legacy --kanban flag was removed by feature #518. If the caller
+// passes --kanban (hidden on this command for interception), the handler
+// returns errKanbanFlagRemoved pointing at `gh agentic kanban --requirements`.
 //
 // stderr receives the busy-indicator rendered by deps.busy while the
 // fetch is in flight; stdout (w) receives the final human or JSON output.
 // Non-TTY writers suppress the indicator — see ui.BusyRun.
 func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
-	if (flags.horizontal || flags.vertical) && !flags.kanban {
-		return fmt.Errorf("--horizontal and --vertical require --kanban")
-	}
-	// Resolve layout early so mutually-exclusive flags fail fast before any
-	// network call.
-	var layout kanbanLayout
 	if flags.kanban {
-		var err error
-		layout, err = resolveKanbanLayout(flags, terminalWidth(), requirementKanbanMinWidth)
-		if err != nil {
-			return err
-		}
+		return &errKanbanFlagRemoved{suggestedCommand: "gh agentic kanban --requirements"}
 	}
 
 	currentRepo, err := deps.currentRepo()
@@ -148,20 +137,8 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 		reqs = filterRequirementsToRepo(reqs, currentRepo)
 	}
 
-	// --json is the highest-priority format — it wins silently over --kanban.
-	// The JSON schema is identical regardless of --kanban; consumers group
-	// by stage themselves if they need a kanban-shaped view.
 	if flags.json {
 		return writeRequirementsJSON(w, reqs)
-	}
-
-	if flags.kanban {
-		columns := columnsForRequirements(flags.includeDone)
-		cards := requirementCards(reqs, columns)
-		if layout.horizontal {
-			return writeHorizontalKanban(w, columns, cards, terminalWidth(), requirementKanbanMinWidth, ui.TerminalSupportsUTF8())
-		}
-		return writeVerticalKanban(w, "Requirements — Kanban", columns, cards, layout.notice)
 	}
 
 	return writeRequirementsTable(w, reqs, currentRepo)

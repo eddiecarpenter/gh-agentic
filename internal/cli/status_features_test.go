@@ -201,34 +201,6 @@ func TestRunStatusFeatures_NoProjectConfigured(t *testing.T) {
 	}
 }
 
-// TestRunStatusFeatures_KanbanVertical verifies --kanban --vertical renders
-// the stage-grouped view for features.
-func TestRunStatusFeatures_KanbanVertical(t *testing.T) {
-	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures --kanban --vertical: %v", err)
-	}
-	out := buf.String()
-	for _, tok := range []string{
-		"Features — Kanban",
-		"## backlog (0)",
-		"## in-design (0)",
-		"## in-development (2)", // #492, #511
-		"## in-review (0)",
-		"#492",
-		"#511",
-	} {
-		if !strings.Contains(out, tok) {
-			t.Errorf("expected %q; got:\n%s", tok, out)
-		}
-	}
-	// --vertical must not emit the auto-fallback notice.
-	if strings.Contains(out, "horizontal kanban needs ≥") {
-		t.Errorf("--vertical should not emit the fallback notice; got:\n%s", out)
-	}
-}
-
 // TestWriteFeaturesTable_TasksColumnAllCases verifies the compact N/M
 // column renders the documented format for zero-task, partial, and fully-
 // done features — a single render so the column layout is asserted once.
