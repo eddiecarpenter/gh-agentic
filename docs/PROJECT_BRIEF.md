@@ -73,7 +73,9 @@ The wizard detects the current repository and collects configuration:
 
 1. **Stack** — Go, Java/Quarkus, Java/Spring Boot, TypeScript/Node.js, Python, Rust, or Other
 2. **Framework version** — which version of the framework to mount
-3. **Configuration** — generates `CLAUDE.md`, `AGENTS.md`, `LOCALRULES.md`, `.ai-version`
+3. **Configuration** — generates `CLAUDE.md`, `AGENTS.md`, and `LOCALRULES.md`; pins
+   the framework version on the control-plane repo's `AGENTIC_FRAMEWORK_VERSION`
+   variable (read through `project.Resolve`).
 
 ### Steps
 

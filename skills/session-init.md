@@ -139,15 +139,17 @@ Execute these steps in order — do not skip any:
    enters recovery mode — skipping completed tasks and resuming from where the
    previous session left off. See `dev-session.md` for full details.
 
-10. Read `.ai-version` at the repository root and note the mounted framework version.
-    If absent (e.g. in the gh-agentic repo itself), skip and continue.
+10. Note the mounted framework version by running `gh agentic info` — the
+    "Framework (local)" line reports what the canonical `project.Resolve`
+    sees. If the command is unavailable (e.g. in the gh-agentic repo itself
+    during local development), skip and continue.
 
 ## On Completion
 
 **New session:** proceed with the work for this session.
 
 **Framework updated mid-session:** confirm to the human before resuming work:
-- The new framework version (from `.ai-version`)
+- The new framework version (reported by `gh agentic info`)
 - The list of files reloaded (protocol + catalogue)
 - Any skills added or removed compared to what was previously loaded (if detectable from the regenerated catalogue)
 
@@ -168,8 +170,9 @@ Execute these steps in order — do not skip any:
 - **Staleness heuristic is mtime (V1).** Any skill file mtime newer than the
   catalogue mtime marks the catalogue stale. Hash-based content comparison is a
   follow-up if false positives/negatives appear in practice.
-- If `.ai-version` is missing or unreadable, warn the human and continue —
-  the version file is informational, not blocking
+- If `gh agentic info` cannot report a framework version (e.g. command
+  missing in a local-dev checkout), warn the human and continue — the
+  version is informational, not blocking
 - There is no STATUS.md — current state is derived from GitHub Issues
 - **Inline status updates**: this skill does not apply pipeline labels. If a future
   change adds a pipeline label transition here, it must include an inline project status

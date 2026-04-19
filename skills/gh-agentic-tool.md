@@ -87,9 +87,12 @@ Issues that cannot be auto-repaired are reported with manual remediation steps.
 
 Mounts (or remounts) the AI-Native Delivery Framework at `.ai/`.
 
-**Single topology:** mounts at the version recorded in `.ai-version`.
-**Federated domain repo:** reads `AGENTIC_FRAMEWORK_VERSION` from the control
-plane and mounts that version, updating local `.ai-version` to match.
+**Version resolution:** `project.Resolve` is the single canonical source. On
+a single-topology or federated-CP repo, the pinned version comes from
+`AGENTIC_FRAMEWORK_VERSION` on the repo itself (falling back to the clone's
+`.ai/.git` metadata, and then to the latest release). On a federated domain
+repo, the pinned version is read from `AGENTIC_FRAMEWORK_VERSION` on the
+control-plane repo so every domain stays in lock-step with the CP.
 
 ```bash
 gh agentic mount

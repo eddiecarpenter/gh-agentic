@@ -79,36 +79,44 @@ template files directly.
 
 ### How it works
 
-1. **`.ai-version`** — A plain-text file at the repo root containing the pinned
-   framework version tag (e.g. `v2.0.0`). This file is committed to the repo.
+1. **Pinned version** — The framework version is pinned by the
+   `AGENTIC_FRAMEWORK_VERSION` GitHub Actions variable on the control-plane
+   repo. For a single-topology repo the CP is the same repo; for a federated
+   setup the CP broadcasts the version to every domain via this variable.
+   The canonical resolver in `internal/project/` (`project.Resolve`) is the
+   single code path that answers "what version should I mount?".
 
 2. **`.ai/` directory** — The mounted framework. This directory is **gitignored**
-   and populated on demand by `gh agentic mount`. It is not committed.
+   and populated on demand by `gh agentic mount`. It is not committed. The
+   cloned framework's own `.git` metadata records the exact tag — that is
+   the local source of truth after the clone runs.
 
-3. **Fetch mechanism** — `gh agentic mount` downloads the framework as a
-   tarball from the `eddiecarpenter/gh-agentic` release at the pinned version
-   using `git clone --depth 1`. It extracts framework files (`skills/`,
+3. **Fetch mechanism** — `gh agentic mount` downloads the framework via
+   `git clone --depth 1 --branch <version>` against the `eddiecarpenter/gh-agentic`
+   release at the pinned version. It extracts framework files (`skills/`,
    `standards/`, `concepts/`, `recipes/`, `RULEBOOK.md`) into `.ai/`.
 
-4. **Mount flows** — The mount command supports three flows:
-   - **First-time** (`mount <version>` with no `.ai-version`): downloads the
-     framework, generates `CLAUDE.md`, `AGENTS.md`, and wrapper workflows, writes
-     `.ai-version`.
-   - **Remount** (`mount` with no args): re-downloads at the current `.ai-version`.
-     Used after a fresh clone or to repair a corrupted `.ai/`.
-   - **Version switch** (`mount <new-version>` with existing `.ai-version`):
-     prompts for confirmation, updates `.ai-version`, and remounts.
+4. **Mount flows** — The mount command supports three flows, all driven by
+   the resolver's answer to "what version is pinned?":
+   - **First-time** (no `.ai/` directory yet): downloads the framework,
+     generates `CLAUDE.md`, `AGENTS.md`, and wrapper workflows.
+   - **Remount** (`mount` with no args, `.ai/` already present at the pinned
+     version): re-downloads at the current pinned version. Used after a
+     fresh clone or to repair a corrupted `.ai/`.
+   - **Version switch** (`mount <new-version>` or a pinned-version change
+     on the CP): prompts for confirmation, remounts at the new version,
+     updates wrapper-workflow tags.
 
 5. **Reusable workflows** — Domain repos invoke the agentic pipeline via thin
    wrapper workflows in `.github/workflows/` that call reusable workflows
-   defined in `eddiecarpenter/gh-agentic`. This avoids duplicating workflow
-   definitions across repos.
+   defined in `eddiecarpenter/gh-agentic`. The reusable workflow reads
+   `${{ vars.AGENTIC_FRAMEWORK_VERSION }}` to pick the framework version at
+   runtime — consistent with what `project.Resolve` exposes to the CLI.
 
 ### In domain repos
 
 ```
 my-domain-repo/
-├── .ai-version          ← committed — pins framework version
 ├── .ai/                 ← gitignored — mounted framework files
 │   ├── RULEBOOK.md
 │   ├── skills/
