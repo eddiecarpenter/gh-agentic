@@ -62,7 +62,7 @@ func runStatusFeatures(w io.Writer, stderr io.Writer, flags statusListFlags, dep
 	}
 
 	if flags.raw {
-		return writeFeaturesRaw(w, features)
+		return writeFeaturesRaw(w, features, flags.verbose)
 	}
 
 	if flags.json {
@@ -137,20 +137,31 @@ func writeFeaturesTable(w io.Writer, features []projectstatus.Feature, currentRe
 // Same shape and column set as the requirements raw renderer — agents that
 // already parse one can parse both with the same code path. Sparse cells
 // render as `-`; no totals or footer line.
-func writeFeaturesRaw(w io.Writer, features []projectstatus.Feature) error {
-	header := strings.Join([]string{"number", "stage", "title", "blocked_by", "owning_repo"}, rawListSeparator)
-	if _, err := fmt.Fprintln(w, header); err != nil {
+//
+// When verbose is true, the header gains `created_at` and
+// `last_transitioned_at` columns at the end (ISO date) — the same suffix
+// applied to the requirements raw shape so the verbose contract stays
+// uniform across both list commands.
+func writeFeaturesRaw(w io.Writer, features []projectstatus.Feature, verbose bool) error {
+	cols := []string{"number", "stage", "title", "blocked_by", "owning_repo"}
+	if verbose {
+		cols = append(cols, "created_at", "last_transitioned_at")
+	}
+	if _, err := fmt.Fprintln(w, strings.Join(cols, rawListSeparator)); err != nil {
 		return fmt.Errorf("writing raw header: %w", err)
 	}
 	for _, f := range features {
-		row := strings.Join([]string{
+		row := []string{
 			fmt.Sprintf("%d", f.Number),
 			rawField(string(f.Stage)),
 			rawField(f.Title),
 			rawBlockedField(f.Blocked),
 			rawField(f.OwningRepo),
-		}, rawListSeparator)
-		if _, err := fmt.Fprintln(w, row); err != nil {
+		}
+		if verbose {
+			row = append(row, rawTimestampField(f.CreatedAt), rawTimestampField(f.LastTransitionedAt))
+		}
+		if _, err := fmt.Fprintln(w, strings.Join(row, rawListSeparator)); err != nil {
 			return fmt.Errorf("writing raw row: %w", err)
 		}
 	}

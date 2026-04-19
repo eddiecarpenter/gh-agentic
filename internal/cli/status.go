@@ -81,6 +81,7 @@ Run 'gh agentic status <sub-command> --help' for detailed usage.`,
 type statusListFlags struct {
 	json        bool
 	raw         bool
+	verbose     bool
 	kanban      bool
 	horizontal  bool
 	vertical    bool
@@ -99,6 +100,7 @@ type statusListFlags struct {
 func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (tab-separated for lists, frontmatter + markdown for details) and suppress human output")
+	cmd.Flags().BoolVar(&f.verbose, "verbose", false, "include timestamps in --raw output (no-op without --raw)")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
 	cmd.Flags().BoolVar(&f.includeDone, "include-done", false, "include items in the 'done' stage")
 }
@@ -117,14 +119,16 @@ func registerRemovedKanbanFlag(cmd *cobra.Command, kanban *bool) {
 
 // statusDetailFlags captures the shared flag set for detail sub-commands.
 type statusDetailFlags struct {
-	json bool
-	raw  bool
+	json    bool
+	raw     bool
+	verbose bool
 }
 
 // registerStatusDetailFlags declares the shared flag set for detail sub-commands.
 func registerStatusDetailFlags(cmd *cobra.Command, f *statusDetailFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (frontmatter header + '---' + verbatim markdown body) and suppress human output")
+	cmd.Flags().BoolVar(&f.verbose, "verbose", false, "include timestamps in --raw output (no-op without --raw)")
 }
 
 // newStatusRequirementsCmd constructs the `gh agentic status requirements`

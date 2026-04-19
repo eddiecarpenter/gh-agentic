@@ -26,6 +26,7 @@ type pipelineFlags struct {
 	thisRepo     bool
 	json         bool
 	raw          bool
+	verbose      bool
 }
 
 // registerPipelineFlags declares every flag the pipeline command accepts.
@@ -41,6 +42,7 @@ func registerPipelineFlags(cmd *cobra.Command, f *pipelineFlags) {
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (tab-separated sections per selector); --horizontal/--vertical are no-ops under --raw")
+	cmd.Flags().BoolVar(&f.verbose, "verbose", false, "include timestamps in --raw output (no-op without --raw)")
 }
 
 // newPipelineCmd constructs the `gh agentic status pipeline` command with
@@ -209,7 +211,7 @@ func runPipeline(w io.Writer, stderr io.Writer, flags pipelineFlags, deps status
 	}
 
 	if flags.raw {
-		return writePipelineRaw(w, reqs, features, fetchReqs, fetchFeats)
+		return writePipelineRaw(w, reqs, features, fetchReqs, fetchFeats, flags.verbose)
 	}
 
 	if flags.json {
@@ -385,12 +387,12 @@ func writePipelineJSON(w io.Writer, reqs []projectstatus.Requirement, features [
 // section entirely — no marker, no trailing blank line. The per-section
 // row shape is delegated to writeRequirementsRaw / writeFeaturesRaw so the
 // pipeline `--raw` row layout cannot drift from the list-command goldens.
-func writePipelineRaw(w io.Writer, reqs []projectstatus.Requirement, features []projectstatus.Feature, includeReqs, includeFeats bool) error {
+func writePipelineRaw(w io.Writer, reqs []projectstatus.Requirement, features []projectstatus.Feature, includeReqs, includeFeats, verbose bool) error {
 	if includeReqs {
 		if _, err := fmt.Fprintln(w, "# requirements"); err != nil {
 			return fmt.Errorf("writing raw requirements marker: %w", err)
 		}
-		if err := writeRequirementsRaw(w, reqs); err != nil {
+		if err := writeRequirementsRaw(w, reqs, verbose); err != nil {
 			return err
 		}
 	}
@@ -406,7 +408,7 @@ func writePipelineRaw(w io.Writer, reqs []projectstatus.Requirement, features []
 		if _, err := fmt.Fprintln(w, "# features"); err != nil {
 			return fmt.Errorf("writing raw features marker: %w", err)
 		}
-		if err := writeFeaturesRaw(w, features); err != nil {
+		if err := writeFeaturesRaw(w, features, verbose); err != nil {
 			return err
 		}
 	}

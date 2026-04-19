@@ -1,0 +1,4 @@
+number	stage	title	blocked_by	owning_repo	created_at	last_transitioned_at
+447	backlog	feat: project lifecycle management	-	eddiecarpenter/gh-agentic	2026-04-18	2026-04-18
+457	scoping	feat: single-pane pipeline status view	-	eddiecarpenter/gh-agentic	2026-04-18	2026-04-18
+467	backlog	feat: skill-publishing	-	eddiecarpenter/gh-agentic	2026-04-18	2026-04-18

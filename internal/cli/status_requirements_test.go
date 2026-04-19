@@ -365,6 +365,56 @@ func TestRunStatusRequirements_RawTSVShape(t *testing.T) {
 	}
 }
 
+// TestRunStatusRequirements_RawVerboseAppendsTimestamps verifies that
+// `--raw --verbose` appends `created_at` and `last_transitioned_at`
+// columns to the header and to every data row, while preserving the TSV
+// column-count invariant.
+func TestRunStatusRequirements_RawVerboseAppendsTimestamps(t *testing.T) {
+	buf := &bytes.Buffer{}
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{raw: true, verbose: true}, fakeStatusDeps(sampleRequirementIssues())); err != nil {
+		t.Fatalf("runStatusRequirements --raw --verbose: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/requirements_list_verbose.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw --verbose output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// Column-count invariant: 7 columns (5 base + 2 timestamps).
+	rawLines := strings.Split(strings.TrimRight(string(got), "\n"), "\n")
+	headerCols := len(strings.Split(rawLines[0], "\t"))
+	if headerCols != 7 {
+		t.Errorf("verbose header column count = %d, want 7", headerCols)
+	}
+	for i, line := range rawLines {
+		cols := strings.Split(line, "\t")
+		if len(cols) != headerCols {
+			t.Errorf("verbose line %d column count = %d, want %d", i, len(cols), headerCols)
+		}
+	}
+}
+
+// TestRunStatusRequirements_VerboseWithoutRawIsNoOp verifies that
+// `--verbose` without `--raw` does not alter the human table — the bytes
+// are identical to a default invocation.
+func TestRunStatusRequirements_VerboseWithoutRawIsNoOp(t *testing.T) {
+	bare := &bytes.Buffer{}
+	if err := runStatusRequirements(bare, io.Discard, statusListFlags{}, fakeStatusDeps(sampleRequirementIssues())); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	verbose := &bytes.Buffer{}
+	if err := runStatusRequirements(verbose, io.Discard, statusListFlags{verbose: true}, fakeStatusDeps(sampleRequirementIssues())); err != nil {
+		t.Fatalf("verbose: %v", err)
+	}
+	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
+		t.Errorf("--verbose without --raw must not change human output:\nbare:\n%s\nverbose:\n%s", bare.String(), verbose.String())
+	}
+}
+
 // keysOf returns the keys of a map — used for diagnostics in test failures.
 func keysOf(m map[string]interface{}) []string {
 	out := make([]string, 0, len(m))

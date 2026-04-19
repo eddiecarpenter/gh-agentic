@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
 )
@@ -58,7 +59,7 @@ func runStatusRequirement(w io.Writer, stderr io.Writer, number int, flags statu
 	}
 
 	if flags.raw {
-		return writeRequirementRaw(w, req)
+		return writeRequirementRaw(w, req, flags.verbose)
 	}
 	if flags.json {
 		return writeRequirementJSON(w, req)
@@ -133,7 +134,10 @@ const rawDetailSeparator = "---"
 // Empty values render as an empty string after the colon (no `-`). The
 // `---` separator is always present, even for an empty body, so agents
 // can split on it without checking for body presence.
-func writeRequirementRaw(w io.Writer, r *projectstatus.Requirement) error {
+//
+// When verbose is true, two additional header lines are inserted after
+// `owning_repo` — `created_at` and `last_transitioned_at`, both ISO date.
+func writeRequirementRaw(w io.Writer, r *projectstatus.Requirement, verbose bool) error {
 	header := []struct {
 		key   string
 		value string
@@ -142,9 +146,29 @@ func writeRequirementRaw(w io.Writer, r *projectstatus.Requirement) error {
 		{"stage", string(r.Stage)},
 		{"title", r.Title},
 		{"owning_repo", r.OwningRepo},
-		{"blocked_by", rawDetailBlockedValue(r.Blocked)},
-		{"linked_features", rawLinkedFeaturesValue(r.LinkedFeatures)},
 	}
+	if verbose {
+		header = append(header,
+			struct {
+				key   string
+				value string
+			}{"created_at", rawDetailTimestamp(r.CreatedAt)},
+			struct {
+				key   string
+				value string
+			}{"last_transitioned_at", rawDetailTimestamp(r.LastTransitionedAt)},
+		)
+	}
+	header = append(header,
+		struct {
+			key   string
+			value string
+		}{"blocked_by", rawDetailBlockedValue(r.Blocked)},
+		struct {
+			key   string
+			value string
+		}{"linked_features", rawLinkedFeaturesValue(r.LinkedFeatures)},
+	)
 	for _, kv := range header {
 		if err := writeRawHeaderLine(w, kv.key, kv.value); err != nil {
 			return err
@@ -193,6 +217,18 @@ func rawDetailBlockedValue(b *projectstatus.BlockedInfo) string {
 		return ""
 	}
 	return b.BlockingRef
+}
+
+// rawDetailTimestamp renders a time.Time as an ISO-8601 date for use in
+// detail-form `--raw --verbose` headers. Mirrors formatISODate from the
+// human detail view: zero times render as the empty string so the line
+// reads `created_at:` (no trailing space) — agents test for empty to
+// detect missing timestamps.
+func rawDetailTimestamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02")
 }
 
 // rawLinkedFeaturesValue renders the `linked_features` header field as a

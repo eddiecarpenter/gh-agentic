@@ -319,6 +319,67 @@ func TestRunStatusRequirement_RawSeparatorAlwaysPresent(t *testing.T) {
 	}
 }
 
+// TestRunStatusRequirement_RawVerboseInsertsTimestamps verifies that
+// `--raw --verbose` inserts `created_at` and `last_transitioned_at`
+// header lines after `owning_repo` while keeping the `---` separator and
+// the verbatim body intact.
+func TestRunStatusRequirement_RawVerboseInsertsTimestamps(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	body := "## Business need\n\n" +
+		"Today, `gh agentic init` reads the project context from many places. We need\n" +
+		"a single chokepoint.\n\n" +
+		"```go\nfunc Resolve(ctx context.Context) (*Project, error) {\n    return nil, nil\n}\n```\n\n" +
+		"Steps: scope → design → develop → review."
+	issues := []projectstatus.ProjectIssue{
+		{Number: 569, Title: "Centralised project context resolution", Body: body, Stage: projectstatus.StageScheduled, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 571, Title: "feat: a", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 572, Title: "feat: b", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
+	}
+	sd := requirementDetailFixture(issues, nil, nil)
+
+	buf := &bytes.Buffer{}
+	if err := runStatusRequirement(buf, io.Discard, 569, statusDetailFlags{raw: true, verbose: true}, sd); err != nil {
+		t.Fatalf("runStatusRequirement --raw --verbose: %v", err)
+	}
+	got := buf.Bytes()
+
+	wantBytes, err := os.ReadFile("testdata/status_raw/requirement_detail_verbose.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw --verbose detail output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// Header must contain both timestamp keys, both as ISO date.
+	for _, marker := range []string{"created_at: 2026-04-18", "last_transitioned_at: 2026-04-18"} {
+		if !strings.Contains(string(got), marker) {
+			t.Errorf("expected %q in verbose detail output; got:\n%s", marker, string(got))
+		}
+	}
+}
+
+// TestRunStatusRequirement_VerboseWithoutRawIsNoOp verifies the human
+// detail view is unchanged when `--verbose` is passed without `--raw`.
+func TestRunStatusRequirement_VerboseWithoutRawIsNoOp(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []projectstatus.ProjectIssue{
+		{Number: 569, Title: "t", Stage: projectstatus.StageScheduled, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	sd := requirementDetailFixture(issues, nil, nil)
+	bare := &bytes.Buffer{}
+	if err := runStatusRequirement(bare, io.Discard, 569, statusDetailFlags{}, sd); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	verbose := &bytes.Buffer{}
+	if err := runStatusRequirement(verbose, io.Discard, 569, statusDetailFlags{verbose: true}, sd); err != nil {
+		t.Fatalf("verbose: %v", err)
+	}
+	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
+		t.Errorf("--verbose without --raw must not change detail output")
+	}
+}
+
 // TestBlockedDetailLine covers the reason / ref / both branches.
 func TestBlockedDetailLine(t *testing.T) {
 	cases := []struct {

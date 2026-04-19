@@ -42,7 +42,7 @@ func runStatusFeature(w io.Writer, stderr io.Writer, number int, flags statusDet
 	}
 
 	if flags.raw {
-		return writeFeatureRaw(w, feature)
+		return writeFeatureRaw(w, feature, flags.verbose)
 	}
 	if flags.json {
 		return writeFeatureJSON(w, feature)
@@ -132,7 +132,11 @@ func writeFeatureDetail(w io.Writer, f *projectstatus.Feature, utf8 bool) error 
 //
 // Empty values render as an empty string after the colon (no `-`). The
 // `---` separator is always present, even when the body is empty.
-func writeFeatureRaw(w io.Writer, f *projectstatus.Feature) error {
+//
+// When verbose is true, two header lines (`created_at`,
+// `last_transitioned_at`, ISO date) are inserted after `owning_repo` —
+// matching the position used by the requirement detail raw renderer.
+func writeFeatureRaw(w io.Writer, f *projectstatus.Feature, verbose bool) error {
 	header := []struct {
 		key   string
 		value string
@@ -141,12 +145,41 @@ func writeFeatureRaw(w io.Writer, f *projectstatus.Feature) error {
 		{"stage", string(f.Stage)},
 		{"title", f.Title},
 		{"owning_repo", f.OwningRepo},
-		{"blocked_by", rawDetailBlockedValue(f.Blocked)},
-		{"parent_requirement", rawParentRequirementValue(f.ParentRequirement)},
-		{"branch", rawBranchValue(f.Branch)},
-		{"pr", rawPRValue(f.PR)},
-		{"tasks_done_total", rawTasksDoneTotalValue(f.Tasks)},
 	}
+	if verbose {
+		header = append(header,
+			struct {
+				key   string
+				value string
+			}{"created_at", rawDetailTimestamp(f.CreatedAt)},
+			struct {
+				key   string
+				value string
+			}{"last_transitioned_at", rawDetailTimestamp(f.LastTransitionedAt)},
+		)
+	}
+	header = append(header,
+		struct {
+			key   string
+			value string
+		}{"blocked_by", rawDetailBlockedValue(f.Blocked)},
+		struct {
+			key   string
+			value string
+		}{"parent_requirement", rawParentRequirementValue(f.ParentRequirement)},
+		struct {
+			key   string
+			value string
+		}{"branch", rawBranchValue(f.Branch)},
+		struct {
+			key   string
+			value string
+		}{"pr", rawPRValue(f.PR)},
+		struct {
+			key   string
+			value string
+		}{"tasks_done_total", rawTasksDoneTotalValue(f.Tasks)},
+	)
 	for _, kv := range header {
 		if err := writeRawHeaderLine(w, kv.key, kv.value); err != nil {
 			return err

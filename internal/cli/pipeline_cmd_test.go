@@ -148,6 +148,8 @@ func TestPipelineCmd_HelpListsFlags(t *testing.T) {
 		"--include-done",
 		"--this-repo",
 		"--json",
+		"--raw",
+		"--verbose",
 	} {
 		if !strings.Contains(out, tok) {
 			t.Errorf("help missing flag %q; got:\n%s", tok, out)
@@ -160,7 +162,7 @@ func TestPipelineCmd_HelpListsFlags(t *testing.T) {
 // help-output check in case the long-description wording drifts.
 func TestPipelineCmd_AllFlagsRegistered(t *testing.T) {
 	cmd := newPipelineCmd()
-	for _, name := range []string{"requirements", "features", "horizontal", "vertical", "include-done", "this-repo", "json", "raw"} {
+	for _, name := range []string{"requirements", "features", "horizontal", "vertical", "include-done", "this-repo", "json", "raw", "verbose"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("flag --%s not registered", name)
 		}
@@ -654,6 +656,52 @@ func TestRunPipeline_RawFeaturesSelector(t *testing.T) {
 	}
 	if strings.Contains(string(got), "# requirements") {
 		t.Errorf("features selector must not emit '# requirements' marker; got:\n%s", string(got))
+	}
+}
+
+// TestRunPipeline_RawCombinedVerbose verifies that --raw --verbose
+// appends `created_at` / `last_transitioned_at` columns to both the
+// requirements and features TSV sections, and that the rendered bytes
+// match the verbose combined golden.
+func TestRunPipeline_RawCombinedVerbose(t *testing.T) {
+	sd := pipelineSampleDeps()
+	buf := &bytes.Buffer{}
+	if err := runPipeline(buf, io.Discard, pipelineFlags{raw: true, verbose: true}, sd); err != nil {
+		t.Fatalf("runPipeline --raw --verbose: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_combined_verbose.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("verbose combined --raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// Each section's header must contain the two timestamp columns.
+	for _, marker := range []string{"\tcreated_at\tlast_transitioned_at"} {
+		if !strings.Contains(string(got), marker) {
+			t.Errorf("expected %q in verbose pipeline output; got:\n%s", marker, string(got))
+		}
+	}
+}
+
+// TestRunPipeline_VerboseWithoutRawIsNoOp verifies that --verbose without
+// --raw does not change the human pipeline output (vertical layout used
+// to keep the test deterministic).
+func TestRunPipeline_VerboseWithoutRawIsNoOp(t *testing.T) {
+	sd := pipelineSampleDeps()
+	bare := &bytes.Buffer{}
+	if err := runPipeline(bare, io.Discard, pipelineFlags{vertical: true}, sd); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	verbose := &bytes.Buffer{}
+	if err := runPipeline(verbose, io.Discard, pipelineFlags{vertical: true, verbose: true}, sd); err != nil {
+		t.Fatalf("verbose: %v", err)
+	}
+	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
+		t.Errorf("--verbose without --raw must not change pipeline output")
 	}
 }
 

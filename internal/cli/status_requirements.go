@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
 	"golang.org/x/term"
@@ -140,7 +141,7 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 	}
 
 	if flags.raw {
-		return writeRequirementsRaw(w, reqs)
+		return writeRequirementsRaw(w, reqs, flags.verbose)
 	}
 
 	if flags.json {
@@ -244,24 +245,44 @@ func rawBlockedField(b *projectstatus.BlockedInfo) string {
 // borders, and no trailing totals line. Sparse cells render as `-`. The
 // column order is frozen — any reshuffle would break every agent
 // consumer that splits on `\t`.
-func writeRequirementsRaw(w io.Writer, reqs []projectstatus.Requirement) error {
-	header := strings.Join([]string{"number", "stage", "title", "blocked_by", "owning_repo"}, rawListSeparator)
-	if _, err := fmt.Fprintln(w, header); err != nil {
+//
+// When verbose is true, the header gains `created_at` and
+// `last_transitioned_at` columns at the end (in that order, ISO date) so
+// agents that need timing pay only for the bytes they ask for.
+func writeRequirementsRaw(w io.Writer, reqs []projectstatus.Requirement, verbose bool) error {
+	cols := []string{"number", "stage", "title", "blocked_by", "owning_repo"}
+	if verbose {
+		cols = append(cols, "created_at", "last_transitioned_at")
+	}
+	if _, err := fmt.Fprintln(w, strings.Join(cols, rawListSeparator)); err != nil {
 		return fmt.Errorf("writing raw header: %w", err)
 	}
 	for _, r := range reqs {
-		row := strings.Join([]string{
+		row := []string{
 			fmt.Sprintf("%d", r.Number),
 			rawField(string(r.Stage)),
 			rawField(r.Title),
 			rawBlockedField(r.Blocked),
 			rawField(r.OwningRepo),
-		}, rawListSeparator)
-		if _, err := fmt.Fprintln(w, row); err != nil {
+		}
+		if verbose {
+			row = append(row, rawTimestampField(r.CreatedAt), rawTimestampField(r.LastTransitionedAt))
+		}
+		if _, err := fmt.Fprintln(w, strings.Join(row, rawListSeparator)); err != nil {
 			return fmt.Errorf("writing raw row: %w", err)
 		}
 	}
 	return nil
+}
+
+// rawTimestampField renders a time.Time as an ISO-8601 date (YYYY-MM-DD)
+// for inclusion in `--raw --verbose` output. Zero times render as the
+// absent sentinel `-` so the column count stays stable across rows.
+func rawTimestampField(t time.Time) string {
+	if t.IsZero() {
+		return rawAbsentValue
+	}
+	return t.Format("2006-01-02")
 }
 
 // writeRequirementsJSON marshals the envelope {items, totals} as pretty

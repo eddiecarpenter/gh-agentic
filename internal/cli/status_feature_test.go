@@ -329,6 +329,79 @@ func TestRunStatusFeature_RawSeparatorAlwaysPresent(t *testing.T) {
 	}
 }
 
+// TestRunStatusFeature_RawVerboseInsertsTimestamps verifies that
+// `--raw --verbose` inserts the two timestamp header lines after
+// `owning_repo` while keeping the body verbatim.
+func TestRunStatusFeature_RawVerboseInsertsTimestamps(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	body := "## User Story\n\n" +
+		"As an agent, I want a status command so I can answer \"where are we?\".\n\n" +
+		"```go\nstatus := \"in-development\"\n```\n\n" +
+		"Flow: backlog → scoping → in-development."
+	issues := []projectstatus.ProjectIssue{
+		{Number: 492, Title: "feat: status command", Body: body, Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	subIssues := map[int][]projectstatus.TaskRef{
+		492: {
+			{Number: 494, Title: "Scaffold", Closed: true},
+			{Number: 495, Title: "Types", Closed: true},
+			{Number: 496, Title: "Requirements list", Closed: false},
+		},
+	}
+	parent := map[int]*projectstatus.RequirementSummary{
+		492: {Number: 457, Title: "feat: single-pane view", Stage: projectstatus.StageScoping, OwningRepo: "eddiecarpenter/gh-agentic"},
+	}
+	branches := map[string]*projectstatus.BranchState{
+		"feature/492": {Name: "feature/492", Exists: true, Merged: true},
+	}
+	prs := map[string]*projectstatus.PRState{
+		"feature/492": {Number: 777, State: "open", Reviewers: []string{"eddie"}},
+	}
+	sd := featureDetailFixture(issues, subIssues, parent, branches, prs)
+
+	buf := &bytes.Buffer{}
+	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{raw: true, verbose: true}, sd); err != nil {
+		t.Fatalf("runStatusFeature --raw --verbose: %v", err)
+	}
+	got := buf.Bytes()
+
+	wantBytes, err := os.ReadFile("testdata/status_raw/feature_detail_verbose.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw --verbose detail output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	for _, marker := range []string{"created_at: 2026-04-18", "last_transitioned_at: 2026-04-18"} {
+		if !strings.Contains(string(got), marker) {
+			t.Errorf("expected %q in verbose feature detail; got:\n%s", marker, string(got))
+		}
+	}
+}
+
+// TestRunStatusFeature_VerboseWithoutRawIsNoOp verifies the human
+// detail view is byte-equal regardless of `--verbose` when `--raw` is
+// not set.
+func TestRunStatusFeature_VerboseWithoutRawIsNoOp(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []projectstatus.ProjectIssue{
+		{Number: 492, Title: "t", Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	sd := featureDetailFixture(issues, nil, nil, nil, nil)
+	bare := &bytes.Buffer{}
+	if err := runStatusFeature(bare, io.Discard, 492, statusDetailFlags{}, sd); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	verbose := &bytes.Buffer{}
+	if err := runStatusFeature(verbose, io.Discard, 492, statusDetailFlags{verbose: true}, sd); err != nil {
+		t.Fatalf("verbose: %v", err)
+	}
+	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
+		t.Errorf("--verbose without --raw must not change feature detail output")
+	}
+}
+
 // TestParentRequirementOneLiner covers nil and normal rendering paths.
 func TestParentRequirementOneLiner(t *testing.T) {
 	if got := parentRequirementOneLiner(nil); got != "" {

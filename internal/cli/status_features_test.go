@@ -348,6 +348,54 @@ func TestRunStatusFeatures_RawTSVShape(t *testing.T) {
 	}
 }
 
+// TestRunStatusFeatures_RawVerboseAppendsTimestamps verifies that
+// `--raw --verbose` appends the two timestamp columns, the bytes match
+// the verbose golden, and the column-count invariant still holds.
+func TestRunStatusFeatures_RawVerboseAppendsTimestamps(t *testing.T) {
+	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{raw: true, verbose: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures --raw --verbose: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/features_list_verbose.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw --verbose output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	rawLines := strings.Split(strings.TrimRight(string(got), "\n"), "\n")
+	headerCols := len(strings.Split(rawLines[0], "\t"))
+	if headerCols != 7 {
+		t.Errorf("verbose header column count = %d, want 7", headerCols)
+	}
+	for i, line := range rawLines {
+		cols := strings.Split(line, "\t")
+		if len(cols) != headerCols {
+			t.Errorf("verbose line %d column count = %d, want %d", i, len(cols), headerCols)
+		}
+	}
+}
+
+// TestRunStatusFeatures_VerboseWithoutRawIsNoOp verifies that `--verbose`
+// without `--raw` does not change the human table output.
+func TestRunStatusFeatures_VerboseWithoutRawIsNoOp(t *testing.T) {
+	bare := &bytes.Buffer{}
+	if err := runStatusFeatures(bare, io.Discard, statusListFlags{}, fakeFeaturesDeps(sampleFeatureIssues(), nil)); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	verbose := &bytes.Buffer{}
+	if err := runStatusFeatures(verbose, io.Discard, statusListFlags{verbose: true}, fakeFeaturesDeps(sampleFeatureIssues(), nil)); err != nil {
+		t.Fatalf("verbose: %v", err)
+	}
+	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
+		t.Errorf("--verbose without --raw must not change human output:\nbare:\n%s\nverbose:\n%s", bare.String(), verbose.String())
+	}
+}
+
 // TestFeaturesTotalsLine covers singular / plural and blocked branches.
 func TestFeaturesTotalsLine(t *testing.T) {
 	cases := []struct {
