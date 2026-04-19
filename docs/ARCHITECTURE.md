@@ -12,7 +12,7 @@ The extension serves two roles:
    credentials, and run health checks.
 2. **Framework source** — the canonical source for the AI-Native Delivery Framework
    files (`skills/`, `standards/`, `concepts/`, `recipes/`). Domain repos mount
-   these files at `.ai/` via `gh agentic -v2 mount`.
+   these files at `.ai/` via `gh agentic mount`.
 
 ---
 
@@ -25,29 +25,29 @@ gh-agentic/
 │       └── main.go              ← entrypoint, wires cobra root command
 ├── internal/
 │   ├── cli/
-│   │   ├── root.go              ← root command, version flag, -v2 persistent flag
-│   │   ├── v2.go                ← v2 guard, deprecation notices
-│   │   ├── init.go              ← `gh agentic -v2 init` subcommand
-│   │   ├── mount.go             ← `gh agentic -v2 mount` subcommand
-│   │   ├── auth.go              ← `gh agentic -v2 auth` subcommand (login, refresh, check)
-│   │   ├── doctorv2.go          ← `gh agentic -v2 doctor-v2` subcommand
-│   │   ├── bootstrap.go         ← `gh agentic bootstrap` (v1 — deprecated)
-│   │   ├── inception.go         ← `gh agentic inception` (v1 — deprecated)
-│   │   ├── sync.go              ← `gh agentic sync` (v1 — deprecated)
-│   │   ├── doctor.go            ← `gh agentic doctor` (v1)
-│   │   └── version.go           ← `gh agentic version`
-│   ├── initv2/                  ← v2 init wizard logic
-│   ├── mount/                   ← v2 mount logic (first-time, remount, switch)
+│   │   ├── root.go              ← root command, version flag
+│   │   ├── init.go              ← `gh agentic init` subcommand
+│   │   ├── mount.go             ← `gh agentic mount` subcommand
+│   │   ├── auth.go              ← `gh agentic auth` subcommand (login, refresh, check)
+│   │   ├── check.go             ← `gh agentic check` subcommand
+│   │   ├── repair.go            ← `gh agentic repair` subcommand
+│   │   ├── upgrade.go           ← `gh agentic upgrade` subcommand
+│   │   ├── project.go           ← `gh agentic project` subcommand tree
+│   │   ├── info.go              ← `gh agentic info` subcommand
+│   │   ├── status.go            ← `gh agentic status` subcommand
+│   │   └── kanban.go            ← `gh agentic kanban` subcommand
+│   ├── init/                    ← init wizard logic
+│   ├── mount/                   ← mount logic (first-time, remount, switch)
 │   │   └── templates/           ← embedded templates for generated files
-│   ├── auth/                    ← v2 credential management (login, refresh, check)
-│   ├── doctorv2/                ← v2 grouped health checks
+│   ├── auth/                    ← credential management (login, refresh, check)
+│   ├── doctor/                  ← grouped health checks
+│   ├── project/                 ← agentic-project management (create, join, switch)
+│   ├── projectstatus/           ← pipeline status reporting
+│   ├── scope/                   ← shared scope routing for gh variable/secret set
+│   ├── frameworkcheck/          ← framework-sync helpers
 │   ├── tarball/                 ← tarball download and extraction
 │   ├── fsutil/                  ← filesystem utilities
 │   ├── testutil/                ← shared test helpers
-│   ├── verify/                  ← credential verification helpers
-│   ├── bootstrap/               ← v1 bootstrap logic (deprecated)
-│   ├── inception/               ← v1 inception logic (deprecated)
-│   ├── sync/                    ← v1 template sync logic (deprecated)
 │   └── ui/
 │       └── styles.go            ← lipgloss styles, GitHub colour palette
 ├── skills/                      ← framework playbooks (session procedures)
@@ -57,7 +57,7 @@ gh-agentic/
 ├── docs/
 │   ├── PROJECT_BRIEF.md
 │   ├── ARCHITECTURE.md          ← this file
-│   └── TUI_DESIGN.md            ← v1 bootstrap UX reference (legacy)
+│   └── TUI_DESIGN.md            ← init wizard UX reference
 ├── .github/workflows/
 │   ├── agentic-pipeline.yml     ← domain repo wrapper workflow
 │   ├── agentic-pipeline-reusable.yml ← reusable pipeline workflow
@@ -73,7 +73,7 @@ gh-agentic/
 
 ---
 
-## v2 Mount model
+## Mount model
 
 Domain repos consume the framework via a **mount** mechanism rather than copying
 template files directly.
@@ -84,9 +84,9 @@ template files directly.
    framework version tag (e.g. `v2.0.0`). This file is committed to the repo.
 
 2. **`.ai/` directory** — The mounted framework. This directory is **gitignored**
-   and populated on demand by `gh agentic -v2 mount`. It is not committed.
+   and populated on demand by `gh agentic mount`. It is not committed.
 
-3. **Fetch mechanism** — `gh agentic -v2 mount` downloads the framework as a
+3. **Fetch mechanism** — `gh agentic mount` downloads the framework as a
    tarball from the `eddiecarpenter/gh-agentic` release at the pinned version
    using `git clone --depth 1`. It extracts framework files (`skills/`,
    `standards/`, `concepts/`, `recipes/`, `RULEBOOK.md`) into `.ai/`.
@@ -147,7 +147,7 @@ works identically whether the file is at `/gh-agentic/concepts/` or at
 
 ## Credential management
 
-The `gh agentic -v2 auth` command manages Claude Code credentials for CI runners.
+The `gh agentic auth` command manages Claude Code credentials for CI runners.
 
 ### Auth subcommands
 
@@ -171,27 +171,18 @@ available to CI runners without manual configuration.
 
 ## Commands
 
-### v2 commands (current)
-
 | Command | Description |
 |---|---|
-| `gh agentic -v2 init` | Interactive wizard to initialise a new agentic environment |
-| `gh agentic -v2 mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
-| `gh agentic -v2 auth login` | Force Claude Code login and push credentials |
-| `gh agentic -v2 auth refresh` | Push current local credentials to repo secret |
-| `gh agentic -v2 auth check` | Verify credentials are present and not expired |
-| `gh agentic -v2 doctor-v2` | Health check with grouped output |
-
-### v1 commands (deprecated)
-
-| Command | Replacement |
-|---|---|
-| `gh agentic bootstrap` | `gh agentic -v2 init` |
-| `gh agentic inception` | `gh agentic -v2 init` |
-| `gh agentic sync` | `gh agentic -v2 mount` |
-
-These commands remain functional but print a deprecation notice when the `-v2`
-flag is set. They will be removed in a future release.
+| `gh agentic init` | Interactive wizard to initialise a new agentic environment |
+| `gh agentic check` | Verify project membership and pipeline readiness |
+| `gh agentic repair` | Auto-fix issues reported by `check` |
+| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
+| `gh agentic upgrade` | Change the framework version for the whole federation (control plane only) |
+| `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
+| `gh agentic info` | Show the current state of this repo's agentic setup |
+| `gh agentic auth` | Manage Claude credentials used by the agent pipeline (login, refresh, check) |
+| `gh agentic status` | Show pipeline state across requirements and features |
+| `gh agentic kanban` | Render requirements and features as a kanban view |
 
 ---
 
@@ -206,19 +197,18 @@ cmd/gh-agentic/main.go
 
 - `internal/cli/` contains only cobra command definitions and flag parsing.
   All logic is delegated to the relevant `internal/` package.
-- v2 packages (`internal/initv2/`, `internal/mount/`, `internal/auth/`,
-  `internal/doctorv2/`) own their respective business logic. They have no
-  knowledge of cobra.
-- v1 packages (`internal/bootstrap/`, `internal/inception/`, `internal/sync/`)
-  remain for backwards compatibility.
+- `internal/init/`, `internal/mount/`, `internal/auth/`, `internal/doctor/`
+  own their respective business logic. They have no knowledge of cobra.
+- `internal/project/` owns agentic-project management — create, join, switch,
+  unlink — and the shared check/repair helpers that the cobra commands compose.
 - `internal/ui/` owns the shared colour palette and lipgloss styles. No other
   package defines styles inline.
 - `internal/tarball/` provides shared tarball download and extraction used by
   both mount and init.
 - `internal/fsutil/` provides filesystem utilities shared across packages.
 - `internal/testutil/` provides shared test helpers.
-- `internal/verify/` provides credential verification helpers shared by auth
-  and doctor commands.
+- `internal/scope/` provides the shared `ScopeFor` routing used by the lower-
+  level packages (auth, init) and re-exported via `internal/project/`.
 
 ---
 
@@ -230,7 +220,7 @@ cmd/gh-agentic/main.go
 | `github.com/charmbracelet/huh` | Declarative TUI forms — used in init wizard for configuration collection. |
 | `github.com/charmbracelet/lipgloss` | Terminal styling — GitHub colour palette, borders, summary boxes. |
 | `github.com/charmbracelet/bubbles` | Spinner component shown while each execution step runs. |
-| `github.com/spf13/cobra` | CLI command routing — root command with `-v2` persistent flag and subcommands. |
+| `github.com/spf13/cobra` | CLI command routing — root command and subcommands. |
 
 ---
 
