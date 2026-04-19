@@ -123,8 +123,9 @@ change membership, or --force to re-run setup from scratch.`,
 					}
 					return err
 				}
-				// Set topology variable.
-				_ = deps.SetRepoVariable(deps.Owner, deps.RepoName, project.TopologyVarName, "single")
+				// Set topology variable. Identity-variable writes are
+				// sanctioned per feature #571 (audit doc Section B).
+				_ = deps.SetRepoVariable(deps.Owner, deps.RepoName, project.TopologyVarName, "single") // boundary-allow: write path
 				return nil
 			}
 

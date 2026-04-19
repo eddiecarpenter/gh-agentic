@@ -118,7 +118,7 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 
 	projectID, err := deps.resolveProjectID(currentRepo)
 	if err != nil {
-		return fmt.Errorf("reading %s for %s: %w", project.ProjectVarName, currentRepo, err)
+		return fmt.Errorf("reading AGENTIC_PROJECT_ID for %s: %w", currentRepo, err)
 	}
 	if projectID == "" {
 		return projectstatus.ErrProjectNotConfigured

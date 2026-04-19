@@ -473,7 +473,7 @@ To change the framework version for the whole federation, use
 				return fmt.Errorf("no projects found for %s", deps.Owner)
 			}
 
-			currentID, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, project.ProjectVarName)
+			currentID := currentProjectID(deps)
 			var options []huh.Option[string]
 			for _, p := range projects {
 				label := p.Title

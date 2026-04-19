@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -159,7 +158,7 @@ func runPipeline(w io.Writer, stderr io.Writer, flags pipelineFlags, deps status
 
 	projectID, err := deps.resolveProjectID(currentRepo)
 	if err != nil {
-		return fmt.Errorf("reading %s for %s: %w", project.ProjectVarName, currentRepo, err)
+		return fmt.Errorf("reading AGENTIC_PROJECT_ID for %s: %w", currentRepo, err)
 	}
 	if projectID == "" {
 		return projectstatus.ErrProjectNotConfigured
