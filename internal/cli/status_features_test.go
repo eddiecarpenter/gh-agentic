@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
 // fakeFeaturesDeps builds a statusDeps that serves the given issues through
@@ -26,6 +28,7 @@ func fakeFeaturesDeps(issues []projectstatus.ProjectIssue, linked []project.Link
 				return linked, nil
 			},
 		},
+		busy: testutil.NoopBusy,
 	}
 }
 
@@ -48,7 +51,7 @@ func sampleFeatureIssues() []projectstatus.ProjectIssue {
 func TestRunStatusFeatures_DefaultExcludesDone(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -74,7 +77,7 @@ func TestRunStatusFeatures_FederatedAggregation(t *testing.T) {
 	}
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), linked)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -94,7 +97,7 @@ func TestRunStatusFeatures_FederatedAggregation(t *testing.T) {
 func TestRunStatusFeatures_ThisRepoNarrows(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{thisRepo: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{thisRepo: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -110,7 +113,7 @@ func TestRunStatusFeatures_ThisRepoNarrows(t *testing.T) {
 func TestRunStatusFeatures_IncludeDone(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{includeDone: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{includeDone: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -127,7 +130,7 @@ func TestRunStatusFeatures_IncludeDone(t *testing.T) {
 func TestRunStatusFeatures_JSONSchema(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{json: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	var parsed struct {
@@ -157,7 +160,7 @@ func TestRunStatusFeatures_JSONSchema(t *testing.T) {
 func TestRunStatusFeatures_EmptyEnvelope(t *testing.T) {
 	sd := fakeFeaturesDeps(nil, nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{json: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	if !strings.Contains(buf.String(), `"items": []`) {
@@ -190,38 +193,11 @@ func TestRunStatusFeatures_NoProjectConfigured(t *testing.T) {
 	sd := statusDeps{
 		currentRepo:      func() (string, error) { return "eddiecarpenter/gh-agentic", nil },
 		resolveProjectID: func(string) (string, error) { return "", nil },
+		busy:             testutil.NoopBusy,
 	}
-	err := runStatusFeatures(&bytes.Buffer{}, statusListFlags{}, sd)
+	err := runStatusFeatures(&bytes.Buffer{}, io.Discard, statusListFlags{}, sd)
 	if !errors.Is(err, projectstatus.ErrProjectNotConfigured) {
 		t.Errorf("expected ErrProjectNotConfigured; got %v", err)
-	}
-}
-
-// TestRunStatusFeatures_KanbanVertical verifies --kanban --vertical renders
-// the stage-grouped view for features.
-func TestRunStatusFeatures_KanbanVertical(t *testing.T) {
-	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures --kanban --vertical: %v", err)
-	}
-	out := buf.String()
-	for _, tok := range []string{
-		"Features — Kanban",
-		"## backlog (0)",
-		"## in-design (0)",
-		"## in-development (2)", // #492, #511
-		"## in-review (0)",
-		"#492",
-		"#511",
-	} {
-		if !strings.Contains(out, tok) {
-			t.Errorf("expected %q; got:\n%s", tok, out)
-		}
-	}
-	// --vertical must not emit the auto-fallback notice.
-	if strings.Contains(out, "horizontal kanban needs ≥") {
-		t.Errorf("--vertical should not emit the fallback notice; got:\n%s", out)
 	}
 }
 
@@ -280,7 +256,7 @@ func TestRunStatusFeatures_ListPopulatesTasksColumn(t *testing.T) {
 		return nil, nil
 	}
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -304,7 +280,7 @@ func TestRunStatusFeatures_ListJSONShapeStableAfterTasksColumn(t *testing.T) {
 		return nil, nil
 	}
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{json: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures --json: %v", err)
 	}
 	raw := buf.String()

@@ -108,10 +108,12 @@ func TestStatusCmd_SubCommandsReturnNotImplemented(t *testing.T) {
 	}
 }
 
-// TestStatusCmd_ListFlagsRegistered verifies every flag that downstream tasks
-// will consume is declared on the list sub-commands and parses without error.
+// TestStatusCmd_ListFlagsRegistered verifies every stable flag the list
+// sub-commands expose is declared on both. After feature #518 the kanban
+// layout flags (--kanban, --horizontal, --vertical) no longer live on
+// these commands — they have moved to `gh agentic kanban`.
 func TestStatusCmd_ListFlagsRegistered(t *testing.T) {
-	expected := []string{"json", "kanban", "horizontal", "this-repo", "include-done"}
+	expected := []string{"json", "this-repo", "include-done"}
 
 	for _, parent := range []string{"requirements", "features"} {
 		t.Run(parent, func(t *testing.T) {
@@ -123,6 +125,12 @@ func TestStatusCmd_ListFlagsRegistered(t *testing.T) {
 			for _, name := range expected {
 				if child.Flags().Lookup(name) == nil {
 					t.Errorf("status %s: expected flag --%s to be declared, but it was not", parent, name)
+				}
+			}
+			// Removed layout flags must not appear in help output.
+			for _, removed := range []string{"horizontal", "vertical"} {
+				if child.Flags().Lookup(removed) != nil {
+					t.Errorf("status %s: flag --%s should have been removed but is still declared", parent, removed)
 				}
 			}
 		})
@@ -202,4 +210,99 @@ func TestStatusCmd_RegisteredOnRoot(t *testing.T) {
 	if findChild(root, "status") == nil {
 		t.Fatalf("root: expected 'status' sub-command to be registered")
 	}
+}
+
+// TestStatusCmd_KanbanFlagHiddenOnList verifies the --kanban flag is still
+// parsed on the list commands (to intercept it) but hidden from help so
+// users don't see it as a supported option.
+func TestStatusCmd_KanbanFlagHiddenOnList(t *testing.T) {
+	for _, parent := range []string{"requirements", "features"} {
+		t.Run(parent, func(t *testing.T) {
+			cmd := newStatusCmd()
+			child := findChild(cmd, parent)
+			if child == nil {
+				t.Fatalf("status: sub-command %q not found", parent)
+			}
+			f := child.Flags().Lookup("kanban")
+			if f == nil {
+				t.Fatalf("status %s: --kanban must remain declared so the migration error fires", parent)
+			}
+			if !f.Hidden {
+				t.Errorf("status %s: --kanban must be hidden from help", parent)
+			}
+		})
+	}
+}
+
+// TestStatusCmd_KanbanFlagProducesMigrationError verifies that passing the
+// legacy --kanban flag to 'status requirements' / 'status features' fails
+// with the documented two-line migration message and exits non-zero.
+func TestStatusCmd_KanbanFlagProducesMigrationError(t *testing.T) {
+	cases := []struct {
+		name           string
+		args           []string
+		expectContains string
+	}{
+		{"requirements", []string{"requirements", "--kanban"}, "gh agentic kanban --requirements"},
+		{"features", []string{"features", "--kanban"}, "gh agentic kanban --features"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := newStatusCmdWithDeps(stubStatusDepsForMigration())
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			cmd.SetOut(stdout)
+			cmd.SetErr(stderr)
+			cmd.SetArgs(tc.args)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatalf("%s: expected error; got nil", tc.name)
+			}
+			// Handler returns ErrSilent after renderStatusError writes
+			// the formatted message on stderr — so the execution error
+			// is ErrSilent and the visible text lives on stderr.
+			if !errors.Is(err, ErrSilent) {
+				t.Errorf("%s: expected ErrSilent, got %v", tc.name, err)
+			}
+			out := stderr.String()
+			if !strings.Contains(out, "--kanban has been removed from this command") {
+				t.Errorf("%s: expected migration heading in stderr; got:\n%s", tc.name, out)
+			}
+			if !strings.Contains(out, tc.expectContains) {
+				t.Errorf("%s: expected stderr to name %q; got:\n%s", tc.name, tc.expectContains, out)
+			}
+		})
+	}
+}
+
+// stubStatusDepsForMigration returns deps that never reach the network —
+// the migration error fires before the fetch runs.
+func stubStatusDepsForMigration() statusDeps {
+	sd := defaultStatusDeps()
+	// Short-circuit currentRepo and project lookup so the test doesn't
+	// touch gh auth — the handler returns the migration error before
+	// either runs, but defensive inputs keep the test hermetic.
+	sd.currentRepo = func() (string, error) { return "eddiecarpenter/gh-agentic", nil }
+	sd.resolveProjectID = func(string) (string, error) { return "PROJ_ID", nil }
+	return sd
+}
+
+// newStatusCmdWithDeps mirrors newStatusCmd but injects an explicit deps
+// bundle into every list sub-command so tests can stub the environment.
+func newStatusCmdWithDeps(deps statusDeps) *cobra.Command {
+	cmd := newStatusCmd()
+	// Rebuild the list sub-commands with injected deps while leaving
+	// the detail commands alone (they aren't exercised by these tests).
+	for i, c := range cmd.Commands() {
+		_ = i
+		switch strings.Split(c.Use, " ")[0] {
+		case "requirements":
+			cmd.RemoveCommand(c)
+			cmd.AddCommand(newStatusRequirementsCmdWithDeps(deps))
+		case "features":
+			cmd.RemoveCommand(c)
+			cmd.AddCommand(newStatusFeaturesCmdWithDeps(deps))
+		}
+	}
+	return cmd
 }

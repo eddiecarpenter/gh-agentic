@@ -9,31 +9,24 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
-	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // runStatusFeatures is the handler for `gh agentic status features`. It
 // resolves the project ID, fetches the list via projectstatus.FetchFeatures
 // (which aggregates across every repo linked to the project), optionally
-// narrows to the current repo, then renders:
+// narrows to the current repo, then renders either the --json envelope or
+// the compact tabular list.
 //
-//  1. --json — envelope {items, totals}; silently takes precedence over --kanban.
-//  2. --kanban — stage-grouped view, vertical by default / side-by-side
-//     when --horizontal is also set and the terminal is wide enough.
-//  3. Default — compact tabular list.
-func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) error {
-	if (flags.horizontal || flags.vertical) && !flags.kanban {
-		return fmt.Errorf("--horizontal and --vertical require --kanban")
-	}
-	// Resolve layout early so mutually-exclusive flags fail fast before any
-	// network call.
-	var layout kanbanLayout
+// The legacy --kanban flag was removed by feature #518. If the caller
+// passes --kanban (hidden on this command for interception), the handler
+// returns errKanbanFlagRemoved pointing at `gh agentic kanban --features`.
+//
+// stderr receives the busy-indicator rendered by deps.busy while the
+// federated fetch is in flight; stdout (w) receives the final output.
+// Non-TTY writers suppress the indicator — see ui.BusyRun.
+func runStatusFeatures(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
 	if flags.kanban {
-		var err error
-		layout, err = resolveKanbanLayout(flags, terminalWidth(), featureKanbanMinWidth)
-		if err != nil {
-			return err
-		}
+		return &errKanbanFlagRemoved{suggestedCommand: "gh agentic kanban --features"}
 	}
 
 	currentRepo, err := deps.currentRepo()
@@ -49,7 +42,15 @@ func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) erro
 		return projectstatus.ErrProjectNotConfigured
 	}
 
-	features, err := projectstatus.FetchFeatures(deps.psDeps, projectID, flags.includeDone)
+	// Wrap the federated feature fetch in the shared busy indicator.
+	// The indicator writes to stderr so stdout stays clean for --json
+	// consumers; non-TTY writers suppress the glyphs entirely.
+	var features []projectstatus.Feature
+	err = deps.busy(stderr, "Fetching features…", func() error {
+		var fetchErr error
+		features, fetchErr = projectstatus.FetchFeatures(deps.psDeps, projectID, flags.includeDone)
+		return fetchErr
+	})
 	if err != nil {
 		return fmt.Errorf("fetching features: %w", err)
 	}
@@ -60,16 +61,6 @@ func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) erro
 
 	if flags.json {
 		return writeFeaturesJSON(w, features)
-	}
-
-	if flags.kanban {
-		unicode := ui.TerminalSupportsUTF8()
-		columns := columnsForFeatures(flags.includeDone)
-		cards := featureCards(features, columns, unicode)
-		if layout.horizontal {
-			return writeHorizontalKanban(w, columns, cards, terminalWidth(), featureKanbanMinWidth, unicode)
-		}
-		return writeVerticalKanban(w, "Features — Kanban", columns, cards, layout.notice)
 	}
 
 	return writeFeaturesTable(w, features, currentRepo)

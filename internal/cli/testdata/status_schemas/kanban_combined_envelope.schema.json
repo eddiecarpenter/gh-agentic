@@ -1,0 +1,54 @@
+{
+  "description": "Schema for `gh agentic kanban --json` — the combined envelope introduced by feature #518. Inner per-item shapes reuse the existing Requirement / Feature schemas verbatim; only the top-level envelope and totals object are new. Selector flags (--requirements / --features) drop the unselected top-level key entirely, not set to null.",
+  "envelope_default": {
+    "requirements": "array-of-object",
+    "features": "array-of-object",
+    "totals": "object"
+  },
+  "envelope_requirements_selector": {
+    "requirements": "array-of-object",
+    "totals": "object"
+  },
+  "envelope_features_selector": {
+    "features": "array-of-object",
+    "totals": "object"
+  },
+  "totals_fields_default": {
+    "open_requirements": "number",
+    "open_features": "number",
+    "blocked": "number"
+  },
+  "totals_fields_requirements_selector": {
+    "open_requirements": "number",
+    "blocked": "number"
+  },
+  "totals_fields_features_selector": {
+    "open_features": "number",
+    "blocked": "number"
+  },
+  "inner_requirement_fields": {
+    "number": "number",
+    "title": "string",
+    "body": "string",
+    "stage": "string",
+    "created_at": "string",
+    "last_transitioned_at": "string",
+    "owning_repo": "string",
+    "blocked": "object-or-null",
+    "linked_features": "array"
+  },
+  "inner_feature_fields": {
+    "number": "number",
+    "title": "string",
+    "body": "string",
+    "stage": "string",
+    "created_at": "string",
+    "last_transitioned_at": "string",
+    "owning_repo": "string",
+    "blocked": "object-or-null",
+    "parent_requirement": "object-or-null",
+    "tasks": "array",
+    "branch": "object-or-null",
+    "pr": "object-or-null"
+  }
+}

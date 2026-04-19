@@ -54,8 +54,11 @@ steps.
 
 %s shows pipeline state across requirements and features.
 
+%s renders requirements and features together as a kanban — the
+top-level, first-class way to answer "where are we?" at a glance.
+
 Run 'gh agentic <command> --help' on any command for detailed usage.`,
-			b("init"), b("check"), b("repair"), b("mount"), b("upgrade"), b("project"), b("info"), b("auth"), b("status")),
+			b("init"), b("check"), b("repair"), b("mount"), b("upgrade"), b("project"), b("info"), b("auth"), b("status"), b("kanban")),
 		Version:       version,
 		SilenceErrors: true,
 	}
@@ -84,6 +87,7 @@ Run 'gh agentic <command> --help' on any command for detailed usage.`,
 	root.AddCommand(newInfoCmd(version, date))
 	root.AddCommand(newAuthCmd())
 	root.AddCommand(newStatusCmd())
+	root.AddCommand(newKanbanCmd())
 
 	return root
 }

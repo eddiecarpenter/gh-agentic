@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 )
@@ -16,7 +17,7 @@ import (
 // detail payload; the list envelope must remain byte-compatible.
 func TestStatusJSON_FeaturesListDoesNotLeakInternalFields(t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{json: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusFeatures --json: %v", err)
 	}
 	raw := buf.String()
@@ -65,7 +66,7 @@ func TestStatusJSON_FeaturesListDoesNotLeakInternalFields(t *testing.T) {
 // feature detail `--json` payload contains exactly the locked keys.
 func TestStatusJSON_FeatureDetailDoesNotLeakInternalFields(t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := runStatusFeature(buf, 492, statusDetailFlags{json: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{json: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusFeature --json: %v", err)
 	}
 	raw := buf.String()

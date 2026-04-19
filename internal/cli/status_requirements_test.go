@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
 // fakeProjectstatusDeps builds a projectstatus.Deps populated from an
@@ -48,6 +50,7 @@ func fakeStatusDeps(issues []projectstatus.ProjectIssue) statusDeps {
 		currentRepo:      func() (string, error) { return "eddiecarpenter/gh-agentic", nil },
 		resolveProjectID: func(string) (string, error) { return "PROJ_ID", nil },
 		psDeps:           fakeProjectstatusDeps(issues),
+		busy:             testutil.NoopBusy,
 	}
 }
 
@@ -56,7 +59,7 @@ func fakeStatusDeps(issues []projectstatus.ProjectIssue) statusDeps {
 // line.
 func TestRunStatusRequirements_DefaultTableExcludesDone(t *testing.T) {
 	buf := &bytes.Buffer{}
-	err := runStatusRequirements(buf, statusListFlags{}, fakeStatusDeps(sampleRequirementIssues()))
+	err := runStatusRequirements(buf, io.Discard, statusListFlags{}, fakeStatusDeps(sampleRequirementIssues()))
 	if err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
@@ -79,7 +82,7 @@ func TestRunStatusRequirements_DefaultTableExcludesDone(t *testing.T) {
 // surfaces closed items and updates the totals.
 func TestRunStatusRequirements_IncludeDonePullsInClosed(t *testing.T) {
 	buf := &bytes.Buffer{}
-	err := runStatusRequirements(buf, statusListFlags{includeDone: true}, fakeStatusDeps(sampleRequirementIssues()))
+	err := runStatusRequirements(buf, io.Discard, statusListFlags{includeDone: true}, fakeStatusDeps(sampleRequirementIssues()))
 	if err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
@@ -97,7 +100,7 @@ func TestRunStatusRequirements_IncludeDonePullsInClosed(t *testing.T) {
 // locked field names.
 func TestRunStatusRequirements_JSONEnvelopeShape(t *testing.T) {
 	buf := &bytes.Buffer{}
-	err := runStatusRequirements(buf, statusListFlags{json: true}, fakeStatusDeps(sampleRequirementIssues()))
+	err := runStatusRequirements(buf, io.Discard, statusListFlags{json: true}, fakeStatusDeps(sampleRequirementIssues()))
 	if err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
@@ -137,7 +140,7 @@ func TestRunStatusRequirements_JSONEnvelopeShape(t *testing.T) {
 // "items": [] rather than null when no requirements match.
 func TestRunStatusRequirements_JSONEnvelopeEmpty(t *testing.T) {
 	buf := &bytes.Buffer{}
-	err := runStatusRequirements(buf, statusListFlags{json: true}, fakeStatusDeps(nil))
+	err := runStatusRequirements(buf, io.Discard, statusListFlags{json: true}, fakeStatusDeps(nil))
 	if err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
@@ -154,7 +157,7 @@ func TestRunStatusRequirements_ThisRepoNarrows(t *testing.T) {
 		{Number: 600, Title: "other", Type: "requirement", Stage: projectstatus.StageBacklog, State: "open", OwningRepo: "foo/bar"},
 	}
 	buf := &bytes.Buffer{}
-	err := runStatusRequirements(buf, statusListFlags{thisRepo: true}, fakeStatusDeps(mixed))
+	err := runStatusRequirements(buf, io.Discard, statusListFlags{thisRepo: true}, fakeStatusDeps(mixed))
 	if err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
@@ -193,10 +196,11 @@ func TestRunStatusRequirements_BlockedAnnotation(t *testing.T) {
 		currentRepo:      func() (string, error) { return "eddiecarpenter/gh-agentic", nil },
 		resolveProjectID: func(string) (string, error) { return "PROJ_ID", nil },
 		psDeps:           deps,
+		busy:             testutil.NoopBusy,
 	}
 
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{}, sd); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{}, sd); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 
@@ -249,60 +253,11 @@ func TestRunStatusRequirements_NoProjectConfigured(t *testing.T) {
 		currentRepo:      func() (string, error) { return "eddiecarpenter/gh-agentic", nil },
 		resolveProjectID: func(string) (string, error) { return "", nil },
 		psDeps:           projectstatus.Deps{},
+		busy:             testutil.NoopBusy,
 	}
-	err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{}, sd)
+	err := runStatusRequirements(&bytes.Buffer{}, io.Discard, statusListFlags{}, sd)
 	if !errors.Is(err, projectstatus.ErrProjectNotConfigured) {
 		t.Errorf("expected ErrProjectNotConfigured, got %v", err)
-	}
-}
-
-// TestRunStatusRequirements_KanbanVertical verifies --kanban --vertical
-// renders the stage-grouped vertical view with columns in canonical order
-// and counts in the section headings.
-func TestRunStatusRequirements_KanbanVertical(t *testing.T) {
-	sd := fakeStatusDeps(sampleRequirementIssues())
-	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
-		t.Fatalf("runStatusRequirements --kanban --vertical: %v", err)
-	}
-	out := buf.String()
-	for _, tok := range []string{
-		"Requirements — Kanban",
-		"## backlog (2)", // #447, #467
-		"## scoping (1)", // #457
-		"## scheduled (0)",
-		"(none)",
-		"#447",
-		"#457",
-		"#467",
-	} {
-		if !strings.Contains(out, tok) {
-			t.Errorf("expected %q in kanban output; got:\n%s", tok, out)
-		}
-	}
-	// --vertical must not emit the auto-fallback notice.
-	if strings.Contains(out, "horizontal kanban needs ≥") {
-		t.Errorf("--vertical should not emit the fallback notice; got:\n%s", out)
-	}
-}
-
-// TestRunStatusRequirements_HorizontalRequiresKanban verifies the standalone
-// --horizontal flag errors rather than silently being ignored.
-func TestRunStatusRequirements_HorizontalRequiresKanban(t *testing.T) {
-	sd := fakeStatusDeps(sampleRequirementIssues())
-	err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{horizontal: true}, sd)
-	if err == nil {
-		t.Fatalf("expected error for bare --horizontal, got nil")
-	}
-}
-
-// TestRunStatusRequirements_VerticalRequiresKanban verifies the standalone
-// --vertical flag errors rather than silently being ignored.
-func TestRunStatusRequirements_VerticalRequiresKanban(t *testing.T) {
-	sd := fakeStatusDeps(sampleRequirementIssues())
-	err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{vertical: true}, sd)
-	if err == nil {
-		t.Fatalf("expected error for bare --vertical, got nil")
 	}
 }
 
@@ -315,7 +270,7 @@ func TestRunStatusRequirements_ShowsRepoColumnWhenFederated(t *testing.T) {
 		{Number: 222, Title: "remote", Type: "requirement", Stage: projectstatus.StageScoping, State: "open", OwningRepo: "foo/other"},
 	}
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{}, fakeStatusDeps(issues)); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{}, fakeStatusDeps(issues)); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 	out := buf.String()
@@ -356,8 +311,9 @@ func TestRunStatusRequirements_CurrentRepoErrorPropagates(t *testing.T) {
 		currentRepo:      func() (string, error) { return "", fmt.Errorf("no remote") },
 		resolveProjectID: func(string) (string, error) { return "PROJ_ID", nil },
 		psDeps:           fakeProjectstatusDeps(nil),
+		busy:             testutil.NoopBusy,
 	}
-	err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{}, sd)
+	err := runStatusRequirements(&bytes.Buffer{}, io.Discard, statusListFlags{}, sd)
 	if err == nil || !strings.Contains(err.Error(), "resolving current repository") {
 		t.Errorf("expected 'resolving current repository' error; got %v", err)
 	}

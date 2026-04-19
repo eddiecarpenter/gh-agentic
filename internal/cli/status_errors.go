@@ -11,6 +11,22 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
 )
 
+// errKanbanFlagRemoved is returned by the status list handlers when the
+// caller passes the legacy --kanban flag. suggestedCommand is the
+// migration pointer the user sees (e.g. "gh agentic kanban --requirements").
+// The renderer (renderStatusError) formats it as the two-line message
+// documented in §6 of the feature #518 scope.
+type errKanbanFlagRemoved struct {
+	suggestedCommand string
+}
+
+// Error satisfies the error interface. The terse phrase mirrors the first
+// line of the rendered output — callers that log err.Error() directly
+// still get a sensible message.
+func (e *errKanbanFlagRemoved) Error() string {
+	return "--kanban has been removed from this command"
+}
+
 // renderStatusError is the centralised error-to-message renderer for every
 // `gh agentic status` sub-command. It inspects the error type via the typed
 // sentinels / struct errors defined in the projectstatus package and prints
@@ -47,6 +63,13 @@ func renderStatusError(cmd *cobra.Command, err error) error {
 	var wt *projectstatus.ErrWrongType
 	if errors.As(err, &wt) {
 		renderWrongType(w, wt)
+		return ErrSilent
+	}
+
+	var kfr *errKanbanFlagRemoved
+	if errors.As(err, &kfr) {
+		fmt.Fprintln(w, "Error: --kanban has been removed from this command.")
+		fmt.Fprintln(w, "Use: "+kfr.suggestedCommand)
 		return ErrSilent
 	}
 
