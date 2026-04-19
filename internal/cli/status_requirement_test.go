@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -243,6 +244,78 @@ func TestFormatPROneLiner(t *testing.T) {
 	want := "#42 (merged) — reviewers: a, b"
 	if got != want {
 		t.Errorf("formatPROneLiner (with reviewers) = %q, want %q", got, want)
+	}
+}
+
+// TestRunStatusRequirement_RawVerbatimBody verifies the `--raw` renderer
+// emits the frontmatter header, the literal `---` separator, and the body
+// verbatim — markdown headings, fenced code, and a `→` character all
+// survive without escaping. The rendered bytes must match the golden
+// (which itself contains the markdown / code / arrow).
+func TestRunStatusRequirement_RawVerbatimBody(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	body := "## Business need\n\n" +
+		"Today, `gh agentic init` reads the project context from many places. We need\n" +
+		"a single chokepoint.\n\n" +
+		"```go\nfunc Resolve(ctx context.Context) (*Project, error) {\n    return nil, nil\n}\n```\n\n" +
+		"Steps: scope → design → develop → review."
+	issues := []projectstatus.ProjectIssue{
+		{Number: 569, Title: "Centralised project context resolution", Body: body, Stage: projectstatus.StageScheduled, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		// Two linked features so the linked_features header field is non-empty.
+		{Number: 571, Title: "feat: a", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 572, Title: "feat: b", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
+	}
+	sd := requirementDetailFixture(issues, nil, nil)
+
+	buf := &bytes.Buffer{}
+	if err := runStatusRequirement(buf, io.Discard, 569, statusDetailFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runStatusRequirement --raw: %v", err)
+	}
+	got := buf.Bytes()
+
+	wantBytes, err := os.ReadFile("testdata/status_raw/requirement_detail.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// AC-2: body region must contain markdown, fenced code, and the `→`
+	// character — and there must be no JSON-style escape sequences (\\n,
+	// \\`, etc.) anywhere in the body region.
+	parts := strings.SplitN(string(got), "\n---\n", 2)
+	if len(parts) != 2 {
+		t.Fatalf("expected '---' separator on its own line; got:\n%s", string(got))
+	}
+	bodyOut := parts[1]
+	for _, marker := range []string{"## Business need", "```go", "→"} {
+		if !strings.Contains(bodyOut, marker) {
+			t.Errorf("body should contain %q verbatim; got:\n%s", marker, bodyOut)
+		}
+	}
+	for _, escape := range []string{`\n`, "\\`", `\u2192`} {
+		if strings.Contains(bodyOut, escape) {
+			t.Errorf("body should not contain escape sequence %q; got:\n%s", escape, bodyOut)
+		}
+	}
+}
+
+// TestRunStatusRequirement_RawSeparatorAlwaysPresent verifies the `---`
+// separator is emitted even when the issue body is empty — agents can
+// rely on the header / body split being unconditional.
+func TestRunStatusRequirement_RawSeparatorAlwaysPresent(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []projectstatus.ProjectIssue{
+		{Number: 600, Title: "empty body", Body: "", Stage: projectstatus.StageBacklog, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	sd := requirementDetailFixture(issues, nil, nil)
+	buf := &bytes.Buffer{}
+	if err := runStatusRequirement(buf, io.Discard, 600, statusDetailFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runStatusRequirement --raw: %v", err)
+	}
+	if !strings.Contains(buf.String(), "\n---\n") {
+		t.Errorf("expected '---' separator even for empty body; got:\n%s", buf.String())
 	}
 }
 

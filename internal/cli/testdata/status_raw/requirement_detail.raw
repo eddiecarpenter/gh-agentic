@@ -1,0 +1,19 @@
+number: 569
+stage: scheduled
+title: Centralised project context resolution
+owning_repo: eddiecarpenter/gh-agentic
+blocked_by:
+linked_features: 571 572
+---
+## Business need
+
+Today, `gh agentic init` reads the project context from many places. We need
+a single chokepoint.
+
+```go
+func Resolve(ctx context.Context) (*Project, error) {
+    return nil, nil
+}
+```
+
+Steps: scope → design → develop → review.

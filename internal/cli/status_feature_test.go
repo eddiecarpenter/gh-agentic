@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -245,6 +246,86 @@ func TestRunStatusFeature_WrongType(t *testing.T) {
 	}
 	if wt.ActualType != "requirement" || wt.WantedType != "feature" {
 		t.Errorf("wrong-type fields: %+v", wt)
+	}
+}
+
+// TestRunStatusFeature_RawVerbatimBody verifies the `--raw` renderer emits
+// the feature-specific frontmatter header, the literal `---` separator, and
+// the body verbatim — markdown headings, fenced code, and a `→` character
+// all survive without escaping. The rendered bytes must match the golden.
+func TestRunStatusFeature_RawVerbatimBody(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	body := "## User Story\n\n" +
+		"As an agent, I want a status command so I can answer \"where are we?\".\n\n" +
+		"```go\nstatus := \"in-development\"\n```\n\n" +
+		"Flow: backlog → scoping → in-development."
+	issues := []projectstatus.ProjectIssue{
+		{Number: 492, Title: "feat: status command", Body: body, Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	subIssues := map[int][]projectstatus.TaskRef{
+		492: {
+			{Number: 494, Title: "Scaffold", Closed: true},
+			{Number: 495, Title: "Types", Closed: true},
+			{Number: 496, Title: "Requirements list", Closed: false},
+		},
+	}
+	parent := map[int]*projectstatus.RequirementSummary{
+		492: {Number: 457, Title: "feat: single-pane view", Stage: projectstatus.StageScoping, OwningRepo: "eddiecarpenter/gh-agentic"},
+	}
+	branches := map[string]*projectstatus.BranchState{
+		"feature/492": {Name: "feature/492", Exists: true, Merged: true},
+	}
+	prs := map[string]*projectstatus.PRState{
+		"feature/492": {Number: 777, State: "open", Reviewers: []string{"eddie"}},
+	}
+	sd := featureDetailFixture(issues, subIssues, parent, branches, prs)
+
+	buf := &bytes.Buffer{}
+	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runStatusFeature --raw: %v", err)
+	}
+	got := buf.Bytes()
+
+	wantBytes, err := os.ReadFile("testdata/status_raw/feature_detail.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// AC-2 reinforcement on the feature side: body region must be verbatim.
+	parts := strings.SplitN(string(got), "\n---\n", 2)
+	if len(parts) != 2 {
+		t.Fatalf("expected '---' separator on its own line; got:\n%s", string(got))
+	}
+	bodyOut := parts[1]
+	for _, marker := range []string{"## User Story", "```go", "→"} {
+		if !strings.Contains(bodyOut, marker) {
+			t.Errorf("body should contain %q verbatim; got:\n%s", marker, bodyOut)
+		}
+	}
+	for _, escape := range []string{`\n`, "\\`", `\u2192`} {
+		if strings.Contains(bodyOut, escape) {
+			t.Errorf("body should not contain escape sequence %q; got:\n%s", escape, bodyOut)
+		}
+	}
+}
+
+// TestRunStatusFeature_RawSeparatorAlwaysPresent verifies the `---`
+// separator is emitted even when the issue body is empty.
+func TestRunStatusFeature_RawSeparatorAlwaysPresent(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []projectstatus.ProjectIssue{
+		{Number: 700, Title: "feat: empty", Body: "", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	sd := featureDetailFixture(issues, nil, nil, nil, nil)
+	buf := &bytes.Buffer{}
+	if err := runStatusFeature(buf, io.Discard, 700, statusDetailFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runStatusFeature --raw: %v", err)
+	}
+	if !strings.Contains(buf.String(), "\n---\n") {
+		t.Errorf("expected '---' separator even for empty body; got:\n%s", buf.String())
 	}
 }
 

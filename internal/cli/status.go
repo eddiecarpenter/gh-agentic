@@ -118,11 +118,13 @@ func registerRemovedKanbanFlag(cmd *cobra.Command, kanban *bool) {
 // statusDetailFlags captures the shared flag set for detail sub-commands.
 type statusDetailFlags struct {
 	json bool
+	raw  bool
 }
 
 // registerStatusDetailFlags declares the shared flag set for detail sub-commands.
 func registerStatusDetailFlags(cmd *cobra.Command, f *statusDetailFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
+	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (frontmatter header + '---' + verbatim markdown body) and suppress human output")
 }
 
 // newStatusRequirementsCmd constructs the `gh agentic status requirements`
