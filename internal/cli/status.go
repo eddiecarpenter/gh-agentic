@@ -44,16 +44,19 @@ and --include-done to include completed items.
 %s shows detail for a single feature — number, title, stage, dates, body,
 parent requirement, tasks, branch state, PR state, and blocked annotation.
 
+%s renders requirements and features together as a kanban — the
+first-class way to answer "where are we?" at a glance.
+
 Run 'gh agentic status <sub-command> --help' for detailed usage.`,
-			b("requirements"), b("requirement <N>"), b("features"), b("feature <N>")),
+			b("requirements"), b("requirement <N>"), b("features"), b("feature <N>"), b("kanban")),
 		Example: `  # List open requirements with stage
   gh agentic status requirements
 
   # Detail for one requirement, as JSON
   gh agentic status requirement 457 --json
 
-  # Kanban of open features
-  gh agentic status features --kanban
+  # Kanban of requirements and features together
+  gh agentic status kanban
 
   # Detail for one feature
   gh agentic status feature 492`,
@@ -67,6 +70,7 @@ Run 'gh agentic status <sub-command> --help' for detailed usage.`,
 	cmd.AddCommand(newStatusRequirementCmd())
 	cmd.AddCommand(newStatusFeaturesCmd())
 	cmd.AddCommand(newStatusFeatureCmd())
+	cmd.AddCommand(newKanbanCmd())
 
 	return cmd
 }

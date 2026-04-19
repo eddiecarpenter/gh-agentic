@@ -59,16 +59,71 @@ func kanbanSampleDeps() statusDeps {
 	return kanbanTestDeps(kanbanSampleIssues(), linked)
 }
 
-// TestKanbanCmd_RegisteredOnRoot verifies the new `gh agentic kanban`
-// command appears as a direct child of the root command.
-func TestKanbanCmd_RegisteredOnRoot(t *testing.T) {
+// TestKanbanCmd_RegisteredUnderStatus verifies the `gh agentic status
+// kanban` command appears as a direct child of the `status` command. The
+// command was promoted to a top-level verb in feature #518 and moved back
+// under `status` in feature #549 so all "where are we?" views live behind
+// one verb.
+func TestKanbanCmd_RegisteredUnderStatus(t *testing.T) {
 	root := newRootCmd("test", "test")
-	child := findChild(root, "kanban")
+	status := findChild(root, "status")
+	if status == nil {
+		t.Fatalf("status command not registered on root")
+	}
+	child := findChild(status, "kanban")
 	if child == nil {
-		t.Fatalf("kanban command not registered on root")
+		t.Fatalf("kanban command not registered under status")
 	}
 	if child.Use != "kanban" {
 		t.Errorf("Use = %q, want %q", child.Use, "kanban")
+	}
+}
+
+// TestKanbanCmd_NotOnRoot verifies the old top-level `gh agentic kanban`
+// registration has been removed. This is the negative-space counterpart to
+// TestKanbanCmd_RegisteredUnderStatus — it guards against regressions that
+// would silently keep both registrations alive.
+func TestKanbanCmd_NotOnRoot(t *testing.T) {
+	root := newRootCmd("test", "test")
+	if findChild(root, "kanban") != nil {
+		t.Errorf("kanban must not be registered as a direct child of root")
+	}
+}
+
+// TestKanbanCmd_OldPathUnknownCommand verifies that invoking the former
+// top-level path (`gh agentic kanban`) now resolves to Cobra's "unknown
+// command" error with a non-zero exit — feature #549 scope §Out of Scope
+// forbids any deprecation alias, so the hard-move contract must hold.
+func TestKanbanCmd_OldPathUnknownCommand(t *testing.T) {
+	root := newRootCmd("test", "test")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(buf)
+	root.SetArgs([]string{"kanban"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("expected Cobra unknown-command error; got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown command") {
+		t.Errorf("expected 'unknown command' in error; got %q", err.Error())
+	}
+}
+
+// TestStatusCmd_HelpListsKanban verifies the `status --help` output
+// advertises the `kanban` subcommand in its Available Commands list. This
+// is the user-facing discovery path under the new invocation — AC-5 of
+// feature #549.
+func TestStatusCmd_HelpListsKanban(t *testing.T) {
+	root := newRootCmd("test", "test")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(buf)
+	root.SetArgs([]string{"status", "--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("status --help: %v", err)
+	}
+	if !strings.Contains(buf.String(), "kanban") {
+		t.Errorf("status --help must list 'kanban' as a subcommand; got:\n%s", buf.String())
 	}
 }
 
@@ -147,9 +202,12 @@ func TestKanbanCmd_PositionalArgsRejected(t *testing.T) {
 	}
 }
 
-// TestKanbanCmd_RootLongDescriptionMentionsKanban verifies the top-level
-// help advertises the new command so users discover it.
-func TestKanbanCmd_RootLongDescriptionMentionsKanban(t *testing.T) {
+// TestKanbanCmd_RootLongDescriptionOmitsKanban verifies the top-level
+// `gh agentic --help` output no longer lists `kanban` as a top-level
+// command — AC-4 of feature #549. Cobra renders every direct child of the
+// root in its Available Commands block, so removing the child registration
+// is enough; this test asserts that removal is reflected in help output.
+func TestKanbanCmd_RootLongDescriptionOmitsKanban(t *testing.T) {
 	root := newRootCmd("test", "test")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -158,8 +216,35 @@ func TestKanbanCmd_RootLongDescriptionMentionsKanban(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("root --help: %v", err)
 	}
-	if !strings.Contains(buf.String(), "kanban") {
-		t.Errorf("root help should mention 'kanban'; got:\n%s", buf.String())
+	out := buf.String()
+	// Scan the Available Commands section specifically — the long
+	// description still mentions "kanban sub-view" as part of describing
+	// `status`, so a naive full-text check would fail. Cobra's help lists
+	// the command name as the first token on each indented line after the
+	// "Available Commands:" heading.
+	const header = "Available Commands:"
+	idx := strings.Index(out, header)
+	if idx < 0 {
+		t.Fatalf("help missing Available Commands section; got:\n%s", out)
+	}
+	// Take the block up to the next blank-line-after-commands marker
+	// (typically "Flags:"). A simple approach: slice to "Flags:" if
+	// present, otherwise to end.
+	block := out[idx:]
+	if end := strings.Index(block, "\nFlags:"); end >= 0 {
+		block = block[:end]
+	}
+	for _, line := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(line)
+		// Each command line is "<name>   <description>". Split on
+		// whitespace to isolate the name token.
+		fields := strings.Fields(trimmed)
+		if len(fields) == 0 {
+			continue
+		}
+		if fields[0] == "kanban" {
+			t.Errorf("root Available Commands must not list 'kanban'; got block:\n%s", block)
+		}
 	}
 }
 

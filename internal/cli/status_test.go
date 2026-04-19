@@ -22,13 +22,15 @@ func findChild(parent *cobra.Command, use string) *cobra.Command {
 	return nil
 }
 
-// TestStatusCmd_RegistersFourSubCommands verifies the command tree wiring:
-// requirements, requirement, features, feature are all registered as direct
-// children of 'status'.
-func TestStatusCmd_RegistersFourSubCommands(t *testing.T) {
+// TestStatusCmd_RegistersExpectedSubCommands verifies the command tree
+// wiring: requirements, requirement, features, feature, and kanban are
+// all registered as direct children of 'status'. Feature #549 moved the
+// previously top-level `kanban` command under `status`; the expected
+// list was extended accordingly.
+func TestStatusCmd_RegistersExpectedSubCommands(t *testing.T) {
 	cmd := newStatusCmd()
 
-	wanted := []string{"requirements", "requirement", "features", "feature"}
+	wanted := []string{"requirements", "requirement", "features", "feature", "kanban"}
 	for _, name := range wanted {
 		if findChild(cmd, name) == nil {
 			t.Errorf("status: expected sub-command %q to be registered, but it was not", name)
@@ -63,9 +65,10 @@ func TestStatusCmd_BareInvocationShowsHelp(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Help output should mention each of the four sub-commands so the human
-	// knows what they can run.
-	for _, token := range []string{"requirements", "requirement", "features", "feature"} {
+	// Help output should mention each of the five sub-commands so the human
+	// knows what they can run. `kanban` was added under `status` by feature
+	// #549.
+	for _, token := range []string{"requirements", "requirement", "features", "feature", "kanban"} {
 		if !strings.Contains(out, token) {
 			t.Errorf("status bare help missing sub-command %q in output:\n%s", token, out)
 		}
