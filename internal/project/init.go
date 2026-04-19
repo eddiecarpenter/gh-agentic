@@ -39,6 +39,18 @@ func InitRepo(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 		return fmt.Errorf("repo is already affiliated with project %q — use 'gh agentic project switch project' to change affiliation", existingName)
 	}
 
+	// Federated mode requires a GitHub Organization. Refuse before any
+	// side effect (project mount, variable writes, ConfigureRepo). Owner
+	// detection is best-effort — if it fails, the per-site guards in
+	// Create / repairTopologyVars are the last line of defence.
+	if cfg.Mode == InitModeFederated {
+		if ownerType, otErr := deps.DetectOwnerType(deps.Owner); otErr == nil {
+			if guardErr := EnsureFederatedOwnerIsOrg("federated", deps.Owner, ownerType); guardErr != nil {
+				return guardErr
+			}
+		}
+	}
+
 	switch cfg.Mode {
 	case InitModeSingle:
 		return initSingle(w, deps, cfg.InitCfg)
@@ -54,21 +66,17 @@ func initSingle(w io.Writer, deps Deps, cfg *initv2.InitConfig) error {
 	fmt.Fprintln(w, "  Setting up single control plane...")
 	fmt.Fprintln(w)
 
-	// Build create config.
+	// Build create config. Single topology is declared here so Create writes
+	// AGENTIC_TOPOLOGY=single directly and the federated-owner guard does
+	// not fire on user-owned single-topology setups.
 	createCfg := CreateConfig{
-		Title:   deps.RepoName,
-		Version: cfg.Version,
+		Title:    deps.RepoName,
+		Version:  cfg.Version,
+		Topology: "single",
 	}
 
 	if err := Create(w, deps, createCfg); err != nil {
 		return fmt.Errorf("creating project: %w", err)
-	}
-
-	// Set AGENTIC_TOPOLOGY=single on this repo.
-	if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName, "single"); err != nil {
-		fmt.Fprintf(w, "  %s  Could not set %s (non-fatal)\n", ui.StatusWarning.Render("⚠"), TopologyVarName)
-	} else {
-		fmt.Fprintf(w, "  %s  %s set to single\n", ui.StatusOK.Render("✓"), TopologyVarName)
 	}
 
 	// Configure secrets, variables, and agent access.

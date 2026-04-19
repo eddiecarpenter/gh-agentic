@@ -85,6 +85,16 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			// If --topology was passed directly, force a topology repair even when
 			// the check didn't flag it (covers the "wrong value, undetectable" case).
 			if chosenTopology != "" {
+				// Refuse federated topology against a user-owned repo before
+				// any side effect runs. DetectOwnerType is best-effort — if
+				// it fails, the guard inside repairTopologyVars still enforces
+				// the rule when the detected type is available there.
+				if ownerType, otErr := deps.DetectOwnerType(deps.Owner); otErr == nil {
+					if guardErr := project.EnsureFederatedOwnerIsOrg(chosenTopology, deps.Owner, ownerType); guardErr != nil {
+						return guardErr
+					}
+				}
+
 				var topoResult project.RepairResult
 				_ = ui.RunWithDynamicSpinner(w, "Repairing topology variables...", func(setLabel func(string)) error {
 					topoResult = project.RepairTopologyWithChoice(deps, chosenTopology)
@@ -142,6 +152,22 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 					pipelineResult.Repaired += applied.Repaired
 					pipelineResult.Unrepaired += applied.Unrepaired
 				}
+			}
+
+			// Phase 4: shadow-vars batch confirm + delete. The prompt must
+			// live outside the spinner phase so huh.NewConfirm can own the
+			// terminal. One confirmation covers the whole batch.
+			if pdepsErr == nil && pipelineResult.ShadowBatch != nil {
+				shadowRes := doctorv2.RepairShadowValues(
+					pipelineResult.ShadowBatch.Items,
+					pipelineDeps.Run,
+					huhConfirm,
+				)
+				for _, line := range shadowRes.Lines {
+					fmt.Fprintln(w, line)
+				}
+				pipelineResult.Repaired += shadowRes.Repaired
+				pipelineResult.Unrepaired += shadowRes.Unrepaired
 			}
 
 			totalRepaired := projectResult.Repaired + pipelineResult.Repaired
@@ -284,6 +310,23 @@ func promptValue(p doctorv2.PendingPrompt, deps doctorv2.CheckDeps) (string, err
 		return "", err
 	}
 	return value, nil
+}
+
+// huhConfirm is the production ConfirmFunc used by shadow-vars repair.
+// The description shows the bulleted list of names under the title so the
+// human sees exactly what will be removed before answering.
+func huhConfirm(title, description string) (bool, error) {
+	var confirmed bool
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title(title).
+			Description(description).
+			Value(&confirmed),
+	))
+	if err := form.Run(); err != nil {
+		return false, err
+	}
+	return confirmed, nil
 }
 
 // promptRunnerLabel mirrors initv2.collectPipelineConfig's runner picker:

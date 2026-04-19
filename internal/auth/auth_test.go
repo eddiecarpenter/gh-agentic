@@ -437,3 +437,82 @@ func TestUploadCredentials_RepoScope(t *testing.T) {
 		t.Errorf("expected --repo flag in args: %v", capturedArgs)
 	}
 }
+
+// TestUploadCredentials_ScopeForRoute_OrgOwner asserts the ScopeFor-driven
+// refactor preserves behaviour byte-for-byte: an organisation owner gets
+// `--org <owner>` with the correct target, not `--org <repo>` or any other
+// variation.
+func TestUploadCredentials_ScopeForRoute_OrgOwner(t *testing.T) {
+	var buf bytes.Buffer
+	var capturedArgs []string
+
+	deps := Deps{
+		Run: func(name string, args ...string) (string, error) {
+			capturedArgs = args
+			return "", nil
+		},
+		ReadCredentials: func(run RunCommandFunc) ([]byte, error) {
+			return []byte("creds"), nil
+		},
+		RepoFullName: "acme/cp",
+		Owner:        "acme",
+		OwnerType:    OwnerTypeOrg,
+	}
+
+	if err := uploadCredentials(&buf, deps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Expect: gh secret set CLAUDE_CREDENTIALS_JSON --body <b64> --org acme
+	found := false
+	for i := 0; i < len(capturedArgs)-1; i++ {
+		if capturedArgs[i] == "--org" {
+			if capturedArgs[i+1] != "acme" {
+				t.Fatalf("--org target: got %q, want %q (args: %v)", capturedArgs[i+1], "acme", capturedArgs)
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected --org flag in args: %v", capturedArgs)
+	}
+}
+
+// TestUploadCredentials_ScopeForRoute_UserOwner asserts the user-account
+// case stays at --repo with the correct target.
+func TestUploadCredentials_ScopeForRoute_UserOwner(t *testing.T) {
+	var buf bytes.Buffer
+	var capturedArgs []string
+
+	deps := Deps{
+		Run: func(name string, args ...string) (string, error) {
+			capturedArgs = args
+			return "", nil
+		},
+		ReadCredentials: func(run RunCommandFunc) ([]byte, error) {
+			return []byte("creds"), nil
+		},
+		RepoFullName: "eddie/repo",
+		Owner:        "eddie",
+		OwnerType:    OwnerTypeUser,
+	}
+
+	if err := uploadCredentials(&buf, deps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	found := false
+	for i := 0; i < len(capturedArgs)-1; i++ {
+		if capturedArgs[i] == "--repo" {
+			if capturedArgs[i+1] != "eddie/repo" {
+				t.Fatalf("--repo target: got %q, want %q (args: %v)", capturedArgs[i+1], "eddie/repo", capturedArgs)
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected --repo flag in args: %v", capturedArgs)
+	}
+}

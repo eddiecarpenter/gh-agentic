@@ -2,10 +2,62 @@ package project
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 )
+
+// --- EnsureFederatedOwnerIsOrg ---
+
+func TestEnsureFederatedOwnerIsOrg_OrgOwner_AllTopologies_ReturnsNil(t *testing.T) {
+	for _, topo := range []string{"", "single", "federated", "federated-cp", "federated-domain", "Federated"} {
+		t.Run(topo, func(t *testing.T) {
+			if err := EnsureFederatedOwnerIsOrg(topo, "acme", auth.OwnerTypeOrg); err != nil {
+				t.Fatalf("expected nil for org owner under topology %q, got %v", topo, err)
+			}
+		})
+	}
+}
+
+func TestEnsureFederatedOwnerIsOrg_UserOwner_SingleOrEmpty_ReturnsNil(t *testing.T) {
+	for _, topo := range []string{"", "single", "Single"} {
+		t.Run(topo, func(t *testing.T) {
+			if err := EnsureFederatedOwnerIsOrg(topo, "eddie", auth.OwnerTypeUser); err != nil {
+				t.Fatalf("expected nil for user owner under topology %q, got %v", topo, err)
+			}
+		})
+	}
+}
+
+func TestEnsureFederatedOwnerIsOrg_UserOwner_FederatedVariants_ReturnsVerbatimError(t *testing.T) {
+	want := fmt.Sprintf(FederatedRequiresOrgMessage, "eddie")
+	for _, topo := range []string{"federated", "federated-cp", "federated-domain", "Federated", "FEDERATED"} {
+		t.Run(topo, func(t *testing.T) {
+			err := EnsureFederatedOwnerIsOrg(topo, "eddie", auth.OwnerTypeUser)
+			if err == nil {
+				t.Fatalf("expected non-nil error under topology %q", topo)
+			}
+			if err.Error() != want {
+				t.Fatalf("error message mismatch:\ngot:  %q\nwant: %q", err.Error(), want)
+			}
+		})
+	}
+}
+
+func TestEnsureFederatedOwnerIsOrg_VerbatimMessageWording(t *testing.T) {
+	// This is the exact wording asserted by downstream consumers — if this
+	// test fails, every acceptance-criterion test that checks the message
+	// will also fail. Keep the expected string as a single literal so the
+	// diff is obvious.
+	want := "Federated topology requires a GitHub Organization. The owner 'eddie' is a user account, which cannot host org-scoped variables and secrets. Either move this repo under an organisation, or use `--topology single`."
+	got := EnsureFederatedOwnerIsOrg("federated", "eddie", auth.OwnerTypeUser).Error()
+	if got != want {
+		t.Fatalf("error message mismatch:\ngot:  %q\nwant: %q", got, want)
+	}
+}
 
 // --- HasDocsContent ---
 

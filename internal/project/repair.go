@@ -234,6 +234,16 @@ func repairTopologyVars(w io.Writer, deps Deps, topology string) error {
 	}
 
 	if topoVal != correctTopo {
+		// Refuse to commit the repo to federated topology under a user
+		// account. The guard runs before the SetRepoVariable call so no
+		// state is changed before we error out. DetectOwnerType is best-
+		// effort — if it fails we fall through and leave the legacy
+		// behaviour in place rather than blocking on a transient API error.
+		if ownerType, otErr := deps.DetectOwnerType(deps.Owner); otErr == nil {
+			if guardErr := EnsureFederatedOwnerIsOrg(correctTopo, deps.Owner, ownerType); guardErr != nil {
+				return guardErr
+			}
+		}
 		if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName, correctTopo); err != nil {
 			return fmt.Errorf("setting %s: %w", TopologyVarName, err)
 		}

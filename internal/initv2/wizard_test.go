@@ -267,6 +267,216 @@ func TestConfigureRepo_GrantsAccess(t *testing.T) {
 	}
 }
 
+// --- federated init confirmation tests (task #534) ---
+
+// recordConfirmFunc returns a ConfirmFunc that records each invocation
+// and returns a prearranged yes/no answer.
+func recordConfirmFunc(yes bool) (ConfirmFunc, *int) {
+	count := 0
+	return func(title, description string) (bool, error) {
+		count++
+		return yes, nil
+	}, &count
+}
+
+func TestConfigureRepo_Federated_EmitsNoteAndConfirmsBeforeWriting(t *testing.T) {
+	cfg := configureRepoTestConfig("Federated", "acme", "cp")
+	confirm, called := recordConfirmFunc(true)
+	cfg.Confirm = confirm
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := "Shared variables and secrets will be stored at organisation 'acme' and will be visible to any other federated control plane in the same organisation."
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("missing verbatim note. output:\n%s", buf.String())
+	}
+	if *called != 1 {
+		t.Errorf("confirm called %d times, want 1", *called)
+	}
+	// Yes → writes proceed.
+	if _, ok := (*captured)["AGENT_USER"]; !ok {
+		t.Errorf("expected AGENT_USER write on Yes")
+	}
+}
+
+func TestConfigureRepo_Federated_ConfirmNo_AbortsWithoutError(t *testing.T) {
+	cfg := configureRepoTestConfig("Federated", "acme", "cp")
+	confirm, called := recordConfirmFunc(false)
+	cfg.Confirm = confirm
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("expected no error on No, got %v", err)
+	}
+
+	if *called != 1 {
+		t.Errorf("confirm called %d times, want 1", *called)
+	}
+	if len(*captured) != 0 {
+		t.Errorf("No should not trigger any writes; got: %v", *captured)
+	}
+	if !strings.Contains(buf.String(), "cancelled") {
+		t.Errorf("expected cancellation message in output, got:\n%s", buf.String())
+	}
+}
+
+func TestConfigureRepo_Single_NoNoteNoConfirm(t *testing.T) {
+	cfg := configureRepoTestConfig("Single", "eddie", "repo")
+	// Intentionally wire a confirm that would blow up the test if called.
+	cfg.Confirm = func(title, description string) (bool, error) {
+		t.Errorf("confirm must not be called under single topology")
+		return false, nil
+	}
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Writes proceed as before.
+	if _, ok := (*captured)["AGENT_USER"]; !ok {
+		t.Errorf("expected AGENT_USER write under single")
+	}
+	// The federated note must NOT appear under single topology.
+	if strings.Contains(buf.String(), "will be visible to any other federated") {
+		t.Errorf("federated note must not appear under single topology; output:\n%s", buf.String())
+	}
+}
+
+// configureRepoTestConfig returns a fully populated InitConfig so every
+// named var/secret is written. The routing assertions below rely on this
+// complete payload.
+func configureRepoTestConfig(topology, owner, repoName string) *InitConfig {
+	return &InitConfig{
+		Version:       "v2.0.10",
+		Topology:      topology,
+		AgentUser:     "agent-bot",
+		RunnerLabel:   "ubuntu-latest",
+		GooseProvider: "claude-code",
+		GooseModel:    "default",
+		GooseAgentPAT: "ghp_test",
+		ClaudeCreds:   "base64==",
+		ProjectID:     "PVT_x",
+		RepoFullName:  owner + "/" + repoName,
+		Owner:         owner,
+		RepoName:      repoName,
+	}
+}
+
+// captureSetCalls returns a run function that records every gh set
+// invocation keyed by the variable/secret name and keeps the full argument
+// list so scope flags can be asserted.
+func captureSetCalls() (func(string, ...string) (string, error), *map[string][]string) {
+	captured := map[string][]string{}
+	run := func(name string, args ...string) (string, error) {
+		if name != "gh" {
+			return "", nil
+		}
+		// gh variable set NAME ... | gh secret set NAME ...
+		if len(args) >= 3 && args[0] != "variable" && args[0] != "secret" {
+			return "", nil
+		}
+		if len(args) < 3 || args[1] != "set" {
+			return "", nil
+		}
+		varName := args[2]
+		captured[varName] = append([]string{}, args...)
+		return "", nil
+	}
+	return run, &captured
+}
+
+// scopeFrom returns the (flag, target) pair from a recorded gh invocation,
+// or ("", "") if no scope flag was found.
+func scopeFrom(args []string) (string, string) {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "--org" || args[i] == "--repo" {
+			return args[i], args[i+1]
+		}
+	}
+	return "", ""
+}
+
+func TestConfigureRepo_Federated_SharedNames_RouteToOrg(t *testing.T) {
+	// NOTE: topology "Federated" is the capitalised wizard value — it is
+	// normalised to lowercase inside ConfigureRepo before scope routing.
+	cfg := configureRepoTestConfig("Federated", "acme", "cp")
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	shared := []string{"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON"}
+	for _, name := range shared {
+		args, ok := (*captured)[name]
+		if !ok {
+			t.Errorf("%s was not written", name)
+			continue
+		}
+		flag, target := scopeFrom(args)
+		if flag != "--org" || target != "acme" {
+			t.Errorf("%s routed to (%q, %q), want (%q, %q)", name, flag, target, "--org", "acme")
+		}
+	}
+}
+
+func TestConfigureRepo_Federated_IdentityName_StaysAtRepo(t *testing.T) {
+	cfg := configureRepoTestConfig("Federated", "acme", "cp")
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only AGENTIC_PROJECT_ID is written by ConfigureRepo today. The other
+	// identity names are written elsewhere (project.Create for topology,
+	// etc.). Verify this one does not get the org treatment.
+	args, ok := (*captured)["AGENTIC_PROJECT_ID"]
+	if !ok {
+		t.Fatal("AGENTIC_PROJECT_ID was not written")
+	}
+	flag, target := scopeFrom(args)
+	if flag != "--repo" || target != "acme/cp" {
+		t.Errorf("AGENTIC_PROJECT_ID routed to (%q, %q), want (%q, %q)", flag, target, "--repo", "acme/cp")
+	}
+}
+
+func TestConfigureRepo_Single_AllNames_StayAtRepo(t *testing.T) {
+	cfg := configureRepoTestConfig("Single", "eddie", "repo")
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	all := []string{
+		"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL",
+		"GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON",
+		"AGENTIC_PROJECT_ID",
+	}
+	for _, name := range all {
+		args, ok := (*captured)[name]
+		if !ok {
+			t.Errorf("%s was not written", name)
+			continue
+		}
+		flag, target := scopeFrom(args)
+		if flag != "--repo" || target != "eddie/repo" {
+			t.Errorf("%s routed to (%q, %q), want (%q, %q)", name, flag, target, "--repo", "eddie/repo")
+		}
+	}
+}
+
 func TestParseRepoFromURL_SSH(t *testing.T) {
 	tests := []struct {
 		url  string

@@ -8,9 +8,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/charmbracelet/huh"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
@@ -35,7 +39,22 @@ type InitConfig struct {
 	Owner          string
 	RepoName       string
 	OwnerType      string
+	// Confirm optionally gates the federated-visibility confirmation in
+	// ConfigureRepo. When set and topology is any federated variant,
+	// ConfigureRepo emits the org-visibility note and calls Confirm before
+	// writing anything. On a No answer, the call returns nil and no
+	// variable or secret is written. When nil, ConfigureRepo proceeds
+	// without prompting — used by single-topology callers and tests that
+	// do not exercise the federated-confirm path.
+	Confirm ConfirmFunc
 }
+
+// ConfirmFunc prompts the user for a yes/no confirmation. Title is the
+// primary question, message is the supplementary body shown beneath it.
+// Returns true on Yes, false otherwise. Implementations may return an
+// error for IO / cancellation failures — ConfigureRepo treats an error
+// the same as a No (abort without writing).
+type ConfirmFunc func(title, message string) (bool, error)
 
 // RunCommandFunc is a function type for running shell commands.
 type RunCommandFunc = auth.RunCommandFunc
@@ -93,10 +112,46 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 }
 
 // ConfigureRepo sets up GitHub secrets, variables, and collaborator access.
+//
+// Under federated topology the shared names (AGENT_USER, RUNNER_LABEL,
+// GOOSE_PROVIDER, GOOSE_MODEL, GOOSE_AGENT_PAT, CLAUDE_CREDENTIALS_JSON)
+// are routed to the organisation level via `scope.ScopeFor`. Per-repo
+// identity names (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY, and so on) stay at
+// `--repo`. Under single topology everything stays at `--repo` — the
+// routing is identical to the pre-scope behaviour.
 func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	repo := cfg.RepoFullName
 	if repo == "" {
 		return nil // No repo context — skip remote configuration.
+	}
+
+	// cfg.Topology carries the wizard's capitalised value ("Single" /
+	// "Federated"); scope.ScopeFor expects the lowercase form.
+	topology := strings.ToLower(cfg.Topology)
+	owner := cfg.Owner
+
+	// Under federated topology the shared values will land at the
+	// organisation level — visible to every other federated control plane
+	// in the same org. That is load-bearing information; surface it before
+	// any write, and gate ConfigureRepo on an explicit yes when the caller
+	// has wired a ConfirmFunc. Single topology is unchanged: no note, no
+	// prompt, behaviour identical to pre-feature.
+	if scope.IsFederatedTopology(topology) {
+		fmt.Fprintf(w, "\n  %s\n\n", federatedOrgVisibilityNote(owner))
+		if cfg.Confirm != nil {
+			ok, err := cfg.Confirm(
+				"Proceed with federated init?",
+				"Shared variables and secrets will be written at organisation scope.",
+			)
+			if err != nil {
+				fmt.Fprintf(w, "  init cancelled by user\n")
+				return nil
+			}
+			if !ok {
+				fmt.Fprintf(w, "  init cancelled by user\n")
+				return nil
+			}
+		}
 	}
 
 	// Set variables.
@@ -111,33 +166,38 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 		if value == "" {
 			continue
 		}
-		if _, err := run("gh", "variable", "set", name, "--body", value, "--repo", repo); err != nil {
+		flag, target := scope.ScopeFor(name, topology, owner, repo)
+		if _, err := run("gh", "variable", "set", name, "--body", value, flag, target); err != nil {
 			return fmt.Errorf("setting variable %s: %w", name, err)
 		}
-		fmt.Fprintf(w, "  ✓ %s saved as repository variable\n", name)
+		fmt.Fprintf(w, "  ✓ %s saved as %s\n", name, describeScope(flag, "variable"))
 	}
 
 	// Set secrets.
 	if cfg.GooseAgentPAT != "" {
-		if _, err := run("gh", "secret", "set", "GOOSE_AGENT_PAT", "--body", cfg.GooseAgentPAT, "--repo", repo); err != nil {
+		flag, target := scope.ScopeFor("GOOSE_AGENT_PAT", topology, owner, repo)
+		if _, err := run("gh", "secret", "set", "GOOSE_AGENT_PAT", "--body", cfg.GooseAgentPAT, flag, target); err != nil {
 			return fmt.Errorf("setting GOOSE_AGENT_PAT: %w", err)
 		}
-		fmt.Fprintln(w, "  ✓ GOOSE_AGENT_PAT saved as repository secret")
+		fmt.Fprintf(w, "  ✓ GOOSE_AGENT_PAT saved as %s\n", describeScope(flag, "secret"))
 	}
 
 	if cfg.ClaudeCreds != "" {
-		if _, err := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", cfg.ClaudeCreds, "--repo", repo); err != nil {
+		flag, target := scope.ScopeFor("CLAUDE_CREDENTIALS_JSON", topology, owner, repo)
+		if _, err := run("gh", "secret", "set", "CLAUDE_CREDENTIALS_JSON", "--body", cfg.ClaudeCreds, flag, target); err != nil {
 			return fmt.Errorf("setting CLAUDE_CREDENTIALS_JSON: %w", err)
 		}
-		fmt.Fprintln(w, "  ✓ CLAUDE_CREDENTIALS_JSON saved as repository secret")
+		fmt.Fprintf(w, "  ✓ CLAUDE_CREDENTIALS_JSON saved as %s\n", describeScope(flag, "secret"))
 	}
 
-	// Set project ID variable.
+	// Set project ID variable. Identity names always route to --repo
+	// regardless of topology.
 	if cfg.ProjectID != "" {
-		if _, err := run("gh", "variable", "set", "AGENTIC_PROJECT_ID", "--body", cfg.ProjectID, "--repo", repo); err != nil {
+		flag, target := scope.ScopeFor("AGENTIC_PROJECT_ID", topology, owner, repo)
+		if _, err := run("gh", "variable", "set", "AGENTIC_PROJECT_ID", "--body", cfg.ProjectID, flag, target); err != nil {
 			return fmt.Errorf("setting AGENTIC_PROJECT_ID: %w", err)
 		}
-		fmt.Fprintln(w, "  ✓ AGENTIC_PROJECT_ID saved as repository variable")
+		fmt.Fprintf(w, "  ✓ AGENTIC_PROJECT_ID saved as %s\n", describeScope(flag, "variable"))
 	}
 
 	// Grant agent user write access.
@@ -152,6 +212,46 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	}
 
 	return nil
+}
+
+// describeScope turns the gh scope flag into a human-readable phrase for
+// the "saved as ..." output line — preserving the pre-ScopeFor messaging
+// where org-scoped values are clearly labelled as such.
+func describeScope(flag, kind string) string {
+	if flag == scope.ScopeFlagOrg {
+		return "organisation " + kind
+	}
+	return "repository " + kind
+}
+
+// federatedOrgVisibilityNote returns the exact verbatim message that
+// ConfigureRepo prints before writing anything under federated topology.
+// The wording is fixed by the acceptance criteria for this feature —
+// tests assert the full sentence, so any change here must update the
+// corresponding test.
+func federatedOrgVisibilityNote(org string) string {
+	return fmt.Sprintf(
+		"Shared variables and secrets will be stored at organisation '%s' and will be visible to any other federated control plane in the same organisation.",
+		org,
+	)
+}
+
+// HuhConfirm is the production ConfirmFunc used by federated init. It
+// wraps huh.NewConfirm so callers that want the real interactive prompt
+// can wire it as cfg.Confirm without re-implementing the huh boilerplate.
+// Tests pass their own ConfirmFunc and never call this.
+func HuhConfirm(title, description string) (bool, error) {
+	var confirmed bool
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title(title).
+			Description(description).
+			Value(&confirmed),
+	))
+	if err := form.Run(); err != nil {
+		return false, err
+	}
+	return confirmed, nil
 }
 
 // DetectRepoFromRemote detects the repo full name from git remote.

@@ -502,3 +502,423 @@ type fakeHTTPError struct {
 }
 
 func (e *fakeHTTPError) Error() string { return e.msg }
+
+// --- checkVariable / checkSecret scope-fallback tests (task #531) ---
+
+// ghRun is a minimal fake for deps.Run used in scope-fallback tests. It
+// takes a routing table keyed by the scope flag ("--org" or "--repo") and
+// returns the output for matching invocations. Any call that doesn't find
+// a matching entry returns empty output (simulating "not found").
+type ghRun struct {
+	// Commands captured for assertions (deep copy of args).
+	Calls [][]string
+	// Outputs maps "kind|scopeFlag" -> output. kind is the first positional
+	// arg from gh ("variable"/"secret") and scopeFlag is "--repo"/"--org".
+	// Absence means empty output (not-found) without error.
+	Outputs map[string]string
+	// Errors maps the same key to an error, overriding Outputs on match.
+	Errors map[string]error
+}
+
+func (r *ghRun) fn() func(string, ...string) (string, error) {
+	return func(name string, args ...string) (string, error) {
+		if name != "gh" {
+			return "", nil
+		}
+		r.Calls = append(r.Calls, append([]string{}, args...))
+
+		// kind is args[0]: "variable" or "secret".
+		if len(args) < 2 {
+			return "", nil
+		}
+		kind := args[0]
+
+		// Scope flag is whichever of --repo/--org appears.
+		scopeFlag := ""
+		for _, a := range args {
+			if a == "--repo" || a == "--org" {
+				scopeFlag = a
+				break
+			}
+		}
+		key := kind + "|" + scopeFlag
+		if err, ok := r.Errors[key]; ok {
+			return "", err
+		}
+		if out, ok := r.Outputs[key]; ok {
+			return out, nil
+		}
+		return "", nil
+	}
+}
+
+func TestCheckSecret_Federated_SecretAtOrgOnly_Pass(t *testing.T) {
+	r := &ghRun{
+		Outputs: map[string]string{
+			"secret|--org": "GOOSE_AGENT_PAT\tUpdated 2026-04-01",
+			// repo listing returns nothing
+		},
+	}
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		Run: r.fn(),
+	}
+	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	if res.Status != Pass {
+		t.Fatalf("got %d (%s), want Pass — calls: %v", res.Status, res.Message, r.Calls)
+	}
+}
+
+func TestCheckSecret_Federated_SecretAtRepoOnly_Pass(t *testing.T) {
+	// Pass-and-overlap is fine here; shadow is a separate check (#532).
+	r := &ghRun{
+		Outputs: map[string]string{
+			"secret|--repo": "GOOSE_AGENT_PAT\tUpdated 2026-04-01",
+			// org listing returns nothing
+		},
+	}
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		Run: r.fn(),
+	}
+	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	if res.Status != Pass {
+		t.Fatalf("got %d (%s), want Pass", res.Status, res.Message)
+	}
+}
+
+func TestCheckSecret_Federated_SecretAtNeither_FailWithOrgRemediation(t *testing.T) {
+	r := &ghRun{} // no outputs → both scopes return empty
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		Run: r.fn(),
+	}
+	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	if res.Status != Fail {
+		t.Fatalf("got %d (%s), want Fail", res.Status, res.Message)
+	}
+	wantHint := "gh secret set GOOSE_AGENT_PAT --org acme"
+	if res.Remediation != wantHint {
+		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
+	}
+	// Must have consulted both scopes.
+	var sawRepo, sawOrg bool
+	for _, c := range r.Calls {
+		for _, a := range c {
+			if a == "--repo" {
+				sawRepo = true
+			}
+			if a == "--org" {
+				sawOrg = true
+			}
+		}
+	}
+	if !sawRepo || !sawOrg {
+		t.Errorf("expected both --repo and --org consulted; got --repo=%v --org=%v (calls: %v)", sawRepo, sawOrg, r.Calls)
+	}
+}
+
+func TestCheckSecret_Single_SecretAtRepo_Pass(t *testing.T) {
+	r := &ghRun{
+		Outputs: map[string]string{
+			"secret|--repo": "GOOSE_AGENT_PAT\tUpdated 2026-04-01",
+		},
+	}
+	deps := CheckDeps{
+		RepoFullName: "eddie/repo", Owner: "eddie", Topology: "single",
+		Run: r.fn(),
+	}
+	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	if res.Status != Pass {
+		t.Fatalf("got %d (%s), want Pass", res.Status, res.Message)
+	}
+	// Must NOT consult org scope under single.
+	for _, c := range r.Calls {
+		for _, a := range c {
+			if a == "--org" {
+				t.Errorf("single topology must not consult --org (calls: %v)", r.Calls)
+			}
+		}
+	}
+}
+
+func TestCheckSecret_Single_SecretAtOrgOnly_Fail(t *testing.T) {
+	// Under single we never consult org — the secret might exist there but
+	// the check treats it as not-configured for this repo.
+	r := &ghRun{
+		Outputs: map[string]string{
+			"secret|--org": "GOOSE_AGENT_PAT\tUpdated 2026-04-01",
+		},
+	}
+	deps := CheckDeps{
+		RepoFullName: "eddie/repo", Owner: "eddie", Topology: "single",
+		Run: r.fn(),
+	}
+	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	if res.Status != Fail {
+		t.Fatalf("got %d (%s), want Fail", res.Status, res.Message)
+	}
+	wantHint := "gh secret set GOOSE_AGENT_PAT --repo eddie/repo"
+	if res.Remediation != wantHint {
+		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
+	}
+}
+
+func TestCheckVariable_Federated_SharedName_QueriesOrg(t *testing.T) {
+	r := &ghRun{
+		Outputs: map[string]string{
+			"variable|--org": "AGENT_USER\tsome-value",
+			// repo variable get returns empty (not set)
+		},
+	}
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		Run: r.fn(),
+	}
+	res := checkVariable(deps, "AGENT_USER")
+	if res.Status != Pass {
+		t.Fatalf("got %d (%s), want Pass", res.Status, res.Message)
+	}
+}
+
+func TestCheckVariable_Federated_IdentityName_NeverQueriesOrg(t *testing.T) {
+	// AGENTIC_PROJECT_ID is an identity name — even under federated it
+	// belongs at the repo only. The org list must never be consulted.
+	r := &ghRun{}
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		Run: r.fn(),
+	}
+	_ = checkVariable(deps, "AGENTIC_PROJECT_ID")
+	for _, c := range r.Calls {
+		for _, a := range c {
+			if a == "--org" {
+				t.Errorf("identity name must not trigger --org lookup (calls: %v)", r.Calls)
+			}
+		}
+	}
+}
+
+// --- checkShadowVars tests (task #532) ---
+
+// shadowScenario configures a ghRun with specific list outputs for each
+// of the four list queries the shadow-vars check issues.
+type shadowScenario struct {
+	VarRepo string
+	VarOrg  string
+	SecRepo string
+	SecOrg  string
+}
+
+func (s shadowScenario) ghRun() *ghRun {
+	return &ghRun{
+		Outputs: map[string]string{
+			"variable|--repo": s.VarRepo,
+			"variable|--org":  s.VarOrg,
+			"secret|--repo":   s.SecRepo,
+			"secret|--org":    s.SecOrg,
+		},
+	}
+}
+
+func TestCheckShadowVars_Federated_NoShadows_Pass(t *testing.T) {
+	r := shadowScenario{
+		// Shared name present only at org — correct federated placement.
+		VarOrg: "AGENT_USER\tvalue",
+		SecOrg: "GOOSE_AGENT_PAT\tupdated",
+	}.ghRun()
+	deps := CheckDeps{
+		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
+		Run: r.fn(),
+	}
+	g := checkShadowVars(deps)
+	if len(g.Results) != 1 || g.Results[0].Status != Pass {
+		t.Fatalf("expected single Pass result, got %+v", g.Results)
+	}
+	if g.Results[0].Data != nil {
+		t.Errorf("expected nil Data on pass result, got %v", g.Results[0].Data)
+	}
+}
+
+func TestCheckShadowVars_Federated_VariableShadow_FailWithDeleteCommand(t *testing.T) {
+	r := shadowScenario{
+		VarRepo: "AGENT_USER\tshadow",
+		VarOrg:  "AGENT_USER\ttrue-value",
+	}.ghRun()
+	deps := CheckDeps{
+		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
+		Run: r.fn(),
+	}
+	g := checkShadowVars(deps)
+	// Expect: 1 summary Fail + 1 per-item Fail for AGENT_USER variable.
+	if len(g.Results) != 2 {
+		t.Fatalf("expected 2 results (summary + item), got %d: %+v", len(g.Results), g.Results)
+	}
+	if g.Results[0].Status != Fail {
+		t.Errorf("summary: got %d, want Fail", g.Results[0].Status)
+	}
+	data, ok := g.Results[0].Data.([]ShadowValue)
+	if !ok || len(data) != 1 {
+		t.Fatalf("expected []ShadowValue of length 1 on summary, got %v", g.Results[0].Data)
+	}
+	if data[0].Kind != "variable" || data[0].Name != "AGENT_USER" {
+		t.Errorf("structured data: got %+v, want variable/AGENT_USER", data[0])
+	}
+	wantCmd := "gh variable delete --repo acme/cp AGENT_USER"
+	if data[0].DeleteCommand != wantCmd {
+		t.Errorf("structured delete command: got %q, want %q", data[0].DeleteCommand, wantCmd)
+	}
+	if g.Results[1].Remediation != wantCmd {
+		t.Errorf("per-item remediation: got %q, want %q", g.Results[1].Remediation, wantCmd)
+	}
+}
+
+func TestCheckShadowVars_Federated_SecretShadow_FailWithDeleteCommand(t *testing.T) {
+	r := shadowScenario{
+		SecRepo: "GOOSE_AGENT_PAT\tshadow",
+		SecOrg:  "GOOSE_AGENT_PAT\ttrue-value",
+	}.ghRun()
+	deps := CheckDeps{
+		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
+		Run: r.fn(),
+	}
+	g := checkShadowVars(deps)
+	data, ok := g.Results[0].Data.([]ShadowValue)
+	if !ok || len(data) != 1 {
+		t.Fatalf("expected 1 shadow, got %v", g.Results[0].Data)
+	}
+	if data[0].Kind != "secret" || data[0].Name != "GOOSE_AGENT_PAT" {
+		t.Errorf("got %+v, want secret/GOOSE_AGENT_PAT", data[0])
+	}
+	wantCmd := "gh secret delete --repo acme/cp GOOSE_AGENT_PAT"
+	if data[0].DeleteCommand != wantCmd {
+		t.Errorf("delete command: got %q, want %q", data[0].DeleteCommand, wantCmd)
+	}
+}
+
+func TestCheckShadowVars_Federated_MixedShadows_AllListed(t *testing.T) {
+	r := shadowScenario{
+		VarRepo: "AGENT_USER\tx\nRUNNER_LABEL\ty",
+		VarOrg:  "AGENT_USER\tx\nRUNNER_LABEL\ty",
+		SecRepo: "GOOSE_AGENT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
+		SecOrg:  "GOOSE_AGENT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
+	}.ghRun()
+	deps := CheckDeps{
+		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
+		Run: r.fn(),
+	}
+	g := checkShadowVars(deps)
+	data, ok := g.Results[0].Data.([]ShadowValue)
+	if !ok {
+		t.Fatalf("expected []ShadowValue, got %T", g.Results[0].Data)
+	}
+	if len(data) != 4 {
+		t.Errorf("expected 4 shadows, got %d: %+v", len(data), data)
+	}
+	// Count variables vs secrets.
+	varCount, secCount := 0, 0
+	for _, s := range data {
+		switch s.Kind {
+		case "variable":
+			varCount++
+		case "secret":
+			secCount++
+		}
+	}
+	if varCount != 2 || secCount != 2 {
+		t.Errorf("want 2 variable + 2 secret shadows, got var=%d sec=%d", varCount, secCount)
+	}
+}
+
+func TestCheckShadowVars_Federated_IssuesFourListQueries(t *testing.T) {
+	r := shadowScenario{}.ghRun()
+	deps := CheckDeps{
+		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
+		Run: r.fn(),
+	}
+	_ = checkShadowVars(deps)
+	// Expect 4 list calls: var --repo, var --org, sec --repo, sec --org.
+	want := map[string]int{
+		"variable|--repo": 1,
+		"variable|--org":  1,
+		"secret|--repo":   1,
+		"secret|--org":    1,
+	}
+	got := map[string]int{}
+	for _, c := range r.Calls {
+		if len(c) < 2 || c[1] != "list" {
+			continue
+		}
+		scopeFlag := ""
+		for _, a := range c {
+			if a == "--repo" || a == "--org" {
+				scopeFlag = a
+				break
+			}
+		}
+		got[c[0]+"|"+scopeFlag]++
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("list query %q: got %d, want %d (all calls: %v)", k, got[k], v, r.Calls)
+		}
+	}
+}
+
+func TestCheckShadowVars_Single_NotApplicable_NoOrgQueries(t *testing.T) {
+	r := &ghRun{}
+	deps := CheckDeps{
+		RepoFullName: "eddie/repo", Owner: "eddie", Topology: "single",
+		Run: r.fn(),
+	}
+	g := checkShadowVars(deps)
+	if len(g.Results) != 1 || g.Results[0].Status != Pass {
+		t.Fatalf("expected single Pass not-applicable result, got %+v", g.Results)
+	}
+	if !strings.Contains(g.Results[0].Message, "not applicable") {
+		t.Errorf("expected 'not applicable' in message, got %q", g.Results[0].Message)
+	}
+	// Must not consult any scope under single.
+	if len(r.Calls) != 0 {
+		t.Errorf("single topology must not issue any gh list queries; got %v", r.Calls)
+	}
+}
+
+func TestFindShadowValues_DeterministicOrder(t *testing.T) {
+	// Same name appears as both a variable and a secret shadow — the slice
+	// should emit the variable entry before the secret entry (declaration
+	// order in the canonical shared list).
+	r := shadowScenario{
+		VarRepo: "AGENT_USER\tv",
+		VarOrg:  "AGENT_USER\tv",
+		SecRepo: "AGENT_USER\ts", // Same name, different kind.
+		SecOrg:  "AGENT_USER\ts",
+	}.ghRun()
+	deps := CheckDeps{
+		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
+		Run: r.fn(),
+	}
+	shadows := FindShadowValues(deps)
+	if len(shadows) != 2 {
+		t.Fatalf("expected 2 shadows, got %d: %+v", len(shadows), shadows)
+	}
+	if shadows[0].Kind != "variable" || shadows[1].Kind != "secret" {
+		t.Errorf("expected variable before secret, got %+v", shadows)
+	}
+}
+
+func TestCheckVariable_Federated_SharedAtNeither_FailWithOrgRemediation(t *testing.T) {
+	r := &ghRun{}
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		Run: r.fn(),
+	}
+	res := checkVariable(deps, "AGENT_USER")
+	if res.Status != Fail {
+		t.Fatalf("got %d (%s), want Fail", res.Status, res.Message)
+	}
+	wantHint := "gh variable set AGENT_USER --org acme"
+	if res.Remediation != wantHint {
+		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
+	}
+}
