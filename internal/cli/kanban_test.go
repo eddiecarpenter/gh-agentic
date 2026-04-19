@@ -144,6 +144,91 @@ func TestHorizontalKanban_ASCIIFallback(t *testing.T) {
 	}
 }
 
+// TestHorizontalKanban_TopBorderHasLeadingDashBeforeLabel verifies the
+// fix for issue #516 defect 1 — the top border emits one horiz glyph
+// before each column label, producing `┌─ backlog ───┬─ scoping ───┐`
+// rather than `┌ backlog ───┬ scoping ───┐`.
+func TestHorizontalKanban_TopBorderHasLeadingDashBeforeLabel(t *testing.T) {
+	cols := columnsForRequirements(false)
+	cards := map[projectstatus.Stage][]kanbanCard{
+		projectstatus.StageBacklog: {{Lines: []string{"#1 t"}}},
+	}
+	buf := &bytes.Buffer{}
+	if err := writeHorizontalKanban(buf, cols, cards, 160, kanbanMinHorizontalWidthRequirements, true); err != nil {
+		t.Fatalf("writeHorizontalKanban: %v", err)
+	}
+	out := buf.String()
+	topLine := strings.SplitN(out, "\n", 2)[0]
+	// Each column header must be preceded by a horiz glyph: `┌─ backlog`
+	// for the first column, `┬─ scoping` and `┬─ scheduled` for the joins.
+	for _, want := range []string{"┌─ backlog", "┬─ scoping", "┬─ scheduled"} {
+		if !strings.Contains(topLine, want) {
+			t.Errorf("expected top border to contain %q; got:\n%s", want, topLine)
+		}
+	}
+	// And it must NOT contain the broken form (label directly after the
+	// corner / join with no leading dash).
+	for _, bad := range []string{"┌ backlog", "┬ scoping", "┬ scheduled"} {
+		if strings.Contains(topLine, bad) {
+			t.Errorf("unexpected unspaced form %q in top border:\n%s", bad, topLine)
+		}
+	}
+}
+
+// TestHorizontalKanban_TopBorderHasLeadingDashASCII verifies the leading
+// dash also appears in the ASCII fallback rendering.
+func TestHorizontalKanban_TopBorderHasLeadingDashASCII(t *testing.T) {
+	cols := columnsForRequirements(false)
+	cards := map[projectstatus.Stage][]kanbanCard{
+		projectstatus.StageBacklog: {{Lines: []string{"#1 t"}}},
+	}
+	buf := &bytes.Buffer{}
+	if err := writeHorizontalKanban(buf, cols, cards, 160, kanbanMinHorizontalWidthRequirements, false); err != nil {
+		t.Fatalf("writeHorizontalKanban: %v", err)
+	}
+	topLine := strings.SplitN(buf.String(), "\n", 2)[0]
+	for _, want := range []string{"+- backlog", "+- scoping", "+- scheduled"} {
+		if !strings.Contains(topLine, want) {
+			t.Errorf("expected ASCII top border to contain %q; got:\n%s", want, topLine)
+		}
+	}
+}
+
+// TestHorizontalKanban_CellWidthCappedOnWideTerminal verifies the fix for
+// issue #516 defect 2 — column cell width is capped (currently at 50
+// chars) so the kanban does not stretch to fill very wide terminals. The
+// bottom border is the cleanest place to measure cell width because it is
+// pure box glyphs with no inline labels.
+func TestHorizontalKanban_CellWidthCappedOnWideTerminal(t *testing.T) {
+	cols := columnsForRequirements(false) // 3 columns
+	cards := map[projectstatus.Stage][]kanbanCard{
+		projectstatus.StageBacklog: {{Lines: []string{"#1 t"}}},
+	}
+	buf := &bytes.Buffer{}
+	// 252-col terminal — without the cap, cellWidth = (252-4)/3 = 82.
+	if err := writeHorizontalKanban(buf, cols, cards, 252, kanbanMinHorizontalWidthRequirements, true); err != nil {
+		t.Fatalf("writeHorizontalKanban: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	// Last line is the bottom border: `└<dashes>┴<dashes>┴<dashes>┘`.
+	bottom := lines[len(lines)-1]
+	// Each segment between corner/join glyphs is the run of horiz glyphs
+	// for one column. With the 50-char cap, every segment must contain
+	// exactly 50 horiz glyphs.
+	dashRuns := strings.FieldsFunc(bottom, func(r rune) bool {
+		return r == '└' || r == '┘' || r == '┴'
+	})
+	if len(dashRuns) != 3 {
+		t.Fatalf("expected 3 column segments in bottom border; got %d in %q", len(dashRuns), bottom)
+	}
+	for i, run := range dashRuns {
+		count := strings.Count(run, "─")
+		if count != 50 {
+			t.Errorf("column %d width = %d, expected cap of 50; bottom=%q", i, count, bottom)
+		}
+	}
+}
+
 // TestRequirementCards_BlockedAnnotation verifies the blocked annotation is
 // appended as a second line on the card.
 func TestRequirementCards_BlockedAnnotation(t *testing.T) {
