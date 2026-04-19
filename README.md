@@ -28,7 +28,7 @@ gh extension install eddiecarpenter/gh-agentic
 - **macOS** — credentials are stored in the macOS keychain (`"Claude Code-credentials"`)
 - **Linux** — credentials are stored at `~/.claude/.credentials.json`
 
-## Getting started (v2)
+## Getting started
 
 ### 1. Clone or create a repo
 
@@ -40,7 +40,7 @@ cd <repo>
 ### 2. Initialise the agentic environment
 
 ```bash
-gh agentic -v2 init
+gh agentic init
 ```
 
 The init wizard detects the current repo, collects configuration (stack, framework
@@ -50,10 +50,11 @@ secrets and variables.
 ### 3. Verify the setup
 
 ```bash
-gh agentic -v2 doctor-v2
+gh agentic check
 ```
 
-All checks should pass. If any fail, follow the remediation commands in the output.
+All checks should pass. If any fail, run `gh agentic repair` to auto-fix the ones
+that can be fixed, and follow the remediation commands for the rest.
 
 ### 4. Start working
 
@@ -62,28 +63,20 @@ Open the repo in your AI agent and begin a Requirements Session. The agent reads
 
 ## Commands
 
-### v2 commands (current)
-
 | Command | Description |
 |---|---|
-| `gh agentic -v2 init` | Interactive wizard to initialise a new agentic environment |
-| `gh agentic -v2 mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
-| `gh agentic -v2 auth login` | Force Claude Code login and push credentials to repo secret |
-| `gh agentic -v2 auth refresh` | Push current local credentials to repo secret |
-| `gh agentic -v2 auth check` | Verify credentials are present and not expired |
-| `gh agentic -v2 doctor-v2` | Health check with grouped output |
-
-### v1 commands (deprecated)
-
-> **Legacy notice:** The following v1 commands are deprecated and will be removed
-> in a future release. Use the v2 equivalents above.
-
-| Command | Replacement |
-|---|---|
-| `gh agentic bootstrap` | `gh agentic -v2 init` |
-| `gh agentic inception` | `gh agentic -v2 init` |
-| `gh agentic sync` | `gh agentic -v2 mount` |
-| `gh agentic doctor` | `gh agentic -v2 doctor-v2` |
+| `gh agentic init` | Interactive wizard to initialise a new agentic environment |
+| `gh agentic check` | Verify project membership and pipeline readiness |
+| `gh agentic repair` | Auto-fix issues reported by `check` |
+| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
+| `gh agentic upgrade` | Change the framework version for the whole federation (control plane only) |
+| `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
+| `gh agentic info` | Show the current state of this repo's agentic setup |
+| `gh agentic auth login` | Force Claude Code login and push credentials to repo secret |
+| `gh agentic auth refresh` | Push current local credentials to repo secret |
+| `gh agentic auth check` | Verify credentials are present and not expired |
+| `gh agentic status` | Show pipeline state across requirements and features |
+| `gh agentic kanban` | Render requirements and features as a kanban view |
 
 ## Mount
 
@@ -92,9 +85,9 @@ The mount command downloads the AI-Native Delivery Framework and installs it at
 on demand and not committed.
 
 ```bash
-gh agentic -v2 mount v2.0.0    # first-time mount at a specific version
-gh agentic -v2 mount            # remount at current .ai-version
-gh agentic -v2 mount v2.1.0    # switch to a new version (prompts for confirmation)
+gh agentic mount v2.0.0    # first-time mount at a specific version
+gh agentic mount            # remount at current .ai-version
+gh agentic mount v2.1.0    # switch to a new version (prompts for confirmation)
 ```
 
 The pinned version is stored in `.ai-version` (committed to the repo).
@@ -104,9 +97,9 @@ The pinned version is stored in `.ai-version` (committed to the repo).
 The auth command manages Claude Code credentials for CI runners.
 
 ```bash
-gh agentic -v2 auth login      # force login and push credentials
-gh agentic -v2 auth refresh    # push current local credentials to repo secret
-gh agentic -v2 auth check      # verify credentials are present and not expired
+gh agentic auth login      # force login and push credentials
+gh agentic auth refresh    # push current local credentials to repo secret
+gh agentic auth check      # verify credentials are present and not expired
 ```
 
 ## Upgrade
