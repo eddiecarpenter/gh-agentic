@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/doctorv2"
+	"github.com/eddiecarpenter/gh-agentic/internal/doctor"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -95,7 +95,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 			}
 
 			var projectReport *project.CheckReport
-			var pipelineReport *doctorv2.Report
+			var pipelineReport *doctor.Report
 
 			_ = ui.RunWithDynamicSpinner(w, "Running project checks...", func(setLabel func(string)) error {
 				// Project-scope checks first — they already handle topology internally.
@@ -129,7 +129,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 					}
 				}
 
-				pipelineCheckDeps := doctorv2.CheckDeps{
+				pipelineCheckDeps := doctor.CheckDeps{
 					Root:              root,
 					RepoFullName:      info.FullName,
 					Owner:             info.Owner,
@@ -141,7 +141,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 					ReadCreds:         deps.readCreds,
 					FetchProjectTitle: project.DefaultFetchProjectTitle,
 				}
-				pipelineReport = doctorv2.RunAllChecksWithProgress(pipelineCheckDeps, setLabel)
+				pipelineReport = doctor.RunAllChecksWithProgress(pipelineCheckDeps, setLabel)
 				return nil
 			})
 
@@ -165,7 +165,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
 			fmt.Fprintln(w, "  "+ui.Divider(48))
 			for _, g := range pipelineReport.Groups {
-				doctorv2.RenderGroup(w, g)
+				doctor.RenderGroup(w, g)
 			}
 
 			// Combined summary.

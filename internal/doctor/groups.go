@@ -1,7 +1,7 @@
-// Package doctorv2 implements the v2 doctor health check with grouped output.
+// Package doctor implements the doctor health check with grouped output.
 // Each check returns a CheckResult with pass/warning/fail status and optional
 // remediation message.
-package doctorv2
+package doctor
 
 import (
 	"fmt"

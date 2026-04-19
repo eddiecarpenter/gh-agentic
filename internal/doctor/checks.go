@@ -1,4 +1,4 @@
-package doctorv2
+package doctor
 
 import (
 	"fmt"
@@ -134,7 +134,7 @@ func checkRepository(deps CheckDeps) Group {
 	return g
 }
 
-// checkFramework checks the v2 framework mount state.
+// checkFramework checks the framework mount state.
 func checkFramework(deps CheckDeps) Group {
 	g := Group{Name: "Framework"}
 
