@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
 // --------------------------------------------------------------------------
@@ -110,6 +112,7 @@ func buildFixtureDeps() statusDeps {
 				return fixturePRs()[name], nil
 			},
 		},
+		busy: testutil.NoopBusy,
 	}
 }
 
@@ -208,7 +211,7 @@ func assertShape(t *testing.T, context string, expected map[string]string, actua
 func TestIntegration_RequirementsList_JSONMatchesSchema(t *testing.T) {
 	schema := loadSchema(t, "requirements_list.schema.json")
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{json: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{json: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 	var payload map[string]interface{}
@@ -232,7 +235,7 @@ func TestIntegration_RequirementsList_JSONMatchesSchema(t *testing.T) {
 func TestIntegration_RequirementDetail_JSONMatchesSchema(t *testing.T) {
 	schema := loadSchema(t, "requirement_detail.schema.json")
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirement(buf, 457, statusDetailFlags{json: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusRequirement(buf, io.Discard, 457, statusDetailFlags{json: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusRequirement: %v", err)
 	}
 	var payload map[string]interface{}
@@ -254,7 +257,7 @@ func TestIntegration_RequirementDetail_JSONMatchesSchema(t *testing.T) {
 func TestIntegration_FeaturesList_JSONMatchesSchema(t *testing.T) {
 	schema := loadSchema(t, "features_list.schema.json")
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{json: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	var payload map[string]interface{}
@@ -273,7 +276,7 @@ func TestIntegration_FeaturesList_JSONMatchesSchema(t *testing.T) {
 func TestIntegration_FeatureDetail_JSONMatchesSchema(t *testing.T) {
 	schema := loadSchema(t, "feature_detail.schema.json")
 	buf := &bytes.Buffer{}
-	if err := runStatusFeature(buf, 492, statusDetailFlags{json: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{json: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusFeature: %v", err)
 	}
 	var payload map[string]interface{}
@@ -305,16 +308,16 @@ func TestIntegration_JSONStabilityAcrossInvocations(t *testing.T) {
 		run  func(w *bytes.Buffer) error
 	}{
 		{"requirements list", func(w *bytes.Buffer) error {
-			return runStatusRequirements(w, statusListFlags{json: true}, buildFixtureDeps())
+			return runStatusRequirements(w, io.Discard, statusListFlags{json: true}, buildFixtureDeps())
 		}},
 		{"requirement detail", func(w *bytes.Buffer) error {
-			return runStatusRequirement(w, 457, statusDetailFlags{json: true}, buildFixtureDeps())
+			return runStatusRequirement(w, io.Discard, 457, statusDetailFlags{json: true}, buildFixtureDeps())
 		}},
 		{"features list", func(w *bytes.Buffer) error {
-			return runStatusFeatures(w, statusListFlags{json: true}, buildFixtureDeps())
+			return runStatusFeatures(w, io.Discard, statusListFlags{json: true}, buildFixtureDeps())
 		}},
 		{"feature detail", func(w *bytes.Buffer) error {
-			return runStatusFeature(w, 492, statusDetailFlags{json: true}, buildFixtureDeps())
+			return runStatusFeature(w, io.Discard, 492, statusDetailFlags{json: true}, buildFixtureDeps())
 		}},
 	}
 	for _, r := range runs {
@@ -339,7 +342,7 @@ func TestIntegration_JSONStabilityAcrossInvocations(t *testing.T) {
 // cells.
 func TestIntegration_HumanOutputHasFederatedRepoColumn(t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -355,7 +358,7 @@ func TestIntegration_HumanOutputHasFederatedRepoColumn(t *testing.T) {
 func TestIntegration_KanbanVerticalPerEntity(t *testing.T) {
 	// Requirements.
 	reqBuf := &bytes.Buffer{}
-	if err := runStatusRequirements(reqBuf, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusRequirements(reqBuf, io.Discard, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("requirements kanban: %v", err)
 	}
 	if !strings.Contains(reqBuf.String(), "Requirements — Kanban") {
@@ -364,7 +367,7 @@ func TestIntegration_KanbanVerticalPerEntity(t *testing.T) {
 
 	// Features.
 	feaBuf := &bytes.Buffer{}
-	if err := runStatusFeatures(feaBuf, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(feaBuf, io.Discard, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("features kanban: %v", err)
 	}
 	if !strings.Contains(feaBuf.String(), "Features — Kanban") {
@@ -380,7 +383,7 @@ func TestIntegration_KanbanHorizontalWide(t *testing.T) {
 	defer func() { terminalWidth = originalWidth }()
 
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true, horizontal: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, horizontal: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("wide horizontal kanban: %v", err)
 	}
 	if !strings.ContainsAny(buf.String(), "┌+") {
@@ -397,7 +400,7 @@ func TestIntegration_KanbanHorizontalNarrowStillRenders(t *testing.T) {
 	defer func() { terminalWidth = originalWidth }()
 
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true, horizontal: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, horizontal: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("--horizontal on narrow terminal should not error: %v", err)
 	}
 	out := buf.String()
@@ -418,7 +421,7 @@ func TestIntegration_KanbanDefaultNarrowAutoFallsBack(t *testing.T) {
 	defer func() { terminalWidth = originalWidth }()
 
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("default narrow kanban should not error: %v", err)
 	}
 	out := buf.String()
@@ -434,7 +437,7 @@ func TestIntegration_KanbanDefaultNarrowAutoFallsBack(t *testing.T) {
 // current repo on both list commands.
 func TestIntegration_ThisRepoNarrowing(t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{thisRepo: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{thisRepo: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -450,7 +453,7 @@ func TestIntegration_ThisRepoNarrowing(t *testing.T) {
 // the done column in the kanban view and closed items in the list view.
 func TestIntegration_IncludeDoneAddsDoneColumn(t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true, includeDone: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true, includeDone: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 	if !strings.Contains(buf.String(), "## done") {
@@ -462,7 +465,7 @@ func TestIntegration_IncludeDoneAddsDoneColumn(t *testing.T) {
 // appears in list views and the Blocked line appears in detail.
 func TestIntegration_BlockedAnnotationEndToEnd(t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	if !strings.Contains(buf.String(), "[blocked by foo/domain-x#507]") {
@@ -470,7 +473,7 @@ func TestIntegration_BlockedAnnotationEndToEnd(t *testing.T) {
 	}
 
 	detailBuf := &bytes.Buffer{}
-	if err := runStatusFeature(detailBuf, 511, statusDetailFlags{}, buildFixtureDeps()); err != nil {
+	if err := runStatusFeature(detailBuf, io.Discard, 511, statusDetailFlags{}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusFeature: %v", err)
 	}
 	if !strings.Contains(detailBuf.String(), "Blocked: foo/domain-x#507") {
@@ -486,22 +489,23 @@ func TestIntegration_ErrorPaths(t *testing.T) {
 			currentRepo:      func() (string, error) { return "owner/repo", nil },
 			resolveProjectID: func(string) (string, error) { return "", nil },
 			psDeps:           projectstatus.Deps{},
+			busy:             testutil.NoopBusy,
 		}
-		err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{}, sd)
+		err := runStatusRequirements(&bytes.Buffer{}, io.Discard, statusListFlags{}, sd)
 		if !errors.Is(err, projectstatus.ErrProjectNotConfigured) {
 			t.Errorf("expected ErrProjectNotConfigured; got %v", err)
 		}
 	})
 
 	t.Run("unknown issue number", func(t *testing.T) {
-		err := runStatusRequirement(&bytes.Buffer{}, 9999, statusDetailFlags{}, buildFixtureDeps())
+		err := runStatusRequirement(&bytes.Buffer{}, io.Discard, 9999, statusDetailFlags{}, buildFixtureDeps())
 		if !errors.Is(err, projectstatus.ErrIssueNotFound) {
 			t.Errorf("expected ErrIssueNotFound; got %v", err)
 		}
 	})
 
 	t.Run("wrong type requirement->feature", func(t *testing.T) {
-		err := runStatusFeature(&bytes.Buffer{}, 457, statusDetailFlags{}, buildFixtureDeps())
+		err := runStatusFeature(&bytes.Buffer{}, io.Discard, 457, statusDetailFlags{}, buildFixtureDeps())
 		var wt *projectstatus.ErrWrongType
 		if !errors.As(err, &wt) {
 			t.Fatalf("expected ErrWrongType; got %v", err)
@@ -512,7 +516,7 @@ func TestIntegration_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("wrong type feature->requirement", func(t *testing.T) {
-		err := runStatusRequirement(&bytes.Buffer{}, 492, statusDetailFlags{}, buildFixtureDeps())
+		err := runStatusRequirement(&bytes.Buffer{}, io.Discard, 492, statusDetailFlags{}, buildFixtureDeps())
 		var wt *projectstatus.ErrWrongType
 		if !errors.As(err, &wt) {
 			t.Fatalf("expected ErrWrongType; got %v", err)
@@ -524,7 +528,7 @@ func TestIntegration_ErrorPaths(t *testing.T) {
 // JSON, not a kanban layout — the documented precedence.
 func TestIntegration_JSONKanbanPrecedence(t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true, json: true}, buildFixtureDeps()); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true, json: true}, buildFixtureDeps()); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 	out := buf.String()

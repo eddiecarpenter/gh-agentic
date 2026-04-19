@@ -21,7 +21,11 @@ import (
 //  2. --kanban — stage-grouped view, vertical by default / side-by-side
 //     when --horizontal is also set and the terminal is wide enough.
 //  3. Default — compact tabular list.
-func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) error {
+//
+// stderr receives the busy-indicator rendered by deps.busy while the
+// federated fetch is in flight; stdout (w) receives the final output.
+// Non-TTY writers suppress the indicator — see ui.BusyRun.
+func runStatusFeatures(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
 	if (flags.horizontal || flags.vertical) && !flags.kanban {
 		return fmt.Errorf("--horizontal and --vertical require --kanban")
 	}
@@ -49,7 +53,15 @@ func runStatusFeatures(w io.Writer, flags statusListFlags, deps statusDeps) erro
 		return projectstatus.ErrProjectNotConfigured
 	}
 
-	features, err := projectstatus.FetchFeatures(deps.psDeps, projectID, flags.includeDone)
+	// Wrap the federated feature fetch in the shared busy indicator.
+	// The indicator writes to stderr so stdout stays clean for --json
+	// consumers; non-TTY writers suppress the glyphs entirely.
+	var features []projectstatus.Feature
+	err = deps.busy(stderr, "Fetching features…", func() error {
+		var fetchErr error
+		features, fetchErr = projectstatus.FetchFeatures(deps.psDeps, projectID, flags.includeDone)
+		return fetchErr
+	})
 	if err != nil {
 		return fmt.Errorf("fetching features: %w", err)
 	}

@@ -39,6 +39,11 @@ type statusDeps struct {
 	resolveProjectID func(repoFullName string) (string, error)
 	// psDeps is the data-layer Deps consumed by projectstatus queries.
 	psDeps projectstatus.Deps
+	// busy wraps a long-running fetch with a delayed, non-TTY-guarded
+	// busy indicator rendered on the stderr writer passed at call time.
+	// Production wires ui.BusyRun; tests use testutil.NoopBusy to stay
+	// silent and deterministic.
+	busy ui.BusyFunc
 }
 
 // defaultStatusDeps returns production dependencies wired to gh auth.
@@ -47,6 +52,7 @@ func defaultStatusDeps() statusDeps {
 		currentRepo:      defaultCurrentRepoFullName,
 		resolveProjectID: defaultResolveProjectID,
 		psDeps:           projectstatus.DefaultDeps(),
+		busy:             ui.BusyRun,
 	}
 }
 
@@ -93,7 +99,11 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 //  2. --kanban — stage-grouped view (vertical by default; --horizontal
 //     adds side-by-side rendering when the terminal is wide enough).
 //  3. Default — compact tabular list.
-func runStatusRequirements(w io.Writer, flags statusListFlags, deps statusDeps) error {
+//
+// stderr receives the busy-indicator rendered by deps.busy while the
+// fetch is in flight; stdout (w) receives the final human or JSON output.
+// Non-TTY writers suppress the indicator — see ui.BusyRun.
+func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
 	if (flags.horizontal || flags.vertical) && !flags.kanban {
 		return fmt.Errorf("--horizontal and --vertical require --kanban")
 	}
@@ -121,7 +131,15 @@ func runStatusRequirements(w io.Writer, flags statusListFlags, deps statusDeps) 
 		return projectstatus.ErrProjectNotConfigured
 	}
 
-	reqs, err := projectstatus.FetchRequirements(deps.psDeps, projectID, flags.includeDone)
+	// Wrap the network-bound fetch in the shared busy indicator. The
+	// indicator writes to stderr so --json consumers piping stdout to jq
+	// get clean output; non-TTY writers suppress the glyphs entirely.
+	var reqs []projectstatus.Requirement
+	err = deps.busy(stderr, "Fetching requirements…", func() error {
+		var fetchErr error
+		reqs, fetchErr = projectstatus.FetchRequirements(deps.psDeps, projectID, flags.includeDone)
+		return fetchErr
+	})
 	if err != nil {
 		return fmt.Errorf("fetching requirements: %w", err)
 	}

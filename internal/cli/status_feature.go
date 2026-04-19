@@ -13,7 +13,11 @@ import (
 // runStatusFeature is the handler for `gh agentic status feature <N>`. It
 // resolves the project ID, fetches the feature via projectstatus, and
 // renders either the human detail view or the self-contained JSON object.
-func runStatusFeature(w io.Writer, number int, flags statusDetailFlags, deps statusDeps) error {
+//
+// stderr receives the busy-indicator rendered by deps.busy while the fetch
+// is in flight; stdout (w) receives the final output. Non-TTY writers
+// suppress the indicator — see ui.BusyRun.
+func runStatusFeature(w io.Writer, stderr io.Writer, number int, flags statusDetailFlags, deps statusDeps) error {
 	currentRepo, err := deps.currentRepo()
 	if err != nil {
 		return fmt.Errorf("resolving current repository: %w", err)
@@ -27,7 +31,12 @@ func runStatusFeature(w io.Writer, number int, flags statusDetailFlags, deps sta
 		return projectstatus.ErrProjectNotConfigured
 	}
 
-	feature, err := projectstatus.FetchFeature(deps.psDeps, projectID, number)
+	var feature *projectstatus.Feature
+	err = deps.busy(stderr, fmt.Sprintf("Fetching feature #%d…", number), func() error {
+		var fetchErr error
+		feature, fetchErr = projectstatus.FetchFeature(deps.psDeps, projectID, number)
+		return fetchErr
+	})
 	if err != nil {
 		return annotateDetailError(err, number, currentRepo)
 	}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -266,7 +267,7 @@ func TestFeatureCards_SortedByStage(t *testing.T) {
 func TestRunStatusRequirements_JSONBeatsKanban(t *testing.T) {
 	sd := fakeStatusDeps(sampleRequirementIssues())
 	buf := &bytes.Buffer{}
-	err := runStatusRequirements(buf, statusListFlags{json: true, kanban: true}, sd)
+	err := runStatusRequirements(buf, io.Discard, statusListFlags{json: true, kanban: true}, sd)
 	if err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
@@ -289,7 +290,7 @@ func TestRunStatusFeatures_KanbanHorizontalWithFakeWidth(t *testing.T) {
 
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	err := runStatusFeatures(buf, statusListFlags{kanban: true, horizontal: true}, sd)
+	err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, horizontal: true}, sd)
 	if err != nil {
 		t.Fatalf("runStatusFeatures kanban+horizontal: %v", err)
 	}
@@ -311,7 +312,7 @@ func TestRunStatusFeatures_KanbanHorizontalOnNarrowHonoursChoice(t *testing.T) {
 
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	err := runStatusFeatures(buf, statusListFlags{kanban: true, horizontal: true}, sd)
+	err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, horizontal: true}, sd)
 	if err != nil {
 		t.Fatalf("--horizontal on narrow terminal returned error: %v", err)
 	}
@@ -329,7 +330,7 @@ func TestRunStatusFeatures_KanbanHorizontalOnNarrowHonoursChoice(t *testing.T) {
 func TestRunStatusRequirements_KanbanIncludeDoneAddsColumn(t *testing.T) {
 	sd := fakeStatusDeps(sampleRequirementIssues())
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true, includeDone: true}, sd); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true, includeDone: true}, sd); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 	out := buf.String()
@@ -338,7 +339,7 @@ func TestRunStatusRequirements_KanbanIncludeDoneAddsColumn(t *testing.T) {
 	}
 
 	buf = &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true, includeDone: false}, sd); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true, includeDone: false}, sd); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 	if strings.Contains(buf.String(), "## done") {
@@ -439,7 +440,7 @@ func TestRunStatusFeatures_KanbanDefaultWideIsHorizontal(t *testing.T) {
 
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -464,7 +465,7 @@ func TestRunStatusFeatures_KanbanDefaultNarrowAutoFallsBack(t *testing.T) {
 
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures auto-fallback should not error: %v", err)
 	}
 	out := buf.String()
@@ -491,7 +492,7 @@ func TestRunStatusFeatures_KanbanVerticalForced(t *testing.T) {
 
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures --vertical: %v", err)
 	}
 	out := buf.String()
@@ -507,7 +508,7 @@ func TestRunStatusFeatures_KanbanVerticalForced(t *testing.T) {
 // and --vertical together yields a clean mutually-exclusive error.
 func TestRunStatusFeatures_KanbanBothFlagsError(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
-	err := runStatusFeatures(&bytes.Buffer{}, statusListFlags{kanban: true, horizontal: true, vertical: true}, sd)
+	err := runStatusFeatures(&bytes.Buffer{}, io.Discard, statusListFlags{kanban: true, horizontal: true, vertical: true}, sd)
 	if err == nil {
 		t.Fatalf("expected mutually-exclusive error, got nil")
 	}
@@ -525,7 +526,7 @@ func TestRunStatusRequirements_KanbanDefaultWideIsHorizontal(t *testing.T) {
 
 	sd := fakeStatusDeps(sampleRequirementIssues())
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true}, sd); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true}, sd); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 	out := buf.String()
@@ -546,7 +547,7 @@ func TestRunStatusRequirements_KanbanDefaultNarrowAutoFallsBack(t *testing.T) {
 
 	sd := fakeStatusDeps(sampleRequirementIssues())
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true}, sd); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true}, sd); err != nil {
 		t.Fatalf("runStatusRequirements auto-fallback should not error: %v", err)
 	}
 	out := buf.String()
@@ -567,7 +568,7 @@ func TestRunStatusRequirements_KanbanDefaultNarrowAutoFallsBack(t *testing.T) {
 // --horizontal and --vertical together yields a clean error.
 func TestRunStatusRequirements_KanbanBothFlagsError(t *testing.T) {
 	sd := fakeStatusDeps(sampleRequirementIssues())
-	err := runStatusRequirements(&bytes.Buffer{}, statusListFlags{kanban: true, horizontal: true, vertical: true}, sd)
+	err := runStatusRequirements(&bytes.Buffer{}, io.Discard, statusListFlags{kanban: true, horizontal: true, vertical: true}, sd)
 	if err == nil {
 		t.Fatalf("expected mutually-exclusive error, got nil")
 	}
@@ -719,7 +720,7 @@ func TestRunStatusFeatures_KanbanVerticalShowsProgress(t *testing.T) {
 		return nil, nil
 	}
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, vertical: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -745,7 +746,7 @@ func TestRunStatusFeatures_KanbanHorizontalShowsProgress(t *testing.T) {
 		return nil, nil
 	}
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, statusListFlags{kanban: true, horizontal: true}, sd); err != nil {
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{kanban: true, horizontal: true}, sd); err != nil {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
@@ -764,7 +765,7 @@ func TestRunStatusRequirements_KanbanHasNoProgressLine(t *testing.T) {
 
 	sd := fakeStatusDeps(sampleRequirementIssues())
 	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, statusListFlags{kanban: true}, sd); err != nil {
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{kanban: true}, sd); err != nil {
 		t.Fatalf("runStatusRequirements: %v", err)
 	}
 	out := buf.String()

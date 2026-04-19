@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
 // newCmdForErrorCapture builds a throwaway cobra.Command whose stderr is
@@ -141,6 +142,7 @@ func TestRenderStatusError_IntegratesWithRequirementsHandler(t *testing.T) {
 		currentRepo:      func() (string, error) { return "owner/repo", nil },
 		resolveProjectID: func(string) (string, error) { return "", nil },
 		psDeps:           projectstatus.Deps{},
+		busy:             testutil.NoopBusy,
 	}
 	cmd := newStatusRequirementsCmdWithDeps(sd)
 	buf := &bytes.Buffer{}

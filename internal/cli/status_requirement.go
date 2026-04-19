@@ -26,7 +26,11 @@ func parseIssueNumberArg(raw string) (int, error) {
 // runStatusRequirement is the handler for `gh agentic status requirement <N>`.
 // It resolves the project ID, fetches the requirement via projectstatus, and
 // renders either the human detail view or a single-object JSON payload.
-func runStatusRequirement(w io.Writer, number int, flags statusDetailFlags, deps statusDeps) error {
+//
+// stderr receives the busy-indicator rendered by deps.busy while the fetch
+// is in flight; stdout (w) receives the final output. Non-TTY writers
+// suppress the indicator — see ui.BusyRun.
+func runStatusRequirement(w io.Writer, stderr io.Writer, number int, flags statusDetailFlags, deps statusDeps) error {
 	currentRepo, err := deps.currentRepo()
 	if err != nil {
 		return fmt.Errorf("resolving current repository: %w", err)
@@ -40,7 +44,12 @@ func runStatusRequirement(w io.Writer, number int, flags statusDetailFlags, deps
 		return projectstatus.ErrProjectNotConfigured
 	}
 
-	req, err := projectstatus.FetchRequirement(deps.psDeps, projectID, number)
+	var req *projectstatus.Requirement
+	err = deps.busy(stderr, fmt.Sprintf("Fetching requirement #%d…", number), func() error {
+		var fetchErr error
+		req, fetchErr = projectstatus.FetchRequirement(deps.psDeps, projectID, number)
+		return fetchErr
+	})
 	if err != nil {
 		// Surface ErrIssueNotFound with the repo context so the renderer can
 		// print the concrete "not found in <repo>" message. Likewise for

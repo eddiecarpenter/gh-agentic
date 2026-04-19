@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
 // featureDetailFixture builds a statusDeps with injectable handlers for the
@@ -37,6 +39,7 @@ func featureDetailFixture(issues []projectstatus.ProjectIssue, subIssues map[int
 		currentRepo:      func() (string, error) { return "eddiecarpenter/gh-agentic", nil },
 		resolveProjectID: func(string) (string, error) { return "PROJ_ID", nil },
 		psDeps:           ps,
+		busy:             testutil.NoopBusy,
 	}
 }
 
@@ -66,7 +69,7 @@ func TestRunStatusFeature_DefaultDetailOutput(t *testing.T) {
 	sd := featureDetailFixture(issues, subIssues, parent, branches, prs)
 
 	buf := &bytes.Buffer{}
-	if err := runStatusFeature(buf, 492, statusDetailFlags{}, sd); err != nil {
+	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{}, sd); err != nil {
 		t.Fatalf("runStatusFeature: %v", err)
 	}
 	out := buf.String()
@@ -100,7 +103,7 @@ func TestRunStatusFeature_EmptyResourcesRenderCleanly(t *testing.T) {
 	}
 	sd := featureDetailFixture(issues, nil, nil, nil, nil)
 	buf := &bytes.Buffer{}
-	if err := runStatusFeature(buf, 10, statusDetailFlags{}, sd); err != nil {
+	if err := runStatusFeature(buf, io.Discard, 10, statusDetailFlags{}, sd); err != nil {
 		t.Fatalf("runStatusFeature: %v", err)
 	}
 	out := buf.String()
@@ -190,7 +193,7 @@ func TestRunStatusFeature_JSONSchema(t *testing.T) {
 	sd := featureDetailFixture(issues, nil, nil, nil, nil)
 
 	buf := &bytes.Buffer{}
-	if err := runStatusFeature(buf, 492, statusDetailFlags{json: true}, sd); err != nil {
+	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{json: true}, sd); err != nil {
 		t.Fatalf("runStatusFeature: %v", err)
 	}
 	var parsed map[string]interface{}
@@ -217,7 +220,7 @@ func TestRunStatusFeature_JSONSchema(t *testing.T) {
 // repo / number.
 func TestRunStatusFeature_NotFound(t *testing.T) {
 	sd := featureDetailFixture(nil, nil, nil, nil, nil)
-	err := runStatusFeature(&bytes.Buffer{}, 9999, statusDetailFlags{}, sd)
+	err := runStatusFeature(&bytes.Buffer{}, io.Discard, 9999, statusDetailFlags{}, sd)
 	if !errors.Is(err, projectstatus.ErrIssueNotFound) {
 		t.Fatalf("expected ErrIssueNotFound; got %v", err)
 	}
@@ -234,7 +237,7 @@ func TestRunStatusFeature_WrongType(t *testing.T) {
 		{Number: 457, Title: "requirement", Type: "requirement", Stage: projectstatus.StageScoping, State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
 	sd := featureDetailFixture(issues, nil, nil, nil, nil)
-	err := runStatusFeature(&bytes.Buffer{}, 457, statusDetailFlags{}, sd)
+	err := runStatusFeature(&bytes.Buffer{}, io.Discard, 457, statusDetailFlags{}, sd)
 
 	var wt *projectstatus.ErrWrongType
 	if !errors.As(err, &wt) {

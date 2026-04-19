@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/testutil"
 )
 
 // requirementDetailFixture builds a fake projectstatus.Deps that returns the
@@ -33,6 +35,7 @@ func requirementDetailFixture(issues []projectstatus.ProjectIssue, branches map[
 		currentRepo:      func() (string, error) { return "eddiecarpenter/gh-agentic", nil },
 		resolveProjectID: func(string) (string, error) { return "PROJ_ID", nil },
 		psDeps:           ps,
+		busy:             testutil.NoopBusy,
 	}
 }
 
@@ -53,7 +56,7 @@ func TestRunStatusRequirement_DefaultDetailOutput(t *testing.T) {
 	sd := requirementDetailFixture(issues, branches, prs)
 
 	buf := &bytes.Buffer{}
-	err := runStatusRequirement(buf, 466, statusDetailFlags{}, sd)
+	err := runStatusRequirement(buf, io.Discard, 466, statusDetailFlags{}, sd)
 	if err != nil {
 		t.Fatalf("runStatusRequirement: %v", err)
 	}
@@ -86,7 +89,7 @@ func TestRunStatusRequirement_NoLinkedFeaturesShowsNone(t *testing.T) {
 	sd := requirementDetailFixture(issues, nil, nil)
 
 	buf := &bytes.Buffer{}
-	err := runStatusRequirement(buf, 467, statusDetailFlags{}, sd)
+	err := runStatusRequirement(buf, io.Discard, 467, statusDetailFlags{}, sd)
 	if err != nil {
 		t.Fatalf("runStatusRequirement: %v", err)
 	}
@@ -105,7 +108,7 @@ func TestRunStatusRequirement_JSONObjectShape(t *testing.T) {
 	sd := requirementDetailFixture(issues, nil, nil)
 
 	buf := &bytes.Buffer{}
-	err := runStatusRequirement(buf, 466, statusDetailFlags{json: true}, sd)
+	err := runStatusRequirement(buf, io.Discard, 466, statusDetailFlags{json: true}, sd)
 	if err != nil {
 		t.Fatalf("runStatusRequirement: %v", err)
 	}
@@ -133,7 +136,7 @@ func TestRunStatusRequirement_JSONObjectShape(t *testing.T) {
 // a clear error and wraps ErrIssueNotFound.
 func TestRunStatusRequirement_NotFound(t *testing.T) {
 	sd := requirementDetailFixture(nil, nil, nil)
-	err := runStatusRequirement(&bytes.Buffer{}, 9999, statusDetailFlags{}, sd)
+	err := runStatusRequirement(&bytes.Buffer{}, io.Discard, 9999, statusDetailFlags{}, sd)
 	if err == nil {
 		t.Fatalf("expected error for missing requirement, got nil")
 	}
@@ -153,7 +156,7 @@ func TestRunStatusRequirement_WrongType(t *testing.T) {
 		{Number: 492, Title: "feat: status", Type: "feature", Stage: projectstatus.StageInDevelopment, State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
 	sd := requirementDetailFixture(issues, nil, nil)
-	err := runStatusRequirement(&bytes.Buffer{}, 492, statusDetailFlags{}, sd)
+	err := runStatusRequirement(&bytes.Buffer{}, io.Discard, 492, statusDetailFlags{}, sd)
 
 	var wt *projectstatus.ErrWrongType
 	if !errors.As(err, &wt) {
