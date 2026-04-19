@@ -170,6 +170,39 @@ See `concepts/delivery-philosophy.md` for the full context.
 
 ---
 
+## Reuse & Refactor Discipline
+
+Before writing any new function, type, module, or schema, the agent invokes
+`skills/refactor-assessment.md` and records one of the three permitted outcomes:
+
+- **Reuse as-is** — an existing symbol already covers the need.
+- **Reuse via refactor** — an existing symbol nearly covers the need; extend
+  or generalise it rather than forking.
+- **Do not reuse** — with a recorded motivation for why the existing code is
+  genuinely unsuitable.
+
+This discipline applies to **every** code-touching action in the framework —
+inside a Session skill (`feature-design`, `dev-session`, `issue-session`),
+inside a Recovery skill (e.g. `foreground-recovery`), and inside any ad-hoc
+human-prompted change. It closes the coverage gap the per-session
+integrations cannot reach.
+
+The outcome is recorded in the canonical annotation format defined by
+`skills/refactor-assessment.md` — a single-line `Reuse: <outcome> — <reason>`
+placed in the commit trailer (for code-touching commits) or in a task
+comment (where no commit is produced).
+
+The discipline is **skippable only with explicit human opt-out**. The opt-out
+and its reason must be captured alongside the change using the same
+annotation slot: `Reuse: opt-out — <reason>`. "I didn't look" is never a
+permitted outcome.
+
+`skills/refactor-assessment.md` is the single source of truth for the
+procedure, the outcomes, the recording format, and the loader phrase. Do not
+restate any of it here — consult the skill.
+
+---
+
 ## Framework Files — Read Only
 
 The framework files in this directory (RULEBOOK.md, `skills/`, `standards/`, `concepts/`,

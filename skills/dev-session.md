@@ -7,6 +7,7 @@ loads:
   - session-init
   - gh-agentic-tool
   - set-issue-status
+  - refactor-assessment
   - session-exit
   - notify-user
 emits-exit-block: true
@@ -61,6 +62,7 @@ Triggered automatically by GitHub Actions when a Feature issue is labelled `in-d
        - Skip those tasks in step 5 — resume from the first incomplete task
 5. For each Task in order (skipping tasks completed in recovery mode):
    - Reads the task issue and understands what must be built
+   - **Reuse & Refactor Check.** Invoke skills/refactor-assessment.md before writing any new code. For **each new function, type, module, or schema** the task will introduce, record one of the three outcomes defined in `refactor-assessment.md` (as-is / via-refactor / none). If the task introduces no new symbols, record `n/a` with a one-line description. **The check must be performed before any new symbol is written.** If the agent finds it has not performed the check, the session **halts** for that task and reports the error — silent progression is forbidden. "I didn't look" is not a permitted outcome.
    - Implements the work described — after each significant step (file created,
      function complete, tests written), writes an intra-task checkpoint to `recovery.md`
      with a `## Current Task` section and pushes immediately:
@@ -72,16 +74,34 @@ Triggered automatically by GitHub Actions when a Feature issue is labelled `in-d
      ```
    - When a complete unit of work is done (a module and its tests written and
      passing), commits and pushes the code immediately — does not wait for the
-     full task to be complete:
+     full task to be complete. The commit body carries the canonical `Reuse:`
+     trailer for any new symbols introduced by the unit:
      ```bash
      git add -A
-     git commit -m "feat: <unit description> (#feature-issue)"
+     git commit -m "$(cat <<'MSG'
+     feat: <unit description> (#feature-issue)
+
+     <optional short paragraph>
+
+     Reuse: <as-is|via-refactor|none|n/a> — <reason or reference>
+     MSG
+     )"
      git push
      echo "=== Unit committed and pushed ==="
      ```
      Then updates `recovery.md` to reflect the completed unit and pushes again.
    - Builds and tests — stops immediately on failure and reports the exact error
-   - Commits: `feat: [task description] — task N of N (#feature-issue)`
+   - Commits the task. The subject is unchanged; the body carries the
+     canonical `Reuse:` trailer recording the outcome of the Reuse & Refactor
+     Check (one trailer per distinct decision if the task introduced multiple
+     unrelated new symbols):
+     ```
+     feat: [task description] — task N of N (#feature-issue)
+
+     <optional short paragraph>
+
+     Reuse: <as-is|via-refactor|none|n/a> — <reason or reference>
+     ```
    - Closes the task issue
    - **Writes `recovery.md`** — after the commit and close, write `recovery.md` to
      the repo root with the current progress state (see format below), then:
@@ -181,6 +201,16 @@ During task implementation, replace or add the `## Current Task` section:
 - **Notes:** <anything a recovering session needs to know, or "None">
 ```
 
+The `Notes` field must record the state of the Reuse & Refactor Check for
+the current task so a recovering session knows whether to re-run it. Use one
+of:
+
+- `Reuse check pending` — the task is underway but the check has not yet been
+  performed.
+- `Reuse check complete — outcome: <as-is|via-refactor|none|n/a> — <reason>` —
+  the check has been performed and the outcome is captured (and will appear
+  in the eventual task-commit trailer).
+
 Remove the `## Current Task` section when writing the post-task checkpoint (task complete).
 
 ## Rules
@@ -191,6 +221,12 @@ Remove the `## Current Task` section when writing the post-task checkpoint (task
 - A feature is not complete until all acceptance criteria have test coverage
 - Report exact command output on any failure
 - Follow the standards in `standards/<stack>.md` exactly
+- **Reuse & Refactor Check is mandatory per task.** No new function, type,
+  module, or schema may be committed without an accompanying `Reuse:` trailer
+  in the commit body recording one of the outcomes defined in
+  `skills/refactor-assessment.md` (as-is / via-refactor / none / n/a). If the
+  check was not performed, the session halts — "I didn't look" is not a
+  permitted outcome.
 - **Inline status updates**: this skill does not apply pipeline labels (the workflow
   applies `in-review`). If a future change adds a pipeline label transition here, it
   must include an inline project status update following `set-issue-status.md` —

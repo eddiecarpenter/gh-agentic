@@ -6,6 +6,7 @@ triggers: "automation: issue-assigned"
 loads:
   - session-init
   - gh-agentic-tool
+  - refactor-assessment
   - session-exit
 emits-exit-block: true
 exit-hands-to: "automation: github-actions opens PR if code changed | human: review comment/PR"
@@ -45,10 +46,26 @@ the agent user (e.g. `goose-agent`).
 1. Reads the issue: title, body, and labels
 2. Posts an acknowledgement comment
 3. Routes by label:
-   - **bug**: locates the problem, verifies fix is in safe scope, creates a fix branch,
-     implements the minimal fix, builds and tests, commits (workflow pushes and opens PR)
+   - **bug**: locates the problem, verifies fix is in safe scope, creates a fix
+     branch, performs the **Reuse & Refactor Check** before implementing the
+     fix — Invoke skills/refactor-assessment.md before writing any new code.
+     For each helper, type, or function introduced by the fix, record one of
+     the three outcomes defined in `refactor-assessment.md` (as-is /
+     via-refactor / none). If the fix is purely a local change with no new
+     symbols, record `n/a` with a short description (e.g.
+     `Reuse: n/a — pure local fix`). Then implements the minimal fix, builds
+     and tests, and commits — the commit body carries the canonical `Reuse:`
+     trailer (workflow pushes and opens the PR):
+
+     ```
+     fix: [bug description] (#N)
+
+     <optional short paragraph>
+
+     Reuse: <as-is|via-refactor|none|n/a> — <reason or reference>
+     ```
    - **question**: researches the answer, posts a detailed reply, adds `answered` label
-     (no code changes, no branch, no PR)
+     (no code changes, no branch, no PR, no reuse trailer required)
    - **other**: posts a comment asking for a `bug` or `question` label
 4. Emits the canonical exit block (see `skills/session-exit.md`). Match the
    actual outcome; all variants conform to the same shape.
@@ -119,12 +136,30 @@ Before making any change, the agent verifies:
 If the fix requires out-of-scope changes, the agent posts a comment and adds
 `needs-human` label instead of proceeding.
 
+**Interaction with the Reuse & Refactor Check.** When the check's outcome is
+**reuse via refactor** and the refactor would exceed the safe-scope rules
+above (e.g. it touches files unrelated to the bug, changes a public API, or
+modifies a contract), the fix is **not** implemented here and is **not**
+turned into a new refactor task in Issue Session. Refactor tasks are the
+responsibility of Feature Design. Instead, route the issue to the existing
+`needs-human` path: add the `needs-human` label, post a comment stating the
+bug's root cause, the reuse-via-refactor outcome, and the reason the refactor
+cannot fit in-session, and let a human triage.
+
 ## Rules
 
 - Narrow scope only — fix exactly what the issue describes, nothing more
 - Always post a comment before starting and after finishing
 - If in doubt — stop and ask via a comment rather than guessing
 - Contract changes always require human approval
+- **Reuse & Refactor Check is mandatory for bug fixes.** Every bug-fix commit
+  body must include the canonical `Reuse:` trailer recording one of the
+  outcomes defined in `skills/refactor-assessment.md` (as-is / via-refactor /
+  none / n/a). Bug-fix commits without the trailer are invalid.
+- **Out-of-scope reuse outcomes route to `needs-human`.** A `reuse via
+  refactor` outcome whose refactor exceeds the Scope Check does not become a
+  new refactor task in Issue Session (that is the job of Feature Design) —
+  apply `needs-human` and post the triage comment instead.
 - **Inline status updates**: this skill only applies `answered` (not a pipeline label).
   If a future change adds a pipeline label transition here, it must include an inline
   project status update following `set-issue-status.md` — hard-fail if

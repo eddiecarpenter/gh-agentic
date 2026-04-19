@@ -43,6 +43,9 @@ Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by ha
 - **release-notes** — Generates human-readable, well-structured release notes from git commit history and updates the GitHub release body with the AI-written notes. Use when the Release recipe fires on a version tag being pushed to main and the release body needs categorised (Features/Fixes/Documentation/Chores) notes.
   Triggers: on-demand
 
+- **skill-creation** — Produces a correctly-classified, schema-conformant skill file from a human description (reactive mode) or surfaces a proactive suggestion when the agent observes the same substantive action repeated in the current session (proactive mode). Use when the human asks to create a skill that does X, or when the agent notices it has performed three or more substantively-similar actions at a natural pause between user turns.
+  Triggers: human-interactive, on-demand
+
 - **update-project-template** — Extracts the live GitHub Project configuration (shortDescription, readme, status field options, and views) and writes it as the canonical .ai/project-template.json so board customisations flow to downstream environments via gh agentic sync. Use when the human asks to save the current project config as the template or to update the project template from the live project (template repo only).
   Triggers: human-interactive
 
@@ -53,10 +56,16 @@ Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by ha
 
 ## Reference skills
 
+- **ask-user** — Canonical harness-neutral interaction shape for every confirmation, classification, disambiguation, or choice prompt raised by any skill — defines when to use a selectable prompt, option constraints, fallback phrasing, and the four canonical prompt shapes (confirm/revise, multi-choice selection, yes/no/later, name-collision). Use inline whenever a skill needs to ask the human for a decision, never as a standalone session.
+  Triggers: on-demand
+
 - **capture-feature** — Defines the canonical markdown body template for every Feature issue created during scoping — user story, context, scope, acceptance criteria in Given/When/Then format, deployment strategy, UX design, notes, and parent link. Use when authoring the body of any new Feature issue, or when reviewing that a Feature issue conforms to the required shape.
   Triggers: on-demand
 
 - **gh-agentic-tool** — Authoritative command reference for the gh agentic CLI extension — describes every command (info, project check/repair/info/create/join/unlink, mount, auth check/login/refresh, doctor), when to use each, and the agent's decision logic for common situations. Use whenever the agent needs to interact with the agentic framework from the command line or diagnose project health.
+  Triggers: on-demand
+
+- **refactor-assessment** — Canonicalises the search-first, reuse-default, motivate-if-not procedure every code-touching skill performs before writing new code — defines the three permitted outcomes (reuse as-is, reuse via refactor, do not reuse with motivation), the opt-out variant, the single-line recording format, and the loader phrase consumer skills invoke. Use when any skill or agent is about to introduce a new function, type, module, schema, or similar symbol and must first confirm whether existing code already covers the need.
   Triggers: on-demand
 
 - **session-exit** — Defines the canonical universal exit block emitted by every Session and Recovery skill at termination, with the three fixed sections (Produced, Blocked, Next) and worked variants. Use when authoring or updating any session-ending skill, or when verifying that an exit block conforms to the framework shape.
@@ -67,4 +76,3 @@ Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by ha
 
 - **skill-categories** — Authoritatively defines the six-category skill taxonomy (Session, Recovery, Bootstrap, Operation, Information, Reference) and the YAML frontmatter schema every skill must conform to. Use when authoring a new skill, classifying an existing skill, validating frontmatter, or reasoning about which exit protocol applies to a skill.
   Triggers: on-demand
-
