@@ -46,21 +46,27 @@ release.
 - [ ] `gh agentic status feature <N> --json` — valid JSON, `parent_requirement`
       / `branch` / `pr` are `null` when absent; `tasks` is always an array.
 
-## Kanban
+## Pipeline
 
-- [ ] `gh agentic status requirements --kanban` — vertical stage-grouped
+- [ ] `gh agentic status pipeline --requirements` — vertical stage-grouped
       view, heading, section counts, `(none)` for empty columns.
-- [ ] `gh agentic status features --kanban --include-done` — adds `done`
+- [ ] `gh agentic status pipeline --features --include-done` — adds `done`
       column to the right.
-- [ ] `gh agentic status features --kanban --horizontal` on a wide terminal
+- [ ] `gh agentic status pipeline --features --horizontal` on a wide terminal
       (≥ 120 cols) — side-by-side columns, unicode box-drawing on UTF-8
       locales.
-- [ ] `gh agentic status features --kanban --horizontal` on a narrow terminal
+- [ ] `gh agentic status pipeline --features --horizontal` on a narrow terminal
       (< 120 cols) — clean error naming required vs current widths.
 - [ ] `LANG=C gh agentic status feature <N>` — task checklist glyphs switch
       to `[x]` / `[ ]` ASCII fallback.
-- [ ] `gh agentic status features --kanban --json` — JSON wins; no kanban
+- [ ] `gh agentic status pipeline --features --json` — JSON wins; no pipeline
       headings in output.
+- [ ] `gh agentic status requirements --kanban` (legacy flag) — migration
+      error pointing at `gh agentic status pipeline --requirements`.
+- [ ] `gh agentic status pipeline` with a card title containing `→` on a
+      252-col terminal — every row has the same rune count and every `│`
+      separator sits at the same visual column across top border, content
+      rows, and bottom border.
 
 ## Error paths
 

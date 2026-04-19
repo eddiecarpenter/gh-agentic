@@ -36,7 +36,7 @@ Template: eddiecarpenter/ai-native-delivery
 | `gh agentic info` | Show the current state of this repo's agentic setup |
 | `gh agentic auth` | Manage Claude credentials (login, refresh, check) |
 | `gh agentic status` | Show pipeline state across requirements and features |
-| `gh agentic kanban` | Render requirements and features as a kanban view |
+| `gh agentic status pipeline` | Render requirements and features as a side-by-side pipeline view |
 
 ## Key Libraries
 
