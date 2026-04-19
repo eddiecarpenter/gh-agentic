@@ -69,6 +69,20 @@ func resolveProjectDeps() (project.Deps, error) {
 	return project.DefaultDeps(currentRepo.Owner, currentRepo.Name, root), nil
 }
 
+// currentProjectID returns the current repo's agentic project ID by routing
+// through project.Resolve. Used by the project sub-commands (list, join,
+// switch) to mark the currently-affiliated project in selection pickers —
+// replaces ad-hoc deps.GetRepoVariable(..., project.ProjectVarName) reads so
+// every command consumes project state from the same canonical source.
+// Returns "" if the repo is unaffiliated or the resolve fails.
+func currentProjectID(deps project.Deps) string {
+	ctx, err := project.Resolve(deps)
+	if err != nil || ctx == nil {
+		return ""
+	}
+	return ctx.ProjectID
+}
+
 // newProjectCreateCmd constructs the `gh agentic project create` subcommand.
 // It presents an interactive form to collect the project title and framework version,
 // then delegates to project.Create.
@@ -277,7 +291,7 @@ project name is matched case-insensitively; quote names that contain spaces.`,
 					return fmt.Errorf("no projects found for %s", deps.Owner)
 				}
 
-				currentID, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, project.ProjectVarName)
+				currentID := currentProjectID(deps)
 
 				var options []huh.Option[string]
 				for _, p := range projects {
@@ -341,7 +355,7 @@ func printAvailableProjects(cmd *cobra.Command, deps project.Deps) error {
 		return nil
 	}
 
-	currentID, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, project.ProjectVarName)
+	currentID := currentProjectID(deps)
 
 	fmt.Fprintf(w, "Available projects for %s:\n\n", deps.Owner)
 	for _, p := range projects {

@@ -355,15 +355,43 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 	return g
 }
 
-// checkProjectAffiliation checks AGENTIC_PROJECT_ID and AGENTIC_TOPOLOGY for domain repos.
+// checkProjectAffiliation reports whether the federated-domain repo has its
+// agentic project membership configured. Values are trusted from the
+// resolver (deps.ProjectID and deps.Topology) — the doctor does not re-read
+// AGENTIC_* variables directly. The check's purpose is to surface a clear
+// diagnostic when the domain repo is missing affiliation; the resolver
+// already validated the variables on the way in.
 func checkProjectAffiliation(deps CheckDeps) Group {
 	g := Group{Name: "Agentic project membership"}
 
-	result := checkVariable(deps, "AGENTIC_PROJECT_ID")
-	g.Results = append(g.Results, result)
+	if strings.TrimSpace(deps.ProjectID) == "" {
+		g.Results = append(g.Results, CheckResult{
+			Name: "AGENTIC_PROJECT_ID", Status: Fail,
+			Message:     "AGENTIC_PROJECT_ID not configured",
+			Remediation: remediationSet("variable", "AGENTIC_PROJECT_ID", deps),
+		})
+	} else {
+		g.Results = append(g.Results, CheckResult{
+			Name: "AGENTIC_PROJECT_ID", Status: Pass,
+			Message: "AGENTIC_PROJECT_ID configured",
+		})
+	}
 
-	result = checkVariable(deps, "AGENTIC_TOPOLOGY")
-	g.Results = append(g.Results, result)
+	// When the resolver produced a topology, AGENTIC_TOPOLOGY was readable
+	// on this repo (or the linked-repos signal short-circuited to a
+	// canonical value). Surface a diagnostic based on that.
+	if strings.TrimSpace(deps.Topology) == "" {
+		g.Results = append(g.Results, CheckResult{
+			Name: "AGENTIC_TOPOLOGY", Status: Fail,
+			Message:     "AGENTIC_TOPOLOGY not configured",
+			Remediation: remediationSet("variable", "AGENTIC_TOPOLOGY", deps),
+		})
+	} else {
+		g.Results = append(g.Results, CheckResult{
+			Name: "AGENTIC_TOPOLOGY", Status: Pass,
+			Message: "AGENTIC_TOPOLOGY configured",
+		})
+	}
 
 	return g
 }
@@ -375,6 +403,10 @@ func checkProjectAffiliation(deps CheckDeps) Group {
 // to a node ID that the authenticated user cannot access (revoked token,
 // deleted project, moved to a different org).
 //
+// ProjectID is supplied by the caller via deps.ProjectID — populated from
+// project.Resolve in the CLI layer. The doctor does not re-read AGENTIC_*
+// variables directly; the resolver is the single canonical source.
+//
 // Outcomes:
 //   - Variable missing → Fail with a 'gh agentic project join' remediation.
 //   - Variable set but GraphQL errors → Fail with an auth-aware remediation.
@@ -383,14 +415,9 @@ func checkProjectAffiliation(deps CheckDeps) Group {
 func checkProjectReachability(deps CheckDeps) Group {
 	g := Group{Name: "Project reachability"}
 
-	// Step 1 — verify AGENTIC_PROJECT_ID is present.
+	// Step 1 — verify AGENTIC_PROJECT_ID is present (trusted from the
+	// resolver; no fallback read here).
 	projectID := strings.TrimSpace(deps.ProjectID)
-	if projectID == "" && deps.Run != nil {
-		out, err := deps.Run("gh", "variable", "get", "AGENTIC_PROJECT_ID", "--repo", deps.RepoFullName)
-		if err == nil {
-			projectID = strings.TrimSpace(out)
-		}
-	}
 	if projectID == "" {
 		remediation := "Run 'gh agentic project join' to affiliate this repo, " +
 			"or 'gh agentic project create' to start a new project"

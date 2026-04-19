@@ -113,8 +113,9 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 
 	data.repoLabel = deps.Owner + "/" + deps.RepoName
 
-	state, err := project.ResolveState(deps)
-	if err != nil {
+	// Single canonical read — no direct AGENTIC_* access in this file.
+	ctx, err := project.Resolve(deps)
+	if err != nil || ctx == nil || ctx.ProjectID == "" {
 		data.noProject = true
 		data.localVersion, data.remoteVersion = localFrameworkVersion(deps.Root), ""
 		data.latestVersion, data.latestStatus = fetchLatest(fetchReleases, data.localVersion)
@@ -122,23 +123,30 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 	}
 
 	// Project fields.
-	if state.ProjectDeleted {
-		data.projectLine = ui.StatusWarning.Render("⚠ agentic project not found — may have been deleted") + " (" + state.ProjectID + ")"
+	if ctx.ProjectDeleted {
+		data.projectLine = ui.StatusWarning.Render("⚠ agentic project not found — may have been deleted") + " (" + ctx.ProjectID + ")"
 		data.projectHint = "→ run 'gh agentic project unlink' or 'gh agentic project init'"
 	} else {
-		data.projectLine = state.ProjectName + " (" + state.ProjectID + ")"
+		data.projectLine = ctx.ProjectName + " (" + ctx.ProjectID + ")"
 	}
-	data.topology = string(state.Topology)
-	if state.ControlPlane.NameWithOwner != "" && state.Topology == project.TopologyFederated {
-		data.controlPlane = state.ControlPlane.NameWithOwner
+	// The info UI uses the legacy Topology enum string for display ("Single"
+	// vs "Federated"). Derive it from the graph — RoleDomain is the only
+	// case where the CP is a different repo.
+	if ctx.Role == project.RoleDomain {
+		data.topology = string(project.TopologyFederated)
+	} else {
+		data.topology = string(project.TopologySingle)
+	}
+	if ctx.Role == project.RoleDomain && ctx.ControlPlane.NameWithOwner != "" {
+		data.controlPlane = ctx.ControlPlane.NameWithOwner
 	}
 
 	// Framework versions.
-	data.localVersion = state.AIVersion
+	data.localVersion = ctx.LocalAIVersion
 	if data.localVersion == "" {
 		data.localVersion = localFrameworkVersion(deps.Root)
 	}
-	data.remoteVersion = state.ControlPlaneFrameworkVersion
+	data.remoteVersion = ctx.FrameworkVersion
 
 	// Sync status (remote vs local).
 	if data.remoteVersion != "" && data.localVersion != "" {

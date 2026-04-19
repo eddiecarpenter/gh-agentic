@@ -71,6 +71,10 @@ func TestRunAllChecks_HealthyRepo(t *testing.T) {
 		Owner:        "owner",
 		RepoName:     "repo",
 		OwnerType:    "User",
+		// ProjectID is populated by the resolver in production; the
+		// doctor trusts it directly.
+		ProjectID:         "PVT_healthy",
+		FetchProjectTitle: func(id string) (string, error) { return "Healthy", nil },
 		Run: func(name string, args ...string) (string, error) {
 			// Fake variable/secret checks.
 			if name == "gh" && len(args) > 0 {
