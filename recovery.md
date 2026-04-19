@@ -4,36 +4,34 @@
 |---------------------|------------------------------------|
 | Feature issue       | #571                               |
 | Branch              | feature/571-centralised-project-context |
-| Last commit         | 8f205ee                            |
+| Last commit         | a50af64                            |
 | Total tasks         | 9                                  |
-| Last updated        | 2026-04-19T11:04:00Z               |
+| Last updated        | 2026-04-19T11:14:00Z               |
 
 ## Completed Tasks
 
 ### #579 — Audit and publish call-site inventory
-- **Implemented:** Published `docs/refactor-audit-571.md` — inventory of every AGENTIC_* read outside `internal/project/` and every `.ai-version` read/write.
-- **Files changed:** docs/refactor-audit-571.md
+- **Implemented:** `docs/refactor-audit-571.md` — inventory of every AGENTIC_* read outside `internal/project/` and every `.ai-version` read/write.
 
 ### #580 — Introduce unified project.Context resolver
-- **Implemented:** Added `project.Resolve(deps) (*project.Context, error)`. Context exposes Topology, Role, LinkedRepos, ControlPlane, FrameworkVersion, LocalAIVersion, VersionInSync, plus role helpers. `ResolveTopology` and `ResolveState` retained as thin wrappers.
-- **Files changed:** internal/project/context.go, context_test.go, info.go, topology.go
+- **Implemented:** `project.Resolve(deps) (*project.Context, error)` in `internal/project/context.go`. `ResolveTopology` and `ResolveState` retained as thin wrappers.
 
 ### #581 — Migrate mount command to project.Resolve
-- **Implemented:** Replaced `resolveMountVersion`, `detectFederatedCP`, `resolveFederatedCP` in `internal/cli/mount.go` with calls to `project.Resolve`. `.ai-version` fallback retained until #585.
-- **Files changed:** internal/cli/mount.go
+- **Implemented:** `resolveMountVersion`, `detectFederatedCP`, `resolveFederatedCP` now go through `project.Resolve`. `.ai-version` fallback retained until #585.
 
 ### #582 — Migrate check and repair commands to project.Resolve
-- **Implemented:** Replaced the `runGetVariable + checkGetRepoVariable + ResolveTopology` dance with a single `project.Resolve` call in check.go RunE and repair.go:buildPipelineCheckDeps. Removed the now-dead helpers.
-- **Files changed:** internal/cli/check.go, internal/cli/repair.go
+- **Implemented:** `check.go` RunE and `repair.go:buildPipelineCheckDeps` use a single `project.Resolve` call. Removed the `runGetVariable` / `checkGetRepoVariable` helpers.
 
 ### #583 — Migrate status, info, auth, upgrade, init commands to project.Resolve
-- **Implemented:** `defaultResolveProjectID` now uses `project.Resolve` → `ctx.ProjectID`. `info.go:collectInfo` uses `project.Resolve` directly (replaces `ResolveState`). `auth.go:isFederatedControlPlane` delegates to `ctx.IsFederatedControlPlane()`. `init.go` "already-initialised?" guard uses `ctx.ProjectID`. `project.go` picker commands (join / list / switch) use shared `currentProjectID(deps)` helper backed by the resolver. `doctor/checks.go:checkProjectAffiliation` trusts `deps.ProjectID` / `deps.Topology` (no more `checkVariable` calls for identity vars). `checkProjectReachability` dropped its stale fallback gh-CLI read. Doctor tests updated to populate `deps.ProjectID` explicitly. `go build ./...` and `go test ./...` pass.
-- **Files changed:** internal/cli/auth.go, info.go, init.go, project.go, status_requirements.go, internal/doctor/checks.go, checks_test.go, repair_test.go
-- **Decisions:** The remaining AGENTIC_* mentions outside `internal/project/` are sanctioned per the audit: scope.ScopeFor routing map, doctor diagnostic messages, docstrings, user-facing error strings, init wizard write path, and one federated-cp variable-existence diagnostic in checkVariablesAndSecrets.
+- **Implemented:** Status/pipeline sub-commands, info.go, auth.go, init.go, project.go pickers, and doctor's `checkProjectAffiliation`/`checkProjectReachability` all route through the resolver. Doctor tests updated to populate `deps.ProjectID`.
+
+### #584 — Enforce boundary: CI check for AGENTIC_* reads
+- **Implemented:** `internal/project/boundary_test.go` — repo-walking scanner that fails `go test ./internal/project/...` if any file outside `internal/project/` references `project.ProjectVarName`, `project.TopologyVarName`, `project.FrameworkVersionVarName`, or `project.DefaultGetRepoVariable`. Positive case (clean tree) and negative case (table-driven synthetic violations, including allow-list and comment-only handling) both covered. Pre-gate cleanup: migrated `project.go` SwitchProject picker to `currentProjectID`, replaced `project.ProjectVarName` in error-format strings with bare `"AGENTIC_PROJECT_ID"` literals, and annotated the sanctioned topology-variable write in `cli/init.go` with `// boundary-allow: write path`.
+- **Files changed:** internal/project/boundary_test.go, internal/cli/init.go, internal/cli/pipeline_cmd.go, internal/cli/project.go, internal/cli/status_features.go, internal/cli/status_requirements.go
+- **Decisions:** Scanner targets identifier references only; string literals (used in user-facing messages) are NOT forbidden. Lines may opt out with `// boundary-allow: <rationale>`.
 
 ## Remaining Tasks
 
-- [ ] #584 — Enforce boundary: fail CI on direct AGENTIC_* reads outside internal/project/ ← current
-- [ ] #585 — Remove .ai-version file and local AGENTIC_TOPOLOGY gate
+- [ ] #585 — Remove .ai-version file and local AGENTIC_TOPOLOGY gate ← current
 - [ ] #586 — Sweep skills, docs, and README to remove .ai-version and stopgap references
 - [ ] #587 — Regression test: charging-domain scenario passes without AGENTIC_TOPOLOGY stopgap
