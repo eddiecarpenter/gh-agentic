@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
@@ -252,14 +253,19 @@ func writeHorizontalPipeline(w io.Writer, columns []projectstatus.Stage, cards m
 	// border reads `┌─ backlog ───┬─ scoping ───┐`, matching the UX spec.
 	// The leading glyph is included in the cellWidth budget — dashes after
 	// the label fill the remainder.
+	//
+	// Width measurement uses utf8.RuneCountInString so multi-byte runes
+	// (e.g. `→`) count as one visual column rather than their byte count.
+	// Using len() for these comparisons drops the row short by the extra
+	// bytes and shifts every subsequent `│` separator out of alignment.
 	var topLine strings.Builder
 	topLine.WriteString(topLeft)
 	for i, col := range columns {
 		label := " " + stageDisplay(col) + " "
-		if len(label) > cellWidth-1 {
+		if utf8.RuneCountInString(label) > cellWidth-1 {
 			label = truncateString(label, cellWidth-1)
 		}
-		dashes := cellWidth - len(label) - 1
+		dashes := cellWidth - utf8.RuneCountInString(label) - 1
 		if dashes < 0 {
 			dashes = 0
 		}
@@ -307,14 +313,14 @@ func writeHorizontalPipeline(w io.Writer, columns []projectstatus.Stage, cards m
 		rowLine.WriteString(vert)
 		for i := 0; i < colCount; i++ {
 			cell := perColumn[i][row]
-			if len(cell) > cellWidth-1 {
+			if utf8.RuneCountInString(cell) > cellWidth-1 {
 				cell = truncateString(cell, cellWidth-1)
 			}
-			// truncateString can produce a byte-length slightly larger than
-			// cellWidth-1 when it appends a multi-byte ellipsis glyph. Guard
-			// against a negative pad count so the renderer tolerates narrow
-			// cells without panicking.
-			pad := cellWidth - 1 - len(cell)
+			// Padding is computed from the rune count, not the byte count,
+			// so multi-byte runes (e.g. `→`) leave the correct number of
+			// trailing spaces and the `│` separators stay aligned across
+			// every row.
+			pad := cellWidth - 1 - utf8.RuneCountInString(cell)
 			if pad < 0 {
 				pad = 0
 			}
@@ -338,14 +344,21 @@ func writeHorizontalPipeline(w io.Writer, columns []projectstatus.Stage, cards m
 	return nil
 }
 
-// truncateString clips s to at most n characters. Callers always pass a
-// positive n; defensively, the function is a no-op for non-positive n.
+// truncateString clips s to at most n runes (not bytes). Callers always
+// pass a positive n; defensively, the function is a no-op for non-positive
+// n. The rune-slice form ensures a multi-byte rune is never cut mid-byte —
+// the result is always valid UTF-8 and the `…` ellipsis (itself a
+// multi-byte rune) is appended at a rune boundary.
 func truncateString(s string, n int) string {
-	if n <= 0 || len(s) <= n {
+	if n <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= n {
 		return s
 	}
 	if n <= 1 {
-		return s[:n]
+		return string(runes[:n])
 	}
-	return s[:n-1] + "…"
+	return string(runes[:n-1]) + "…"
 }
