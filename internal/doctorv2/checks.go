@@ -10,6 +10,7 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
+	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 )
 
 // CheckDeps holds injectable dependencies for check functions.
@@ -423,47 +424,137 @@ func checkProjectReachability(deps CheckDeps) Group {
 }
 
 // checkVariable checks if a GitHub variable exists.
+//
+// Under federated topology the shared names (AGENT_USER, RUNNER_LABEL,
+// GOOSE_PROVIDER, GOOSE_MODEL) live at the organisation level and are not
+// visible via `gh variable list --repo OWNER/REPO`. The check therefore
+// consults the org scope for shared names under federated topology, treating
+// a hit at either scope as "configured". Identity names (AGENTIC_*) are
+// repo-scoped only under any topology.
+//
+// The remediation message references the authoritative target scope so the
+// human knows where the missing value should actually be set.
 func checkVariable(deps CheckDeps, name string) CheckResult {
 	if deps.Run == nil {
 		return CheckResult{Name: name, Status: Warning, Message: name + " — unable to check (no run func)"}
 	}
 
-	out, err := deps.Run("gh", "variable", "get", name, "--repo", deps.RepoFullName)
-	if err != nil || strings.TrimSpace(out) == "" {
-		return CheckResult{
-			Name: name, Status: Fail,
-			Message:     name + " not configured",
-			Remediation: fmt.Sprintf("gh variable set %s --repo %s", name, deps.RepoFullName),
+	// Repo scope — always consulted.
+	repoOut, repoErr := deps.Run("gh", "variable", "get", name, "--repo", deps.RepoFullName)
+	repoHit := repoErr == nil && strings.TrimSpace(repoOut) != ""
+
+	// Org scope — only consulted for shared names under federated topology.
+	// Identity names stay repo-only even under federated.
+	orgHit := false
+	if shouldConsultOrg(name, deps.Topology) {
+		orgOut, orgErr := deps.Run("gh", "variable", "list", "--org", deps.Owner)
+		if orgErr == nil && containsVariableName(orgOut, name) {
+			orgHit = true
 		}
 	}
 
-	return CheckResult{Name: name, Status: Pass, Message: name + " configured"}
-}
-
-// checkSecret checks if a GitHub secret exists.
-func checkSecret(deps CheckDeps, name string) CheckResult {
-	if deps.Run == nil {
-		return CheckResult{Name: name, Status: Warning, Message: name + " — unable to check (no run func)"}
-	}
-
-	// gh secret list returns secrets — check if name is in the list.
-	out, err := deps.Run("gh", "secret", "list", "--repo", deps.RepoFullName)
-	if err != nil {
-		return CheckResult{
-			Name: name, Status: Warning,
-			Message: name + " — unable to verify",
-		}
-	}
-
-	if strings.Contains(out, name) {
+	if repoHit || orgHit {
 		return CheckResult{Name: name, Status: Pass, Message: name + " configured"}
 	}
 
 	return CheckResult{
 		Name: name, Status: Fail,
 		Message:     name + " not configured",
-		Remediation: fmt.Sprintf("gh secret set %s --repo %s", name, deps.RepoFullName),
+		Remediation: remediationSet("variable", name, deps),
 	}
+}
+
+// checkSecret checks if a GitHub secret exists.
+//
+// Under federated topology the shared secret names (GOOSE_AGENT_PAT,
+// CLAUDE_CREDENTIALS_JSON) live at the organisation level and are not
+// visible via `gh secret list --repo OWNER/REPO`. The check therefore
+// consults the org scope for shared names under federated topology,
+// treating a hit at either scope as "configured". Identity names are never
+// looked up at org scope.
+func checkSecret(deps CheckDeps, name string) CheckResult {
+	if deps.Run == nil {
+		return CheckResult{Name: name, Status: Warning, Message: name + " — unable to check (no run func)"}
+	}
+
+	// Repo scope — always consulted.
+	repoOut, repoErr := deps.Run("gh", "secret", "list", "--repo", deps.RepoFullName)
+	// A repo listing error is treated as inconclusive unless the org lookup
+	// can confirm the secret for us below.
+	repoHit := repoErr == nil && containsSecretName(repoOut, name)
+
+	// Org scope — only consulted for shared names under federated topology.
+	orgHit := false
+	if shouldConsultOrg(name, deps.Topology) {
+		orgOut, orgErr := deps.Run("gh", "secret", "list", "--org", deps.Owner)
+		if orgErr == nil && containsSecretName(orgOut, name) {
+			orgHit = true
+		}
+	}
+
+	if repoHit || orgHit {
+		return CheckResult{Name: name, Status: Pass, Message: name + " configured"}
+	}
+
+	// Neither scope returned a hit. If the repo listing errored AND the org
+	// fallback did not confirm, surface the original soft-warning so the
+	// human can distinguish "not configured" from "could not verify".
+	if repoErr != nil && !orgHit {
+		return CheckResult{
+			Name: name, Status: Warning,
+			Message: name + " — unable to verify",
+		}
+	}
+
+	return CheckResult{
+		Name: name, Status: Fail,
+		Message:     name + " not configured",
+		Remediation: remediationSet("secret", name, deps),
+	}
+}
+
+// shouldConsultOrg reports whether the org scope should be queried for the
+// given variable/secret name under the given topology. Shared names under
+// any federated topology variant go to the org; everything else stays at
+// the repo (and the caller must not waste an API call on the org list).
+func shouldConsultOrg(name, topology string) bool {
+	return scope.IsSharedName(name) && scope.IsFederatedTopology(topology)
+}
+
+// containsVariableName returns true if the gh output from
+// `gh variable list` contains a row for the given variable name. Each row
+// starts with the variable name followed by whitespace, so a naive
+// strings.Contains would false-positive on prefix collisions (e.g. AGENT
+// vs AGENT_USER). Match on the first token of each line instead.
+func containsVariableName(out, name string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == name {
+			return true
+		}
+	}
+	return false
+}
+
+// containsSecretName returns true if the gh output from
+// `gh secret list` contains a row for the given secret name. Same
+// first-token match semantics as containsVariableName.
+func containsSecretName(out, name string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == name {
+			return true
+		}
+	}
+	return false
+}
+
+// remediationSet returns the `gh variable set` / `gh secret set` hint
+// pointing at the authoritative scope (org for shared names under
+// federated, repo otherwise). The kind argument is "variable" or "secret".
+func remediationSet(kind, name string, deps CheckDeps) string {
+	flag, target := scope.ScopeFor(name, deps.Topology, deps.Owner, deps.RepoFullName)
+	return fmt.Sprintf("gh %s set %s %s %s", kind, name, flag, target)
 }
 
 // fileExists returns true if the path exists and is a regular file.
