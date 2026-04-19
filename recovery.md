@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #538                               |
 | Branch              | feature/538-strip-v1-v2-vocabulary |
-| Last commit         | 941a039                            |
+| Last commit         | aefef05                            |
 | Total tasks         | 8                                  |
-| Last updated        | 2026-04-19T03:44:04+00:00          |
+| Last updated        | 2026-04-19T03:46:43+00:00          |
 
 ## Completed Tasks
 
@@ -15,10 +15,14 @@
 - **Files changed:** internal/init/*.go (renamed from initv2/), internal/cli/init.go, internal/cli/repair.go, internal/project/init.go, internal/project/init_test.go, internal/project/guards.go, internal/project/scope.go, internal/scope/scope.go
 - **Decisions:** Chose `initpkg` as the import alias (task permitted it — `init` collides semantically with Go's reserved init function identifier). All subsequent tasks that reference the renamed package must use the same alias.
 
+### #540 — Rename internal/doctorv2 to internal/doctor; strip V2 vocabulary from package
+- **Implemented:** Renamed the package directory via `git mv`, changed every `package doctorv2` declaration to `package doctor`, updated import paths in `internal/cli/check.go` and `internal/cli/repair.go`, rewrote qualified identifiers from `doctorv2.X` to `doctor.X`. Cleaned v2 doc-string vocabulary on the package-level comment in `groups.go` and the `checkFramework` comment in `checks.go`. `ProjectV2` (GitHub GraphQL type) was left untouched per allow-list.
+- **Files changed:** internal/doctor/*.go (renamed from doctorv2/), internal/cli/check.go, internal/cli/repair.go
+- **Decisions:** No alias needed — `doctor` does not collide with any Go identifier.
+
 ## Remaining Tasks
 
-- [ ] #540 — Rename internal/doctorv2 → internal/doctor ← current
-- [ ] #541 — Strip -v2/--v2 from mount templates, CLI strings, tests
+- [ ] #541 — Strip -v2/--v2 from mount templates, CLI strings, tests ← current
 - [ ] #542 — Rewrite docs/ARCHITECTURE.md
 - [ ] #543 — Clean docs/PROJECT_BRIEF.md and README.md
 - [ ] #544 — Resolve docs/TUI_DESIGN.md
