@@ -222,6 +222,14 @@ func writeHorizontalKanban(w io.Writer, columns []projectstatus.Stage, cards map
 		contentWidth = colCount // minimum 1 cell per column
 	}
 	cellWidth := contentWidth / colCount
+	// Cap cellWidth so columns do not stretch to fill very wide terminals —
+	// content rarely needs more than ~50 chars and the excess renders as
+	// distracting empty padding. With the cap applied, the kanban sits
+	// compactly in the top-left rather than spanning the whole window.
+	const maxCellWidth = 50
+	if cellWidth > maxCellWidth {
+		cellWidth = maxCellWidth
+	}
 
 	var topLeft, topRight, bottomLeft, bottomRight, topJoin, bottomJoin, horiz, vert string
 	if unicode {
@@ -239,17 +247,22 @@ func writeHorizontalKanban(w io.Writer, columns []projectstatus.Stage, cards map
 	}
 
 	// Top border with column headers inline: ┌─ name ─┬─ name ─┐
+	// Each column emits one leading horiz glyph before the label so the
+	// border reads `┌─ backlog ───┬─ scoping ───┐`, matching the UX spec.
+	// The leading glyph is included in the cellWidth budget — dashes after
+	// the label fill the remainder.
 	var topLine strings.Builder
 	topLine.WriteString(topLeft)
 	for i, col := range columns {
 		label := " " + stageDisplay(col) + " "
-		if len(label) > cellWidth {
-			label = truncateString(label, cellWidth)
+		if len(label) > cellWidth-1 {
+			label = truncateString(label, cellWidth-1)
 		}
-		dashes := cellWidth - len(label)
+		dashes := cellWidth - len(label) - 1
 		if dashes < 0 {
 			dashes = 0
 		}
+		topLine.WriteString(horiz)
 		topLine.WriteString(label)
 		topLine.WriteString(strings.Repeat(horiz, dashes))
 		if i < len(columns)-1 {
