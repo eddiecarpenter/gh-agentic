@@ -27,9 +27,10 @@ type resolveRepoFunc func() (repoInfo, error)
 
 // checkDeps holds injectable dependencies for the check command.
 type checkDeps struct {
-	run         auth.RunCommandFunc
-	readCreds   auth.ReadCredentialsFunc
-	resolveRepo resolveRepoFunc
+	run              auth.RunCommandFunc
+	readCreds        auth.ReadCredentialsFunc
+	resolveRepo      resolveRepoFunc
+	fetchLinkedRepos project.FetchLinkedReposFunc
 }
 
 // defaultResolveRepo resolves the repo from git remote config.
@@ -59,7 +60,8 @@ func newCheckCmd() *cobra.Command {
 		readCreds: func(run auth.RunCommandFunc) ([]byte, error) {
 			return auth.ReadClaudeCredentialsDefault(run)
 		},
-		resolveRepo: defaultResolveRepo,
+		resolveRepo:      defaultResolveRepo,
+		fetchLinkedRepos: project.DefaultFetchLinkedRepos,
 	})
 }
 
@@ -112,21 +114,14 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 				projectID := ""
 				topology := ""
 				if info.FullName != "" {
-					projectID, _ = runGetVariable(deps.run, info.FullName, "AGENTIC_PROJECT_ID")
-					if projectID != "" {
-						topoVal, _ := runGetVariable(deps.run, info.FullName, "AGENTIC_TOPOLOGY")
-						switch topoVal {
-						case "federated":
-							topology = resolveTopologyMode(deps.run, info.FullName)
-						case "single":
-							topology = "single"
-						default:
-							topology = resolveTopologyMode(deps.run, info.FullName)
-							if topology == "federated-domain" {
-								topology = "single"
-							}
-						}
-					}
+					projectID, _ = runGetVariable(deps.run, info.FullName, project.ProjectVarName)
+					topology, _ = project.ResolveTopology(project.ResolveTopologyDeps{
+						Owner:            info.Owner,
+						Repo:             info.RepoName,
+						ProjectID:        projectID,
+						GetRepoVariable:  checkGetRepoVariable(deps.run),
+						FetchLinkedRepos: deps.fetchLinkedRepos,
+					})
 				}
 
 				pipelineCheckDeps := doctor.CheckDeps{
@@ -195,16 +190,12 @@ func runGetVariable(run auth.RunCommandFunc, repoFullName, name string) (string,
 	return strings.TrimSpace(out), err
 }
 
-// resolveTopologyMode determines whether this federated repo is the control plane
-// or a domain repo. The control plane is identified by the presence of
-// AGENTIC_FRAMEWORK_VERSION — only the CP sets this variable.
-func resolveTopologyMode(run auth.RunCommandFunc, repoFullName string) string {
-	if run == nil {
-		return "federated-domain"
+// checkGetRepoVariable adapts an auth.RunCommandFunc into a
+// project.GetRepoVariableFunc so the shared topology resolver (which
+// takes owner + repo separately) can read repo variables via the gh CLI
+// without introducing a direct dependency on auth.RunCommandFunc.
+func checkGetRepoVariable(run auth.RunCommandFunc) project.GetRepoVariableFunc {
+	return func(owner, repo, name string) (string, error) {
+		return runGetVariable(run, owner+"/"+repo, name)
 	}
-	out, err := run("gh", "variable", "get", "AGENTIC_FRAMEWORK_VERSION", "--repo", repoFullName)
-	if err == nil && strings.TrimSpace(out) != "" {
-		return "federated-cp"
-	}
-	return "federated-domain"
 }

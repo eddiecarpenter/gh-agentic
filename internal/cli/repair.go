@@ -216,22 +216,29 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 		run = auth.DefaultRunCommand
 	}
 
-	projectID, _ := runGetVariable(run, repoFullName, "AGENTIC_PROJECT_ID")
-	topology := ""
-	if projectID != "" {
-		topoVal, _ := runGetVariable(run, repoFullName, "AGENTIC_TOPOLOGY")
-		switch topoVal {
-		case "federated":
-			topology = resolveTopologyMode(run, repoFullName)
-		case "single":
-			topology = "single"
-		default:
-			topology = resolveTopologyMode(run, repoFullName)
-			if topology == "federated-domain" {
-				topology = "single"
-			}
-		}
+	projectID, _ := runGetVariable(run, repoFullName, project.ProjectVarName)
+
+	// Resolve topology through the single source of truth. pdeps already
+	// provides the canonical variable-read and linked-repo-fetch funcs;
+	// pass them straight through so the resolver can honour the variable
+	// first and, when unset, fall back to inspecting the project's
+	// linked repos (the federated-domain path).
+	getRepoVariable := pdeps.GetRepoVariable
+	if getRepoVariable == nil {
+		getRepoVariable = checkGetRepoVariable(run)
 	}
+	fetchLinkedRepos := pdeps.FetchLinkedRepos
+	if fetchLinkedRepos == nil {
+		fetchLinkedRepos = project.DefaultFetchLinkedRepos
+	}
+
+	topology, _ := project.ResolveTopology(project.ResolveTopologyDeps{
+		Owner:            owner,
+		Repo:             repoName,
+		ProjectID:        projectID,
+		GetRepoVariable:  getRepoVariable,
+		FetchLinkedRepos: fetchLinkedRepos,
+	})
 
 	return doctor.CheckDeps{
 		Root:         root,
