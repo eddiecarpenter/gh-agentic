@@ -92,7 +92,7 @@ func TestAGENTSMDTemplate_Content(t *testing.T) {
 	if !strings.Contains(agentsMDTemplate, "@LOCALRULES.md") {
 		t.Error("AGENTS.md template should reference @LOCALRULES.md")
 	}
-	if !strings.Contains(agentsMDTemplate, "gh agentic --v2 mount") {
+	if !strings.Contains(agentsMDTemplate, "gh agentic mount") {
 		t.Error("AGENTS.md template should contain bootstrap rule")
 	}
 }
@@ -109,8 +109,8 @@ func TestAGENTSMDTemplate_BootstrapRule(t *testing.T) {
 
 func TestAGENTSMDTemplate_BootstrapRuleCommand(t *testing.T) {
 	// AC 9: bootstrap rule must reference the mount command with .ai-version.
-	if !strings.Contains(agentsMDTemplate, "gh agentic --v2 mount $(cat .ai-version)") {
-		t.Error("AGENTS.md bootstrap rule should reference 'gh agentic --v2 mount $(cat .ai-version)'")
+	if !strings.Contains(agentsMDTemplate, "gh agentic mount $(cat .ai-version)") {
+		t.Error("AGENTS.md bootstrap rule should reference 'gh agentic mount $(cat .ai-version)'")
 	}
 }
 
@@ -144,7 +144,7 @@ func TestAGENTSMDTemplateFile_MatchesEmbeddedTemplate(t *testing.T) {
 	content := string(data)
 
 	// Both should have the same bootstrap rule elements.
-	if !strings.Contains(content, "gh agentic --v2 mount $(cat .ai-version)") {
+	if !strings.Contains(content, "gh agentic mount $(cat .ai-version)") {
 		t.Error("template file should reference mount command")
 	}
 	if !strings.Contains(content, "Interactive context") {

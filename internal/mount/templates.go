@@ -2,13 +2,13 @@ package mount
 
 import "strings"
 
-// claudeMDTemplate is the standard CLAUDE.md content for v2 domain repos.
+// claudeMDTemplate is the standard CLAUDE.md content for domain repos.
 const claudeMDTemplate = `# CLAUDE.md
 
 @AGENTS.md
 `
 
-// agentsMDTemplate is the standard AGENTS.md content for v2 domain repos.
+// agentsMDTemplate is the standard AGENTS.md content for domain repos.
 // It references the mounted .ai/ framework and includes the bootstrap rule.
 const agentsMDTemplate = `# AGENTS.md
 
@@ -20,11 +20,11 @@ const agentsMDTemplate = `# AGENTS.md
 If the .ai/ directory does not exist, stop immediately.
 
 - **Interactive context:** Instruct the user to run:
-  ` + "`" + `gh agentic --v2 mount $(cat .ai-version)` + "`" + `
+  ` + "`" + `gh agentic mount $(cat .ai-version)` + "`" + `
 
 - **CI context:** Fail with the message:
   "Framework not mounted. Add a mount step before the pipeline:
-  ` + "`" + `gh agentic --v2 mount $(cat .ai-version)` + "`" + `"
+  ` + "`" + `gh agentic mount $(cat .ai-version)` + "`" + `"
 
 Do not proceed with any other work until the framework is mounted.
 `

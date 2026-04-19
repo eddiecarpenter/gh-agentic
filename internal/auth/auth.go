@@ -1,4 +1,4 @@
-// Package auth implements v2 credential management for Claude Code.
+// Package auth implements credential management for Claude Code.
 // It provides login, refresh, and check operations for the
 // CLAUDE_CREDENTIALS_JSON secret.
 package auth
