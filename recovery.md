@@ -4,16 +4,16 @@
 |---------------------|------------------------------------|
 | Feature issue       | #538                               |
 | Branch              | feature/538-strip-v1-v2-vocabulary |
-| Last commit         | 8295cf9                            |
+| Last commit         | 0afc3bd                            |
 | Total tasks         | 8                                  |
-| Last updated        | 2026-04-19T03:53:09+00:00          |
+| Last updated        | 2026-04-19T03:54:37+00:00          |
 
 ## Completed Tasks
 
 ### #539 — Rename internal/initv2 to internal/init; strip V2 vocabulary from package
 - **Implemented:** `git mv`; `package initv2` → `package init`; callers import as `initpkg`.
 - **Files changed:** internal/init/*.go, internal/cli/{init,repair}.go, internal/project/{init,init_test,guards,scope}.go, internal/scope/scope.go
-- **Decisions:** `initpkg` import alias (init function identifier collision).
+- **Decisions:** `initpkg` import alias (Go init function identifier collision).
 
 ### #540 — Rename internal/doctorv2 to internal/doctor; strip V2 vocabulary from package
 - **Implemented:** `git mv`; `package doctorv2` → `package doctor`.
@@ -29,11 +29,14 @@
 - **Files changed:** docs/ARCHITECTURE.md
 
 ### #543 — Clean docs/PROJECT_BRIEF.md and README.md of v1/v2 framing
-- **Implemented:** Both files now describe only the current single design. Collapsed v1/v2 command tables into a single Commands list in each file. Replaced `gh agentic -v2 init` / `-v2 doctor-v2` strings with their plain form. Removed the README Legacy notice, the v1-deprecated section, and the 'Getting started (v2)' heading. Dropped 'In v2' framing and 'required for v2' wording from PROJECT_BRIEF.md. Verified `grep -nE '(v1|v2|V1|V2) command|deprecated|-v2|--v2|doctor-v2'` returns no hits.
+- **Implemented:** Both files describe only the current single design. Single Commands table, plain command strings, no Legacy notice, no v1-deprecated section.
 - **Files changed:** docs/PROJECT_BRIEF.md, README.md
+
+### #544 — Resolve docs/TUI_DESIGN.md — delete it or strip the legacy v1 framing
+- **Implemented:** Deleted the file. It was pure v1 prototype history — described the retired `gh agentic bootstrap` / `gum` / `prototype.sh` flow, Embedded/Organisation topology wording, and a post-bootstrap 'Launch Goose' step, none of which apply to the current huh-based `gh agentic init` wizard. The GitHub colour palette it documented is now self-documenting in `internal/ui/styles.go`.
+- **Files changed:** deleted docs/TUI_DESIGN.md; updated docs/ARCHITECTURE.md (removed dangling tree entry), internal/ui/styles.go (two comments)
 
 ## Remaining Tasks
 
-- [ ] #544 — Resolve docs/TUI_DESIGN.md ← current
-- [ ] #545 — Audit CATALOGUE.md and LOCALRULES.md
+- [ ] #545 — Audit CATALOGUE.md and LOCALRULES.md ← current
 - [ ] #546 — Final verification
