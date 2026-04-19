@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #555                               |
 | Branch              | feature/555-topology-resolver      |
-| Last commit         | 5f1e600                            |
+| Last commit         | 92ff97e                            |
 | Total tasks         | 4                                  |
-| Last updated        | 2026-04-19T04:34:28Z               |
+| Last updated        | 2026-04-19T04:35:30Z               |
 
 ## Completed Tasks
 
@@ -25,6 +25,11 @@
 - **Files changed:** internal/project/topology_regression_test.go
 - **Decisions:** Kept the regression in its own file so the docstring and history clearly reference Feature #555; the test also asserts FetchLinkedRepos is invoked exactly once to protect the caching contract.
 
+### #559 — Final verification and PR manual sanity-check note
+- **Implemented:** Re-ran `go build ./...` and `go test ./...` — both clean. Recorded the manual-verification note (shared org-level values no longer reported as missing on `NewOpenBSS/charging-domain`) in the final commit body so it surfaces in the PR's commit history.
+- **Files changed:** (empty verification commit — no source files)
+- **Decisions:** The Dev Session workflow hard-codes the PR body to `Closes #N`, so the verification note is attached to the last commit (the standard place reviewers look). A `PR_BODY.md` fragment was considered but not used — there is no wiring on this repo's workflow to consume it.
+
 ## Remaining Tasks
 
-- [ ] #559 — Final verification and PR manual sanity-check note ← current
+(none)
