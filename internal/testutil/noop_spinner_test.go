@@ -38,3 +38,27 @@ func TestNoopSpinner_NilWriter(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestNoopBusy_ExecutesFn(t *testing.T) {
+	called := false
+	err := NoopBusy(&bytes.Buffer{}, "fetch", func() error {
+		called = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected fn to be called")
+	}
+}
+
+func TestNoopBusy_PropagatesError(t *testing.T) {
+	wantErr := errors.New("busy boom")
+	err := NoopBusy(&bytes.Buffer{}, "fetch", func() error {
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected error %v, got %v", wantErr, err)
+	}
+}
