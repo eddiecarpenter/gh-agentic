@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
+	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // requirementKanbanColumns is the canonical left-to-right column order for
@@ -26,15 +27,57 @@ var featureKanbanColumns = []projectstatus.Stage{
 	projectstatus.StageInReview,
 }
 
-// kanbanMinHorizontalWidthRequirements is the minimum terminal width in
-// columns required for the horizontal kanban of requirements. Below this the
-// command errors cleanly rather than rendering an unreadable table.
-const kanbanMinHorizontalWidthRequirements = 90
+// requirementKanbanMinWidth is the minimum terminal width in columns required
+// for the horizontal kanban of requirements. Below this, the default kanban
+// auto-falls-back to vertical rendering with a one-line notice. An explicit
+// --horizontal flag overrides the fallback and honours the user's choice.
+const requirementKanbanMinWidth = 100
 
-// kanbanMinHorizontalWidthFeatures is the minimum terminal width required
-// for the horizontal kanban of features — wider because it has one more
-// column and longer stage labels.
-const kanbanMinHorizontalWidthFeatures = 120
+// featureKanbanMinWidth is the minimum terminal width required for the
+// horizontal kanban of features — wider because it has one more column and
+// longer stage labels.
+const featureKanbanMinWidth = 120
+
+// Legacy constant aliases retained for backward compatibility with any
+// downstream callers; the canonical names are requirementKanbanMinWidth and
+// featureKanbanMinWidth above.
+const (
+	kanbanMinHorizontalWidthRequirements = requirementKanbanMinWidth
+	kanbanMinHorizontalWidthFeatures     = featureKanbanMinWidth
+)
+
+// kanbanLayout captures the decision made by resolveKanbanLayout — whether
+// to render horizontal or vertical, and an optional one-line notice to
+// emit before the kanban body when the default auto-falls-back.
+type kanbanLayout struct {
+	horizontal bool
+	notice     string
+}
+
+// resolveKanbanLayout picks the kanban layout for the current invocation.
+//
+// Precedence:
+//  1. --horizontal and --vertical are mutually exclusive (error).
+//  2. --vertical → vertical, no notice.
+//  3. --horizontal → horizontal, no notice (honoured even on narrow terminals).
+//  4. Neither flag: horizontal when actualWidth ≥ minWidth, otherwise
+//     vertical with a fallback notice describing the widths and suggested flags.
+func resolveKanbanLayout(flags statusListFlags, actualWidth, minWidth int) (kanbanLayout, error) {
+	if flags.horizontal && flags.vertical {
+		return kanbanLayout{}, fmt.Errorf("--horizontal and --vertical are mutually exclusive")
+	}
+	if flags.vertical {
+		return kanbanLayout{horizontal: false}, nil
+	}
+	if flags.horizontal {
+		return kanbanLayout{horizontal: true}, nil
+	}
+	if actualWidth >= minWidth {
+		return kanbanLayout{horizontal: true}, nil
+	}
+	notice := fmt.Sprintf("(terminal %d cols — horizontal kanban needs ≥ %d. Showing vertical. Use --horizontal to override, or --vertical to make this the permanent default.)", actualWidth, minWidth)
+	return kanbanLayout{horizontal: false, notice: notice}, nil
+}
 
 // kanbanCard is the pre-rendered content of a single card in a kanban
 // column. The first line is typically the `#<N> <title>` summary; additional
@@ -78,14 +121,24 @@ func requirementCards(reqs []projectstatus.Requirement, columns []projectstatus.
 	return out
 }
 
-// featureCards groups features by stage and renders them as cards.
-func featureCards(features []projectstatus.Feature, columns []projectstatus.Stage) map[projectstatus.Stage][]kanbanCard {
+// featureCards groups features by stage and renders them as cards. Every
+// feature card carries a progress line combining the block-bar glyph
+// (via ui.RenderProgressBar) and the numeric `N/M tasks` caption so both
+// list-context views — horizontal and vertical kanban — communicate
+// per-feature progress at a glance.
+//
+// unicode selects between the Unicode block glyphs and the ASCII fallback;
+// callers thread in ui.TerminalSupportsUTF8() — the same value used to
+// choose box-drawing glyphs — so a terminal gets a consistent look across
+// the whole view.
+func featureCards(features []projectstatus.Feature, columns []projectstatus.Stage, unicode bool) map[projectstatus.Stage][]kanbanCard {
 	out := map[projectstatus.Stage][]kanbanCard{}
 	for _, col := range columns {
 		out[col] = nil
 	}
 	for _, f := range features {
 		card := kanbanCard{Lines: []string{fmt.Sprintf("#%d %s", f.Number, f.Title)}}
+		card.Lines = append(card.Lines, featureProgressLine(f, unicode))
 		if f.Blocked != nil && f.Blocked.BlockingRef != "" {
 			card.Lines = append(card.Lines, fmt.Sprintf("[blocked by %s]", f.Blocked.BlockingRef))
 		}
@@ -94,14 +147,32 @@ func featureCards(features []projectstatus.Feature, columns []projectstatus.Stag
 	return out
 }
 
+// featureProgressLine renders the progress indicator shown on every
+// feature kanban card — a block-bar followed by the exact N/M numeric.
+// Zero-total features still emit a `0/0 tasks` caption so the line
+// position is consistent across cards; the block-bar renders as `[]` in
+// that case (see ui.RenderProgressBar).
+func featureProgressLine(f projectstatus.Feature, unicode bool) string {
+	bar := ui.RenderProgressBar(f.TasksDone, f.TasksTotal, unicode)
+	return fmt.Sprintf("%s %d/%d tasks", bar, f.TasksDone, f.TasksTotal)
+}
+
 // writeVerticalKanban renders the stage-grouped view that works at any
 // terminal width: a heading, then each column as `## <stage> (N)` followed
 // by its cards, or `(none)` when the column is empty.
 //
-// heading is the title line (e.g. "Requirements — Kanban").
-func writeVerticalKanban(w io.Writer, heading string, columns []projectstatus.Stage, cards map[projectstatus.Stage][]kanbanCard) error {
+// heading is the title line (e.g. "Requirements — Kanban"). notice, if
+// non-empty, is printed on its own line between the heading and the first
+// column — used by the auto-fallback path to explain the layout choice.
+func writeVerticalKanban(w io.Writer, heading string, columns []projectstatus.Stage, cards map[projectstatus.Stage][]kanbanCard, notice ...string) error {
 	fmt.Fprintln(w, "=== "+heading+" ===")
 	fmt.Fprintln(w, "")
+	for _, n := range notice {
+		if n != "" {
+			fmt.Fprintln(w, n)
+			fmt.Fprintln(w, "")
+		}
+	}
 	for _, col := range columns {
 		colCards := cards[col]
 		fmt.Fprintf(w, "## %s (%d)\n", stageDisplay(col), len(colCards))
@@ -125,22 +196,28 @@ func writeVerticalKanban(w io.Writer, heading string, columns []projectstatus.St
 }
 
 // writeHorizontalKanban renders the side-by-side box-drawing view. minWidth
-// is the required terminal width; actualWidth is the detected width. The
-// function returns a clean error with a fix-it message when actualWidth is
-// below minWidth.
+// is the minimum terminal width needed for a readable layout; actualWidth is
+// the detected width. When actualWidth is below minWidth the function still
+// renders — honouring an explicit --horizontal opt-in — by using minWidth for
+// cell-size calculations so cards remain legible even if the table overflows
+// the terminal.
 //
 // unicode toggles the fancy box-drawing characters versus the ASCII fallback
 // (+ - |).
 func writeHorizontalKanban(w io.Writer, columns []projectstatus.Stage, cards map[projectstatus.Stage][]kanbanCard, actualWidth, minWidth int, unicode bool) error {
-	if actualWidth < minWidth {
-		return fmt.Errorf("--horizontal requires at least %d columns. Current terminal: %d. Try without --horizontal for vertical kanban.", minWidth, actualWidth)
+	// Use minWidth for layout when the terminal is narrower than the
+	// readability threshold — the caller has chosen to force horizontal and
+	// any overflow is their deliberate trade-off.
+	layoutWidth := actualWidth
+	if layoutWidth < minWidth {
+		layoutWidth = minWidth
 	}
 
 	// Distribute available width across columns evenly, leaving room for the
 	// vertical separators between them (one character per separator).
 	colCount := len(columns)
 	separatorCount := colCount + 1
-	contentWidth := actualWidth - separatorCount
+	contentWidth := layoutWidth - separatorCount
 	if contentWidth < colCount {
 		contentWidth = colCount // minimum 1 cell per column
 	}
@@ -219,7 +296,15 @@ func writeHorizontalKanban(w io.Writer, columns []projectstatus.Stage, cards map
 			if len(cell) > cellWidth-1 {
 				cell = truncateString(cell, cellWidth-1)
 			}
-			rowLine.WriteString(" " + cell + strings.Repeat(" ", cellWidth-1-len(cell)))
+			// truncateString can produce a byte-length slightly larger than
+			// cellWidth-1 when it appends a multi-byte ellipsis glyph. Guard
+			// against a negative pad count so the renderer tolerates narrow
+			// cells without panicking.
+			pad := cellWidth - 1 - len(cell)
+			if pad < 0 {
+				pad = 0
+			}
+			rowLine.WriteString(" " + cell + strings.Repeat(" ", pad))
 			rowLine.WriteString(vert)
 		}
 		fmt.Fprintln(w, rowLine.String())

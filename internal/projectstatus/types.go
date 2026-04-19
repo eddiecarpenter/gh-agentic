@@ -84,6 +84,12 @@ type Requirement struct {
 
 // Feature is a single feature issue with its pipeline state, parent
 // requirement reference, tasks, branch state, and PR state.
+//
+// TasksTotal and TasksDone are internal fields used by list-context
+// renderers (the progress bar on kanban cards and the N/M column on the
+// feature list). They are deliberately tagged `json:"-"` so the `--json`
+// output retains the schema locked by feature #492 — machine consumers
+// compute progress themselves from the `tasks` array on the detail payload.
 type Feature struct {
 	Number             int                 `json:"number"`
 	Title              string              `json:"title"`
@@ -97,6 +103,10 @@ type Feature struct {
 	Tasks              []TaskRef           `json:"tasks"`
 	Branch             *BranchState        `json:"branch"`
 	PR                 *PRState            `json:"pr"`
+
+	// Internal — not serialised to --json; used by list/kanban renderers.
+	TasksTotal int `json:"-"`
+	TasksDone  int `json:"-"`
 }
 
 // RequirementSummary is the compact embedded form used when a feature
