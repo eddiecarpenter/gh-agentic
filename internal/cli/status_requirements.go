@@ -139,6 +139,10 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 		reqs = filterRequirementsToRepo(reqs, currentRepo)
 	}
 
+	if flags.raw {
+		return writeRequirementsRaw(w, reqs)
+	}
+
 	if flags.json {
 		return writeRequirementsJSON(w, reqs)
 	}
@@ -196,6 +200,67 @@ func writeRequirementsTable(w io.Writer, reqs []projectstatus.Requirement, curre
 	}
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, requirementsTotalsLine(len(reqs), blocked))
+	return nil
+}
+
+// rawListSeparator is the column separator used by every list-form `--raw`
+// renderer. Tab is the contract — agents split on it; never change.
+const rawListSeparator = "\t"
+
+// rawAbsentValue is the sentinel rendered into a list-form `--raw` cell when
+// the value is empty / unknown. Agents test for `-` rather than empty strings
+// because empty strings collide with the field separator on parse.
+const rawAbsentValue = "-"
+
+// rawField normalises a list-form cell value: empty strings render as the
+// sentinel `-`, whitespace is preserved verbatim. The TSV contract forbids
+// tabs and newlines inside a cell; both are stripped to spaces so the
+// columns remain stable for `awk -F\\t` or equivalent.
+func rawField(v string) string {
+	if v == "" {
+		return rawAbsentValue
+	}
+	v = strings.ReplaceAll(v, "\t", " ")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return v
+}
+
+// rawBlockedField returns the blocked-by ref string for the list-form raw
+// renderers. Mirrors the existing `Blocked.BlockingRef` value when present;
+// emits `-` otherwise so every cell has a value.
+func rawBlockedField(b *projectstatus.BlockedInfo) string {
+	if b == nil || b.BlockingRef == "" {
+		return rawAbsentValue
+	}
+	return b.BlockingRef
+}
+
+// writeRequirementsRaw emits the agent-oriented TSV form of the requirements
+// list per the `--raw` contract:
+//
+//	number<TAB>stage<TAB>title<TAB>blocked_by<TAB>owning_repo
+//
+// Header row first, one row per item, no presentation glyphs / colours /
+// borders, and no trailing totals line. Sparse cells render as `-`. The
+// column order is frozen — any reshuffle would break every agent
+// consumer that splits on `\t`.
+func writeRequirementsRaw(w io.Writer, reqs []projectstatus.Requirement) error {
+	header := strings.Join([]string{"number", "stage", "title", "blocked_by", "owning_repo"}, rawListSeparator)
+	if _, err := fmt.Fprintln(w, header); err != nil {
+		return fmt.Errorf("writing raw header: %w", err)
+	}
+	for _, r := range reqs {
+		row := strings.Join([]string{
+			fmt.Sprintf("%d", r.Number),
+			rawField(string(r.Stage)),
+			rawField(r.Title),
+			rawBlockedField(r.Blocked),
+			rawField(r.OwningRepo),
+		}, rawListSeparator)
+		if _, err := fmt.Fprintln(w, row); err != nil {
+			return fmt.Errorf("writing raw row: %w", err)
+		}
+	}
 	return nil
 }
 

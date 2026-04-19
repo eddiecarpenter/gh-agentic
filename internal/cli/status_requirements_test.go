@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -316,6 +317,51 @@ func TestRunStatusRequirements_CurrentRepoErrorPropagates(t *testing.T) {
 	err := runStatusRequirements(&bytes.Buffer{}, io.Discard, statusListFlags{}, sd)
 	if err == nil || !strings.Contains(err.Error(), "resolving current repository") {
 		t.Errorf("expected 'resolving current repository' error; got %v", err)
+	}
+}
+
+// TestRunStatusRequirements_RawTSVShape exercises the `--raw` renderer end
+// to end: column count must match the header row on every line, sparse
+// fields must render as `-`, and the rendered bytes must match the golden
+// fixture for the fixed integration sample.
+func TestRunStatusRequirements_RawTSVShape(t *testing.T) {
+	buf := &bytes.Buffer{}
+	if err := runStatusRequirements(buf, io.Discard, statusListFlags{raw: true}, fakeStatusDeps(sampleRequirementIssues())); err != nil {
+		t.Fatalf("runStatusRequirements --raw: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/requirements_list.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// AC-3: every line, when split on \t, must have the same column count
+	// as the header row.
+	rawLines := strings.Split(strings.TrimRight(string(got), "\n"), "\n")
+	if len(rawLines) == 0 {
+		t.Fatal("expected at least the header row in --raw output")
+	}
+	headerCols := len(strings.Split(rawLines[0], "\t"))
+	if headerCols != 5 {
+		t.Errorf("header column count = %d, want 5", headerCols)
+	}
+	for i, line := range rawLines {
+		cols := strings.Split(line, "\t")
+		if len(cols) != headerCols {
+			t.Errorf("line %d column count = %d, want %d (line: %q)", i, len(cols), headerCols, line)
+		}
+	}
+
+	// Sparse blocked_by must render as the absent sentinel `-`, not empty.
+	for i, line := range rawLines[1:] {
+		cols := strings.Split(line, "\t")
+		if cols[3] == "" {
+			t.Errorf("data row %d blocked_by cell empty; expected sentinel %q", i, rawAbsentValue)
+		}
 	}
 }
 

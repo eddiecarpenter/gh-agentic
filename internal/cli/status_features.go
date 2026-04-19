@@ -61,6 +61,10 @@ func runStatusFeatures(w io.Writer, stderr io.Writer, flags statusListFlags, dep
 		features = filterFeaturesToRepo(features, currentRepo)
 	}
 
+	if flags.raw {
+		return writeFeaturesRaw(w, features)
+	}
+
 	if flags.json {
 		return writeFeaturesJSON(w, features)
 	}
@@ -122,6 +126,34 @@ func writeFeaturesTable(w io.Writer, features []projectstatus.Feature, currentRe
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, featuresTotalsLine(len(features), blocked))
+	return nil
+}
+
+// writeFeaturesRaw emits the agent-oriented TSV form of the features list
+// per the `--raw` contract:
+//
+//	number<TAB>stage<TAB>title<TAB>blocked_by<TAB>owning_repo
+//
+// Same shape and column set as the requirements raw renderer — agents that
+// already parse one can parse both with the same code path. Sparse cells
+// render as `-`; no totals or footer line.
+func writeFeaturesRaw(w io.Writer, features []projectstatus.Feature) error {
+	header := strings.Join([]string{"number", "stage", "title", "blocked_by", "owning_repo"}, rawListSeparator)
+	if _, err := fmt.Fprintln(w, header); err != nil {
+		return fmt.Errorf("writing raw header: %w", err)
+	}
+	for _, f := range features {
+		row := strings.Join([]string{
+			fmt.Sprintf("%d", f.Number),
+			rawField(string(f.Stage)),
+			rawField(f.Title),
+			rawBlockedField(f.Blocked),
+			rawField(f.OwningRepo),
+		}, rawListSeparator)
+		if _, err := fmt.Fprintln(w, row); err != nil {
+			return fmt.Errorf("writing raw row: %w", err)
+		}
+	}
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -298,6 +299,51 @@ func TestRunStatusFeatures_ListJSONShapeStableAfterTasksColumn(t *testing.T) {
 	for k := range env {
 		if _, ok := allowedTop[k]; !ok {
 			t.Errorf("unexpected top-level key %q", k)
+		}
+	}
+}
+
+// TestRunStatusFeatures_RawTSVShape exercises the `--raw` renderer end to
+// end: the rendered bytes must match the golden, every line split on \t
+// must have the same column count, and sparse fields must render as `-`.
+func TestRunStatusFeatures_RawTSVShape(t *testing.T) {
+	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures --raw: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/features_list.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// AC-3: every line, when split on \t, must have the same column count
+	// as the header row.
+	rawLines := strings.Split(strings.TrimRight(string(got), "\n"), "\n")
+	if len(rawLines) == 0 {
+		t.Fatal("expected at least the header row in --raw output")
+	}
+	headerCols := len(strings.Split(rawLines[0], "\t"))
+	if headerCols != 5 {
+		t.Errorf("header column count = %d, want 5", headerCols)
+	}
+	for i, line := range rawLines {
+		cols := strings.Split(line, "\t")
+		if len(cols) != headerCols {
+			t.Errorf("line %d column count = %d, want %d (line: %q)", i, len(cols), headerCols, line)
+		}
+	}
+
+	// Sparse blocked_by must render as the absent sentinel `-`, not empty.
+	for i, line := range rawLines[1:] {
+		cols := strings.Split(line, "\t")
+		if cols[3] == "" {
+			t.Errorf("data row %d blocked_by cell empty; expected sentinel %q", i, rawAbsentValue)
 		}
 	}
 }

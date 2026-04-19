@@ -80,6 +80,7 @@ Run 'gh agentic status <sub-command> --help' for detailed usage.`,
 // tasks wire the actual behaviour behind each flag.
 type statusListFlags struct {
 	json        bool
+	raw         bool
 	kanban      bool
 	horizontal  bool
 	vertical    bool
@@ -97,6 +98,7 @@ type statusListFlags struct {
 // guided migration error.
 func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
+	cmd.Flags().BoolVar(&f.raw, "raw", false, "emit agent-oriented raw output (tab-separated for lists, frontmatter + markdown for details) and suppress human output")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
 	cmd.Flags().BoolVar(&f.includeDone, "include-done", false, "include items in the 'done' stage")
 }
