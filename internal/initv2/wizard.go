@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/scope"
@@ -37,7 +39,22 @@ type InitConfig struct {
 	Owner          string
 	RepoName       string
 	OwnerType      string
+	// Confirm optionally gates the federated-visibility confirmation in
+	// ConfigureRepo. When set and topology is any federated variant,
+	// ConfigureRepo emits the org-visibility note and calls Confirm before
+	// writing anything. On a No answer, the call returns nil and no
+	// variable or secret is written. When nil, ConfigureRepo proceeds
+	// without prompting — used by single-topology callers and tests that
+	// do not exercise the federated-confirm path.
+	Confirm ConfirmFunc
 }
+
+// ConfirmFunc prompts the user for a yes/no confirmation. Title is the
+// primary question, message is the supplementary body shown beneath it.
+// Returns true on Yes, false otherwise. Implementations may return an
+// error for IO / cancellation failures — ConfigureRepo treats an error
+// the same as a No (abort without writing).
+type ConfirmFunc func(title, message string) (bool, error)
 
 // RunCommandFunc is a function type for running shell commands.
 type RunCommandFunc = auth.RunCommandFunc
@@ -113,6 +130,30 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	topology := strings.ToLower(cfg.Topology)
 	owner := cfg.Owner
 
+	// Under federated topology the shared values will land at the
+	// organisation level — visible to every other federated control plane
+	// in the same org. That is load-bearing information; surface it before
+	// any write, and gate ConfigureRepo on an explicit yes when the caller
+	// has wired a ConfirmFunc. Single topology is unchanged: no note, no
+	// prompt, behaviour identical to pre-feature.
+	if scope.IsFederatedTopology(topology) {
+		fmt.Fprintf(w, "\n  %s\n\n", federatedOrgVisibilityNote(owner))
+		if cfg.Confirm != nil {
+			ok, err := cfg.Confirm(
+				"Proceed with federated init?",
+				"Shared variables and secrets will be written at organisation scope.",
+			)
+			if err != nil {
+				fmt.Fprintf(w, "  init cancelled by user\n")
+				return nil
+			}
+			if !ok {
+				fmt.Fprintf(w, "  init cancelled by user\n")
+				return nil
+			}
+		}
+	}
+
 	// Set variables.
 	variables := map[string]string{
 		"AGENT_USER":     cfg.AgentUser,
@@ -181,6 +222,36 @@ func describeScope(flag, kind string) string {
 		return "organisation " + kind
 	}
 	return "repository " + kind
+}
+
+// federatedOrgVisibilityNote returns the exact verbatim message that
+// ConfigureRepo prints before writing anything under federated topology.
+// The wording is fixed by the acceptance criteria for this feature —
+// tests assert the full sentence, so any change here must update the
+// corresponding test.
+func federatedOrgVisibilityNote(org string) string {
+	return fmt.Sprintf(
+		"Shared variables and secrets will be stored at organisation '%s' and will be visible to any other federated control plane in the same organisation.",
+		org,
+	)
+}
+
+// HuhConfirm is the production ConfirmFunc used by federated init. It
+// wraps huh.NewConfirm so callers that want the real interactive prompt
+// can wire it as cfg.Confirm without re-implementing the huh boilerplate.
+// Tests pass their own ConfirmFunc and never call this.
+func HuhConfirm(title, description string) (bool, error) {
+	var confirmed bool
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title(title).
+			Description(description).
+			Value(&confirmed),
+	))
+	if err := form.Run(); err != nil {
+		return false, err
+	}
+	return confirmed, nil
 }
 
 // DetectRepoFromRemote detects the repo full name from git remote.

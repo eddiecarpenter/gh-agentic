@@ -267,6 +267,88 @@ func TestConfigureRepo_GrantsAccess(t *testing.T) {
 	}
 }
 
+// --- federated init confirmation tests (task #534) ---
+
+// recordConfirmFunc returns a ConfirmFunc that records each invocation
+// and returns a prearranged yes/no answer.
+func recordConfirmFunc(yes bool) (ConfirmFunc, *int) {
+	count := 0
+	return func(title, description string) (bool, error) {
+		count++
+		return yes, nil
+	}, &count
+}
+
+func TestConfigureRepo_Federated_EmitsNoteAndConfirmsBeforeWriting(t *testing.T) {
+	cfg := configureRepoTestConfig("Federated", "acme", "cp")
+	confirm, called := recordConfirmFunc(true)
+	cfg.Confirm = confirm
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := "Shared variables and secrets will be stored at organisation 'acme' and will be visible to any other federated control plane in the same organisation."
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("missing verbatim note. output:\n%s", buf.String())
+	}
+	if *called != 1 {
+		t.Errorf("confirm called %d times, want 1", *called)
+	}
+	// Yes → writes proceed.
+	if _, ok := (*captured)["AGENT_USER"]; !ok {
+		t.Errorf("expected AGENT_USER write on Yes")
+	}
+}
+
+func TestConfigureRepo_Federated_ConfirmNo_AbortsWithoutError(t *testing.T) {
+	cfg := configureRepoTestConfig("Federated", "acme", "cp")
+	confirm, called := recordConfirmFunc(false)
+	cfg.Confirm = confirm
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("expected no error on No, got %v", err)
+	}
+
+	if *called != 1 {
+		t.Errorf("confirm called %d times, want 1", *called)
+	}
+	if len(*captured) != 0 {
+		t.Errorf("No should not trigger any writes; got: %v", *captured)
+	}
+	if !strings.Contains(buf.String(), "cancelled") {
+		t.Errorf("expected cancellation message in output, got:\n%s", buf.String())
+	}
+}
+
+func TestConfigureRepo_Single_NoNoteNoConfirm(t *testing.T) {
+	cfg := configureRepoTestConfig("Single", "eddie", "repo")
+	// Intentionally wire a confirm that would blow up the test if called.
+	cfg.Confirm = func(title, description string) (bool, error) {
+		t.Errorf("confirm must not be called under single topology")
+		return false, nil
+	}
+	run, captured := captureSetCalls()
+
+	var buf bytes.Buffer
+	if err := ConfigureRepo(&buf, cfg, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Writes proceed as before.
+	if _, ok := (*captured)["AGENT_USER"]; !ok {
+		t.Errorf("expected AGENT_USER write under single")
+	}
+	// The federated note must NOT appear under single topology.
+	if strings.Contains(buf.String(), "will be visible to any other federated") {
+		t.Errorf("federated note must not appear under single topology; output:\n%s", buf.String())
+	}
+}
+
 // configureRepoTestConfig returns a fully populated InitConfig so every
 // named var/secret is written. The routing assertions below rely on this
 // complete payload.
