@@ -155,8 +155,7 @@ append created_at and last_transitioned_at columns.
 Pass --include-done to include completed requirements; by default only open
 items are listed.
 
-For the pipeline view, use 'gh agentic status pipeline --requirements'. The
---kanban flag has been removed from this command.`,
+For a side-by-side pipeline view, use 'gh agentic status pipeline --requirements'.`,
 		Example: `  # Default list view
   gh agentic status requirements
 
@@ -166,7 +165,7 @@ For the pipeline view, use 'gh agentic status pipeline --requirements'. The
   # Include closed requirements
   gh agentic status requirements --include-done
 
-  # Pipeline view — use the pipeline subcommand instead
+  # Side-by-side pipeline view
   gh agentic status pipeline --requirements`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
@@ -255,8 +254,7 @@ append created_at and last_transitioned_at columns.
 Pass --include-done to include completed features; by default only open items
 are listed.
 
-For the pipeline view, use 'gh agentic status pipeline --features'. The
---kanban flag has been removed from this command.`,
+For a side-by-side pipeline view, use 'gh agentic status pipeline --features'.`,
 		Example: `  # Default list view
   gh agentic status features
 
@@ -266,7 +264,7 @@ For the pipeline view, use 'gh agentic status pipeline --features'. The
   # Narrow to the current repo
   gh agentic status features --this-repo
 
-  # Pipeline view — use the pipeline subcommand instead
+  # Side-by-side pipeline view
   gh agentic status pipeline --features`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,

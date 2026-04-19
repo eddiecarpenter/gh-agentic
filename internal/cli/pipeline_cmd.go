@@ -63,7 +63,6 @@ separator, then the features pipeline, then a combined totals line. Use
 --requirements or --features (mutually exclusive) to render only one of
 the two pipelines.
 
-The layout flags mirror the semantics of the earlier list-flag form:
 --horizontal forces horizontal layout, --vertical forces vertical, and
 omitting both auto-picks based on terminal width. --include-done appends
 the 'done' column. --this-repo narrows the federated view to the current
