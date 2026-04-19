@@ -32,31 +32,31 @@ By default the view aggregates across every active repo in the federation
 (control plane and domain repos). Use --this-repo on any sub-command to narrow
 to the current repository (detected via 'git remote get-url origin').
 
-%s lists open requirements with stage, supports --kanban for a stage-grouped
-view and --include-done to include completed items.
+%s lists open requirements with stage, supports --include-done to include
+completed items.
 
 %s shows detail for a single requirement — number, title, stage, dates, body,
 linked features, and blocked annotation where applicable.
 
-%s lists open features with stage, supports --kanban for a stage-grouped view
-and --include-done to include completed items.
+%s lists open features with stage, supports --include-done to include
+completed items.
 
 %s shows detail for a single feature — number, title, stage, dates, body,
 parent requirement, tasks, branch state, PR state, and blocked annotation.
 
-%s renders requirements and features together as a kanban — the
-first-class way to answer "where are we?" at a glance.
+%s renders requirements and features together as a side-by-side pipeline
+view — the first-class way to answer "where are we?" at a glance.
 
 Run 'gh agentic status <sub-command> --help' for detailed usage.`,
-			b("requirements"), b("requirement <N>"), b("features"), b("feature <N>"), b("kanban")),
+			b("requirements"), b("requirement <N>"), b("features"), b("feature <N>"), b("pipeline")),
 		Example: `  # List open requirements with stage
   gh agentic status requirements
 
   # Detail for one requirement, as JSON
   gh agentic status requirement 457 --json
 
-  # Kanban of requirements and features together
-  gh agentic status kanban
+  # Pipeline of requirements and features together
+  gh agentic status pipeline
 
   # Detail for one feature
   gh agentic status feature 492`,
@@ -70,7 +70,7 @@ Run 'gh agentic status <sub-command> --help' for detailed usage.`,
 	cmd.AddCommand(newStatusRequirementCmd())
 	cmd.AddCommand(newStatusFeaturesCmd())
 	cmd.AddCommand(newStatusFeatureCmd())
-	cmd.AddCommand(newKanbanCmd())
+	cmd.AddCommand(newPipelineCmd())
 
 	return cmd
 }
@@ -88,12 +88,13 @@ type statusListFlags struct {
 }
 
 // registerStatusListFlags declares the shared flag set for list sub-commands.
-// After feature #518 the list sub-commands no longer carry kanban-rendering
+// After feature #518 the list sub-commands no longer carry pipeline-rendering
 // flags (`--kanban`, `--horizontal`, `--vertical`) — those live on the
-// `gh agentic status kanban` command (promoted to top-level by #518 and
-// moved back under `status` by #549). registerRemovedKanbanFlag declares
-// `--kanban` as a hidden boolean on the status list commands so the handler
-// can intercept it and emit a guided migration error.
+// `gh agentic status pipeline` command (promoted to top-level by #518, moved
+// back under `status` by #549, and renamed from `kanban` to `pipeline` by
+// #562). registerRemovedKanbanFlag declares `--kanban` as a hidden boolean
+// on the status list commands so the handler can intercept it and emit a
+// guided migration error.
 func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
 	cmd.Flags().BoolVar(&f.json, "json", false, "emit a stable structured JSON payload and suppress human output")
 	cmd.Flags().BoolVar(&f.thisRepo, "this-repo", false, "narrow the view to the current repository only")
@@ -102,11 +103,13 @@ func registerStatusListFlags(cmd *cobra.Command, f *statusListFlags) {
 
 // registerRemovedKanbanFlag declares --kanban as a hidden boolean so the
 // parse layer still accepts it. The handler checks the flag and returns a
-// migration error pointing at the new top-level command. This is a
-// deliberate breaking change — no deprecation grace period, per §6 of the
-// feature scope — but the migration error message is actionable.
+// migration error pointing at the new sub-command. This is a deliberate
+// breaking change — no deprecation grace period, per §6 of the feature
+// scope — but the migration error message is actionable. The flag name
+// `--kanban` is preserved here because it is the legacy user-facing flag
+// being intercepted; renaming it would break the intercept.
 func registerRemovedKanbanFlag(cmd *cobra.Command, kanban *bool) {
-	cmd.Flags().BoolVar(kanban, "kanban", false, "removed — use 'gh agentic status kanban' instead")
+	cmd.Flags().BoolVar(kanban, "kanban", false, "removed — use 'gh agentic status pipeline' instead")
 	_ = cmd.Flags().MarkHidden("kanban")
 }
 
@@ -145,7 +148,7 @@ Pass --json to emit a stable structured payload for machine consumption.
 Pass --include-done to include completed requirements; by default only open
 items are listed.
 
-For the kanban view, use 'gh agentic status kanban --requirements'. The
+For the pipeline view, use 'gh agentic status pipeline --requirements'. The
 --kanban flag has been removed from this command.`,
 		Example: `  # Default list view
   gh agentic status requirements
@@ -156,8 +159,8 @@ For the kanban view, use 'gh agentic status kanban --requirements'. The
   # Include closed requirements
   gh agentic status requirements --include-done
 
-  # Kanban view — use the status subcommand instead
-  gh agentic status kanban --requirements`,
+  # Pipeline view — use the pipeline subcommand instead
+  gh agentic status pipeline --requirements`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -241,7 +244,7 @@ Pass --json to emit a stable structured payload for machine consumption.
 Pass --include-done to include completed features; by default only open items
 are listed.
 
-For the kanban view, use 'gh agentic status kanban --features'. The
+For the pipeline view, use 'gh agentic status pipeline --features'. The
 --kanban flag has been removed from this command.`,
 		Example: `  # Default list view
   gh agentic status features
@@ -252,8 +255,8 @@ For the kanban view, use 'gh agentic status kanban --features'. The
   # Narrow to the current repo
   gh agentic status features --this-repo
 
-  # Kanban view — use the status subcommand instead
-  gh agentic status kanban --features`,
+  # Pipeline view — use the pipeline subcommand instead
+  gh agentic status pipeline --features`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

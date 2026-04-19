@@ -37,14 +37,14 @@ func TestColumnsForFeatures_OrderAndDone(t *testing.T) {
 	}
 }
 
-// TestVerticalKanban_EmptyColumnShowsNone verifies empty columns render the
-// "(none)" marker rather than a blank section.
-func TestVerticalKanban_EmptyColumnShowsNone(t *testing.T) {
+// TestVerticalPipeline_EmptyColumnShowsNone verifies empty columns render
+// the "(none)" marker rather than a blank section.
+func TestVerticalPipeline_EmptyColumnShowsNone(t *testing.T) {
 	cols := []projectstatus.Stage{projectstatus.StageBacklog}
-	cards := map[projectstatus.Stage][]kanbanCard{projectstatus.StageBacklog: nil}
+	cards := map[projectstatus.Stage][]pipelineCard{projectstatus.StageBacklog: nil}
 	buf := &bytes.Buffer{}
-	if err := writeVerticalKanban(buf, "Test", cols, cards); err != nil {
-		t.Fatalf("writeVerticalKanban: %v", err)
+	if err := writeVerticalPipeline(buf, "Test", cols, cards); err != nil {
+		t.Fatalf("writeVerticalPipeline: %v", err)
 	}
 	out := buf.String()
 	if !strings.Contains(out, "(none)") {
@@ -55,18 +55,18 @@ func TestVerticalKanban_EmptyColumnShowsNone(t *testing.T) {
 	}
 }
 
-// TestVerticalKanban_BlockedCardWrapsAnnotation verifies a blocked card
+// TestVerticalPipeline_BlockedCardWrapsAnnotation verifies a blocked card
 // renders an indented [blocked by ...] line beneath its summary.
-func TestVerticalKanban_BlockedCardWrapsAnnotation(t *testing.T) {
+func TestVerticalPipeline_BlockedCardWrapsAnnotation(t *testing.T) {
 	cols := []projectstatus.Stage{projectstatus.StageBacklog}
-	cards := map[projectstatus.Stage][]kanbanCard{
+	cards := map[projectstatus.Stage][]pipelineCard{
 		projectstatus.StageBacklog: {
 			{Lines: []string{"#10 feat: blocked", "[blocked by foo/bar#99]"}},
 		},
 	}
 	buf := &bytes.Buffer{}
-	if err := writeVerticalKanban(buf, "Test", cols, cards); err != nil {
-		t.Fatalf("writeVerticalKanban: %v", err)
+	if err := writeVerticalPipeline(buf, "Test", cols, cards); err != nil {
+		t.Fatalf("writeVerticalPipeline: %v", err)
 	}
 	out := buf.String()
 	if !strings.Contains(out, "[blocked by foo/bar#99]") {
@@ -74,20 +74,20 @@ func TestVerticalKanban_BlockedCardWrapsAnnotation(t *testing.T) {
 	}
 }
 
-// TestHorizontalKanban_NarrowTerminalStillRenders verifies that
-// writeHorizontalKanban renders (without error) even when the detected
+// TestHorizontalPipeline_NarrowTerminalStillRenders verifies that
+// writeHorizontalPipeline renders (without error) even when the detected
 // terminal width is below the readability threshold — the layout is computed
 // against minWidth and callers accept the overflow as the price of forcing
 // horizontal on a narrow terminal.
-func TestHorizontalKanban_NarrowTerminalStillRenders(t *testing.T) {
+func TestHorizontalPipeline_NarrowTerminalStillRenders(t *testing.T) {
 	cols := columnsForFeatures(false)
 	cards := featureCards([]projectstatus.Feature{
 		{Number: 1, Title: "t", Stage: projectstatus.StageBacklog},
 	}, cols, true)
 	buf := &bytes.Buffer{}
-	err := writeHorizontalKanban(buf, cols, cards, 80, 120, true)
+	err := writeHorizontalPipeline(buf, cols, cards, 80, 120, true)
 	if err != nil {
-		t.Fatalf("writeHorizontalKanban on narrow terminal returned error: %v", err)
+		t.Fatalf("writeHorizontalPipeline on narrow terminal returned error: %v", err)
 	}
 	out := buf.String()
 	// Layout should have been computed against minWidth (120), so the box
@@ -99,17 +99,17 @@ func TestHorizontalKanban_NarrowTerminalStillRenders(t *testing.T) {
 	}
 }
 
-// TestHorizontalKanban_WideTerminalRenders verifies a wide terminal produces
-// a box-drawing table with column headers and at least one row.
-func TestHorizontalKanban_WideTerminalRenders(t *testing.T) {
+// TestHorizontalPipeline_WideTerminalRenders verifies a wide terminal
+// produces a box-drawing table with column headers and at least one row.
+func TestHorizontalPipeline_WideTerminalRenders(t *testing.T) {
 	cols := columnsForFeatures(false)
 	cards := featureCards([]projectstatus.Feature{
 		{Number: 492, Title: "feat: status command", Stage: projectstatus.StageInDevelopment},
 	}, cols, true)
 
 	buf := &bytes.Buffer{}
-	if err := writeHorizontalKanban(buf, cols, cards, 160, kanbanMinHorizontalWidthFeatures, true); err != nil {
-		t.Fatalf("writeHorizontalKanban: %v", err)
+	if err := writeHorizontalPipeline(buf, cols, cards, 160, pipelineMinHorizontalWidthFeatures, true); err != nil {
+		t.Fatalf("writeHorizontalPipeline: %v", err)
 	}
 	out := buf.String()
 	// Expect unicode box-drawing chars.
@@ -120,16 +120,16 @@ func TestHorizontalKanban_WideTerminalRenders(t *testing.T) {
 	}
 }
 
-// TestHorizontalKanban_ASCIIFallback verifies the ASCII box-drawing
+// TestHorizontalPipeline_ASCIIFallback verifies the ASCII box-drawing
 // alternative renders when unicode is false.
-func TestHorizontalKanban_ASCIIFallback(t *testing.T) {
+func TestHorizontalPipeline_ASCIIFallback(t *testing.T) {
 	cols := columnsForRequirements(false)
-	cards := map[projectstatus.Stage][]kanbanCard{
+	cards := map[projectstatus.Stage][]pipelineCard{
 		projectstatus.StageBacklog: {{Lines: []string{"#1 t"}}},
 	}
 	buf := &bytes.Buffer{}
-	if err := writeHorizontalKanban(buf, cols, cards, 160, kanbanMinHorizontalWidthRequirements, false); err != nil {
-		t.Fatalf("writeHorizontalKanban: %v", err)
+	if err := writeHorizontalPipeline(buf, cols, cards, 160, pipelineMinHorizontalWidthRequirements, false); err != nil {
+		t.Fatalf("writeHorizontalPipeline: %v", err)
 	}
 	out := buf.String()
 	for _, tok := range []string{"+", "|", "-"} {
@@ -144,18 +144,18 @@ func TestHorizontalKanban_ASCIIFallback(t *testing.T) {
 	}
 }
 
-// TestHorizontalKanban_TopBorderHasLeadingDashBeforeLabel verifies the
+// TestHorizontalPipeline_TopBorderHasLeadingDashBeforeLabel verifies the
 // fix for issue #516 defect 1 — the top border emits one horiz glyph
 // before each column label, producing `┌─ backlog ───┬─ scoping ───┐`
 // rather than `┌ backlog ───┬ scoping ───┐`.
-func TestHorizontalKanban_TopBorderHasLeadingDashBeforeLabel(t *testing.T) {
+func TestHorizontalPipeline_TopBorderHasLeadingDashBeforeLabel(t *testing.T) {
 	cols := columnsForRequirements(false)
-	cards := map[projectstatus.Stage][]kanbanCard{
+	cards := map[projectstatus.Stage][]pipelineCard{
 		projectstatus.StageBacklog: {{Lines: []string{"#1 t"}}},
 	}
 	buf := &bytes.Buffer{}
-	if err := writeHorizontalKanban(buf, cols, cards, 160, kanbanMinHorizontalWidthRequirements, true); err != nil {
-		t.Fatalf("writeHorizontalKanban: %v", err)
+	if err := writeHorizontalPipeline(buf, cols, cards, 160, pipelineMinHorizontalWidthRequirements, true); err != nil {
+		t.Fatalf("writeHorizontalPipeline: %v", err)
 	}
 	out := buf.String()
 	topLine := strings.SplitN(out, "\n", 2)[0]
@@ -175,16 +175,16 @@ func TestHorizontalKanban_TopBorderHasLeadingDashBeforeLabel(t *testing.T) {
 	}
 }
 
-// TestHorizontalKanban_TopBorderHasLeadingDashASCII verifies the leading
+// TestHorizontalPipeline_TopBorderHasLeadingDashASCII verifies the leading
 // dash also appears in the ASCII fallback rendering.
-func TestHorizontalKanban_TopBorderHasLeadingDashASCII(t *testing.T) {
+func TestHorizontalPipeline_TopBorderHasLeadingDashASCII(t *testing.T) {
 	cols := columnsForRequirements(false)
-	cards := map[projectstatus.Stage][]kanbanCard{
+	cards := map[projectstatus.Stage][]pipelineCard{
 		projectstatus.StageBacklog: {{Lines: []string{"#1 t"}}},
 	}
 	buf := &bytes.Buffer{}
-	if err := writeHorizontalKanban(buf, cols, cards, 160, kanbanMinHorizontalWidthRequirements, false); err != nil {
-		t.Fatalf("writeHorizontalKanban: %v", err)
+	if err := writeHorizontalPipeline(buf, cols, cards, 160, pipelineMinHorizontalWidthRequirements, false); err != nil {
+		t.Fatalf("writeHorizontalPipeline: %v", err)
 	}
 	topLine := strings.SplitN(buf.String(), "\n", 2)[0]
 	for _, want := range []string{"+- backlog", "+- scoping", "+- scheduled"} {
@@ -194,20 +194,20 @@ func TestHorizontalKanban_TopBorderHasLeadingDashASCII(t *testing.T) {
 	}
 }
 
-// TestHorizontalKanban_CellWidthCappedOnWideTerminal verifies the fix for
-// issue #516 defect 2 — column cell width is capped (currently at 50
-// chars) so the kanban does not stretch to fill very wide terminals. The
-// bottom border is the cleanest place to measure cell width because it is
-// pure box glyphs with no inline labels.
-func TestHorizontalKanban_CellWidthCappedOnWideTerminal(t *testing.T) {
+// TestHorizontalPipeline_CellWidthCappedOnWideTerminal verifies the fix
+// for issue #516 defect 2 — column cell width is capped (currently at 50
+// chars) so the pipeline does not stretch to fill very wide terminals.
+// The bottom border is the cleanest place to measure cell width because
+// it is pure box glyphs with no inline labels.
+func TestHorizontalPipeline_CellWidthCappedOnWideTerminal(t *testing.T) {
 	cols := columnsForRequirements(false) // 3 columns
-	cards := map[projectstatus.Stage][]kanbanCard{
+	cards := map[projectstatus.Stage][]pipelineCard{
 		projectstatus.StageBacklog: {{Lines: []string{"#1 t"}}},
 	}
 	buf := &bytes.Buffer{}
 	// 252-col terminal — without the cap, cellWidth = (252-4)/3 = 82.
-	if err := writeHorizontalKanban(buf, cols, cards, 252, kanbanMinHorizontalWidthRequirements, true); err != nil {
-		t.Fatalf("writeHorizontalKanban: %v", err)
+	if err := writeHorizontalPipeline(buf, cols, cards, 252, pipelineMinHorizontalWidthRequirements, true); err != nil {
+		t.Fatalf("writeHorizontalPipeline: %v", err)
 	}
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	// Last line is the bottom border: `└<dashes>┴<dashes>┴<dashes>┘`.
@@ -260,13 +260,13 @@ func TestFeatureCards_SortedByStage(t *testing.T) {
 	}
 }
 
-// TestResolveKanbanLayout_DefaultWideIsHorizontal verifies that with no layout
-// flag and a wide-enough terminal the resolver picks horizontal without a
-// notice — the new default behaviour.
-func TestResolveKanbanLayout_DefaultWideIsHorizontal(t *testing.T) {
-	layout, err := resolveKanbanLayout(statusListFlags{kanban: true}, 150, featureKanbanMinWidth)
+// TestResolvePipelineLayout_DefaultWideIsHorizontal verifies that with no
+// layout flag and a wide-enough terminal the resolver picks horizontal
+// without a notice — the new default behaviour.
+func TestResolvePipelineLayout_DefaultWideIsHorizontal(t *testing.T) {
+	layout, err := resolvePipelineLayout(statusListFlags{kanban: true}, 150, featurePipelineMinWidth)
 	if err != nil {
-		t.Fatalf("resolveKanbanLayout: %v", err)
+		t.Fatalf("resolvePipelineLayout: %v", err)
 	}
 	if !layout.horizontal {
 		t.Errorf("expected horizontal layout on wide terminal; got vertical")
@@ -276,12 +276,12 @@ func TestResolveKanbanLayout_DefaultWideIsHorizontal(t *testing.T) {
 	}
 }
 
-// TestResolveKanbanLayout_DefaultNarrowFallsBack verifies the auto-fallback:
-// narrow terminal + no flag → vertical + notice line.
-func TestResolveKanbanLayout_DefaultNarrowFallsBack(t *testing.T) {
-	layout, err := resolveKanbanLayout(statusListFlags{kanban: true}, 80, featureKanbanMinWidth)
+// TestResolvePipelineLayout_DefaultNarrowFallsBack verifies the
+// auto-fallback: narrow terminal + no flag → vertical + notice line.
+func TestResolvePipelineLayout_DefaultNarrowFallsBack(t *testing.T) {
+	layout, err := resolvePipelineLayout(statusListFlags{kanban: true}, 80, featurePipelineMinWidth)
 	if err != nil {
-		t.Fatalf("resolveKanbanLayout: %v", err)
+		t.Fatalf("resolvePipelineLayout: %v", err)
 	}
 	if layout.horizontal {
 		t.Errorf("expected vertical fallback on narrow terminal; got horizontal")
@@ -298,13 +298,13 @@ func TestResolveKanbanLayout_DefaultNarrowFallsBack(t *testing.T) {
 	}
 }
 
-// TestResolveKanbanLayout_VerticalForcesVertical verifies --vertical picks
+// TestResolvePipelineLayout_VerticalForcesVertical verifies --vertical picks
 // vertical on any width without a notice line.
-func TestResolveKanbanLayout_VerticalForcesVertical(t *testing.T) {
+func TestResolvePipelineLayout_VerticalForcesVertical(t *testing.T) {
 	for _, width := range []int{60, 120, 200} {
-		layout, err := resolveKanbanLayout(statusListFlags{kanban: true, vertical: true}, width, featureKanbanMinWidth)
+		layout, err := resolvePipelineLayout(statusListFlags{kanban: true, vertical: true}, width, featurePipelineMinWidth)
 		if err != nil {
-			t.Fatalf("width=%d: resolveKanbanLayout: %v", width, err)
+			t.Fatalf("width=%d: resolvePipelineLayout: %v", width, err)
 		}
 		if layout.horizontal {
 			t.Errorf("width=%d: expected vertical; got horizontal", width)
@@ -315,13 +315,13 @@ func TestResolveKanbanLayout_VerticalForcesVertical(t *testing.T) {
 	}
 }
 
-// TestResolveKanbanLayout_HorizontalForcesHorizontal verifies --horizontal
+// TestResolvePipelineLayout_HorizontalForcesHorizontal verifies --horizontal
 // picks horizontal on any width without a notice line.
-func TestResolveKanbanLayout_HorizontalForcesHorizontal(t *testing.T) {
+func TestResolvePipelineLayout_HorizontalForcesHorizontal(t *testing.T) {
 	for _, width := range []int{40, 120, 200} {
-		layout, err := resolveKanbanLayout(statusListFlags{kanban: true, horizontal: true}, width, featureKanbanMinWidth)
+		layout, err := resolvePipelineLayout(statusListFlags{kanban: true, horizontal: true}, width, featurePipelineMinWidth)
 		if err != nil {
-			t.Fatalf("width=%d: resolveKanbanLayout: %v", width, err)
+			t.Fatalf("width=%d: resolvePipelineLayout: %v", width, err)
 		}
 		if !layout.horizontal {
 			t.Errorf("width=%d: expected horizontal; got vertical", width)
@@ -332,10 +332,10 @@ func TestResolveKanbanLayout_HorizontalForcesHorizontal(t *testing.T) {
 	}
 }
 
-// TestResolveKanbanLayout_BothFlagsErrors verifies that passing both
+// TestResolvePipelineLayout_BothFlagsErrors verifies that passing both
 // --horizontal and --vertical is a clean user-facing error.
-func TestResolveKanbanLayout_BothFlagsErrors(t *testing.T) {
-	_, err := resolveKanbanLayout(statusListFlags{kanban: true, horizontal: true, vertical: true}, 150, featureKanbanMinWidth)
+func TestResolvePipelineLayout_BothFlagsErrors(t *testing.T) {
+	_, err := resolvePipelineLayout(statusListFlags{kanban: true, horizontal: true, vertical: true}, 150, featurePipelineMinWidth)
 	if err == nil {
 		t.Fatalf("expected error for mutually-exclusive flags, got nil")
 	}
