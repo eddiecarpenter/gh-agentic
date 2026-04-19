@@ -3,9 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
-	"strings"
 
-	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
@@ -132,72 +130,56 @@ Use --yes to skip the confirmation prompt when switching versions (for scripts).
 	return cmd
 }
 
-// resolveMountVersion determines the correct framework version to mount.
-// For federated domain repos: reads AGENTIC_FRAMEWORK_VERSION from the control plane.
-// For all other cases: falls back to the local .ai-version.
+// resolveMountVersion determines the correct framework version to mount
+// through the canonical project.Resolve resolver. The resolver's
+// FrameworkVersion field already encodes the per-topology precedence:
+//   - single / federated-cp → AGENTIC_FRAMEWORK_VERSION on this repo
+//   - federated-domain      → AGENTIC_FRAMEWORK_VERSION on the CP repo
+//
+// When the authoritative version is unset (e.g. first-time single mount
+// before any version has been pinned) we fall back to the local .ai-version
+// file — that fallback disappears in task #585 once the file is removed.
 func resolveMountVersion(root string) (string, error) {
-	cp, ok := detectFederatedCP()
-	if !ok {
+	ctx, err := resolveContextForMount(root)
+	if err != nil {
 		return localVersionFallback(root)
 	}
-
-	parts := strings.SplitN(cp, "/", 2)
-	if len(parts) != 2 {
-		return localVersionFallback(root)
+	if ctx.FrameworkVersion != "" {
+		return ctx.FrameworkVersion, nil
 	}
-
-	cpVersion, err := project.DefaultGetRepoVariable(parts[0], parts[1], project.FrameworkVersionVarName)
-	if err != nil || cpVersion == "" {
-		return localVersionFallback(root)
-	}
-
-	return cpVersion, nil
+	return localVersionFallback(root)
 }
 
-// resolveFederatedCP returns the control plane repo (owner/name) for a
-// federated domain repo, or "" for any other topology or on any lookup
-// failure. Callers treat empty as "no .cp/ mount needed".
+// resolveFederatedCP returns the control plane repo (owner/name) when the
+// current directory is a federated domain repo. Returns "" for any other
+// topology or any lookup failure — callers treat empty as "no .cp/ mount
+// needed".
+//
+// Delegates to project.Resolve so topology detection stays on the single
+// canonical code path.
 func resolveFederatedCP(root string) string {
-	cp, _ := detectFederatedCP()
-	return cp
+	ctx, err := resolveContextForMount(root)
+	if err != nil {
+		return ""
+	}
+	if !ctx.IsFederatedDomain() {
+		return ""
+	}
+	return ctx.ControlPlane.NameWithOwner
 }
 
-// detectFederatedCP returns the control plane repo's NameWithOwner when the
-// current working directory is a federated domain repo. Returns ("", false)
-// for single topology, control plane itself, or any lookup failure.
-func detectFederatedCP() (string, bool) {
-	currentRepo, err := repository.Current()
+// resolveContextForMount builds the project.Deps for the current repo and
+// delegates to project.Resolve. Kept as a package-level helper so both the
+// version resolver and the CP resolver share the same single read path.
+func resolveContextForMount(root string) (*project.Context, error) {
+	deps, err := resolveProjectDeps()
 	if err != nil {
-		return "", false
+		return nil, err
 	}
-
-	topology, _ := project.DefaultGetRepoVariable(currentRepo.Owner, currentRepo.Name, project.TopologyVarName)
-	if topology != "federated" {
-		return "", false
-	}
-
-	projectID, err := project.DefaultGetRepoVariable(currentRepo.Owner, currentRepo.Name, project.ProjectVarName)
-	if err != nil || projectID == "" {
-		return "", false
-	}
-
-	linked, err := project.DefaultFetchLinkedRepos(projectID)
-	if err != nil {
-		return "", false
-	}
-
-	cp, ok := project.ControlPlaneRepo(linked)
-	if !ok {
-		return "", false
-	}
-
-	// On the control plane repo itself, don't self-mount.
-	currentNameWithOwner := currentRepo.Owner + "/" + currentRepo.Name
-	if strings.EqualFold(cp.NameWithOwner, currentNameWithOwner) {
-		return "", false
-	}
-
-	return cp.NameWithOwner, true
+	// resolveProjectDeps hardcodes os.Getwd() as Root; mount is called from a
+	// possibly-different root (for tests), so we override explicitly.
+	deps.Root = root
+	return project.Resolve(deps)
 }
 
 func localVersionFallback(root string) (string, error) {
