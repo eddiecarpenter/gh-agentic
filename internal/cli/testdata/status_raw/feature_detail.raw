@@ -1,0 +1,19 @@
+number: 492
+stage: in-development
+title: feat: status command
+owning_repo: eddiecarpenter/gh-agentic
+blocked_by:
+parent_requirement: 457
+branch: feature/492 (merged)
+pr: 777 (open)
+tasks_done_total: 2/3
+---
+## User Story
+
+As an agent, I want a status command so I can answer "where are we?".
+
+```go
+status := "in-development"
+```
+
+Flow: backlog → scoping → in-development.

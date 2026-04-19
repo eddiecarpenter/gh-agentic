@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/projectstatus"
 )
@@ -57,8 +57,8 @@ func runStatusRequirement(w io.Writer, stderr io.Writer, number int, flags statu
 		return annotateDetailError(err, number, currentRepo)
 	}
 
-	if flags.json {
-		return writeRequirementJSON(w, req)
+	if flags.raw {
+		return writeRequirementRaw(w, req, flags.verbose)
 	}
 	return writeRequirementDetail(w, req)
 }
@@ -109,21 +109,136 @@ func writeRequirementDetail(w io.Writer, r *projectstatus.Requirement) error {
 	return nil
 }
 
-// writeRequirementJSON emits the single-object payload with indentation for
-// readability and Go's default time.Time RFC3339 serialisation.
-func writeRequirementJSON(w io.Writer, r *projectstatus.Requirement) error {
-	// Normalise nullable collections so consumers see [] instead of null for
-	// LinkedFeatures — matches the list envelope convention.
-	payload := *r
-	if payload.LinkedFeatures == nil {
-		payload.LinkedFeatures = []projectstatus.FeatureSummary{}
+// rawDetailSeparator is the literal line emitted between the frontmatter
+// header and the verbatim body for every detail-form `--raw` renderer. The
+// separator is always present even when the body is empty, so agents can
+// rely on the header / body split being unconditional.
+const rawDetailSeparator = "---"
+
+// writeRequirementRaw emits the agent-oriented frontmatter form of a
+// requirement detail per the `--raw` contract:
+//
+//	number: 569
+//	stage: scheduled
+//	title: ...
+//	owning_repo: ...
+//	blocked_by:
+//	linked_features: 571 572
+//	---
+//	<body verbatim>
+//
+// Empty values render as an empty string after the colon (no `-`). The
+// `---` separator is always present, even for an empty body, so agents
+// can split on it without checking for body presence.
+//
+// When verbose is true, two additional header lines are inserted after
+// `owning_repo` — `created_at` and `last_transitioned_at`, both ISO date.
+func writeRequirementRaw(w io.Writer, r *projectstatus.Requirement, verbose bool) error {
+	header := []struct {
+		key   string
+		value string
+	}{
+		{"number", fmt.Sprintf("%d", r.Number)},
+		{"stage", string(r.Stage)},
+		{"title", r.Title},
+		{"owning_repo", r.OwningRepo},
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(payload); err != nil {
-		return fmt.Errorf("encoding JSON: %w", err)
+	if verbose {
+		header = append(header,
+			struct {
+				key   string
+				value string
+			}{"created_at", rawDetailTimestamp(r.CreatedAt)},
+			struct {
+				key   string
+				value string
+			}{"last_transitioned_at", rawDetailTimestamp(r.LastTransitionedAt)},
+		)
+	}
+	header = append(header,
+		struct {
+			key   string
+			value string
+		}{"blocked_by", rawDetailBlockedValue(r.Blocked)},
+		struct {
+			key   string
+			value string
+		}{"linked_features", rawLinkedFeaturesValue(r.LinkedFeatures)},
+	)
+	for _, kv := range header {
+		if err := writeRawHeaderLine(w, kv.key, kv.value); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(w, rawDetailSeparator); err != nil {
+		return fmt.Errorf("writing raw separator: %w", err)
+	}
+	if r.Body != "" {
+		if _, err := fmt.Fprint(w, r.Body); err != nil {
+			return fmt.Errorf("writing raw body: %w", err)
+		}
+		// Ensure the body terminates with a newline so the final agent line
+		// is well-formed; do not double up if the body already ends with \n.
+		if !strings.HasSuffix(r.Body, "\n") {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return fmt.Errorf("terminating raw body: %w", err)
+			}
+		}
 	}
 	return nil
+}
+
+// writeRawHeaderLine writes a single `key: value` header line. Empty
+// values omit the trailing space — the rendered line is `key:` with no
+// space — so agents can splitN(":", 2) without normalising the suffix.
+func writeRawHeaderLine(w io.Writer, key, value string) error {
+	var line string
+	if value == "" {
+		line = key + ":"
+	} else {
+		line = key + ": " + value
+	}
+	if _, err := fmt.Fprintln(w, line); err != nil {
+		return fmt.Errorf("writing raw header: %w", err)
+	}
+	return nil
+}
+
+// rawDetailBlockedValue returns the value rendered for the `blocked_by`
+// header field on detail-form raw output. Mirrors the BlockingRef when
+// blocked, empty string otherwise — agents test for empty to detect
+// "not blocked".
+func rawDetailBlockedValue(b *projectstatus.BlockedInfo) string {
+	if b == nil {
+		return ""
+	}
+	return b.BlockingRef
+}
+
+// rawDetailTimestamp renders a time.Time as an ISO-8601 date for use in
+// detail-form `--raw --verbose` headers. Mirrors formatISODate from the
+// human detail view: zero times render as the empty string so the line
+// reads `created_at:` (no trailing space) — agents test for empty to
+// detect missing timestamps.
+func rawDetailTimestamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
+// rawLinkedFeaturesValue renders the `linked_features` header field as a
+// space-separated list of feature numbers (no leading `#`). Empty when the
+// requirement has no linked features.
+func rawLinkedFeaturesValue(features []projectstatus.FeatureSummary) string {
+	if len(features) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(features))
+	for _, f := range features {
+		parts = append(parts, fmt.Sprintf("%d", f.Number))
+	}
+	return strings.Join(parts, " ")
 }
 
 // formatISODate returns the ISO-8601 date portion of t. Zero times render as

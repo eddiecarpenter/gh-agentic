@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
 	"golang.org/x/term"
@@ -94,8 +94,9 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 
 // runStatusRequirements is the handler for `gh agentic status requirements`.
 // It resolves the project ID, fetches the list via projectstatus, optionally
-// narrows to the current repo, then renders either the --json envelope or
-// the compact tabular list.
+// narrows to the current repo, then renders either the --raw TSV form or
+// the compact tabular human list. The --json flag was removed by feature
+// #589 in favour of the agent-oriented --raw shape.
 //
 // The legacy --kanban flag was removed by feature #518. If the caller
 // passes --kanban (hidden on this command for interception), the handler
@@ -104,8 +105,8 @@ func defaultResolveProjectID(repoFullName string) (string, error) {
 // `status` and feature #562 renamed it from `kanban` to `pipeline`.
 //
 // stderr receives the busy-indicator rendered by deps.busy while the
-// fetch is in flight; stdout (w) receives the final human or JSON output.
-// Non-TTY writers suppress the indicator — see ui.BusyRun.
+// fetch is in flight; stdout (w) receives the final output. Non-TTY
+// writers suppress the indicator — see ui.BusyRun.
 func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags, deps statusDeps) error {
 	if flags.kanban {
 		return &errPipelineCommandRenamed{suggestedCommand: "gh agentic status pipeline --requirements"}
@@ -125,8 +126,8 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 	}
 
 	// Wrap the network-bound fetch in the shared busy indicator. The
-	// indicator writes to stderr so --json consumers piping stdout to jq
-	// get clean output; non-TTY writers suppress the glyphs entirely.
+	// indicator writes to stderr so --raw consumers piping stdout get
+	// clean output; non-TTY writers suppress the glyphs entirely.
 	var reqs []projectstatus.Requirement
 	err = deps.busy(stderr, "Fetching requirements…", func() error {
 		var fetchErr error
@@ -141,8 +142,8 @@ func runStatusRequirements(w io.Writer, stderr io.Writer, flags statusListFlags,
 		reqs = filterRequirementsToRepo(reqs, currentRepo)
 	}
 
-	if flags.json {
-		return writeRequirementsJSON(w, reqs)
+	if flags.raw {
+		return writeRequirementsRaw(w, reqs, flags.verbose)
 	}
 
 	return writeRequirementsTable(w, reqs, currentRepo)
@@ -201,45 +202,85 @@ func writeRequirementsTable(w io.Writer, reqs []projectstatus.Requirement, curre
 	return nil
 }
 
-// writeRequirementsJSON marshals the envelope {items, totals} as pretty
-// JSON. Items is a concrete slice rather than interface{} so the marshalled
-// shape includes every Requirement field — callers relying on schema
-// stability get a deterministic payload.
-func writeRequirementsJSON(w io.Writer, reqs []projectstatus.Requirement) error {
-	// Ensure a non-nil slice so the JSON always contains "items": [] rather
-	// than "items": null for the empty case.
-	if reqs == nil {
-		reqs = []projectstatus.Requirement{}
+// rawListSeparator is the column separator used by every list-form `--raw`
+// renderer. Tab is the contract — agents split on it; never change.
+const rawListSeparator = "\t"
+
+// rawAbsentValue is the sentinel rendered into a list-form `--raw` cell when
+// the value is empty / unknown. Agents test for `-` rather than empty strings
+// because empty strings collide with the field separator on parse.
+const rawAbsentValue = "-"
+
+// rawField normalises a list-form cell value: empty strings render as the
+// sentinel `-`, whitespace is preserved verbatim. The TSV contract forbids
+// tabs and newlines inside a cell; both are stripped to spaces so the
+// columns remain stable for `awk -F\\t` or equivalent.
+func rawField(v string) string {
+	if v == "" {
+		return rawAbsentValue
 	}
-	// Ensure LinkedFeatures is a non-nil slice per Requirement so the JSON
-	// emits [] rather than null — consumers parse items uniformly.
-	for i := range reqs {
-		if reqs[i].LinkedFeatures == nil {
-			reqs[i].LinkedFeatures = []projectstatus.FeatureSummary{}
+	v = strings.ReplaceAll(v, "\t", " ")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return v
+}
+
+// rawBlockedField returns the blocked-by ref string for the list-form raw
+// renderers. Mirrors the existing `Blocked.BlockingRef` value when present;
+// emits `-` otherwise so every cell has a value.
+func rawBlockedField(b *projectstatus.BlockedInfo) string {
+	if b == nil || b.BlockingRef == "" {
+		return rawAbsentValue
+	}
+	return b.BlockingRef
+}
+
+// writeRequirementsRaw emits the agent-oriented TSV form of the requirements
+// list per the `--raw` contract:
+//
+//	number<TAB>stage<TAB>title<TAB>blocked_by<TAB>owning_repo
+//
+// Header row first, one row per item, no presentation glyphs / colours /
+// borders, and no trailing totals line. Sparse cells render as `-`. The
+// column order is frozen — any reshuffle would break every agent
+// consumer that splits on `\t`.
+//
+// When verbose is true, the header gains `created_at` and
+// `last_transitioned_at` columns at the end (in that order, ISO date) so
+// agents that need timing pay only for the bytes they ask for.
+func writeRequirementsRaw(w io.Writer, reqs []projectstatus.Requirement, verbose bool) error {
+	cols := []string{"number", "stage", "title", "blocked_by", "owning_repo"}
+	if verbose {
+		cols = append(cols, "created_at", "last_transitioned_at")
+	}
+	if _, err := fmt.Fprintln(w, strings.Join(cols, rawListSeparator)); err != nil {
+		return fmt.Errorf("writing raw header: %w", err)
+	}
+	for _, r := range reqs {
+		row := []string{
+			fmt.Sprintf("%d", r.Number),
+			rawField(string(r.Stage)),
+			rawField(r.Title),
+			rawBlockedField(r.Blocked),
+			rawField(r.OwningRepo),
 		}
-	}
-	envelope := projectstatus.ListEnvelope{
-		Items:  reqs,
-		Totals: countRequirementsTotals(reqs),
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(envelope); err != nil {
-		return fmt.Errorf("encoding JSON: %w", err)
+		if verbose {
+			row = append(row, rawTimestampField(r.CreatedAt), rawTimestampField(r.LastTransitionedAt))
+		}
+		if _, err := fmt.Fprintln(w, strings.Join(row, rawListSeparator)); err != nil {
+			return fmt.Errorf("writing raw row: %w", err)
+		}
 	}
 	return nil
 }
 
-// countRequirementsTotals computes the Open / Blocked counts rendered into
-// the list envelope totals.
-func countRequirementsTotals(reqs []projectstatus.Requirement) projectstatus.ListTotals {
-	blocked := 0
-	for _, r := range reqs {
-		if r.Blocked != nil {
-			blocked++
-		}
+// rawTimestampField renders a time.Time as an ISO-8601 date (YYYY-MM-DD)
+// for inclusion in `--raw --verbose` output. Zero times render as the
+// absent sentinel `-` so the column count stays stable across rows.
+func rawTimestampField(t time.Time) string {
+	if t.IsZero() {
+		return rawAbsentValue
 	}
-	return projectstatus.ListTotals{Open: len(reqs), Blocked: blocked}
+	return t.Format("2006-01-02")
 }
 
 // anyRequirementCrossRepo returns true when any row has an owning repo that

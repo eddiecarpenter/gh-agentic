@@ -2,9 +2,9 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -183,39 +183,6 @@ func TestRunStatusFeature_UnicodeGlyphs(t *testing.T) {
 	}
 }
 
-// TestRunStatusFeature_JSONSchema verifies --json emits a single object with
-// every nested resource present (or null when absent).
-func TestRunStatusFeature_JSONSchema(t *testing.T) {
-	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
-	issues := []projectstatus.ProjectIssue{
-		{Number: 492, Title: "feat: status command", Body: "b", Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
-	}
-	sd := featureDetailFixture(issues, nil, nil, nil, nil)
-
-	buf := &bytes.Buffer{}
-	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{json: true}, sd); err != nil {
-		t.Fatalf("runStatusFeature: %v", err)
-	}
-	var parsed map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("json parse: %v; raw:\n%s", err, buf.String())
-	}
-	for _, key := range []string{"number", "title", "body", "stage", "created_at", "last_transitioned_at", "owning_repo", "blocked", "parent_requirement", "tasks", "branch", "pr"} {
-		if _, ok := parsed[key]; !ok {
-			t.Errorf("JSON missing key %q; keys = %v", key, keysOf(parsed))
-		}
-	}
-	if parsed["parent_requirement"] != nil {
-		t.Errorf("parent_requirement = %v, want null", parsed["parent_requirement"])
-	}
-	if parsed["pr"] != nil {
-		t.Errorf("pr = %v, want null", parsed["pr"])
-	}
-	if _, ok := parsed["tasks"].([]interface{}); !ok {
-		t.Errorf("tasks should be [] (non-null); got %v", parsed["tasks"])
-	}
-}
-
 // TestRunStatusFeature_NotFound verifies ErrIssueNotFound is annotated with
 // repo / number.
 func TestRunStatusFeature_NotFound(t *testing.T) {
@@ -245,6 +212,159 @@ func TestRunStatusFeature_WrongType(t *testing.T) {
 	}
 	if wt.ActualType != "requirement" || wt.WantedType != "feature" {
 		t.Errorf("wrong-type fields: %+v", wt)
+	}
+}
+
+// TestRunStatusFeature_RawVerbatimBody verifies the `--raw` renderer emits
+// the feature-specific frontmatter header, the literal `---` separator, and
+// the body verbatim — markdown headings, fenced code, and a `→` character
+// all survive without escaping. The rendered bytes must match the golden.
+func TestRunStatusFeature_RawVerbatimBody(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	body := "## User Story\n\n" +
+		"As an agent, I want a status command so I can answer \"where are we?\".\n\n" +
+		"```go\nstatus := \"in-development\"\n```\n\n" +
+		"Flow: backlog → scoping → in-development."
+	issues := []projectstatus.ProjectIssue{
+		{Number: 492, Title: "feat: status command", Body: body, Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	subIssues := map[int][]projectstatus.TaskRef{
+		492: {
+			{Number: 494, Title: "Scaffold", Closed: true},
+			{Number: 495, Title: "Types", Closed: true},
+			{Number: 496, Title: "Requirements list", Closed: false},
+		},
+	}
+	parent := map[int]*projectstatus.RequirementSummary{
+		492: {Number: 457, Title: "feat: single-pane view", Stage: projectstatus.StageScoping, OwningRepo: "eddiecarpenter/gh-agentic"},
+	}
+	branches := map[string]*projectstatus.BranchState{
+		"feature/492": {Name: "feature/492", Exists: true, Merged: true},
+	}
+	prs := map[string]*projectstatus.PRState{
+		"feature/492": {Number: 777, State: "open", Reviewers: []string{"eddie"}},
+	}
+	sd := featureDetailFixture(issues, subIssues, parent, branches, prs)
+
+	buf := &bytes.Buffer{}
+	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runStatusFeature --raw: %v", err)
+	}
+	got := buf.Bytes()
+
+	wantBytes, err := os.ReadFile("testdata/status_raw/feature_detail.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// AC-2 reinforcement on the feature side: body region must be verbatim.
+	parts := strings.SplitN(string(got), "\n---\n", 2)
+	if len(parts) != 2 {
+		t.Fatalf("expected '---' separator on its own line; got:\n%s", string(got))
+	}
+	bodyOut := parts[1]
+	for _, marker := range []string{"## User Story", "```go", "→"} {
+		if !strings.Contains(bodyOut, marker) {
+			t.Errorf("body should contain %q verbatim; got:\n%s", marker, bodyOut)
+		}
+	}
+	for _, escape := range []string{`\n`, "\\`", `\u2192`} {
+		if strings.Contains(bodyOut, escape) {
+			t.Errorf("body should not contain escape sequence %q; got:\n%s", escape, bodyOut)
+		}
+	}
+}
+
+// TestRunStatusFeature_RawSeparatorAlwaysPresent verifies the `---`
+// separator is emitted even when the issue body is empty.
+func TestRunStatusFeature_RawSeparatorAlwaysPresent(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []projectstatus.ProjectIssue{
+		{Number: 700, Title: "feat: empty", Body: "", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	sd := featureDetailFixture(issues, nil, nil, nil, nil)
+	buf := &bytes.Buffer{}
+	if err := runStatusFeature(buf, io.Discard, 700, statusDetailFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runStatusFeature --raw: %v", err)
+	}
+	if !strings.Contains(buf.String(), "\n---\n") {
+		t.Errorf("expected '---' separator even for empty body; got:\n%s", buf.String())
+	}
+}
+
+// TestRunStatusFeature_RawVerboseInsertsTimestamps verifies that
+// `--raw --verbose` inserts the two timestamp header lines after
+// `owning_repo` while keeping the body verbatim.
+func TestRunStatusFeature_RawVerboseInsertsTimestamps(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	body := "## User Story\n\n" +
+		"As an agent, I want a status command so I can answer \"where are we?\".\n\n" +
+		"```go\nstatus := \"in-development\"\n```\n\n" +
+		"Flow: backlog → scoping → in-development."
+	issues := []projectstatus.ProjectIssue{
+		{Number: 492, Title: "feat: status command", Body: body, Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	subIssues := map[int][]projectstatus.TaskRef{
+		492: {
+			{Number: 494, Title: "Scaffold", Closed: true},
+			{Number: 495, Title: "Types", Closed: true},
+			{Number: 496, Title: "Requirements list", Closed: false},
+		},
+	}
+	parent := map[int]*projectstatus.RequirementSummary{
+		492: {Number: 457, Title: "feat: single-pane view", Stage: projectstatus.StageScoping, OwningRepo: "eddiecarpenter/gh-agentic"},
+	}
+	branches := map[string]*projectstatus.BranchState{
+		"feature/492": {Name: "feature/492", Exists: true, Merged: true},
+	}
+	prs := map[string]*projectstatus.PRState{
+		"feature/492": {Number: 777, State: "open", Reviewers: []string{"eddie"}},
+	}
+	sd := featureDetailFixture(issues, subIssues, parent, branches, prs)
+
+	buf := &bytes.Buffer{}
+	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{raw: true, verbose: true}, sd); err != nil {
+		t.Fatalf("runStatusFeature --raw --verbose: %v", err)
+	}
+	got := buf.Bytes()
+
+	wantBytes, err := os.ReadFile("testdata/status_raw/feature_detail_verbose.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw --verbose detail output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	for _, marker := range []string{"created_at: 2026-04-18", "last_transitioned_at: 2026-04-18"} {
+		if !strings.Contains(string(got), marker) {
+			t.Errorf("expected %q in verbose feature detail; got:\n%s", marker, string(got))
+		}
+	}
+}
+
+// TestRunStatusFeature_VerboseWithoutRawIsNoOp verifies the human
+// detail view is byte-equal regardless of `--verbose` when `--raw` is
+// not set.
+func TestRunStatusFeature_VerboseWithoutRawIsNoOp(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []projectstatus.ProjectIssue{
+		{Number: 492, Title: "t", Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	sd := featureDetailFixture(issues, nil, nil, nil, nil)
+	bare := &bytes.Buffer{}
+	if err := runStatusFeature(bare, io.Discard, 492, statusDetailFlags{}, sd); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	verbose := &bytes.Buffer{}
+	if err := runStatusFeature(verbose, io.Discard, 492, statusDetailFlags{verbose: true}, sd); err != nil {
+		t.Fatalf("verbose: %v", err)
+	}
+	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
+		t.Errorf("--verbose without --raw must not change feature detail output")
 	}
 }
 

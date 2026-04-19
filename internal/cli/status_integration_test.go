@@ -2,12 +2,8 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +20,7 @@ import (
 // realistic-shaped project state.
 // --------------------------------------------------------------------------
 
-// fixedTime is the deterministic timestamp used everywhere so --json output
+// fixedTime is the deterministic timestamp used everywhere so --raw output
 // is byte-identical across runs.
 var fixedTime = time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
 
@@ -117,207 +113,32 @@ func buildFixtureDeps() statusDeps {
 }
 
 // --------------------------------------------------------------------------
-// Lightweight schema validator — a tiny shape-matcher that reads the locked
-// schema JSON file and asserts field presence and type on the payload. No
-// external dependency; keeps the testdata/ files human-editable.
-// --------------------------------------------------------------------------
-
-// statusSchema is the parsed form of testdata/status_schemas/*.json.
-type statusSchema struct {
-	Envelope                           map[string]string `json:"envelope"`
-	TotalsFields                       map[string]string `json:"totals_fields"`
-	ItemFields                         map[string]string `json:"item_fields"`
-	RootFields                         map[string]string `json:"root_fields"`
-	LinkedFeatureFields                map[string]string `json:"linked_feature_fields"`
-	TaskFields                         map[string]string `json:"task_fields"`
-	BranchFieldsWhenPresent            map[string]string `json:"branch_fields_when_present"`
-	PRFieldsWhenPresent                map[string]string `json:"pr_fields_when_present"`
-	ParentRequirementFieldsWhenPresent map[string]string `json:"parent_requirement_fields_when_present"`
-	BlockedFieldsWhenPresent           map[string]string `json:"blocked_fields_when_present"`
-}
-
-// loadSchema reads a schema JSON file from testdata.
-func loadSchema(t *testing.T, name string) statusSchema {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "status_schemas", name))
-	if err != nil {
-		t.Fatalf("loadSchema %q: %v", name, err)
-	}
-	var s statusSchema
-	if err := json.Unmarshal(data, &s); err != nil {
-		t.Fatalf("loadSchema %q parse: %v", name, err)
-	}
-	return s
-}
-
-// typeOf returns the coarse JSON-level type of v as used by assertShape.
-func typeOf(v interface{}) string {
-	switch x := v.(type) {
-	case nil:
-		return "null"
-	case string:
-		return "string"
-	case float64:
-		return "number"
-	case bool:
-		return "boolean"
-	case []interface{}:
-		if len(x) > 0 {
-			if _, ok := x[0].(map[string]interface{}); ok {
-				return "array-of-object"
-			}
-		}
-		return "array"
-	case map[string]interface{}:
-		return "object"
-	default:
-		return fmt.Sprintf("%T", v)
-	}
-}
-
-// assertShape compares a decoded payload against a map of expected types.
-// Allowed expected strings: "string", "number", "boolean", "array",
-// "array-of-object", "object", "object-or-null".
-func assertShape(t *testing.T, context string, expected map[string]string, actual map[string]interface{}) {
-	t.Helper()
-	for field, wantType := range expected {
-		v, ok := actual[field]
-		if !ok {
-			t.Errorf("%s: missing field %q", context, field)
-			continue
-		}
-		gotType := typeOf(v)
-		if wantType == "object-or-null" {
-			if gotType != "object" && gotType != "null" {
-				t.Errorf("%s: field %q has type %q, want object-or-null", context, field, gotType)
-			}
-			continue
-		}
-		if wantType == "array" && gotType == "array-of-object" {
-			continue // array-of-object satisfies "array"
-		}
-		if gotType != wantType {
-			t.Errorf("%s: field %q has type %q, want %q", context, field, gotType, wantType)
-		}
-	}
-}
-
-// --------------------------------------------------------------------------
 // Integration tests — run the full stack for every sub-command.
+// The --json schema integration tests were removed by feature #589 along
+// with the --json flag itself; --raw byte-equality is exercised by the
+// per-shape tests in status_requirements_test.go, status_features_test.go,
+// status_requirement_test.go, status_feature_test.go, and pipeline_cmd_test.go.
 // --------------------------------------------------------------------------
 
-// TestIntegration_RequirementsList_JSONMatchesSchema validates
-// `gh agentic status requirements --json` against the locked schema.
-func TestIntegration_RequirementsList_JSONMatchesSchema(t *testing.T) {
-	schema := loadSchema(t, "requirements_list.schema.json")
-	buf := &bytes.Buffer{}
-	if err := runStatusRequirements(buf, io.Discard, statusListFlags{json: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("runStatusRequirements: %v", err)
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
-		t.Fatalf("decode: %v\nraw:\n%s", err, buf.String())
-	}
-	assertShape(t, "envelope", schema.Envelope, payload)
-	totals, _ := payload["totals"].(map[string]interface{})
-	assertShape(t, "totals", schema.TotalsFields, totals)
-	items, _ := payload["items"].([]interface{})
-	if len(items) == 0 {
-		t.Fatalf("expected at least 1 requirement; got 0")
-	}
-	for i, it := range items {
-		assertShape(t, fmt.Sprintf("items[%d]", i), schema.ItemFields, it.(map[string]interface{}))
-	}
-}
-
-// TestIntegration_RequirementDetail_JSONMatchesSchema validates the detail
-// JSON schema including nested linked_features.
-func TestIntegration_RequirementDetail_JSONMatchesSchema(t *testing.T) {
-	schema := loadSchema(t, "requirement_detail.schema.json")
-	buf := &bytes.Buffer{}
-	if err := runStatusRequirement(buf, io.Discard, 457, statusDetailFlags{json: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("runStatusRequirement: %v", err)
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
-		t.Fatalf("decode: %v\nraw:\n%s", err, buf.String())
-	}
-	assertShape(t, "root", schema.RootFields, payload)
-	lf, _ := payload["linked_features"].([]interface{})
-	if len(lf) == 0 {
-		t.Errorf("expected linked_features to contain feature #492")
-	}
-	for i, f := range lf {
-		assertShape(t, fmt.Sprintf("linked_features[%d]", i), schema.LinkedFeatureFields, f.(map[string]interface{}))
-	}
-}
-
-// TestIntegration_FeaturesList_JSONMatchesSchema validates the features list
-// JSON shape.
-func TestIntegration_FeaturesList_JSONMatchesSchema(t *testing.T) {
-	schema := loadSchema(t, "features_list.schema.json")
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("runStatusFeatures: %v", err)
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
-		t.Fatalf("decode: %v\nraw:\n%s", err, buf.String())
-	}
-	assertShape(t, "envelope", schema.Envelope, payload)
-	items, _ := payload["items"].([]interface{})
-	for i, it := range items {
-		assertShape(t, fmt.Sprintf("items[%d]", i), schema.ItemFields, it.(map[string]interface{}))
-	}
-}
-
-// TestIntegration_FeatureDetail_JSONMatchesSchema validates the feature
-// detail JSON shape including nested tasks and branch/pr structures.
-func TestIntegration_FeatureDetail_JSONMatchesSchema(t *testing.T) {
-	schema := loadSchema(t, "feature_detail.schema.json")
-	buf := &bytes.Buffer{}
-	if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{json: true}, buildFixtureDeps()); err != nil {
-		t.Fatalf("runStatusFeature: %v", err)
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
-		t.Fatalf("decode: %v\nraw:\n%s", err, buf.String())
-	}
-	assertShape(t, "root", schema.RootFields, payload)
-	tasks, _ := payload["tasks"].([]interface{})
-	if len(tasks) == 0 {
-		t.Errorf("expected tasks to be populated for feature #492")
-	}
-	for i, task := range tasks {
-		assertShape(t, fmt.Sprintf("tasks[%d]", i), schema.TaskFields, task.(map[string]interface{}))
-	}
-	if branch, ok := payload["branch"].(map[string]interface{}); ok {
-		assertShape(t, "branch", schema.BranchFieldsWhenPresent, branch)
-	}
-	if pr, ok := payload["pr"].(map[string]interface{}); ok {
-		assertShape(t, "pr", schema.PRFieldsWhenPresent, pr)
-	}
-}
-
-// TestIntegration_JSONStabilityAcrossInvocations verifies byte-identical
-// output across two runs of each sub-command — the hardest guarantee for
-// downstream consumers.
-func TestIntegration_JSONStabilityAcrossInvocations(t *testing.T) {
+// TestIntegration_RawStabilityAcrossInvocations verifies byte-identical
+// --raw output across two runs of each sub-command — the hardest
+// guarantee for downstream agent consumers.
+func TestIntegration_RawStabilityAcrossInvocations(t *testing.T) {
 	runs := []struct {
 		name string
 		run  func(w *bytes.Buffer) error
 	}{
 		{"requirements list", func(w *bytes.Buffer) error {
-			return runStatusRequirements(w, io.Discard, statusListFlags{json: true}, buildFixtureDeps())
+			return runStatusRequirements(w, io.Discard, statusListFlags{raw: true}, buildFixtureDeps())
 		}},
 		{"requirement detail", func(w *bytes.Buffer) error {
-			return runStatusRequirement(w, io.Discard, 457, statusDetailFlags{json: true}, buildFixtureDeps())
+			return runStatusRequirement(w, io.Discard, 457, statusDetailFlags{raw: true}, buildFixtureDeps())
 		}},
 		{"features list", func(w *bytes.Buffer) error {
-			return runStatusFeatures(w, io.Discard, statusListFlags{json: true}, buildFixtureDeps())
+			return runStatusFeatures(w, io.Discard, statusListFlags{raw: true}, buildFixtureDeps())
 		}},
 		{"feature detail", func(w *bytes.Buffer) error {
-			return runStatusFeature(w, io.Discard, 492, statusDetailFlags{json: true}, buildFixtureDeps())
+			return runStatusFeature(w, io.Discard, 492, statusDetailFlags{raw: true}, buildFixtureDeps())
 		}},
 	}
 	for _, r := range runs {
@@ -331,7 +152,7 @@ func TestIntegration_JSONStabilityAcrossInvocations(t *testing.T) {
 				t.Fatalf("%s run B: %v", r.name, err)
 			}
 			if bufA.String() != bufB.String() {
-				t.Errorf("%s: JSON output is not byte-identical across runs", r.name)
+				t.Errorf("%s: --raw output is not byte-identical across runs", r.name)
 			}
 		})
 	}

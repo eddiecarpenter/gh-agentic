@@ -2,9 +2,9 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -125,49 +125,6 @@ func TestRunStatusFeatures_IncludeDone(t *testing.T) {
 	}
 }
 
-// TestRunStatusFeatures_JSONSchema verifies --json emits the envelope with the
-// documented field names on every item.
-func TestRunStatusFeatures_JSONSchema(t *testing.T) {
-	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures: %v", err)
-	}
-	var parsed struct {
-		Items  []map[string]interface{} `json:"items"`
-		Totals struct {
-			Open    int `json:"open"`
-			Blocked int `json:"blocked"`
-		} `json:"totals"`
-	}
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("json parse: %v; raw:\n%s", err, buf.String())
-	}
-	if parsed.Totals.Open != 2 {
-		t.Errorf("totals.open = %d, want 2", parsed.Totals.Open)
-	}
-	requiredKeys := []string{"number", "title", "body", "stage", "created_at", "last_transitioned_at", "owning_repo", "blocked", "parent_requirement", "tasks", "branch", "pr"}
-	for i, item := range parsed.Items {
-		for _, k := range requiredKeys {
-			if _, ok := item[k]; !ok {
-				t.Errorf("item[%d] missing required key %q; keys = %v", i, k, keysOf(item))
-			}
-		}
-	}
-}
-
-// TestRunStatusFeatures_EmptyEnvelope verifies no-results returns items: [].
-func TestRunStatusFeatures_EmptyEnvelope(t *testing.T) {
-	sd := fakeFeaturesDeps(nil, nil)
-	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures: %v", err)
-	}
-	if !strings.Contains(buf.String(), `"items": []`) {
-		t.Errorf("expected 'items: []'; got:\n%s", buf.String())
-	}
-}
-
 // TestRunStatusFeatures_BlockedAnnotation exercises the renderer directly
 // with a blocked feature to verify the inline annotation and totals.
 func TestRunStatusFeatures_BlockedAnnotation(t *testing.T) {
@@ -243,7 +200,7 @@ func TestWriteFeaturesTable_TasksColumnWithCrossRepo(t *testing.T) {
 
 // TestRunStatusFeatures_ListPopulatesTasksColumn verifies the handler-level
 // plumbing: the FetchSubIssues dependency is consumed and the counts land
-// in the TASKS column without any change to --json output.
+// in the TASKS column.
 func TestRunStatusFeatures_ListPopulatesTasksColumn(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
 	sd.psDeps.FetchSubIssues = func(_, _ string, n int) ([]projectstatus.TaskRef, error) {
@@ -268,37 +225,96 @@ func TestRunStatusFeatures_ListPopulatesTasksColumn(t *testing.T) {
 	}
 }
 
-// TestRunStatusFeatures_ListJSONShapeStableAfterTasksColumn verifies the
-// JSON output remains byte-identical in shape after the list renderer
-// grew a TASKS column — AC-10 reinforcement.
-func TestRunStatusFeatures_ListJSONShapeStableAfterTasksColumn(t *testing.T) {
+// TestRunStatusFeatures_RawTSVShape exercises the `--raw` renderer end to
+// end: the rendered bytes must match the golden, every line split on \t
+// must have the same column count, and sparse fields must render as `-`.
+func TestRunStatusFeatures_RawTSVShape(t *testing.T) {
 	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
-	sd.psDeps.FetchSubIssues = func(_, _ string, n int) ([]projectstatus.TaskRef, error) {
-		if n == 492 {
-			return []projectstatus.TaskRef{{Number: 1, Closed: true}}, nil
-		}
-		return nil, nil
-	}
 	buf := &bytes.Buffer{}
-	if err := runStatusFeatures(buf, io.Discard, statusListFlags{json: true}, sd); err != nil {
-		t.Fatalf("runStatusFeatures --json: %v", err)
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures --raw: %v", err)
 	}
-	raw := buf.String()
-	for _, forbidden := range []string{"tasks_total", "tasks_done", "TasksTotal", "TasksDone", "TASKS"} {
-		if strings.Contains(raw, forbidden) {
-			t.Errorf("unexpected key %q in --json output:\n%s", forbidden, raw)
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/features_list.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// AC-3: every line, when split on \t, must have the same column count
+	// as the header row.
+	rawLines := strings.Split(strings.TrimRight(string(got), "\n"), "\n")
+	if len(rawLines) == 0 {
+		t.Fatal("expected at least the header row in --raw output")
+	}
+	headerCols := len(strings.Split(rawLines[0], "\t"))
+	if headerCols != 5 {
+		t.Errorf("header column count = %d, want 5", headerCols)
+	}
+	for i, line := range rawLines {
+		cols := strings.Split(line, "\t")
+		if len(cols) != headerCols {
+			t.Errorf("line %d column count = %d, want %d (line: %q)", i, len(cols), headerCols, line)
 		}
 	}
-	// Parseable envelope check — items and totals, nothing else.
-	var env map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &env); err != nil {
-		t.Fatalf("parse envelope: %v", err)
-	}
-	allowedTop := map[string]struct{}{"items": {}, "totals": {}}
-	for k := range env {
-		if _, ok := allowedTop[k]; !ok {
-			t.Errorf("unexpected top-level key %q", k)
+
+	// Sparse blocked_by must render as the absent sentinel `-`, not empty.
+	for i, line := range rawLines[1:] {
+		cols := strings.Split(line, "\t")
+		if cols[3] == "" {
+			t.Errorf("data row %d blocked_by cell empty; expected sentinel %q", i, rawAbsentValue)
 		}
+	}
+}
+
+// TestRunStatusFeatures_RawVerboseAppendsTimestamps verifies that
+// `--raw --verbose` appends the two timestamp columns, the bytes match
+// the verbose golden, and the column-count invariant still holds.
+func TestRunStatusFeatures_RawVerboseAppendsTimestamps(t *testing.T) {
+	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{raw: true, verbose: true}, sd); err != nil {
+		t.Fatalf("runStatusFeatures --raw --verbose: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/features_list_verbose.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("--raw --verbose output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	rawLines := strings.Split(strings.TrimRight(string(got), "\n"), "\n")
+	headerCols := len(strings.Split(rawLines[0], "\t"))
+	if headerCols != 7 {
+		t.Errorf("verbose header column count = %d, want 7", headerCols)
+	}
+	for i, line := range rawLines {
+		cols := strings.Split(line, "\t")
+		if len(cols) != headerCols {
+			t.Errorf("verbose line %d column count = %d, want %d", i, len(cols), headerCols)
+		}
+	}
+}
+
+// TestRunStatusFeatures_VerboseWithoutRawIsNoOp verifies that `--verbose`
+// without `--raw` does not change the human table output.
+func TestRunStatusFeatures_VerboseWithoutRawIsNoOp(t *testing.T) {
+	bare := &bytes.Buffer{}
+	if err := runStatusFeatures(bare, io.Discard, statusListFlags{}, fakeFeaturesDeps(sampleFeatureIssues(), nil)); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	verbose := &bytes.Buffer{}
+	if err := runStatusFeatures(verbose, io.Discard, statusListFlags{verbose: true}, fakeFeaturesDeps(sampleFeatureIssues(), nil)); err != nil {
+		t.Fatalf("verbose: %v", err)
+	}
+	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
+		t.Errorf("--verbose without --raw must not change human output:\nbare:\n%s\nverbose:\n%s", bare.String(), verbose.String())
 	}
 }
 

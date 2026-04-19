@@ -1,7 +1,6 @@
 package projectstatus
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -9,12 +8,6 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 )
-
-// jsonMarshal wraps encoding/json.Marshal in a locally-named shim to avoid
-// colliding with test helpers that use `json.Unmarshal` inline.
-func jsonMarshal(v interface{}) ([]byte, error) {
-	return json.Marshal(v)
-}
 
 // fakeDeps builds a Deps populated with deterministic fakes for tests.
 // Each callback is wired to return data derived from the provided issues
@@ -244,27 +237,6 @@ func TestFetchFeatures_TaskCountsZeroWhenDepNotWired(t *testing.T) {
 	}
 	if got[0].TasksTotal != 0 || got[0].TasksDone != 0 {
 		t.Errorf("expected zero counts when dep not wired; got Total=%d Done=%d", got[0].TasksTotal, got[0].TasksDone)
-	}
-}
-
-// TestFetchFeatures_TaskCountsExcludedFromJSON verifies that the new internal
-// fields are not serialised by json.Marshal — the locked schema for --json
-// continues to emit exactly the documented keys.
-func TestFetchFeatures_TaskCountsExcludedFromJSON(t *testing.T) {
-	feat := Feature{
-		Number:     1,
-		Title:      "f",
-		TasksTotal: 5,
-		TasksDone:  3,
-	}
-	blob, err := jsonMarshalFeature(feat)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	for _, disallowed := range []string{"tasks_total", "tasks_done", "TasksTotal", "TasksDone"} {
-		if containsIdentifier(blob, disallowed) {
-			t.Errorf("JSON payload must not contain %q; got:\n%s", disallowed, blob)
-		}
 	}
 }
 
@@ -579,33 +551,6 @@ func TestBodyReferencesRequirement_CrossRepoGuard(t *testing.T) {
 	if !bodyReferencesRequirement("Closes a/b#457", 457, "c/d", "a/b") {
 		t.Errorf("qualified Closes a/b#457 should match regardless of feature repo")
 	}
-}
-
-// jsonMarshalFeature marshals a Feature using encoding/json — used by the
-// schema-stability test to confirm internal fields are not emitted.
-func jsonMarshalFeature(f Feature) (string, error) {
-	b, err := jsonMarshal(f)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
-// containsIdentifier reports whether s contains target as a substring. Named
-// for readability in the schema-stability test.
-func containsIdentifier(s, target string) bool {
-	return len(target) > 0 && indexOf(s, target) >= 0
-}
-
-// indexOf wraps strings.Index via a local shim so the test file does not
-// need to import strings inline for a single call.
-func indexOf(s, sep string) int {
-	for i := 0; i+len(sep) <= len(s); i++ {
-		if s[i:i+len(sep)] == sep {
-			return i
-		}
-	}
-	return -1
 }
 
 // equalInts is a small helper for slice comparison in tests.

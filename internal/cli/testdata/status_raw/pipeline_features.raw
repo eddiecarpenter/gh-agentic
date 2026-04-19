@@ -1,0 +1,4 @@
+# features
+number	stage	title	blocked_by	owning_repo
+492	in-development	feat: status command	-	eddiecarpenter/gh-agentic
+511	in-development	feat: domain-X event handler	-	foo/domain-x

@@ -2,7 +2,8 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -145,7 +146,8 @@ func TestPipelineCmd_HelpListsFlags(t *testing.T) {
 		"--vertical",
 		"--include-done",
 		"--this-repo",
-		"--json",
+		"--raw",
+		"--verbose",
 	} {
 		if !strings.Contains(out, tok) {
 			t.Errorf("help missing flag %q; got:\n%s", tok, out)
@@ -158,7 +160,7 @@ func TestPipelineCmd_HelpListsFlags(t *testing.T) {
 // help-output check in case the long-description wording drifts.
 func TestPipelineCmd_AllFlagsRegistered(t *testing.T) {
 	cmd := newPipelineCmd()
-	for _, name := range []string{"requirements", "features", "horizontal", "vertical", "include-done", "this-repo", "json"} {
+	for _, name := range []string{"requirements", "features", "horizontal", "vertical", "include-done", "this-repo", "raw", "verbose"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("flag --%s not registered", name)
 		}
@@ -426,99 +428,6 @@ func TestRunPipeline_BothFlagsLayoutConflict(t *testing.T) {
 	}
 }
 
-// TestRunPipeline_JSONDefaultEnvelopeShape verifies --json with no
-// selector emits {requirements, features, totals} — AC-6.
-func TestRunPipeline_JSONDefaultEnvelopeShape(t *testing.T) {
-	buf := &bytes.Buffer{}
-	err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true}, pipelineSampleDeps())
-	if err != nil {
-		t.Fatalf("runPipeline --json: %v", err)
-	}
-	var parsed map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("unmarshal: %v; raw:\n%s", err, buf.String())
-	}
-	for _, key := range []string{"requirements", "features", "totals"} {
-		if _, ok := parsed[key]; !ok {
-			t.Errorf("envelope missing key %q; keys = %v", key, keysOfRaw(parsed))
-		}
-	}
-	// Inner totals must have the three locked fields and no extras.
-	var totals map[string]interface{}
-	if err := json.Unmarshal(parsed["totals"], &totals); err != nil {
-		t.Fatalf("totals: %v", err)
-	}
-	want := map[string]bool{"open_requirements": true, "open_features": true, "blocked": true}
-	for k := range totals {
-		if !want[k] {
-			t.Errorf("unexpected totals key %q", k)
-		}
-	}
-	for k := range want {
-		if _, ok := totals[k]; !ok {
-			t.Errorf("totals missing key %q; got %v", k, keysOf(totals))
-		}
-	}
-}
-
-// TestRunPipeline_JSONRequirementsSelectorOmitsFeatures verifies AC-7 for
-// the --requirements selector: the `features` key is absent, not null.
-func TestRunPipeline_JSONRequirementsSelectorOmitsFeatures(t *testing.T) {
-	buf := &bytes.Buffer{}
-	err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true, requirements: true}, pipelineSampleDeps())
-	if err != nil {
-		t.Fatalf("runPipeline --json --requirements: %v", err)
-	}
-	var parsed map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("unmarshal: %v; raw:\n%s", err, buf.String())
-	}
-	if _, present := parsed["features"]; present {
-		t.Errorf("features key must be absent with --requirements; keys = %v", keysOfRaw(parsed))
-	}
-	if _, present := parsed["requirements"]; !present {
-		t.Errorf("requirements key must be present; keys = %v", keysOfRaw(parsed))
-	}
-	// Totals should carry open_requirements but not open_features.
-	var totals map[string]interface{}
-	if err := json.Unmarshal(parsed["totals"], &totals); err != nil {
-		t.Fatalf("totals: %v", err)
-	}
-	if _, present := totals["open_features"]; present {
-		t.Errorf("open_features must be absent under --requirements; got %v", keysOf(totals))
-	}
-	if _, present := totals["open_requirements"]; !present {
-		t.Errorf("open_requirements must be present; got %v", keysOf(totals))
-	}
-}
-
-// TestRunPipeline_JSONFeaturesSelectorOmitsRequirements is the symmetric
-// check to TestRunPipeline_JSONRequirementsSelectorOmitsFeatures.
-func TestRunPipeline_JSONFeaturesSelectorOmitsRequirements(t *testing.T) {
-	buf := &bytes.Buffer{}
-	err := runPipeline(buf, &bytes.Buffer{}, pipelineFlags{json: true, features: true}, pipelineSampleDeps())
-	if err != nil {
-		t.Fatalf("runPipeline --json --features: %v", err)
-	}
-	var parsed map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
-		t.Fatalf("unmarshal: %v; raw:\n%s", err, buf.String())
-	}
-	if _, present := parsed["requirements"]; present {
-		t.Errorf("requirements key must be absent with --features; keys = %v", keysOfRaw(parsed))
-	}
-	if _, present := parsed["features"]; !present {
-		t.Errorf("features key must be present; keys = %v", keysOfRaw(parsed))
-	}
-	var totals map[string]interface{}
-	if err := json.Unmarshal(parsed["totals"], &totals); err != nil {
-		t.Fatalf("totals: %v", err)
-	}
-	if _, present := totals["open_requirements"]; present {
-		t.Errorf("open_requirements must be absent under --features; got %v", keysOf(totals))
-	}
-}
-
 // TestRunPipeline_InvokesBusyWrapper verifies the pipeline handler wraps
 // its fetch via deps.busy with the appropriate label — AC-9 / AC-11.
 func TestRunPipeline_InvokesBusyWrapper(t *testing.T) {
@@ -568,12 +477,148 @@ func TestRunPipeline_NonTTYStderrProducesNoSpinnerBytes(t *testing.T) {
 	}
 }
 
-// keysOfRaw returns the keys of a map[string]json.RawMessage for
-// human-readable failure messages.
-func keysOfRaw(m map[string]json.RawMessage) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
+// TestRunPipeline_RawCombinedShape verifies the bare `pipeline --raw`
+// invocation emits both sections separated by a blank line, that each
+// section uses the Task 1 list TSV header + rows, and that the rendered
+// bytes match the combined golden.
+func TestRunPipeline_RawCombinedShape(t *testing.T) {
+	sd := pipelineSampleDeps()
+	buf := &bytes.Buffer{}
+	if err := runPipeline(buf, io.Discard, pipelineFlags{raw: true}, sd); err != nil {
+		t.Fatalf("runPipeline --raw: %v", err)
 	}
-	return out
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_combined.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("combined --raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// Both section markers must be present and in order.
+	out := string(got)
+	reqIdx := strings.Index(out, "# requirements")
+	feaIdx := strings.Index(out, "# features")
+	if reqIdx < 0 || feaIdx < 0 {
+		t.Fatalf("expected both '# requirements' and '# features' markers; got:\n%s", out)
+	}
+	if reqIdx >= feaIdx {
+		t.Errorf("requirements section must precede features section")
+	}
+}
+
+// TestRunPipeline_RawRequirementsSelector verifies the `--requirements`
+// selector emits only the `# requirements` section — no `# features`
+// marker anywhere in the output.
+func TestRunPipeline_RawRequirementsSelector(t *testing.T) {
+	sd := pipelineSampleDeps()
+	buf := &bytes.Buffer{}
+	if err := runPipeline(buf, io.Discard, pipelineFlags{raw: true, requirements: true}, sd); err != nil {
+		t.Fatalf("runPipeline --raw --requirements: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_requirements.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("requirements --raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+	if strings.Contains(string(got), "# features") {
+		t.Errorf("requirements selector must not emit '# features' marker; got:\n%s", string(got))
+	}
+}
+
+// TestRunPipeline_RawFeaturesSelector verifies the `--features` selector
+// emits only the `# features` section — no `# requirements` marker.
+func TestRunPipeline_RawFeaturesSelector(t *testing.T) {
+	sd := pipelineSampleDeps()
+	buf := &bytes.Buffer{}
+	if err := runPipeline(buf, io.Discard, pipelineFlags{raw: true, features: true}, sd); err != nil {
+		t.Fatalf("runPipeline --raw --features: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_features.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("features --raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+	if strings.Contains(string(got), "# requirements") {
+		t.Errorf("features selector must not emit '# requirements' marker; got:\n%s", string(got))
+	}
+}
+
+// TestRunPipeline_RawCombinedVerbose verifies that --raw --verbose
+// appends `created_at` / `last_transitioned_at` columns to both the
+// requirements and features TSV sections, and that the rendered bytes
+// match the verbose combined golden.
+func TestRunPipeline_RawCombinedVerbose(t *testing.T) {
+	sd := pipelineSampleDeps()
+	buf := &bytes.Buffer{}
+	if err := runPipeline(buf, io.Discard, pipelineFlags{raw: true, verbose: true}, sd); err != nil {
+		t.Fatalf("runPipeline --raw --verbose: %v", err)
+	}
+
+	got := buf.Bytes()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_combined_verbose.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if !bytes.Equal(got, wantBytes) {
+		t.Errorf("verbose combined --raw output does not match golden\nwant:\n%s\ngot:\n%s", string(wantBytes), string(got))
+	}
+
+	// Each section's header must contain the two timestamp columns.
+	for _, marker := range []string{"\tcreated_at\tlast_transitioned_at"} {
+		if !strings.Contains(string(got), marker) {
+			t.Errorf("expected %q in verbose pipeline output; got:\n%s", marker, string(got))
+		}
+	}
+}
+
+// TestRunPipeline_VerboseWithoutRawIsNoOp verifies that --verbose without
+// --raw does not change the human pipeline output (vertical layout used
+// to keep the test deterministic).
+func TestRunPipeline_VerboseWithoutRawIsNoOp(t *testing.T) {
+	sd := pipelineSampleDeps()
+	bare := &bytes.Buffer{}
+	if err := runPipeline(bare, io.Discard, pipelineFlags{vertical: true}, sd); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	verbose := &bytes.Buffer{}
+	if err := runPipeline(verbose, io.Discard, pipelineFlags{vertical: true, verbose: true}, sd); err != nil {
+		t.Fatalf("verbose: %v", err)
+	}
+	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
+		t.Errorf("--verbose without --raw must not change pipeline output")
+	}
+}
+
+// TestRunPipeline_RawIgnoresLayoutFlags verifies that --horizontal /
+// --vertical are no-ops under --raw — the rendered bytes match the
+// layout-free combined golden regardless of the layout selector.
+func TestRunPipeline_RawIgnoresLayoutFlags(t *testing.T) {
+	sd := pipelineSampleDeps()
+	wantBytes, err := os.ReadFile("testdata/status_raw/pipeline_combined.raw")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	for _, layout := range []pipelineFlags{
+		{raw: true, horizontal: true},
+		{raw: true, vertical: true},
+	} {
+		buf := &bytes.Buffer{}
+		if err := runPipeline(buf, io.Discard, layout, sd); err != nil {
+			t.Fatalf("runPipeline --raw layout=%+v: %v", layout, err)
+		}
+		if !bytes.Equal(buf.Bytes(), wantBytes) {
+			t.Errorf("layout %+v under --raw should be a no-op; bytes diverged", layout)
+		}
+	}
 }

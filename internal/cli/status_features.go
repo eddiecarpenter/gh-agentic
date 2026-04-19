@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -13,8 +12,9 @@ import (
 // runStatusFeatures is the handler for `gh agentic status features`. It
 // resolves the project ID, fetches the list via projectstatus.FetchFeatures
 // (which aggregates across every repo linked to the project), optionally
-// narrows to the current repo, then renders either the --json envelope or
-// the compact tabular list.
+// narrows to the current repo, then renders either the --raw TSV form or
+// the compact tabular human list. The --json flag was removed by feature
+// #589 in favour of the agent-oriented --raw shape.
 //
 // The legacy --kanban flag was removed by feature #518. If the caller
 // passes --kanban (hidden on this command for interception), the handler
@@ -44,7 +44,7 @@ func runStatusFeatures(w io.Writer, stderr io.Writer, flags statusListFlags, dep
 	}
 
 	// Wrap the federated feature fetch in the shared busy indicator.
-	// The indicator writes to stderr so stdout stays clean for --json
+	// The indicator writes to stderr so stdout stays clean for --raw
 	// consumers; non-TTY writers suppress the glyphs entirely.
 	var features []projectstatus.Feature
 	err = deps.busy(stderr, "Fetching features…", func() error {
@@ -60,8 +60,8 @@ func runStatusFeatures(w io.Writer, stderr io.Writer, flags statusListFlags, dep
 		features = filterFeaturesToRepo(features, currentRepo)
 	}
 
-	if flags.json {
-		return writeFeaturesJSON(w, features)
+	if flags.raw {
+		return writeFeaturesRaw(w, features, flags.verbose)
 	}
 
 	return writeFeaturesTable(w, features, currentRepo)
@@ -124,37 +124,43 @@ func writeFeaturesTable(w io.Writer, features []projectstatus.Feature, currentRe
 	return nil
 }
 
-// writeFeaturesJSON emits {items, totals} matching the documented schema.
-func writeFeaturesJSON(w io.Writer, features []projectstatus.Feature) error {
-	if features == nil {
-		features = []projectstatus.Feature{}
+// writeFeaturesRaw emits the agent-oriented TSV form of the features list
+// per the `--raw` contract:
+//
+//	number<TAB>stage<TAB>title<TAB>blocked_by<TAB>owning_repo
+//
+// Same shape and column set as the requirements raw renderer — agents that
+// already parse one can parse both with the same code path. Sparse cells
+// render as `-`; no totals or footer line.
+//
+// When verbose is true, the header gains `created_at` and
+// `last_transitioned_at` columns at the end (ISO date) — the same suffix
+// applied to the requirements raw shape so the verbose contract stays
+// uniform across both list commands.
+func writeFeaturesRaw(w io.Writer, features []projectstatus.Feature, verbose bool) error {
+	cols := []string{"number", "stage", "title", "blocked_by", "owning_repo"}
+	if verbose {
+		cols = append(cols, "created_at", "last_transitioned_at")
 	}
-	for i := range features {
-		if features[i].Tasks == nil {
-			features[i].Tasks = []projectstatus.TaskRef{}
+	if _, err := fmt.Fprintln(w, strings.Join(cols, rawListSeparator)); err != nil {
+		return fmt.Errorf("writing raw header: %w", err)
+	}
+	for _, f := range features {
+		row := []string{
+			fmt.Sprintf("%d", f.Number),
+			rawField(string(f.Stage)),
+			rawField(f.Title),
+			rawBlockedField(f.Blocked),
+			rawField(f.OwningRepo),
 		}
-	}
-	envelope := projectstatus.ListEnvelope{
-		Items:  features,
-		Totals: countFeaturesTotals(features),
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(envelope); err != nil {
-		return fmt.Errorf("encoding JSON: %w", err)
+		if verbose {
+			row = append(row, rawTimestampField(f.CreatedAt), rawTimestampField(f.LastTransitionedAt))
+		}
+		if _, err := fmt.Fprintln(w, strings.Join(row, rawListSeparator)); err != nil {
+			return fmt.Errorf("writing raw row: %w", err)
+		}
 	}
 	return nil
-}
-
-// countFeaturesTotals computes the Open / Blocked counts for the envelope.
-func countFeaturesTotals(features []projectstatus.Feature) projectstatus.ListTotals {
-	blocked := 0
-	for _, f := range features {
-		if f.Blocked != nil {
-			blocked++
-		}
-	}
-	return projectstatus.ListTotals{Open: len(features), Blocked: blocked}
 }
 
 // anyFeatureCrossRepo reports whether any feature has an owning repo that
