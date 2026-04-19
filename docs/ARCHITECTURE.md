@@ -56,8 +56,7 @@ gh-agentic/
 ├── recipes/                     ← goose recipe definitions
 ├── docs/
 │   ├── PROJECT_BRIEF.md
-│   ├── ARCHITECTURE.md          ← this file
-│   └── TUI_DESIGN.md            ← init wizard UX reference
+│   └── ARCHITECTURE.md          ← this file
 ├── .github/workflows/
 │   ├── agentic-pipeline.yml     ← domain repo wrapper workflow
 │   ├── agentic-pipeline-reusable.yml ← reusable pipeline workflow
