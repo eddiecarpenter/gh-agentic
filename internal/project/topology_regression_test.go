@@ -1,7 +1,9 @@
 package project
 
 import (
+	"bytes"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -66,6 +68,66 @@ func TestResolveTopology_ChargingDomainRegression(t *testing.T) {
 	// trip — check and repair are already chatty.
 	if fetchCalls != 1 {
 		t.Errorf("FetchLinkedRepos invocations: got %d, want 1 (must be cached within a single resolve)", fetchCalls)
+	}
+}
+
+// TestResolveTopology_CrossOwnerProject_DetectsFederatedDomain covers
+// Feature #602: when the project is owned by a different login than the
+// current repo, the resolver must classify the repo as federated-domain
+// regardless of the linked-graph shape (even when the graph is sparse or
+// the current repo is not linked).
+func TestResolveTopology_CrossOwnerProject_DetectsFederatedDomain(t *testing.T) {
+	store := newVariableStore(map[string]string{})
+
+	got, err := ResolveTopology(ResolveTopologyDeps{
+		Owner:            "acme-domain-owner",
+		Repo:             "widget-service",
+		ProjectID:        "PVT_cp",
+		GetRepoVariable:  store.get,
+		FetchLinkedRepos: func(string) ([]LinkedRepo, error) { return nil, nil },
+		FetchProjectOwner: func(string) (string, error) {
+			return "acme-platform", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != TopologyStringFederatedDomain {
+		t.Errorf("cross-owner: got %q, want %q", got, TopologyStringFederatedDomain)
+	}
+}
+
+// TestRepairTopologyVars_FederatedDomain_MissingCPVersion_HardStops covers
+// Feature #602: when a federated-domain repo discovers the CP has no
+// AGENTIC_FRAMEWORK_VERSION, repair must terminate with a pointed message
+// naming the CP repo — never cross-write.
+func TestRepairTopologyVars_FederatedDomain_MissingCPVersion_HardStops(t *testing.T) {
+	// Domain repo with no local vars beyond PROJECT_ID; CP has no fwVer either.
+	deps := testDeps("NewOpenBSS", "charging-domain")
+	deps.GetRepoVariable = func(owner, repo, name string) (string, error) {
+		if owner == "NewOpenBSS" && repo == "charging-domain" && name == ProjectVarName {
+			return "PVT_charging", nil
+		}
+		return "", errors.New("not found")
+	}
+	deps.FetchLinkedRepos = func(string) ([]LinkedRepo, error) {
+		return []LinkedRepo{
+			{Name: "charging-control-plane", NameWithOwner: "NewOpenBSS/charging-control-plane"},
+			{Name: "charging-domain", NameWithOwner: "NewOpenBSS/charging-domain"},
+		}, nil
+	}
+	deps.FetchProjectOwner = func(string) (string, error) { return "NewOpenBSS", nil }
+
+	var buf bytes.Buffer
+	err := repairTopologyVars(&buf, deps)
+	if err == nil {
+		t.Fatal("expected a hard-stop error; got nil")
+	}
+	if !strings.Contains(err.Error(), "charging-control-plane") {
+		t.Errorf("error must name the CP repo; got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "gh agentic repair") {
+		t.Errorf("error must instruct to run repair on the CP; got %q", err.Error())
 	}
 }
 

@@ -70,14 +70,20 @@ Flags: none.
 ### `gh agentic repair`
 
 Auto-fix issues reported by `check`. Repairs include framework not
-mounted, missing project board views, topology mis-configuration,
+mounted, missing project board views, topology variable writes (CP-side
+`AGENTIC_FRAMEWORK_VERSION`, clearing stray values on domain repos),
 `.ai/` missing from `.gitignore`, and workflow version-tag drift.
 Variable / secret values that need human input are surfaced via huh
 prompts.
 
-Flags:
-- `--topology` — override the topology resolver: `single` or `federated`.
-  Skips the interactive topology prompt.
+Topology is always deduced by `project.Resolve` — from the project
+owner, linked-graph, and local `AGENTIC_FRAMEWORK_VERSION`. There is no
+override flag and no interactive topology prompt; each repo's repair
+fixes only its own state. When a federated-domain repo detects that the
+control plane has missing state, repair terminates with a pointed
+instruction to run `gh agentic repair` on the control plane repo.
+
+Flags: none.
 
 ### `gh agentic mount`
 
