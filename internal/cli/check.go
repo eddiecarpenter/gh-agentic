@@ -32,6 +32,23 @@ type checkDeps struct {
 	fetchLinkedRepos project.FetchLinkedReposFunc
 }
 
+// projectFrameworkOutOfSync returns true when the project-side
+// framework-version-sync check reports a Fail status. Pipeline-scope
+// checks (skill frontmatter, catalogue, workflow versions) operate on
+// `.ai/` and produce noise against a stale mount, so both `check` and
+// `repair` short-circuit on this signal.
+func projectFrameworkOutOfSync(report *project.CheckReport) bool {
+	if report == nil {
+		return false
+	}
+	for _, r := range report.Results {
+		if r.Name == "framework-version-sync" && r.Status == project.CheckFail {
+			return true
+		}
+	}
+	return false
+}
+
 // defaultResolveRepo resolves the repo from git remote config.
 func defaultResolveRepo() (repoInfo, error) {
 	currentRepo, err := repository.Current()
@@ -97,10 +114,21 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 
 			var projectReport *project.CheckReport
 			var pipelineReport *doctor.Report
+			var pipelineSkipped bool
 
 			_ = ui.RunWithDynamicSpinner(w, "Running project checks...", func(setLabel func(string)) error {
 				// Project-scope checks first — they already handle topology internally.
 				projectReport = project.RunChecksWithProgress(projectDeps, setLabel)
+
+				// Short-circuit: if the mounted framework is out of sync
+				// with the authoritative version, pipeline-side checks
+				// (skill frontmatter, catalogue, workflow versions) will
+				// generate noise against a stale `.ai/`. Stop here and
+				// direct the user to `gh agentic mount` first.
+				if projectFrameworkOutOfSync(projectReport) {
+					pipelineSkipped = true
+					return nil
+				}
 
 				// Pipeline-scope checks need repo identity + resolved topology mode.
 				setLabel("Detecting repository for pipeline checks...")
@@ -157,13 +185,23 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 			// Pipeline section.
 			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
 			fmt.Fprintln(w, "  "+ui.Divider(48))
-			for _, g := range pipelineReport.Groups {
-				doctor.RenderGroup(w, g)
+			if pipelineSkipped {
+				fmt.Fprintf(w, "  %s  Skipped — framework mount is out of sync; run 'gh agentic mount' first\n", ui.StatusWarning.Render("⚠"))
+			} else {
+				for _, g := range pipelineReport.Groups {
+					doctor.RenderGroup(w, g)
+				}
 			}
 
 			// Combined summary.
-			fails := projectReport.FailCount() + pipelineReport.FailCount()
-			warns := projectReport.WarnCount() + pipelineReport.WarningCount()
+			pipelineFails := 0
+			pipelineWarns := 0
+			if pipelineReport != nil {
+				pipelineFails = pipelineReport.FailCount()
+				pipelineWarns = pipelineReport.WarningCount()
+			}
+			fails := projectReport.FailCount() + pipelineFails
+			warns := projectReport.WarnCount() + pipelineWarns
 			fmt.Fprintln(w, "")
 			switch {
 			case fails > 0:

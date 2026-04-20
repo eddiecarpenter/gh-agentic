@@ -12,9 +12,10 @@ import (
 
 // RepairResult holds the outcome of a repair run.
 type RepairResult struct {
-	Lines      []string // output lines to display
-	Repaired   int
-	Unrepaired int
+	Lines               []string // output lines to display
+	Repaired            int
+	Unrepaired          int
+	FrameworkOutOfSync  bool // true when framework-version-sync check failed
 }
 
 // RepairWithProgress runs all checks and repairs failures, calling setLabel
@@ -26,6 +27,16 @@ func RepairWithProgress(deps Deps, setLabel func(string)) RepairResult {
 		setLabel("Running agentic project checks...")
 	}
 	report := RunChecksWithProgress(deps, setLabel)
+
+	// Surface framework-out-of-sync so the CLI can short-circuit the
+	// pipeline phase — running skill / workflow checks against a stale
+	// `.ai/` produces noise and blocks the real remediation.
+	for _, r := range report.Results {
+		if r.Name == "framework-version-sync" && r.Status == CheckFail {
+			result.FrameworkOutOfSync = true
+			break
+		}
+	}
 
 	// Nothing to do if there are no failures and no repairable warnings.
 	hasRepairable := false
