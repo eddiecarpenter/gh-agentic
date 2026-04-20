@@ -656,6 +656,44 @@ func DefaultFetchProjectViews(projectID string) ([]ProjectView, error) {
 // FetchProjectTitleFunc fetches the title of a ProjectV2 by its node ID.
 type FetchProjectTitleFunc func(projectID string) (string, error)
 
+// FetchProjectOwnerFunc fetches the owner login (user or organisation) that
+// owns a GitHub ProjectV2. This is the primary disambiguator for federated-
+// domain topology: if the project owner differs from the current repo's
+// owner, the repo is a domain repo regardless of the linked-graph shape.
+type FetchProjectOwnerFunc func(projectID string) (string, error)
+
+// DefaultFetchProjectOwner fetches the owner login (user or organisation) of
+// a GitHub ProjectV2 via GraphQL.
+func DefaultFetchProjectOwner(projectID string) (string, error) {
+	client, err := api.DefaultGraphQLClient()
+	if err != nil {
+		return "", fmt.Errorf("creating GraphQL client: %w", err)
+	}
+
+	query := `query($id: ID!) {
+		node(id: $id) {
+			... on ProjectV2 {
+				owner {
+					... on Organization { login }
+					... on User { login }
+				}
+			}
+		}
+	}`
+
+	var resp struct {
+		Node struct {
+			Owner struct {
+				Login string `json:"login"`
+			} `json:"owner"`
+		} `json:"node"`
+	}
+	if err := client.Do(query, map[string]interface{}{"id": projectID}, &resp); err != nil {
+		return "", fmt.Errorf("fetching owner for project %s: %w", projectID, err)
+	}
+	return resp.Node.Owner.Login, nil
+}
+
 // DefaultFetchProjectTitle fetches the title of a GitHub ProjectV2 via GraphQL.
 func DefaultFetchProjectTitle(projectID string) (string, error) {
 	client, err := api.DefaultGraphQLClient()

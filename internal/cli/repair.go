@@ -18,30 +18,28 @@ import (
 
 // newRepairCmd constructs the top-level `gh agentic repair` command.
 func newRepairCmd() *cobra.Command {
-	var topologyFlag string
-
 	cmd := &cobra.Command{
 		Use:   "repair",
 		Short: "Auto-fix issues reported by 'check'",
 		Long: `Run all health checks and automatically fix what can be fixed.
 
+Topology is always deduced from the project-linked-repo graph plus ownership
+(project owner vs repo owner) — no prompts, no manual override. Each repo's
+repair fixes only its own state. If a federated-domain repo detects that the
+control plane has missing state, repair terminates with a pointed instruction
+to run 'gh agentic repair' on the control plane repo.
+
 Auto-repairs:
   - Framework not mounted        → mounts the latest version
   - Missing project board views  → recreates views from the template
-  - Topology misconfigured       → sets or corrects topology and framework version
+  - Topology variables           → writes AGENTIC_FRAMEWORK_VERSION on the CP
+                                   when missing; clears stray values on domains
   - .ai/ missing from .gitignore → appends the entry
   - Workflow version tag drift   → rewrites @vX.Y.Z to match the mounted framework
 
-When topology cannot be determined automatically you will be prompted, or use
---topology to skip the prompt:
-
-  --topology single     standalone repo (control plane and code in one)
-  --topology federated  this repo is the control plane for domain repos
-
 Variables and secrets cannot be auto-repaired (they need human-supplied values).
 Those failures are surfaced with the exact 'gh' command to run.`,
-		Example: `  gh agentic repair
-  gh agentic repair --topology federated`,
+		Example:      `  gh agentic repair`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			deps, err := resolveProjectDeps()
@@ -57,53 +55,6 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 				projectResult = project.RepairWithProgress(deps, setLabel)
 				return nil
 			})
-
-			needsTopology := projectResult.NeedsTopologyPrompt
-			chosenTopology := topologyFlag
-
-			if needsTopology && chosenTopology == "" {
-				fmt.Fprintln(w, "")
-				fmt.Fprintf(w, "  %s  %s cannot be determined automatically.\n",
-					ui.StatusWarning.Render("⚠"), "AGENTIC_TOPOLOGY")
-				fmt.Fprintln(w, "")
-
-				form := huh.NewForm(huh.NewGroup(
-					huh.NewSelect[string]().
-						Title("What is the role of this repository?").
-						Description("Choose how this repo fits into the agentic project topology.").
-						Options(
-							huh.NewOption("Federated — this is the control plane for other (domain) repos", "federated"),
-							huh.NewOption("Single    — this repo is the only repo (control plane + code together)", "single"),
-						).
-						Value(&chosenTopology),
-				))
-				if err := form.Run(); err != nil {
-					return fmt.Errorf("topology selection: %w", err)
-				}
-			}
-
-			// If --topology was passed directly, force a topology repair even when
-			// the check didn't flag it (covers the "wrong value, undetectable" case).
-			if chosenTopology != "" {
-				// Refuse federated topology against a user-owned repo before
-				// any side effect runs. DetectOwnerType is best-effort — if
-				// it fails, the guard inside repairTopologyVars still enforces
-				// the rule when the detected type is available there.
-				if ownerType, otErr := deps.DetectOwnerType(deps.Owner); otErr == nil {
-					if guardErr := project.EnsureFederatedOwnerIsOrg(chosenTopology, deps.Owner, ownerType); guardErr != nil {
-						return guardErr
-					}
-				}
-
-				var topoResult project.RepairResult
-				_ = ui.RunWithDynamicSpinner(w, "Repairing topology variables...", func(setLabel func(string)) error {
-					topoResult = project.RepairTopologyWithChoice(deps, chosenTopology)
-					return nil
-				})
-				projectResult.Lines = append(projectResult.Lines, topoResult.Lines...)
-				projectResult.Repaired += topoResult.Repaired
-				projectResult.Unrepaired += topoResult.Unrepaired
-			}
 
 			// Phase 2: pipeline-side checks and auto-repairs.
 			pipelineDeps, pdepsErr := buildPipelineCheckDeps(deps)
@@ -190,7 +141,6 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&topologyFlag, "topology", "", "override topology: 'single' or 'federated'")
 	return cmd
 }
 

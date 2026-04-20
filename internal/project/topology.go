@@ -27,6 +27,10 @@ type ResolveTopologyDeps struct {
 	// FetchLinkedRepos returns the repositories linked to a ProjectV2
 	// by its node ID. Called at most once per ResolveTopology call.
 	FetchLinkedRepos FetchLinkedReposFunc
+	// FetchProjectOwner returns the owner login of the ProjectV2 — used
+	// as the primary federated-domain disambiguator. Optional: callers
+	// that leave it nil fall back to the linked-graph rules alone.
+	FetchProjectOwner FetchProjectOwnerFunc
 }
 
 // ResolveTopology is retained as a thin wrapper over Resolve for call sites
@@ -48,11 +52,12 @@ func ResolveTopology(deps ResolveTopologyDeps) (string, error) {
 	// decision reads are required; everything else is left at its zero
 	// value.
 	fullDeps := Deps{
-		Owner:            deps.Owner,
-		RepoName:         deps.Repo,
-		RepoFullName:     deps.Owner + "/" + deps.Repo,
-		GetRepoVariable:  deps.GetRepoVariable,
-		FetchLinkedRepos: deps.FetchLinkedRepos,
+		Owner:             deps.Owner,
+		RepoName:          deps.Repo,
+		RepoFullName:      deps.Owner + "/" + deps.Repo,
+		GetRepoVariable:   deps.GetRepoVariable,
+		FetchLinkedRepos:  deps.FetchLinkedRepos,
+		FetchProjectOwner: deps.FetchProjectOwner,
 	}
 
 	// The historic wrapper contract: FetchLinkedRepos must not be called
@@ -75,6 +80,10 @@ func ResolveTopology(deps ResolveTopologyDeps) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return resolveTopologyWithLinked(fullDeps, deps.ProjectID, linked, nil)
+	var projectOwner string
+	if deps.FetchProjectOwner != nil {
+		projectOwner, _ = deps.FetchProjectOwner(deps.ProjectID)
+	}
+	return resolveTopologyWithLinked(fullDeps, deps.ProjectID, projectOwner, linked, nil)
 }
 

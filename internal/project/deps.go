@@ -40,6 +40,7 @@ type Deps struct {
 	FetchProjectViews        FetchProjectViewsFunc
 	FetchProjectsForOwner    FetchProjectsForOwnerFunc
 	FetchProjectTitle        FetchProjectTitleFunc
+	FetchProjectOwner        FetchProjectOwnerFunc
 	Run                      auth.RunCommandFunc
 }
 
@@ -71,6 +72,7 @@ func DefaultDeps(owner, repoName, root string) Deps {
 		FetchProjectViews:        DefaultFetchProjectViews,
 		FetchProjectsForOwner:    DefaultFetchProjectsForOwner,
 		FetchProjectTitle:        DefaultFetchProjectTitle,
+		FetchProjectOwner:        DefaultFetchProjectOwner,
 		Run:                      auth.DefaultRunCommand,
 	}
 }

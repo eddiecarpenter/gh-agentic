@@ -297,9 +297,25 @@ func checkFrameworkMounted(deps Deps) CheckResult {
 	}
 }
 
+// checkTopologyVars validates topology-related variables against the
+// canonical topology deduced by project.Resolve. Per-topology rules:
+//
+//   - single           → nothing required locally
+//   - federated-cp     → AGENTIC_FRAMEWORK_VERSION must be set locally
+//   - federated-domain → no local vars required; a local
+//                        AGENTIC_FRAMEWORK_VERSION is a misconfiguration
+//                        (domain repos read the value from the CP, not
+//                        their own repo)
 func checkTopologyVars(deps Deps) CheckResult {
-	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
-	if err != nil || projectID == "" {
+	ctx, err := Resolve(deps)
+	if err != nil {
+		return CheckResult{
+			Name:    "topology-vars",
+			Status:  CheckWarn,
+			Message: "topology check skipped — cannot resolve topology: " + err.Error(),
+		}
+	}
+	if ctx.ProjectID == "" {
 		return CheckResult{
 			Name:    "topology-vars",
 			Status:  CheckWarn,
@@ -307,70 +323,52 @@ func checkTopologyVars(deps Deps) CheckResult {
 		}
 	}
 
-	topoVal, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName)
-	if err != nil || topoVal == "" {
+	switch ctx.Topology {
+	case TopologyStringSingle:
 		return CheckResult{
-			Name:        "topology-vars",
-			Status:      CheckWarn,
-			Message:     TopologyVarName + " not set — topology cannot be determined",
-			Remediation: "run 'gh agentic project repair'",
+			Name:    "topology-vars",
+			Status:  CheckPass,
+			Message: "topology=single — no topology vars required",
 		}
-	}
 
-	// Validate that AGENTIC_TOPOLOGY=single is consistent with the project state.
-	// If the project has multiple linked repos, or AGENTIC_FRAMEWORK_VERSION is already
-	// set, then this repo is a federated CP and the value is wrong.
-	if topoVal == "single" {
+	case TopologyStringFederatedCP:
 		fwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-		linked, linkedErr := deps.FetchLinkedRepos(projectID)
-		if linkedErr == nil && len(linked) > 1 {
+		if strings.TrimSpace(fwVer) == "" {
 			return CheckResult{
 				Name:        "topology-vars",
-				Status:      CheckWarn,
-				Message:     TopologyVarName + "=single but project has multiple linked repos — should be federated (control plane)",
-				Remediation: "run 'gh agentic project repair'",
-			}
-		}
-		if fwVer != "" {
-			return CheckResult{
-				Name:        "topology-vars",
-				Status:      CheckWarn,
-				Message:     TopologyVarName + "=single but " + FrameworkVersionVarName + " is set — should be federated (control plane)",
-				Remediation: "run 'gh agentic project repair'",
-			}
-		}
-		return CheckResult{
-			Name:    "topology-vars",
-			Status:  CheckPass,
-			Message: TopologyVarName + "=single",
-		}
-	}
-
-	// AGENTIC_FRAMEWORK_VERSION is only required on federated control planes —
-	// domain repos read it from the CP; single repos don't broadcast it at all.
-	if topoVal == "federated" {
-		fwVer, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-		if err != nil || fwVer == "" {
-			return CheckResult{
-				Name:        "topology-vars",
-				Status:      CheckWarn,
+				Status:      CheckFail,
 				Message:     FrameworkVersionVarName + " not set on control plane",
-				Remediation: "run 'gh agentic project switch version <version>' to set it",
+				Remediation: "run 'gh agentic repair' to set it to the latest release",
 			}
 		}
 		return CheckResult{
 			Name:    "topology-vars",
 			Status:  CheckPass,
-			Message: TopologyVarName + "=" + topoVal + ", " + FrameworkVersionVarName + "=" + fwVer,
+			Message: "topology=federated-cp, " + FrameworkVersionVarName + "=" + fwVer,
+		}
+
+	case TopologyStringFederatedDomain:
+		fwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
+		if strings.TrimSpace(fwVer) != "" {
+			return CheckResult{
+				Name:        "topology-vars",
+				Status:      CheckWarn,
+				Message:     FrameworkVersionVarName + " is set on a federated-domain repo — should only be set on the control plane",
+				Remediation: "remove it via 'gh variable delete " + FrameworkVersionVarName + "'",
+			}
+		}
+		return CheckResult{
+			Name:    "topology-vars",
+			Status:  CheckPass,
+			Message: "topology=federated-domain — no local topology vars required",
 		}
 	}
 
-	// Unknown topology value.
 	return CheckResult{
 		Name:        "topology-vars",
 		Status:      CheckWarn,
-		Message:     TopologyVarName + "=" + topoVal + " — unrecognised value (expected 'single' or 'federated')",
-		Remediation: "run 'gh agentic project repair'",
+		Message:     "unrecognised topology " + ctx.Topology,
+		Remediation: "run 'gh agentic repair'",
 	}
 }
 

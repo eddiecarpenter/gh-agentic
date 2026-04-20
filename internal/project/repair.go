@@ -2,7 +2,6 @@ package project
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -11,16 +10,11 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
-// ErrTopologyAmbiguous is returned by repairTopologyVars when the topology
-// cannot be determined automatically and requires user input.
-var ErrTopologyAmbiguous = errors.New("topology ambiguous")
-
 // RepairResult holds the outcome of a repair run.
 type RepairResult struct {
-	Lines               []string // output lines to display
-	Repaired            int
-	Unrepaired          int
-	NeedsTopologyPrompt bool // true when topology couldn't be auto-determined
+	Lines      []string // output lines to display
+	Repaired   int
+	Unrepaired int
 }
 
 // RepairWithProgress runs all checks and repairs failures, calling setLabel
@@ -87,13 +81,9 @@ func RepairWithProgress(deps Deps, setLabel func(string)) RepairResult {
 				setLabel("Repairing: topology variables...")
 			}
 			var buf bytes.Buffer
-			if err := repairTopologyVars(&buf, deps, ""); err != nil {
-				if errors.Is(err, ErrTopologyAmbiguous) {
-					result.NeedsTopologyPrompt = true
-				} else {
-					result.Lines = append(result.Lines, fmt.Sprintf("  %s  Could not repair topology variables: %v", ui.StatusDanger.Render("✗"), err))
-					result.Unrepaired++
-				}
+			if err := repairTopologyVars(&buf, deps); err != nil {
+				result.Lines = append(result.Lines, fmt.Sprintf("  %s  Could not repair topology variables: %v", ui.StatusDanger.Render("✗"), err))
+				result.Unrepaired++
 			} else {
 				result.Lines = append(result.Lines, strings.TrimRight(buf.String(), "\n"))
 				result.Repaired++
@@ -181,91 +171,42 @@ func repairViews(w io.Writer, deps Deps) error {
 	return nil
 }
 
-// RepairTopologyWithChoice runs a targeted topology repair using an explicit topology
-// value chosen by the user. Called after NeedsTopologyPrompt is returned by RepairWithProgress.
-func RepairTopologyWithChoice(deps Deps, topology string) RepairResult {
-	result := RepairResult{}
-	var buf bytes.Buffer
-	if err := repairTopologyVars(&buf, deps, topology); err != nil {
-		result.Lines = append(result.Lines, fmt.Sprintf("  %s  Could not repair topology variables: %v", ui.StatusDanger.Render("✗"), err))
-		result.Unrepaired++
-	} else {
-		result.Lines = append(result.Lines, strings.TrimRight(buf.String(), "\n"))
-		result.Repaired++
-	}
-	return result
-}
-
-// repairTopologyVars ensures AGENTIC_TOPOLOGY and AGENTIC_FRAMEWORK_VERSION
-// are set correctly. If topology is non-empty it is used directly
-// (user-supplied via `--topology`); the repair writes AGENTIC_TOPOLOGY in
-// that case only.
+// repairTopologyVars ensures topology-related variables are correct on the
+// current repo, deducing topology via the canonical project.Resolve. The
+// rule is: each repo's repair fixes its own state only. No cross-repo
+// writes; when a federated-domain repo detects broken control-plane
+// state, it terminates with a pointed "run repair on the CP" error.
 //
-// Per feature #571 / task #585 the auto-repair path no longer writes
-// AGENTIC_TOPOLOGY automatically — the canonical resolver infers topology
-// from the project-linked-repo graph, so the variable is optional (kept
-// only as an explicit override). Federated control planes still need
-// AGENTIC_FRAMEWORK_VERSION set to broadcast the pinned version to domain
-// repos; that write continues to happen.
-func repairTopologyVars(w io.Writer, deps Deps, topology string) error {
-	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
-	if err != nil || projectID == "" {
+// Per-topology behaviour:
+//
+//   - single          → no topology-var writes required
+//   - federated-cp    → write AGENTIC_FRAMEWORK_VERSION to the latest
+//                       release when missing
+//   - federated-domain → no local writes; if the CP's
+//                       AGENTIC_FRAMEWORK_VERSION is missing, return a
+//                       hard-stop error pointing at the CP repo
+func repairTopologyVars(w io.Writer, deps Deps) error {
+	ctx, err := Resolve(deps)
+	if err != nil {
+		return fmt.Errorf("resolving topology: %w", err)
+	}
+	if ctx.ProjectID == "" {
 		return fmt.Errorf(ProjectVarName + " not set — cannot repair topology")
 	}
 
-	// Detect topology from linked repos — the canonical inference the
-	// resolver uses. Same graph query, same result.
-	linked, err := deps.FetchLinkedRepos(projectID)
-	if err != nil {
-		return fmt.Errorf("fetching linked repos: %w", err)
-	}
-	topo := DetectTopology(deps.RepoFullName, linked)
+	switch ctx.Topology {
+	case TopologyStringSingle:
+		// Single repo: resolver infers topology from the project graph,
+		// so no variable writes are required. Report cleanly.
+		fmt.Fprintf(w, "  %s  topology=single — no variable writes required\n", ui.StatusOK.Render("✓"))
+		return nil
 
-	// Check existing variable values.
-	fwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-	topoVal, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName)
-
-	// Explicit-override path: caller supplied --topology. Honour it and
-	// write AGENTIC_TOPOLOGY; this is the only place the variable is
-	// written automatically now.
-	if topology != "" {
-		if ownerType, otErr := deps.DetectOwnerType(deps.Owner); otErr == nil {
-			if guardErr := EnsureFederatedOwnerIsOrg(topology, deps.Owner, ownerType); guardErr != nil {
-				return guardErr
-			}
+	case TopologyStringFederatedCP:
+		fwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
+		if strings.TrimSpace(fwVer) != "" {
+			fmt.Fprintf(w, "  %s  topology=federated-cp — %s=%s\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName, fwVer)
+			return nil
 		}
-		if topoVal != topology {
-			if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName, topology); err != nil {
-				return fmt.Errorf("setting %s: %w", TopologyVarName, err)
-			}
-			if topoVal == "" {
-				fmt.Fprintf(w, "  %s  %s set to %q\n", ui.StatusOK.Render("✓"), TopologyVarName, topology)
-			} else {
-				fmt.Fprintf(w, "  %s  %s corrected from %q to %q\n", ui.StatusOK.Render("✓"), TopologyVarName, topoVal, topology)
-			}
-			topoVal = topology
-		}
-	} else {
-		// Auto-detect path: derive the canonical topology but do NOT
-		// write AGENTIC_TOPOLOGY automatically. The resolver infers
-		// from linked repos + AGENTIC_FRAMEWORK_VERSION; leaving the
-		// variable unset is correct and what #571 wants.
-		if topo == TopologySingle && (fwVer != "" || len(linked) > 1) {
-			topoVal = "federated"
-		} else if topo == TopologySingle && len(linked) == 1 && fwVer == "" {
-			// Genuinely ambiguous — caller should prompt for --topology.
-			return ErrTopologyAmbiguous
-		} else if topo == TopologySingle {
-			topoVal = "single"
-		} else {
-			topoVal = "federated"
-		}
-	}
-
-	// For federated control planes, ensure AGENTIC_FRAMEWORK_VERSION is set
-	// — that variable IS how the CP broadcasts the pinned version to domain
-	// repos, so it must remain a write path.
-	if topoVal == "federated" && fwVer == "" {
 		releases, err := deps.FetchReleases(mount.FrameworkRepo)
 		if err != nil || len(releases) == 0 {
 			return fmt.Errorf("fetching framework releases: %w", err)
@@ -275,9 +216,33 @@ func repairTopologyVars(w io.Writer, deps Deps, topology string) error {
 			return fmt.Errorf("setting %s: %w", FrameworkVersionVarName, err)
 		}
 		fmt.Fprintf(w, "  %s  %s set to %s\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName, latest)
+		return nil
+
+	case TopologyStringFederatedDomain:
+		// Domain repo fixes its own state only: delete a stray local
+		// AGENTIC_FRAMEWORK_VERSION (which must only live on the CP).
+		// If the CP's AGENTIC_FRAMEWORK_VERSION is missing, hard-stop
+		// with a pointed "run repair on the CP" message — never write
+		// cross-repo.
+		localFwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
+		if strings.TrimSpace(localFwVer) != "" {
+			if err := deps.DeleteRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName); err != nil {
+				return fmt.Errorf("deleting stray %s on domain repo: %w", FrameworkVersionVarName, err)
+			}
+			fmt.Fprintf(w, "  %s  removed stray %s (domain repos read this value from the CP)\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName)
+		}
+		if strings.TrimSpace(ctx.FrameworkVersion) != "" {
+			fmt.Fprintf(w, "  %s  topology=federated-domain — CP %s=%s\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName, ctx.FrameworkVersion)
+			return nil
+		}
+		cpName := ctx.ControlPlane.NameWithOwner
+		if cpName == "" {
+			return fmt.Errorf("%s is not set on the control plane — run 'gh agentic repair' from the control plane repo to fix it", FrameworkVersionVarName)
+		}
+		return fmt.Errorf("control plane %s is missing %s — run 'gh agentic repair' from %s to fix it", cpName, FrameworkVersionVarName, cpName)
 	}
 
-	return nil
+	return fmt.Errorf("unrecognised topology %q", ctx.Topology)
 }
 
 // repairFramework mounts the latest framework version into .ai/.

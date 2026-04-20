@@ -140,18 +140,22 @@ func Resolve(deps Deps) (*Context, error) {
 		ctx.ProjectID = strings.TrimSpace(pid)
 	}
 
-	// Resolve topology — the same canonical precedence used by
-	// ResolveTopology: AGENTIC_TOPOLOGY override first, then the linked-
-	// repos fallback. Pull the linked-repos list out so the rest of the
-	// function can populate ControlPlane / LinkedRepos without a second
-	// network round trip.
+	// Resolve topology — the canonical precedence: explicit
+	// AGENTIC_TOPOLOGY override, project-owner comparison, then the
+	// linked-repos fallback. Pull the linked-repos list and project owner
+	// out so the rest of the function can populate ControlPlane /
+	// LinkedRepos without a second network round trip.
 	var linked []LinkedRepo
 	var linkedErr error
 	if ctx.ProjectID != "" && deps.FetchLinkedRepos != nil {
 		linked, linkedErr = deps.FetchLinkedRepos(ctx.ProjectID)
 	}
+	var projectOwner string
+	if ctx.ProjectID != "" && deps.FetchProjectOwner != nil {
+		projectOwner, _ = deps.FetchProjectOwner(ctx.ProjectID)
+	}
 
-	topology, topoErr := resolveTopologyWithLinked(deps, ctx.ProjectID, linked, linkedErr)
+	topology, topoErr := resolveTopologyWithLinked(deps, ctx.ProjectID, projectOwner, linked, linkedErr)
 	if topoErr != nil {
 		return nil, topoErr
 	}
@@ -206,21 +210,36 @@ func Resolve(deps Deps) (*Context, error) {
 	return ctx, nil
 }
 
-// resolveTopologyWithLinked reuses the canonical ResolveTopology precedence
-// but accepts a pre-fetched linked-repos list so Resolve avoids a duplicate
-// network round trip. linkedErr != nil is propagated only when the topology
-// decision actually needs the list.
-func resolveTopologyWithLinked(deps Deps, projectID string, linked []LinkedRepo, linkedErr error) (string, error) {
+// resolveTopologyWithLinked resolves canonical topology from the project
+// graph. The precedence is:
+//
+//  1. Explicit AGENTIC_TOPOLOGY override ("federated" or "single").
+//  2. No project affiliation → single.
+//  3. Project owner differs from repo owner → federated-domain. Fast
+//     path for the cross-owner federation case; works regardless of
+//     linked-graph shape.
+//  4. Linked-graph inspection (project owner matches, or unknown):
+//     - current repo not in the linked list → federated-domain
+//     - current repo in the linked list with siblings (>1):
+//       local AGENTIC_FRAMEWORK_VERSION set → federated-cp
+//       local AGENTIC_FRAMEWORK_VERSION absent → federated-domain
+//     - current repo is the only linked repo:
+//       local AGENTIC_FRAMEWORK_VERSION set → federated-cp
+//       otherwise → single
+//
+// The projectOwner argument is the owner login returned by
+// FetchProjectOwner; empty means the owner could not be resolved (deleted
+// project, network failure, unwired dep) and the function relies on the
+// linked-graph rules alone.
+func resolveTopologyWithLinked(deps Deps, projectID, projectOwner string, linked []LinkedRepo, linkedErr error) (string, error) {
 	if deps.GetRepoVariable == nil {
 		return TopologyStringSingle, nil
 	}
 
-	// Precedence 1: explicit AGENTIC_TOPOLOGY wins.
+	// Precedence 1: explicit AGENTIC_TOPOLOGY override.
 	topoVal, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName)
 	switch strings.TrimSpace(topoVal) {
 	case "federated":
-		// federated-cp vs federated-domain — the presence of
-		// AGENTIC_FRAMEWORK_VERSION locally identifies the CP.
 		return resolveFederatedMode(deps), nil
 	case "single":
 		return TopologyStringSingle, nil
@@ -231,20 +250,45 @@ func resolveTopologyWithLinked(deps Deps, projectID string, linked []LinkedRepo,
 		return TopologyStringSingle, nil
 	}
 
-	// Precedence 3: inspect linked repos. Any error from the linked-repos
-	// fetch is surfaced here because without the list the decision cannot
-	// be made reliably.
+	// Precedence 3: project owner vs repo owner.
+	if projectOwner != "" && !strings.EqualFold(projectOwner, deps.Owner) {
+		return TopologyStringFederatedDomain, nil
+	}
+
+	// Precedence 4: inspect linked repos. A linked-graph fetch error blocks
+	// the CP/domain/single decision but not the cross-owner detection above.
 	if linkedErr != nil {
 		return "", linkedErr
 	}
 
-	versionVal, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-	hasVersion := strings.TrimSpace(versionVal) != ""
-
-	if len(linked) <= 1 && !hasVersion {
-		return TopologyStringSingle, nil
+	hasLocalVersion := false
+	if v, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName); strings.TrimSpace(v) != "" {
+		hasLocalVersion = true
 	}
-	return resolveFederatedMode(deps), nil
+
+	currentInLinked := false
+	for _, r := range linked {
+		if strings.EqualFold(r.NameWithOwner, deps.RepoFullName) {
+			currentInLinked = true
+			break
+		}
+	}
+
+	if !currentInLinked && len(linked) > 0 {
+		return TopologyStringFederatedDomain, nil
+	}
+
+	if len(linked) > 1 {
+		if hasLocalVersion {
+			return TopologyStringFederatedCP, nil
+		}
+		return TopologyStringFederatedDomain, nil
+	}
+
+	if hasLocalVersion {
+		return TopologyStringFederatedCP, nil
+	}
+	return TopologyStringSingle, nil
 }
 
 // resolveFederatedMode picks between federated-cp and federated-domain by
