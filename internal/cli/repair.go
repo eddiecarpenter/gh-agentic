@@ -57,9 +57,13 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			})
 
 			// Phase 2: pipeline-side checks and auto-repairs.
+			// Skip when the framework mount is out of sync — the pipeline
+			// checks run against `.ai/` and only produce noise until the
+			// user runs `gh agentic mount`.
 			pipelineDeps, pdepsErr := buildPipelineCheckDeps(deps)
 			var pipelineResult doctor.RepairResult
-			if pdepsErr == nil {
+			pipelineSkipped := projectResult.FrameworkOutOfSync
+			if pdepsErr == nil && !pipelineSkipped {
 				_ = ui.RunWithDynamicSpinner(w, "Running pipeline checks...", func(setLabel func(string)) error {
 					pipelineResult = doctor.RepairPipeline(pipelineDeps, setLabel)
 					return nil
@@ -80,18 +84,21 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			fmt.Fprintln(w, "")
 			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
 			fmt.Fprintln(w, "  "+ui.Divider(48))
-			if pdepsErr != nil {
+			switch {
+			case pipelineSkipped:
+				fmt.Fprintf(w, "  %s  Skipped — framework mount is out of sync; run 'gh agentic mount' first\n", ui.StatusWarning.Render("⚠"))
+			case pdepsErr != nil:
 				fmt.Fprintf(w, "  %s  Skipped: %v\n", ui.StatusWarning.Render("⚠"), pdepsErr)
-			} else if len(pipelineResult.Lines) == 0 && len(pipelineResult.PendingPrompts) == 0 {
+			case len(pipelineResult.Lines) == 0 && len(pipelineResult.PendingPrompts) == 0:
 				fmt.Fprintf(w, "  %s  No pipeline issues found\n", ui.StatusOK.Render("✓"))
-			} else {
+			default:
 				for _, line := range pipelineResult.Lines {
 					fmt.Fprintln(w, line)
 				}
 			}
 
 			// Phase 3: prompt for missing variables/secrets and apply them.
-			if pdepsErr == nil && len(pipelineResult.PendingPrompts) > 0 {
+			if !pipelineSkipped && pdepsErr == nil && len(pipelineResult.PendingPrompts) > 0 {
 				applied, err := promptAndApplyPending(w, pipelineDeps, pipelineResult.PendingPrompts)
 				if err != nil {
 					fmt.Fprintf(w, "\n  %s  Prompt cancelled: %v\n", ui.StatusWarning.Render("⚠"), err)
@@ -108,7 +115,7 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			// Phase 4: shadow-vars batch confirm + delete. The prompt must
 			// live outside the spinner phase so huh.NewConfirm can own the
 			// terminal. One confirmation covers the whole batch.
-			if pdepsErr == nil && pipelineResult.ShadowBatch != nil {
+			if !pipelineSkipped && pdepsErr == nil && pipelineResult.ShadowBatch != nil {
 				shadowRes := doctor.RepairShadowValues(
 					pipelineResult.ShadowBatch.Items,
 					pipelineDeps.Run,
