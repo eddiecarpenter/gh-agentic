@@ -13,11 +13,13 @@ inputs:
     required: false
     default: 'latest'
   agentic-version:
-    description: 'gh-agentic extension version to install (e.g. v1.2.3). Must match AGENTIC_FRAMEWORK_VERSION.'
-    required: true
+    description: 'gh-agentic extension version to install (e.g. v1.2.3). Must match AGENTIC_FRAMEWORK_VERSION. When empty, the extension install is skipped — use this for workflows (e.g. release notes) that do not need the framework mounted.'
+    required: false
+    default: ''
   gh-token:
-    description: 'GitHub token used to install the gh-agentic extension from a private/release context.'
-    required: true
+    description: 'GitHub token used to install the gh-agentic extension. Required when agentic-version is set.'
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -102,13 +104,14 @@ runs:
         echo "${{ runner.tool_cache }}/claude-cli/bin" >> $GITHUB_PATH
 
     - name: Install gh-agentic extension
+      if: inputs.agentic-version != ''
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.gh-token }}
         AGENTIC_VERSION: ${{ inputs.agentic-version }}
       run: |
-        if [ -z "${AGENTIC_VERSION}" ]; then
-          echo "::error::agentic-version input is empty. Pass the resolved AGENTIC_FRAMEWORK_VERSION."
+        if [ -z "${GH_TOKEN}" ]; then
+          echo "::error::gh-token input is required when agentic-version is set."
           exit 1
         fi
         echo "Installing gh-agentic extension pinned to ${AGENTIC_VERSION}..."
