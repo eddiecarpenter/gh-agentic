@@ -42,13 +42,26 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Framework version: ${VERSION}"
 
+      - name: Checkout gh-agentic tools
+        # Composite actions live in eddiecarpenter/gh-agentic. When this
+        # reusable workflow runs in a domain repo, `./.github/actions/*`
+        # paths resolve against the domain repo's workspace (not this repo),
+        # so the actions must be fetched alongside. Pinned to the same
+        # version as the framework to keep tooling and skills in lockstep.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: eddiecarpenter/gh-agentic
+          ref: ${{ steps.version.outputs.version }}
+          path: .agentic-tools
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
+
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.github/actions/install-ai-tools
+        uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
@@ -63,7 +76,7 @@ jobs:
           ls -la .ai/
 
       - name: Setup Claude Code auth
-        uses: ./.github/actions/setup-claude-auth
+        uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
