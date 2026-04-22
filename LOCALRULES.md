@@ -70,3 +70,15 @@ Do not reinvent what already exists in charging-domain. Adapt it.
 ## Tool / Skill Sync
 
 When the `gh agentic` CLI surface changes (new command, removed command, new/removed/renamed flag, changed `--raw` output shape), `skills/gh-agentic-tool.md` must be updated in the same PR. CI enforces this via `TestGhAgenticToolSkillCoversCLI` — the build fails if the skill is out of sync with the CLI.
+
+## Release Version Sync
+
+Whenever a new version of `gh-agentic` is released, the `AGENTIC_FRAMEWORK_VERSION` repo variable on `eddiecarpenter/gh-agentic` must be updated to match the new release tag. The CI pipeline pins both the mounted framework and the installed `gh-agentic` extension to this variable — if it drifts from the latest release, CI runs against a stale framework and a stale CLI.
+
+Update command:
+
+```
+gh variable set AGENTIC_FRAMEWORK_VERSION --repo eddiecarpenter/gh-agentic --body "<new-version>"
+```
+
+This applies to this repo only because `gh-agentic` is its own framework source — a circular dependency unique to the control-plane-of-itself arrangement. Other domain repos get the version from the control plane via `gh agentic mount` and do not need this step.
