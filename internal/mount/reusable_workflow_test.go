@@ -77,18 +77,82 @@ func TestReusableWorkflowHasNoCallerRelativeActionPaths(t *testing.T) {
 	}
 }
 
-// reusableWorkflowPath walks up from the test's working directory to the
-// repository root and returns the absolute path to
-// .github/workflows/agentic-pipeline-reusable.yml. Tests in
-// internal/mount/ run with CWD = internal/mount, so the walk is short.
+// TestCompositeActionsHaveNoInterCompositeUses guards against a related
+// class of bug. GitHub Actions resolves `uses: ./path` inside a composite
+// action relative to the **caller's workspace root**, not the composite's
+// own directory. When a composite references another composite by
+// `./.github/actions/...` and is consumed via nested checkout from a
+// different repo (the model in `agentic-pipeline-reusable.yml`), the path
+// does not resolve. Inline shared logic instead of composing composites.
+//
+// The v2.2.3 release hit this: `install-ai-tools` referenced
+// `./.github/actions/install-system-deps`, which then failed in every
+// domain pipeline that consumed the framework via nested checkout. The
+// fix inlined `install-system-deps` and removed the directory. This test
+// freezes that policy so no one reintroduces the pattern.
+func TestCompositeActionsHaveNoInterCompositeUses(t *testing.T) {
+	actionsDir := compositeActionsDir(t)
+	entries, err := os.ReadDir(actionsDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", actionsDir, err)
+	}
+	found := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		actionYAML := filepath.Join(actionsDir, e.Name(), "action.yml")
+		data, err := os.ReadFile(actionYAML)
+		if err != nil {
+			continue // not all directories are composite actions
+		}
+		found++
+		for i, line := range strings.Split(string(data), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "uses:") && strings.Contains(trimmed, "./.github/actions/") {
+				t.Errorf(
+					"%s line %d references another composite via ./.github/actions/... — "+
+						"GitHub resolves that path against the caller's workspace, which breaks "+
+						"when consumed via nested checkout. Inline the referenced composite's "+
+						"steps into this one instead.\n  line: %s",
+					filepath.Join(e.Name(), "action.yml"), i+1, trimmed,
+				)
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatalf("no composite actions discovered under %s — test is a no-op", actionsDir)
+	}
+}
+
+// reusableWorkflowPath returns the absolute path to the reusable pipeline
+// workflow at the repo root. Tests in internal/mount/ run with CWD =
+// internal/mount, so the walk is short.
 func reusableWorkflowPath(t *testing.T) string {
+	t.Helper()
+	return repoRelativePath(t, ".github", "workflows", "agentic-pipeline-reusable.yml")
+}
+
+// compositeActionsDir returns the absolute path to .github/actions/ at
+// the repo root.
+func compositeActionsDir(t *testing.T) string {
+	t.Helper()
+	return repoRelativePath(t, ".github", "actions")
+}
+
+// repoRelativePath walks up from the test working directory looking for a
+// path that exists relative to each ancestor, returning the absolute path
+// on the first hit. Used to locate repo-root artefacts from inside a
+// package test binary where Go sets CWD to the package directory.
+func repoRelativePath(t *testing.T, segments ...string) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
+	rel := filepath.Join(segments...)
 	for i := 0; i < 8; i++ {
-		candidate := filepath.Join(dir, ".github", "workflows", "agentic-pipeline-reusable.yml")
+		candidate := filepath.Join(dir, rel)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
@@ -98,6 +162,6 @@ func reusableWorkflowPath(t *testing.T) string {
 		}
 		dir = parent
 	}
-	t.Fatalf("could not locate .github/workflows/agentic-pipeline-reusable.yml from %s", dir)
+	t.Fatalf("could not locate %s from %s", rel, dir)
 	return ""
 }

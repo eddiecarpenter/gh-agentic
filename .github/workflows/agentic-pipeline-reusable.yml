@@ -67,12 +67,27 @@ jobs:
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Mount AI framework
+        # Mount via direct git clone rather than `gh agentic mount`. The CLI
+        # does exactly this (`git clone --depth 1 --branch <tag>`) plus a
+        # .gitignore touch-up — inlining removes a dependency on the
+        # extension being installed and usable at this point in the job, and
+        # keeps the mount step purely declarative. The extension is still
+        # installed by the preceding step for any recipes that need it.
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
+          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
-          echo "Mounting AI framework via gh agentic mount..."
-          gh agentic mount -y
-          echo "✓ Framework mounted at .ai/"
+          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
+          rm -rf .ai
+          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
+            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
+            .ai
+          # Keep .ai/ out of the domain repo's tracked tree. Idempotent —
+          # most domain repos already have the entry.
+          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
+            echo '.ai/' >> .gitignore
+          fi
+          echo "✓ Framework mounted at .ai/ (ref: $(git -C .ai describe --tags --exact-match 2>/dev/null || echo 'unknown'))"
           ls -la .ai/
 
       - name: Setup Claude Code auth
