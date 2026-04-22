@@ -1,6 +1,7 @@
 name: Install AI Tools
 description: >
-  Install system dependencies, Goose and Claude Code CLI with caching support.
+  Install system dependencies, Goose, Claude Code CLI, and the gh-agentic
+  extension with caching support.
 
 inputs:
   goose-version:
@@ -11,6 +12,12 @@ inputs:
     description: 'Claude Code CLI version to install (default: latest)'
     required: false
     default: 'latest'
+  agentic-version:
+    description: 'gh-agentic extension version to install (e.g. v1.2.3). Must match AGENTIC_FRAMEWORK_VERSION.'
+    required: true
+  gh-token:
+    description: 'GitHub token used to install the gh-agentic extension from a private/release context.'
+    required: true
 
 runs:
   using: composite
@@ -93,3 +100,17 @@ runs:
         mkdir -p ~/.local/bin
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         echo "${{ runner.tool_cache }}/claude-cli/bin" >> $GITHUB_PATH
+
+    - name: Install gh-agentic extension
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        AGENTIC_VERSION: ${{ inputs.agentic-version }}
+      run: |
+        if [ -z "${AGENTIC_VERSION}" ]; then
+          echo "::error::agentic-version input is empty. Pass the resolved AGENTIC_FRAMEWORK_VERSION."
+          exit 1
+        fi
+        echo "Installing gh-agentic extension pinned to ${AGENTIC_VERSION}..."
+        gh extension install eddiecarpenter/gh-agentic --pin "${AGENTIC_VERSION}" --force
+        gh agentic --version || true

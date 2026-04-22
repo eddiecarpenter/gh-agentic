@@ -51,8 +51,31 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Resolve framework version
+        id: version
+        env:
+          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+        run: |
+          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
+            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
+            exit 1
+          fi
+          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Install tools
         uses: ./.github/actions/install-ai-tools
+        with:
+          agentic-version: ${{ steps.version.outputs.version }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Mount AI framework
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+        run: |
+          echo "Mounting AI framework via gh agentic mount..."
+          gh agentic mount -y
+          echo "✓ Framework mounted at .ai/"
 
       - name: Setup Claude Code auth
         uses: ./.github/actions/setup-claude-auth
@@ -136,8 +159,31 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Resolve framework version
+        id: version
+        env:
+          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+        run: |
+          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
+            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
+            exit 1
+          fi
+          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Install Goose and Claude Code CLI
         uses: ./.github/actions/install-ai-tools
+        with:
+          agentic-version: ${{ steps.version.outputs.version }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Mount AI framework
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+        run: |
+          echo "Mounting AI framework via gh agentic mount..."
+          gh agentic mount -y
+          echo "✓ Framework mounted at .ai/"
 
       - name: Setup Claude Code auth
         uses: ./.github/actions/setup-claude-auth
@@ -330,8 +376,31 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Resolve framework version
+        id: version
+        env:
+          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+        run: |
+          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
+            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
+            exit 1
+          fi
+          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Install tools
         uses: ./.github/actions/install-ai-tools
+        with:
+          agentic-version: ${{ steps.version.outputs.version }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Mount AI framework
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+        run: |
+          echo "Mounting AI framework via gh agentic mount..."
+          gh agentic mount -y
+          echo "✓ Framework mounted at .ai/"
 
       - name: Setup Claude Code auth
         uses: ./.github/actions/setup-claude-auth
@@ -415,8 +484,31 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Resolve framework version
+        id: version
+        env:
+          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+        run: |
+          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
+            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
+            exit 1
+          fi
+          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Install tools
         uses: ./.github/actions/install-ai-tools
+        with:
+          agentic-version: ${{ steps.version.outputs.version }}
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Mount AI framework
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+        run: |
+          echo "Mounting AI framework via gh agentic mount..."
+          gh agentic mount -y
+          echo "✓ Framework mounted at .ai/"
 
       - name: Setup Claude Code auth
         uses: ./.github/actions/setup-claude-auth
