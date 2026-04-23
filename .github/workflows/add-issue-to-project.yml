@@ -17,6 +17,16 @@ jobs:
 
     steps:
       # -----------------------------------------------------------------------
+      # Step 0 — Mint a GitHub App installation token
+      # -----------------------------------------------------------------------
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
+        with:
+          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
+
+      # -----------------------------------------------------------------------
       # Step 1 — Check if project sync is configured
       # Exit silently if AGENTIC_PROJECT_ID is not set (graceful no-op)
       # -----------------------------------------------------------------------
@@ -38,7 +48,7 @@ jobs:
         if: steps.config.outputs.skip != 'true'
         id: add
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           ISSUE_NODE_ID="${{ github.event.issue.node_id }}"
           PROJECT_ID="${{ vars.AGENTIC_PROJECT_ID }}"
@@ -109,7 +119,7 @@ jobs:
         if: steps.config.outputs.skip != 'true' && steps.add.outputs.item_id && steps.map.outputs.skip != 'true'
         id: field
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           PROJECT_ID="${{ vars.AGENTIC_PROJECT_ID }}"
           TARGET_STATUS="${{ steps.map.outputs.status }}"
@@ -164,7 +174,7 @@ jobs:
       - name: Update project status
         if: steps.config.outputs.skip != 'true' && steps.add.outputs.item_id && steps.map.outputs.skip != 'true' && steps.field.outputs.field_id
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           PROJECT_ID="${{ vars.AGENTIC_PROJECT_ID }}"
           ITEM_ID="${{ steps.add.outputs.item_id }}"

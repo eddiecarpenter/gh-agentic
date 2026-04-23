@@ -1,15 +1,23 @@
 name: Setup Claude Code Auth
 description: >
-  Restore Claude Code credentials from secret, validate the session,
-  and rotate the secret if the credentials were refreshed.
+  Restore Claude Code credentials from secret and validate the session.
+  Credential rotation is no longer performed in-band — the GitHub App used
+  for pipeline auth deliberately does not carry secrets:write. When Claude
+  Code rotates the local credentials at runtime, the workflow logs a clear
+  warning instructing a human to refresh CLAUDE_CREDENTIALS_JSON manually.
+  See docs/github-app-setup.md ("Manual CLAUDE_CREDENTIALS_JSON refresh").
 
 inputs:
   claude-credentials-json:
     description: 'Base64-encoded Claude Code credentials JSON (CLAUDE_CREDENTIALS_JSON secret)'
     required: true
   gh-token:
-    description: 'GitHub token with secrets:write permission for credential rotation (GOOSE_AGENT_PAT)'
-    required: true
+    description: >
+      GitHub App installation token. Used for diagnostics only — this action
+      no longer writes secrets. Kept as an input for caller-API stability;
+      may be removed in a follow-up.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -19,33 +27,39 @@ runs:
       env:
         CLAUDE_CREDENTIALS_JSON: ${{ inputs.claude-credentials-json }}
       run: |
+        if [ -z "${CLAUDE_CREDENTIALS_JSON}" ]; then
+          echo "::error::CLAUDE_CREDENTIALS_JSON is empty. Set the repo secret manually:"
+          echo "  gh secret set CLAUDE_CREDENTIALS_JSON --repo <owner>/<repo> < credentials.json"
+          echo "(See docs/github-app-setup.md — Manual CLAUDE_CREDENTIALS_JSON refresh)"
+          exit 1
+        fi
         mkdir -p ~/.claude
         echo "${CLAUDE_CREDENTIALS_JSON}" | base64 -d > ~/.claude/.credentials.json
         chmod 0600 ~/.claude/.credentials.json
 
-    - name: Validate and refresh Claude Code credentials
+    - name: Validate Claude Code credentials
       shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.gh-token }}
       run: |
         if [ ! -s ~/.claude/.credentials.json ]; then
-          echo "ERROR: ~/.claude/.credentials.json is empty or missing."
-          echo "Regenerate: run the refresh-credentials skill locally, then re-run this job."
+          echo "::error::~/.claude/.credentials.json is empty or missing."
+          echo "Regenerate locally and run: gh secret set CLAUDE_CREDENTIALS_JSON ..."
           exit 1
         fi
         CREDS_BEFORE=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
         claude -p "hi" > /dev/null || {
-          echo "ERROR: Claude Code authentication failed — session may be revoked."
-          echo "Run the refresh-credentials skill locally to restore the secret."
+          echo "::error::Claude Code authentication failed — session may be revoked."
+          echo "Run the refresh-credentials skill locally to regenerate, then:"
+          echo "  gh secret set CLAUDE_CREDENTIALS_JSON --repo <owner>/<repo> < credentials.json"
           exit 1
         }
         echo "Claude Code credentials valid."
         CREDS_AFTER=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
         if [ "$CREDS_BEFORE" != "$CREDS_AFTER" ]; then
-          echo "Credentials rotated — updating CLAUDE_CREDENTIALS_JSON secret"
-          gh secret set CLAUDE_CREDENTIALS_JSON \
-            --repo "${GITHUB_REPOSITORY}" \
-            --body "$(cat ~/.claude/.credentials.json | base64 | tr -d '\n')"
+          echo "::warning::Claude Code rotated the local credentials at runtime."
+          echo "::warning::The CLAUDE_CREDENTIALS_JSON secret is now stale — refresh it manually:"
+          echo "::warning::  gh secret set CLAUDE_CREDENTIALS_JSON --repo ${GITHUB_REPOSITORY} --body \"\$(base64 -w0 < ~/.claude/.credentials.json)\""
+          echo "::warning::Subsequent runs will use the stale (still-valid) secret until the manual refresh is performed."
+          echo "::warning::See docs/github-app-setup.md — Manual CLAUDE_CREDENTIALS_JSON refresh."
         else
-          echo "Credentials unchanged — no update needed"
+          echo "Credentials unchanged — no rotation occurred this run."
         fi
