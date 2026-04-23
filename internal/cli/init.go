@@ -69,7 +69,7 @@ change membership, or --force to re-run setup from scratch.`,
 			if ierr != nil {
 				return fmt.Errorf("resolving working directory: %w", ierr)
 			}
-			if err := refuseIfFrameworkSource(initRoot, "init"); err != nil {
+			if err := refuseIfFrameworkSource(cmd, initRoot, "init"); err != nil {
 				return err
 			}
 

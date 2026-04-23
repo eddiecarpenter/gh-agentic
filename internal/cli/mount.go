@@ -72,7 +72,7 @@ Use --yes to skip the confirmation prompt when switching versions (for scripts).
 			// Refuse on the framework source (.ai is a symlink). Mount
 			// would rm -rf .ai and git-clone gh-agentic into the empty
 			// directory, destroying the committed symlink.
-			if err := refuseIfFrameworkSource(root, "mount"); err != nil {
+			if err := refuseIfFrameworkSource(cmd, root, "mount"); err != nil {
 				return err
 			}
 

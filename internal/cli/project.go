@@ -41,6 +41,25 @@ agentic project to another.
 %s detaches this repo from its agentic project without touching the project
 board or the framework mount.`,
 			b("create"), b("join"), b("switch"), b("unlink")),
+		// PersistentPreRunE covers the bare `project` command AND every
+		// subcommand — none of them apply on the framework source, so
+		// the guard belongs here rather than being duplicated in each
+		// subcommand's RunE.
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			root, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("resolving working directory: %w", err)
+			}
+			// Build the refusal command name: "project" when invoked
+			// bare, "project <sub>" when a subcommand fired it (e.g.
+			// "project create"). cmd.Name() is the leaf name so we
+			// only need to prepend "project" for subcommands.
+			name := "project"
+			if cmd.Name() != "project" {
+				name = "project " + cmd.Name()
+			}
+			return refuseIfFrameworkSource(cmd, root, name)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -125,7 +144,7 @@ The framework version defaults to the latest release; use --version to pin one.`
 			if rerr != nil {
 				return fmt.Errorf("resolving working directory: %w", rerr)
 			}
-			if err := refuseIfFrameworkSource(root, "project create"); err != nil {
+			if err := refuseIfFrameworkSource(cmd, root, "project create"); err != nil {
 				return err
 			}
 
@@ -254,7 +273,7 @@ project name is matched case-insensitively; quote names that contain spaces.`,
 			if rerr != nil {
 				return fmt.Errorf("resolving working directory: %w", rerr)
 			}
-			if err := refuseIfFrameworkSource(root, "project join"); err != nil {
+			if err := refuseIfFrameworkSource(cmd, root, "project join"); err != nil {
 				return err
 			}
 
@@ -419,7 +438,7 @@ Use --yes to skip the confirmation prompt in scripts.`,
 			if rerr != nil {
 				return fmt.Errorf("resolving working directory: %w", rerr)
 			}
-			if err := refuseIfFrameworkSource(root, "project unlink"); err != nil {
+			if err := refuseIfFrameworkSource(cmd, root, "project unlink"); err != nil {
 				return err
 			}
 
@@ -474,7 +493,7 @@ To change the framework version for the whole federation, use
 			if rerr != nil {
 				return fmt.Errorf("resolving working directory: %w", rerr)
 			}
-			if err := refuseIfFrameworkSource(root, "project switch"); err != nil {
+			if err := refuseIfFrameworkSource(cmd, root, "project switch"); err != nil {
 				return err
 			}
 

@@ -14,7 +14,7 @@ import (
 func TestRefuseIfFrameworkSource(t *testing.T) {
 	t.Run("not a framework source — returns nil", func(t *testing.T) {
 		root := t.TempDir()
-		if err := refuseIfFrameworkSource(root, "mount"); err != nil {
+		if err := refuseIfFrameworkSource(nil, root, "mount"); err != nil {
 			t.Fatalf("expected nil, got: %v", err)
 		}
 	})
@@ -24,7 +24,7 @@ func TestRefuseIfFrameworkSource(t *testing.T) {
 		if err := os.Symlink(".", filepath.Join(root, ".ai")); err != nil {
 			t.Skipf("platform does not support symlinks in tempdir: %v", err)
 		}
-		err := refuseIfFrameworkSource(root, "mount")
+		err := refuseIfFrameworkSource(nil, root, "mount")
 		if err == nil {
 			t.Fatal("expected refusal error, got nil")
 		}

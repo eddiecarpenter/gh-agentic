@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 
+	"github.com/spf13/cobra"
+
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 )
 
@@ -18,9 +20,18 @@ import (
 // guarded command. It states what was detected, why the command cannot
 // run, and which commands ARE supported on the framework source, so the
 // user is not left guessing.
-func refuseIfFrameworkSource(root, commandName string) error {
+//
+// When cmd is non-nil, the helper sets SilenceUsage on it so cobra does
+// not dump the command's Help block before the refusal message —
+// that would bury the actual reason the command was refused under 30
+// lines of usage text. The flag is set only on refusal; normal argument
+// errors still get the usage dump.
+func refuseIfFrameworkSource(cmd *cobra.Command, root, commandName string) error {
 	if !project.IsFrameworkSource(root) {
 		return nil
+	}
+	if cmd != nil {
+		cmd.SilenceUsage = true
 	}
 	return fmt.Errorf(
 		"command refused: .ai is a symlink — this repo is the gh-agentic framework source, not a consumer\n"+

@@ -49,7 +49,7 @@ Use --list to browse available versions before choosing one.`,
 			if err != nil {
 				return fmt.Errorf("resolving working directory: %w", err)
 			}
-			if err := refuseIfFrameworkSource(root, "upgrade"); err != nil {
+			if err := refuseIfFrameworkSource(cmd, root, "upgrade"); err != nil {
 				return err
 			}
 
