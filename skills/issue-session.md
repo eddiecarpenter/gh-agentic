@@ -1,8 +1,8 @@
 ---
 name: issue-session
-description: Handles a GitHub Issue assigned to the agent — routes by label to either fix a bug on a new branch or answer a question as a comment, and exits cleanly so the workflow can open a PR if code changed. Use when GitHub Actions triggers this session automatically on an issue being assigned to the agent user — never run interactively.
+description: Handles a GitHub Issue labelled `assigned-to-agent` — routes by additional label to either fix a bug on a new branch or answer a question as a comment, and exits cleanly so the workflow can open a PR if code changed. Use when GitHub Actions triggers this session automatically on the `assigned-to-agent` label being applied — never run interactively.
 category: Session
-triggers: "automation: issue-assigned"
+triggers: "automation: issue-labelled-assigned-to-agent"
 loads:
   - session-init
   - gh-agentic-tool
@@ -16,14 +16,14 @@ exit-hands-to: "automation: github-actions opens PR if code changed | human: rev
 
 ## ⛔ Automation-Only — Do Not Execute Interactively
 
-This session is triggered exclusively by GitHub Actions when a GitHub Issue is assigned
-to the agent user. It must never be run manually by an agent in an interactive session.
+This session is triggered exclusively by GitHub Actions when an issue is labelled
+`assigned-to-agent`. It must never be run manually by an agent in an interactive session.
 
 If you are reading this skill in an interactive session, stop immediately and print:
 
 ```
 REFUSED: Issue Session is automation-only.
-It runs automatically when a GitHub Issue is assigned to the agent user.
+It runs automatically when an issue is labelled `assigned-to-agent`.
 Do not execute this session interactively.
 ```
 
@@ -38,8 +38,10 @@ Routes by label: fixes bugs or answers questions.
 
 ## When it Runs
 
-Triggered automatically by GitHub Actions when a GitHub Issue is assigned to
-the agent user (e.g. `goose-agent`).
+Triggered automatically by GitHub Actions when an issue is labelled
+`assigned-to-agent`. (Previously triggered by issue assignment to the
+`goose-agent` user — that mechanism was retired in Feature #622 because
+GitHub Apps cannot be issue assignees.)
 
 ## What the Agent Does
 

@@ -33,7 +33,7 @@ name: Agentic Pipeline
 
 on:
   issues:
-    types: [labeled, assigned]
+    types: [labeled]
   pull_request:
     types: [closed]
     branches:
@@ -556,17 +556,14 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Stage 4c — Issue Session
-  # Trigger: issue assigned to the agent user
-  # NOTE: this trigger condition is migrated to a label-based trigger in
-  # task #630 — kept as-is here so the App-token swap and the trigger
-  # change land as separate, atomic commits.
+  # Trigger: issue labelled `assigned-to-agent`
   # ---------------------------------------------------------------------------
   issue-session:
     name: Issue Session (Stage 4c)
     if: |
       github.event_name == 'issues' &&
-      github.event.action == 'assigned' &&
-      github.event.assignee.login == vars.AGENT_USER
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'assigned-to-agent'
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
       contents: write
