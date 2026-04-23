@@ -11,11 +11,14 @@ name: Agentic Pipeline
 #      forward the event context (and any workflow_dispatch inputs) via
 #      `workflow_call`.
 #
-# Job bodies use the domain-friendly setup pattern unconditionally:
-# gh-agentic is nested-checked-out into .agentic-tools/ so composite
-# actions resolve, and the framework is mounted via direct git clone into
-# .ai/. On the framework repo itself these steps are redundant but
-# functional — a self-checkout and self-clone, cheap at CI timescales.
+# Authentication: every job mints a short-lived GitHub App installation
+# token via `actions/create-github-app-token`. The App must be installed on
+# any repo this workflow runs against (and on `eddiecarpenter/gh-agentic`,
+# whose submodule is fetched during checkout). See `docs/github-app-setup.md`.
+#
+# Framework mount: `.ai/` and `.agentic-tools/` are tracked as git
+# submodules (since PR #620). Checkout steps use `submodules: recursive`
+# to populate them — no separate clone or `Mount AI framework` step.
 #
 # `workflow_dispatch` inputs (pr_number, branch_name) reach this workflow
 # two ways: directly from a dispatch event on gh-agentic (via
@@ -60,7 +63,9 @@ on:
         type: string
         default: ''
     secrets:
-      GOOSE_AGENT_PAT:
+      AGENTIC_APP_ID:
+        required: true
+      AGENTIC_APP_PRIVATE_KEY:
         required: true
       CLAUDE_CREDENTIALS_JSON:
         required: true
@@ -84,12 +89,20 @@ jobs:
       issues: write
 
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
+        with:
+          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
+
       - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Resolve framework version
         id: version
@@ -103,14 +116,6 @@ jobs:
           VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Checkout gh-agentic tools
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: eddiecarpenter/gh-agentic
-          ref: ${{ steps.version.outputs.version }}
-          path: .agentic-tools
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
-
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
@@ -120,34 +125,13 @@ jobs:
         uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Mount AI framework
-        env:
-          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
-          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
-          rm -rf .ai
-          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
-            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
-            .ai
-          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
-            echo '.ai/' >> .gitignore
-          fi
-          # Recipes are consumed from .ai/.goose/recipes/ — no separate copy.
-          echo "✓ Framework mounted at .ai/ (ref: $(git -C .ai describe --tags --exact-match 2>/dev/null || echo 'unknown'))"
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
         uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Configure environment
-        run: |
-          git config user.name "${{ vars.AGENT_USER }}"
-          git config user.email "${{ vars.AGENT_USER }}@users.noreply.github.com"
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Goose
         run: |
@@ -169,7 +153,7 @@ jobs:
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       # Recipe never pushes — per RULEBOOK, "the workflow pushes after the
       # recipe exits cleanly". The recipe creates `feature/<N>-*` locally
@@ -180,7 +164,7 @@ jobs:
         id: push
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           BRANCH=$(git branch --list "feature/${ISSUE}-*" --format='%(refname:short)' | head -1)
@@ -201,13 +185,12 @@ jobs:
           echo "✓ Pushed ${BRANCH} to origin."
 
       # The recipe attempts the in-design → in-development swap itself, but
-      # the agent's token can be denied that transition (FORBIDDEN on
-      # AddLabelsToLabelable when goose-agent lacks write on the repo).
-      # Retry with the workflow's token — idempotent.
+      # the agent's token can be denied that transition. Retry with the
+      # workflow's token — idempotent.
       - name: Swap in-design → in-development
         if: success() && steps.push.outputs.name != ''
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           LABELS=$(gh issue view "${ISSUE}" --json labels --jq '[.labels[].name] | join(",")')
@@ -225,7 +208,7 @@ jobs:
       - name: Set project status to 'In Development'
         if: success() && steps.push.outputs.name != ''
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
           ISSUE: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
@@ -301,10 +284,17 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
+        with:
+          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
+
       - name: Resolve feature branch
         id: branch
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ISSUE: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
         run: |
@@ -325,7 +315,8 @@ jobs:
         with:
           ref: ${{ steps.branch.outputs.name }}
           fetch-depth: 0
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Resolve framework version
         id: version
@@ -339,14 +330,6 @@ jobs:
           VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Checkout gh-agentic tools
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: eddiecarpenter/gh-agentic
-          ref: ${{ steps.version.outputs.version }}
-          path: .agentic-tools
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
-
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
@@ -356,33 +339,13 @@ jobs:
         uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Mount AI framework
-        env:
-          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
-          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
-          rm -rf .ai
-          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
-            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
-            .ai
-          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
-            echo '.ai/' >> .gitignore
-          fi
-          echo "✓ Framework mounted at .ai/"
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
         uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Configure environment
-        run: |
-          git config user.name "${{ vars.AGENT_USER }}"
-          git config user.email "${{ vars.AGENT_USER }}@users.noreply.github.com"
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Rebase feature branch onto main
         run: |
@@ -428,18 +391,18 @@ jobs:
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Push branch
         if: success()
         run: git push origin ${{ steps.branch.outputs.name }}
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Open PR
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
@@ -458,7 +421,7 @@ jobs:
       - name: Apply in-review label and set project status
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
         run: |
           COMMITS=$(git rev-list --count origin/main..HEAD)
@@ -495,7 +458,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || (
         github.event_name == 'pull_request_review' &&
-        github.event.review.user.login != vars.AGENT_USER &&
+        github.event.review.user.type != 'Bot' &&
         startsWith(github.event.pull_request.head.ref, 'feature/') &&
         (github.event.review.state == 'commented' || github.event.review.state == 'changes_requested')
       )
@@ -508,12 +471,20 @@ jobs:
       cancel-in-progress: false
 
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
+        with:
+          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
+
       - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
           fetch-depth: 0
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Resolve framework version
         id: version
@@ -527,14 +498,6 @@ jobs:
           VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Checkout gh-agentic tools
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: eddiecarpenter/gh-agentic
-          ref: ${{ steps.version.outputs.version }}
-          path: .agentic-tools
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
-
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
@@ -544,32 +507,13 @@ jobs:
         uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Mount AI framework
-        env:
-          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
-          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
-          rm -rf .ai
-          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
-            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
-            .ai
-          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
-            echo '.ai/' >> .gitignore
-          fi
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
         uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Configure environment
-        run: |
-          git config user.name "${{ vars.AGENT_USER }}"
-          git config user.email "${{ vars.AGENT_USER }}@users.noreply.github.com"
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Goose
         run: |
@@ -588,7 +532,7 @@ jobs:
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           goose run \
             --recipe .ai/.goose/recipes/pr-review-session.yaml \
@@ -599,7 +543,7 @@ jobs:
       - name: Push fixes
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
         run: |
           LOCAL=$(git rev-parse HEAD)
@@ -613,6 +557,9 @@ jobs:
   # ---------------------------------------------------------------------------
   # Stage 4c — Issue Session
   # Trigger: issue assigned to the agent user
+  # NOTE: this trigger condition is migrated to a label-based trigger in
+  # task #630 — kept as-is here so the App-token swap and the trigger
+  # change land as separate, atomic commits.
   # ---------------------------------------------------------------------------
   issue-session:
     name: Issue Session (Stage 4c)
@@ -630,12 +577,20 @@ jobs:
       cancel-in-progress: false
 
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
+        with:
+          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
+
       - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Resolve framework version
         id: version
@@ -649,14 +604,6 @@ jobs:
           VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Checkout gh-agentic tools
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: eddiecarpenter/gh-agentic
-          ref: ${{ steps.version.outputs.version }}
-          path: .agentic-tools
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
-
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
@@ -666,32 +613,13 @@ jobs:
         uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Mount AI framework
-        env:
-          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
-          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
-          rm -rf .ai
-          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
-            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
-            .ai
-          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
-            echo '.ai/' >> .gitignore
-          fi
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
         uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Configure environment
-        run: |
-          git config user.name "${{ vars.AGENT_USER }}"
-          git config user.email "${{ vars.AGENT_USER }}@users.noreply.github.com"
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Goose
         run: |
@@ -713,12 +641,12 @@ jobs:
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Push fix branch
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           BRANCH=$(git branch --show-current)
           if [[ "${BRANCH}" == fix/issue-* ]]; then
@@ -730,7 +658,7 @@ jobs:
       - name: Open PR
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           BRANCH=$(git branch --show-current)
           if [[ "${BRANCH}" == fix/issue-* ]]; then
@@ -759,6 +687,13 @@ jobs:
       issues: write
 
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
+        with:
+          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
+
       - name: Extract feature issue number
         id: feature
         env:
@@ -770,7 +705,7 @@ jobs:
 
       - name: Apply done label, set project status, and close feature issue
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
@@ -814,7 +749,7 @@ jobs:
       - name: Parse parent requirement
         id: parent
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
@@ -838,7 +773,7 @@ jobs:
 
       - name: Auto-close parent requirement if all sub-issues complete
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
         run: |
           PARENT="${{ steps.parent.outputs.requirement_number }}"
@@ -880,7 +815,7 @@ jobs:
 
       - name: Delete feature branch
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
           gh api repos/${{ github.repository }}/git/refs/heads/${HEAD_REF} --method DELETE
