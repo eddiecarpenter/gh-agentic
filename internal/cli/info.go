@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -47,6 +49,13 @@ type infoData struct {
 	// on the source; the current checkout's git description is what
 	// matters, and the display should say so.
 	frameworkSource bool
+
+	// frameworkRef is the git ref of the framework checkout when
+	// frameworkSource is true. Populated with the branch name (e.g.
+	// "main", "feature/619-collapse-workflows"), or the exact tag when
+	// HEAD is tagged, or a short SHA for a detached checkout. Empty
+	// outside framework-source mode.
+	frameworkRef string
 }
 
 // newInfoCmd constructs the top-level `gh agentic info` command.
@@ -120,6 +129,14 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 
 	data.repoLabel = deps.Owner + "/" + deps.RepoName
 	data.frameworkSource = project.IsFrameworkSource(deps.Root)
+	if data.frameworkSource {
+		// On the framework source the "version" we report is the
+		// current git ref — branch name, tag, or short SHA. More
+		// useful than a generic label, and tells the user at a glance
+		// whether they are on main, a feature branch, or a detached
+		// head.
+		data.frameworkRef = currentGitRef(deps.Root)
+	}
 
 	// Single canonical read — no direct AGENTIC_* access in this file.
 	ctx, err := project.Resolve(deps)
@@ -198,6 +215,44 @@ func localFrameworkVersion(root string) string {
 	return ""
 }
 
+// currentGitRef returns a human-readable description of the repo's
+// current HEAD — used by the info display in framework-source mode.
+// Resolution order matches what a developer would want to see first:
+//
+//  1. If HEAD is on a named branch, return the branch name. This is
+//     the everyday case — "main", "feature/619-collapse-workflows".
+//  2. If HEAD is at a tag exactly, return the tag. Useful when
+//     developing against a tagged release without checking out a
+//     branch.
+//  3. Otherwise return the short SHA (detached HEAD, rebase in
+//     progress, etc.).
+//
+// Returns "" only if git is unavailable or the repo is in an
+// unusable state — the caller renders a muted "unknown ref" in that
+// case.
+func currentGitRef(root string) string {
+	// Branch name first — `git symbolic-ref --short HEAD` is precise
+	// and fails cleanly on detached HEAD.
+	if out, err := exec.Command("git", "-C", root, "symbolic-ref", "--short", "HEAD").Output(); err == nil {
+		if ref := strings.TrimSpace(string(out)); ref != "" {
+			return ref
+		}
+	}
+	// Exact tag — useful for developers checked out at a release point.
+	if out, err := exec.Command("git", "-C", root, "describe", "--tags", "--exact-match").Output(); err == nil {
+		if ref := strings.TrimSpace(string(out)); ref != "" {
+			return ref
+		}
+	}
+	// Fallback: short SHA.
+	if out, err := exec.Command("git", "-C", root, "rev-parse", "--short", "HEAD").Output(); err == nil {
+		if ref := strings.TrimSpace(string(out)); ref != "" {
+			return "detached@" + ref
+		}
+	}
+	return ""
+}
+
 // printInfo renders the collected data to w.
 func printInfo(w io.Writer, data *infoData) {
 	fmt.Fprintln(w, "")
@@ -244,18 +299,17 @@ func printInfo(w io.Writer, data *infoData) {
 	fmt.Fprintln(w, "  "+ui.Divider(48))
 
 	// On the framework source repo itself, there is no "mounted version"
-	// to speak of — the framework IS this checkout. Report it honestly
-	// as the current checkout rather than as a tag masquerading as a
-	// mounted version.
+	// to speak of — the framework IS this checkout. Report the current
+	// git ref (branch, tag, or short SHA) so the user can see at a
+	// glance whether they are on main, a feature branch, or a
+	// detached HEAD.
 	if data.frameworkSource {
-		label := "Framework source:"
-		value := data.localVersion
+		value := data.frameworkRef
 		if value == "" {
-			value = ui.Muted.Render("current checkout")
-		} else {
-			value = value + "  " + ui.Muted.Render("(this repo)")
+			value = ui.Muted.Render("unknown ref")
 		}
-		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, label, value)
+		value = value + "  " + ui.Muted.Render("(this repo)")
+		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework source:", value)
 	} else if data.localVersion != "" {
 		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework (local):", data.localVersion)
 	} else {
