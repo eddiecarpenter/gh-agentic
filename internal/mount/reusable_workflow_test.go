@@ -14,15 +14,23 @@ import (
 // against the domain repo's workspace — which does not contain the
 // actions — and every domain pipeline failed at the "Install tools" step.
 //
-// The fix is to nested-checkout eddiecarpenter/gh-agentic into
-// `.agentic-tools/` and reference the actions via that path. This test
-// enforces the rule statically so the regression cannot recur silently.
+// The fix is to populate `.agentic-tools/` with eddiecarpenter/gh-agentic
+// and reference the actions via that path. Two mechanisms populate it:
+//
+//  1. Legacy (pre-#622): an explicit `actions/checkout` step with
+//     `repository: eddiecarpenter/gh-agentic` + `path: .agentic-tools`.
+//  2. Current (post-#622): `.agentic-tools/` is tracked as a git
+//     submodule pointing at gh-agentic, and the primary checkout step
+//     uses `submodules: recursive` to populate it.
+//
+// This test accepts either mechanism — it only fails if `./.agentic-tools/...`
+// is referenced AND neither population mechanism is present.
 //
 // If this test fails, the reusable workflow either:
 //   - re-introduced a `./.github/actions/...` path (must use
 //     `./.agentic-tools/.github/actions/...` instead), or
-//   - dropped the nested checkout of eddiecarpenter/gh-agentic that
-//     populates `.agentic-tools/` before the first action `uses`.
+//   - dropped both the nested checkout of eddiecarpenter/gh-agentic
+//     and the `submodules: recursive` option on the primary checkout.
 func TestReusableWorkflowHasNoCallerRelativeActionPaths(t *testing.T) {
 	path := reusableWorkflowPath(t)
 	data, err := os.ReadFile(path)
@@ -49,19 +57,25 @@ func TestReusableWorkflowHasNoCallerRelativeActionPaths(t *testing.T) {
 		}
 	}
 
-	// The fix requires a nested checkout of gh-agentic at `.agentic-tools/`.
-	// If present, the file must show both the nested checkout step and at
-	// least one `uses: ./.agentic-tools/...` consumer. Guard both halves so
-	// that a future edit cannot silently drop the checkout and leave a
-	// dangling relative path.
+	// `.agentic-tools/` must be populated by one of two mechanisms before
+	// any `./.agentic-tools/...` consumer runs:
+	//   1. Legacy: an explicit nested checkout step with
+	//      `repository: eddiecarpenter/gh-agentic` + `path: .agentic-tools`.
+	//   2. Current: a primary checkout with `submodules: recursive`, which
+	//      populates the `.agentic-tools/` submodule (added in PR #620,
+	//      consolidated by Feature #622).
+	// Either is sufficient. Guard the consumer side so a future edit
+	// cannot drop both mechanisms and leave a dangling relative path.
 	hasNestedCheckout := strings.Contains(content, "repository: eddiecarpenter/gh-agentic") &&
 		strings.Contains(content, "path: .agentic-tools")
+	hasSubmoduleCheckout := strings.Contains(content, "submodules: recursive")
 	hasNestedConsumer := strings.Contains(content, "./.agentic-tools/.github/actions/")
 
-	if hasNestedConsumer && !hasNestedCheckout {
+	if hasNestedConsumer && !(hasNestedCheckout || hasSubmoduleCheckout) {
 		t.Errorf(
-			"%s references ./.agentic-tools/... actions but does not nested-checkout "+
-				"eddiecarpenter/gh-agentic into path: .agentic-tools. Add the checkout step "+
+			"%s references ./.agentic-tools/... actions but neither (a) nested-checkouts "+
+				"eddiecarpenter/gh-agentic into path: .agentic-tools nor (b) uses "+
+				"submodules: recursive on the primary checkout. Add one mechanism "+
 				"before the first consumer.",
 			filepath.Base(path),
 		)
