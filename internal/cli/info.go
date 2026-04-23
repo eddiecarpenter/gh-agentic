@@ -40,6 +40,13 @@ type infoData struct {
 	noProject   bool
 	syncStatus  string // inline suffix for remote row
 	latestStatus string // inline suffix for latest row
+
+	// frameworkSource is true when this repo IS the gh-agentic framework
+	// source itself (.ai is a symlink). Changes how localVersion is
+	// labelled — a tag-versioned "mount" is not a meaningful concept
+	// on the source; the current checkout's git description is what
+	// matters, and the display should say so.
+	frameworkSource bool
 }
 
 // newInfoCmd constructs the top-level `gh agentic info` command.
@@ -112,6 +119,7 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 	}
 
 	data.repoLabel = deps.Owner + "/" + deps.RepoName
+	data.frameworkSource = project.IsFrameworkSource(deps.Root)
 
 	// Single canonical read — no direct AGENTIC_* access in this file.
 	ctx, err := project.Resolve(deps)
@@ -235,7 +243,20 @@ func printInfo(w io.Writer, data *infoData) {
 	fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Framework"))
 	fmt.Fprintln(w, "  "+ui.Divider(48))
 
-	if data.localVersion != "" {
+	// On the framework source repo itself, there is no "mounted version"
+	// to speak of — the framework IS this checkout. Report it honestly
+	// as the current checkout rather than as a tag masquerading as a
+	// mounted version.
+	if data.frameworkSource {
+		label := "Framework source:"
+		value := data.localVersion
+		if value == "" {
+			value = ui.Muted.Render("current checkout")
+		} else {
+			value = value + "  " + ui.Muted.Render("(this repo)")
+		}
+		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, label, value)
+	} else if data.localVersion != "" {
 		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework (local):", data.localVersion)
 	} else {
 		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework (local):", ui.Muted.Render("not mounted"))

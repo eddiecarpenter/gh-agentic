@@ -1,13 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
 jobs:
   release:
-    uses: eddiecarpenter/gh-agentic/.github/workflows/release-reusable.yml@{{.Version}}
+    uses: eddiecarpenter/gh-agentic/.github/workflows/release.yml@{{.Version}}
     secrets: inherit
     permissions:
       contents: write

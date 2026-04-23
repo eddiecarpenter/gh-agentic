@@ -200,8 +200,11 @@ func TestWorkflowTemplate_ContainsVersion(t *testing.T) {
 	if !strings.Contains(content, "@v2.1.0") {
 		t.Errorf("workflow should reference @v2.1.0, got: %s", content)
 	}
-	if !strings.Contains(content, "agentic-pipeline-reusable.yml") {
-		t.Error("workflow should reference reusable workflow")
+	if !strings.Contains(content, "agentic-pipeline.yml") {
+		t.Error("workflow should reference pipeline workflow")
+	}
+	if strings.Contains(content, "agentic-pipeline-reusable.yml") {
+		t.Error("workflow must not reference the legacy -reusable filename (collapsed in v2.3.0)")
 	}
 }
 

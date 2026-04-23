@@ -6,11 +6,33 @@ import (
 	"testing"
 )
 
-func TestWorkflowTemplate_ReferencesReusableWorkflow(t *testing.T) {
+func TestWorkflowTemplate_ReferencesPipelineWorkflow(t *testing.T) {
 	content := workflowTemplate("v2.0.0")
 
-	if !strings.Contains(content, "agentic-pipeline-reusable.yml@v2.0.0") {
-		t.Errorf("workflow should reference reusable workflow with version, got:\n%s", content)
+	if !strings.Contains(content, "agentic-pipeline.yml@v2.0.0") {
+		t.Errorf("workflow should reference pipeline workflow with version, got:\n%s", content)
+	}
+	// Guard against regression to the pre-v2.3.0 filename.
+	if strings.Contains(content, "agentic-pipeline-reusable.yml") {
+		t.Errorf("workflow must not reference the legacy -reusable filename (collapsed in v2.3.0), got:\n%s", content)
+	}
+}
+
+func TestWorkflowTemplate_ForwardsDispatchInputs(t *testing.T) {
+	content := workflowTemplate("v2.0.0")
+
+	// workflow_dispatch inputs must be forwarded to the reusable via
+	// `with:` — without that, the pr-review-session branch of the callee
+	// sees empty strings. See feature #619 addendum.
+	required := []string{
+		"with:",
+		"pr_number: ${{ inputs.pr_number || '' }}",
+		"branch_name: ${{ inputs.branch_name || '' }}",
+	}
+	for _, f := range required {
+		if !strings.Contains(content, f) {
+			t.Errorf("workflow must forward dispatch inputs via with: — missing %q in:\n%s", f, content)
+		}
 	}
 }
 
@@ -34,11 +56,16 @@ func TestWorkflowTemplate_HasRequiredFields(t *testing.T) {
 	}
 }
 
-func TestReleaseWorkflowTemplate_ReferencesReusableWorkflow(t *testing.T) {
+func TestReleaseWorkflowTemplate_ReferencesPipelineWorkflow(t *testing.T) {
 	content := releaseWorkflowTemplate("v2.0.0")
 
-	if !strings.Contains(content, "release-reusable.yml@v2.0.0") {
-		t.Errorf("release workflow should reference reusable workflow with version, got:\n%s", content)
+	if !strings.Contains(content, "release.yml@v2.0.0") {
+		t.Errorf("release workflow should reference the consolidated release.yml with version, got:\n%s", content)
+	}
+	// Guard against the dangling legacy reference we shipped for several
+	// releases without a corresponding file ever existing.
+	if strings.Contains(content, "release-reusable.yml") {
+		t.Errorf("release workflow must not reference release-reusable.yml — that file has never existed in gh-agentic; got:\n%s", content)
 	}
 }
 
@@ -47,8 +74,10 @@ func TestReleaseWorkflowTemplate_HasRequiredFields(t *testing.T) {
 
 	required := []string{
 		"name: Release",
-		"push:",
-		"tags:",
+		// Consolidated release workflow is triggered by `release: published`,
+		// not by tag push. Release creation is each project's own concern.
+		"release:",
+		"types: [published]",
 		"secrets: inherit",
 	}
 

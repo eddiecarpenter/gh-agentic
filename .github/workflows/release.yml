@@ -1,22 +1,30 @@
 name: Release Notes
 
-# Triggered when any GitHub release is published — by GoReleaser, by the
-# local publish-release workflow, or by any other means.
+# Generates AI release notes from git history and updates the release body.
+# Fires when a GitHub release is published — either in the gh-agentic
+# framework repo itself (direct trigger) or in a domain repo via a thin
+# wrapper that calls this workflow with `uses:`.
 #
-# This workflow generates AI release notes from git history and updates
-# the release body. It does not create releases or build artefacts.
+# Release CREATION is not handled here — that is each project's own
+# concern (GoReleaser, npm publish, cargo publish, etc.). This workflow
+# only augments the release body after it already exists.
 #
-# How the release is created is entirely the local project's concern:
-#   - GoReleaser projects: GoReleaser creates the release on tag push
-#   - Framework/docs repos: publish-release.yml creates a stub release on tag push
-#   - Any other tool: works the same way
-#
-# In all cases, when the release is published this workflow fires and
-# replaces the release body with AI-generated notes.
+# Mounts the framework at .ai/ the same way the pipeline workflow does:
+# nested-checkout of gh-agentic into .agentic-tools/ (so composite actions
+# resolve) and direct git clone into .ai/ (no dependency on the gh-agentic
+# extension being callable). On the framework repo itself, .ai is a
+# committed symlink to . — the CI workspace step replaces it with a real
+# clone for the duration of the job.
 
 on:
   release:
     types: [published]
+  workflow_call:
+    secrets:
+      GOOSE_AGENT_PAT:
+        required: true
+      CLAUDE_CREDENTIALS_JSON:
+        required: true
 
 jobs:
   release-notes:
@@ -26,10 +34,37 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
+      - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0  # full history required to find previous tag and commits
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Resolve framework version
+        id: version
+        env:
+          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # Domain repos pin via AGENTIC_FRAMEWORK_VERSION. The framework
+          # repo triggering on its own release: published has no such
+          # variable — the release tag that just fired IS the version.
+          if [ -n "${AGENTIC_FRAMEWORK_VERSION}" ]; then
+            VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
+          elif [ -n "${RELEASE_TAG}" ]; then
+            VERSION="${RELEASE_TAG}"
+          else
+            echo "::error::Neither AGENTIC_FRAMEWORK_VERSION nor release tag is set — cannot resolve framework version."
+            exit 1
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Checkout gh-agentic tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: eddiecarpenter/gh-agentic
+          ref: ${{ steps.version.outputs.version }}
+          path: .agentic-tools
           token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Setup Node.js
@@ -37,11 +72,28 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      - name: Install AI tools
-        uses: ./.github/actions/install-ai-tools
+      - name: Install tools
+        uses: ./.agentic-tools/.github/actions/install-ai-tools
+        with:
+          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Mount AI framework
+        env:
+          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
+          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+        run: |
+          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
+          rm -rf .ai
+          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
+            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
+            .ai
+          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
+            echo '.ai/' >> .gitignore
+          fi
+          echo "✓ Framework mounted at .ai/ (ref: $(git -C .ai describe --tags --exact-match 2>/dev/null || echo 'unknown'))"
 
       - name: Setup Claude Code auth
-        uses: ./.github/actions/setup-claude-auth
+        uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
@@ -62,11 +114,11 @@ jobs:
       - name: Run release recipe
         run: |
           goose run \
-            --recipe .goose/recipes/release.yaml \
+            --recipe .ai/.goose/recipes/release.yaml \
             --params tag=${{ github.event.release.tag_name }} \
             --params repo=${{ github.repository }}
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
           GOOSE_PROVIDER: ${{ vars.GOOSE_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto

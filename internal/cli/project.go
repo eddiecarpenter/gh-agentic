@@ -118,6 +118,17 @@ The framework version defaults to the latest release; use --version to pin one.`
 				return cmd.Help()
 			}
 
+			// Refuse on the framework source. `project create` would
+			// create a new GitHub Project and link it to gh-agentic,
+			// corrupting the framework's own project membership.
+			root, rerr := os.Getwd()
+			if rerr != nil {
+				return fmt.Errorf("resolving working directory: %w", rerr)
+			}
+			if err := refuseIfFrameworkSource(root, "project create"); err != nil {
+				return err
+			}
+
 			deps, err := resolveProjectDeps()
 			if err != nil {
 				return err
@@ -235,6 +246,16 @@ project name is matched case-insensitively; quote names that contain spaces.`,
 			// No flags and no args — show help.
 			if !list && !interactive && len(args) == 0 {
 				return cmd.Help()
+			}
+
+			// Refuse on the framework source. Joining another project
+			// would overwrite the framework's own AGENTIC_PROJECT_ID.
+			root, rerr := os.Getwd()
+			if rerr != nil {
+				return fmt.Errorf("resolving working directory: %w", rerr)
+			}
+			if err := refuseIfFrameworkSource(root, "project join"); err != nil {
+				return err
 			}
 
 			deps, err := resolveProjectDeps()
@@ -391,6 +412,17 @@ Use --yes to skip the confirmation prompt in scripts.`,
   # Skip confirmation (for scripts)
   gh agentic project unlink --yes`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Refuse on the framework source. Unlinking would delete
+			// AGENTIC_PROJECT_ID, decoupling the framework from its own
+			// canonical project.
+			root, rerr := os.Getwd()
+			if rerr != nil {
+				return fmt.Errorf("resolving working directory: %w", rerr)
+			}
+			if err := refuseIfFrameworkSource(root, "project unlink"); err != nil {
+				return err
+			}
+
 			deps, err := resolveProjectDeps()
 			if err != nil {
 				return err
@@ -435,6 +467,15 @@ To change the framework version for the whole federation, use
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !list && !interactive && len(args) == 0 {
 				return cmd.Help()
+			}
+
+			// Refuse on the framework source.
+			root, rerr := os.Getwd()
+			if rerr != nil {
+				return fmt.Errorf("resolving working directory: %w", rerr)
+			}
+			if err := refuseIfFrameworkSource(root, "project switch"); err != nil {
+				return err
 			}
 
 			deps, err := resolveProjectDeps()

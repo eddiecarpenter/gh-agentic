@@ -22,7 +22,10 @@ on:
 
 jobs:
   pipeline:
-    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline-reusable.yml@{{.Version}}
+    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@{{.Version}}
+    with:
+      pr_number: ${{ inputs.pr_number || '' }}
+      branch_name: ${{ inputs.branch_name || '' }}
     secrets: inherit
     permissions:
       contents: write

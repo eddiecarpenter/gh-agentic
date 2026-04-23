@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -39,6 +40,18 @@ Use --list to browse available versions before choosing one.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
+
+			// Refuse on the framework source. --list is informational but
+			// the whole "change the framework version" concept does not
+			// apply when this repo IS the framework — consistency trumps
+			// the informational sub-mode.
+			root, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("resolving working directory: %w", err)
+			}
+			if err := refuseIfFrameworkSource(root, "upgrade"); err != nil {
+				return err
+			}
 
 			if list {
 				var releases []mount.Release

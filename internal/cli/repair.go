@@ -49,18 +49,35 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 
 			w := cmd.OutOrStdout()
 
+			// Framework-source mode (this repo IS gh-agentic): skip the
+			// project-scope auto-repairs entirely. Those touch mount
+			// state and `.ai/` content, which would harm the committed
+			// symlink. The pipeline-scope repairs (missing variables,
+			// missing secrets, runner label) still run and remain
+			// useful.
+			root, rerr := os.Getwd()
+			if rerr != nil {
+				return fmt.Errorf("resolving working directory: %w", rerr)
+			}
+			isFrameworkSource := project.IsFrameworkSource(root)
+
 			// Phase 1: project-side checks and auto-repairs.
 			var projectResult project.RepairResult
-			_ = ui.RunWithDynamicSpinner(w, "Running checks...", func(setLabel func(string)) error {
-				projectResult = project.RepairWithProgress(deps, setLabel)
-				return nil
-			})
+			if !isFrameworkSource {
+				_ = ui.RunWithDynamicSpinner(w, "Running checks...", func(setLabel func(string)) error {
+					projectResult = project.RepairWithProgress(deps, setLabel)
+					return nil
+				})
+			}
 
 			// Phase 2: pipeline-side checks and auto-repairs.
 			// Skip when the framework mount is out of sync — the pipeline
 			// checks run against `.ai/` and only produce noise until the
 			// user runs `gh agentic mount`.
 			pipelineDeps, pdepsErr := buildPipelineCheckDeps(deps)
+			if pdepsErr == nil {
+				pipelineDeps.FrameworkSource = isFrameworkSource
+			}
 			var pipelineResult doctor.RepairResult
 			pipelineSkipped := projectResult.FrameworkOutOfSync
 			if pdepsErr == nil && !pipelineSkipped {
@@ -75,10 +92,16 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("gh agentic — repair"))
 			fmt.Fprintln(w, "")
 
-			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Project"))
-			fmt.Fprintln(w, "  "+ui.Divider(48))
-			for _, line := range projectResult.Lines {
-				fmt.Fprintln(w, line)
+			if isFrameworkSource {
+				fmt.Fprintln(w, "  "+ui.StatusWarning.Render("⚠")+"  Framework source detected (.ai is a symlink)")
+				fmt.Fprintln(w, "  "+ui.Muted.Render("   Content-layer repairs are skipped. Config-layer repairs (variables, secrets) run below."))
+				fmt.Fprintln(w, "")
+			} else {
+				fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Project"))
+				fmt.Fprintln(w, "  "+ui.Divider(48))
+				for _, line := range projectResult.Lines {
+					fmt.Fprintln(w, line)
+				}
 			}
 
 			fmt.Fprintln(w, "")
