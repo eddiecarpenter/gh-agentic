@@ -143,7 +143,9 @@ echo ""
 echo "=== gh-agentic Specific Workflows ==="
 
 [ -f "$REPO_ROOT/.github/workflows/build-and-test.yml" ] && pass "build-and-test.yml preserved" || warn "build-and-test.yml not found (gh-agentic specific)"
-[ -f "$REPO_ROOT/.github/workflows/agentic-pipeline-reusable.yml" ] && pass "agentic-pipeline-reusable.yml preserved" || warn "agentic-pipeline-reusable.yml not found (gh-agentic specific)"
+[ -f "$REPO_ROOT/.github/workflows/agentic-pipeline.yml" ] && pass "agentic-pipeline.yml preserved" || warn "agentic-pipeline.yml not found"
+# Guard the v2.3.0 collapse: the -reusable duplicate must not return.
+[ ! -f "$REPO_ROOT/.github/workflows/agentic-pipeline-reusable.yml" ] && pass "no agentic-pipeline-reusable.yml (collapsed in v2.3.0)" || warn "agentic-pipeline-reusable.yml re-appeared — was collapsed in v2.3.0"
 
 # ============================================================================
 # Summary

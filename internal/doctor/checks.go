@@ -28,6 +28,14 @@ type CheckDeps struct {
 	// configured AGENTIC_PROJECT_ID resolves via the GraphQL API. Tests
 	// substitute a fake; production wires project.DefaultFetchProjectTitle.
 	FetchProjectTitle project.FetchProjectTitleFunc
+	// FrameworkSource signals that this repo IS the gh-agentic framework
+	// source itself (detected by .ai being a symlink). When true, content-
+	// layer checks that inspect a mounted .ai/ tree are replaced with a
+	// synthetic "skipped — framework source" group so the report is
+	// honest about what was and was not examined, and configuration-layer
+	// checks (variables, secrets, workflows, project reachability) run as
+	// normal. See feature #619 §E.
+	FrameworkSource bool
 }
 
 // checkGroupStep pairs a spinner label with a check function.
@@ -38,6 +46,21 @@ type checkGroupStep struct {
 
 // checksForTopologyWithLabels returns the ordered list of labelled check steps.
 func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
+	// On the gh-agentic framework source itself, mount-layer checks do
+	// not apply (.ai is a symlink → ., not a tarball clone). Replace
+	// them with a synthetic "skipped" group and preserve everything
+	// else. See feature #619 §E.
+	if deps.FrameworkSource {
+		base := []checkGroupStep{
+			{"Checking repository...", checkRepository},
+			{"Skipping content-layer checks...", checkFrameworkSourceSkipped},
+			{"Checking workflows...", checkWorkflows},
+			{"Checking variables and secrets...", checkVariablesAndSecrets},
+			{"Checking project reachability...", checkProjectReachability},
+		}
+		return base
+	}
+
 	base := []checkGroupStep{
 		{"Checking repository...", checkRepository},
 		{"Checking framework mount...", checkFramework},
@@ -132,6 +155,24 @@ func checkRepository(deps CheckDeps) Group {
 	}
 
 	return g
+}
+
+// checkFrameworkSourceSkipped is substituted for checkFramework,
+// checkAgentFiles, and checkSkillFrontmatter when the repo is the
+// gh-agentic framework source itself. It emits one informational
+// result per skipped concern so the report shape stays parallel with
+// the consumer-repo flow and the user can see exactly what was not
+// inspected and why.
+func checkFrameworkSourceSkipped(deps CheckDeps) Group {
+	reason := "framework source (.ai is a symlink) — content-layer checks do not apply"
+	return Group{
+		Name: "Framework source",
+		Results: []CheckResult{
+			{Name: "framework-mount", Status: Warning, Message: "skipped: " + reason},
+			{Name: "agent-files", Status: Warning, Message: "skipped: " + reason},
+			{Name: "skill-frontmatter", Status: Warning, Message: "skipped: " + reason},
+		},
+	}
 }
 
 // checkFramework checks the framework mount state.

@@ -54,9 +54,9 @@ func setupHealthyRepo(t *testing.T) string {
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	_ = os.MkdirAll(workflowsDir, 0o755)
 	_ = os.WriteFile(filepath.Join(workflowsDir, "agentic-pipeline.yml"),
-		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline-reusable.yml@v2.0.0"), 0o644)
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v2.0.0"), 0o644)
 	_ = os.WriteFile(filepath.Join(workflowsDir, "release.yml"),
-		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/release-reusable.yml@v2.0.0"), 0o644)
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/release.yml@v2.0.0"), 0o644)
 
 	return root
 }
@@ -173,7 +173,7 @@ func TestCheckWorkflows_VersionMismatch(t *testing.T) {
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	_ = os.MkdirAll(workflowsDir, 0o755)
 	_ = os.WriteFile(filepath.Join(workflowsDir, "agentic-pipeline.yml"),
-		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline-reusable.yml@v1.0.0"), 0o644)
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v1.0.0"), 0o644)
 
 	deps := CheckDeps{Root: root}
 
@@ -202,9 +202,9 @@ func TestCheckWorkflows_VersionMatch(t *testing.T) {
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	_ = os.MkdirAll(workflowsDir, 0o755)
 	_ = os.WriteFile(filepath.Join(workflowsDir, "agentic-pipeline.yml"),
-		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline-reusable.yml@v2.0.0"), 0o644)
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v2.0.0"), 0o644)
 	_ = os.WriteFile(filepath.Join(workflowsDir, "release.yml"),
-		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/release-reusable.yml@v2.0.0"), 0o644)
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/release.yml@v2.0.0"), 0o644)
 
 	deps := CheckDeps{Root: root}
 

@@ -37,9 +37,9 @@ func makeRepoNeedingPipelineRepairs(t *testing.T) string {
 	// Break workflow tags (currently @v2.0.0 from setupHealthyRepo).
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	_ = os.WriteFile(filepath.Join(workflowsDir, "agentic-pipeline.yml"),
-		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline-reusable.yml@v1.0.0"), 0o644)
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v1.0.0"), 0o644)
 	_ = os.WriteFile(filepath.Join(workflowsDir, "release.yml"),
-		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/release-reusable.yml@v1.0.0"), 0o644)
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/release.yml@v1.0.0"), 0o644)
 
 	return root
 }

@@ -135,7 +135,7 @@ func TestUpdateWorkflowVersions_UpdatesTags(t *testing.T) {
 	content := `name: Test
 jobs:
   pipeline:
-    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline-reusable.yml@v1.0.0
+    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v1.0.0
     secrets: inherit
 `
 	_ = os.WriteFile(filepath.Join(workflowsDir, "test.yml"), []byte(content), 0o644)

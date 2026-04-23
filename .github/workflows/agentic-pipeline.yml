@@ -1,5 +1,33 @@
 name: Agentic Pipeline
 
+# Canonical pipeline workflow. One file, two entry paths:
+#
+#   1. Direct trigger on events in the gh-agentic framework repo itself
+#      (embedded topology — the framework is also a control plane). The
+#      `on: issues / pull_request / ...` block drives this path.
+#
+#   2. Called by a domain repo's thin wrapper workflow via `uses:` at a
+#      pinned tag. Domain wrappers declare their own event triggers and
+#      forward the event context (and any workflow_dispatch inputs) via
+#      `workflow_call`.
+#
+# Job bodies use the domain-friendly setup pattern unconditionally:
+# gh-agentic is nested-checked-out into .agentic-tools/ so composite
+# actions resolve, and the framework is mounted via direct git clone into
+# .ai/. On the framework repo itself these steps are redundant but
+# functional — a self-checkout and self-clone, cheap at CI timescales.
+#
+# `workflow_dispatch` inputs (pr_number, branch_name) reach this workflow
+# two ways: directly from a dispatch event on gh-agentic (via
+# github.event.inputs.*), or forwarded from a caller via `with:` and
+# exposed as inputs.*. Jobs resolve both: `inputs.pr_number ||
+# github.event.inputs.pr_number`.
+#
+# History: this workflow was previously duplicated as
+# agentic-pipeline-reusable.yml. The two drifted repeatedly across four
+# hot-fix releases. Collapsed here — the `-reusable` filename convention
+# is not required by GitHub Actions for a workflow to be callable.
+
 on:
   issues:
     types: [labeled, assigned]
@@ -19,6 +47,23 @@ on:
         description: 'Feature branch the PR is open on'
         required: true
         type: string
+  workflow_call:
+    inputs:
+      pr_number:
+        description: 'PR number to process review comments for (forwarded from caller workflow_dispatch)'
+        required: false
+        type: string
+        default: ''
+      branch_name:
+        description: 'Feature branch the PR is open on (forwarded from caller workflow_dispatch)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      GOOSE_AGENT_PAT:
+        required: true
+      CLAUDE_CREDENTIALS_JSON:
+        required: true
 
 jobs:
 
@@ -39,17 +84,12 @@ jobs:
       issues: write
 
     steps:
-      - name: Checkout
+      - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
-        with:
-          node-version: 'lts/*'
 
       - name: Resolve framework version
         id: version
@@ -63,22 +103,43 @@ jobs:
           VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
+      - name: Checkout gh-agentic tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: eddiecarpenter/gh-agentic
+          ref: ${{ steps.version.outputs.version }}
+          path: .agentic-tools
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
+
       - name: Install tools
-        uses: ./.github/actions/install-ai-tools
+        uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Mount AI framework
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
+          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
-          echo "Mounting AI framework via gh agentic mount..."
-          gh agentic mount -y
-          echo "✓ Framework mounted at .ai/"
+          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
+          rm -rf .ai
+          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
+            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
+            .ai
+          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
+            echo '.ai/' >> .gitignore
+          fi
+          # Recipes are consumed from .ai/.goose/recipes/ — no separate copy.
+          echo "✓ Framework mounted at .ai/ (ref: $(git -C .ai describe --tags --exact-match 2>/dev/null || echo 'unknown'))"
 
       - name: Setup Claude Code auth
-        uses: ./.github/actions/setup-claude-auth
+        uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
@@ -99,11 +160,11 @@ jobs:
       - name: Run feature-design recipe
         run: |
           goose run \
-            --recipe .goose/recipes/feature-design.yaml \
+            --recipe .ai/.goose/recipes/feature-design.yaml \
             --params feature_issue=${{ github.event.issue.number }} \
             --params repo=${{ github.repository }}
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
           GOOSE_PROVIDER: ${{ vars.GOOSE_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
@@ -130,9 +191,6 @@ jobs:
           fi
           echo "name=${BRANCH}" >> $GITHUB_OUTPUT
           git checkout "${BRANCH}"
-          # Stage+commit any uncommitted work the recipe left behind (e.g. a
-          # refactor task that produced scaffolding). Empty working tree is
-          # fine — the commit is guarded by git diff-index.
           git add -A
           if ! git diff-index --quiet HEAD --; then
             git commit -m "chore: feature-design scaffolding — feature #${ISSUE}"
@@ -143,10 +201,9 @@ jobs:
           echo "✓ Pushed ${BRANCH} to origin."
 
       # The recipe attempts the in-design → in-development swap itself, but
-      # the agent's token can be denied that transition (seen in the wild as
-      # FORBIDDEN on AddLabelsToLabelable for fine-grained PATs). The workflow
-      # retries the swap here with the same PAT — if the recipe already swapped,
-      # this is a no-op; if it didn't, this is what triggers Stage 4.
+      # the agent's token can be denied that transition (FORBIDDEN on
+      # AddLabelsToLabelable when goose-agent lacks write on the repo).
+      # Retry with the workflow's token — idempotent.
       - name: Swap in-design → in-development
         if: success() && steps.push.outputs.name != ''
         env:
@@ -165,7 +222,6 @@ jobs:
 
       # Inline project status update — mirror the dev-session pattern so
       # Stage 3 also keeps the project board in lockstep with the label.
-      # Hard-fails on missing AGENTIC_PROJECT_ID to surface misconfiguration.
       - name: Set project status to 'In Development'
         if: success() && steps.push.outputs.name != ''
         env:
@@ -264,17 +320,12 @@ jobs:
           fi
           echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
-      - name: Checkout
+      - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ steps.branch.outputs.name }}
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
-        with:
-          node-version: 'lts/*'
 
       - name: Resolve framework version
         id: version
@@ -288,22 +339,42 @@ jobs:
           VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Install Goose and Claude Code CLI
-        uses: ./.github/actions/install-ai-tools
+      - name: Checkout gh-agentic tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: eddiecarpenter/gh-agentic
+          ref: ${{ steps.version.outputs.version }}
+          path: .agentic-tools
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
+
+      - name: Install tools
+        uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Mount AI framework
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
+          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
-          echo "Mounting AI framework via gh agentic mount..."
-          gh agentic mount -y
+          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
+          rm -rf .ai
+          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
+            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
+            .ai
+          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
+            echo '.ai/' >> .gitignore
+          fi
           echo "✓ Framework mounted at .ai/"
 
       - name: Setup Claude Code auth
-        uses: ./.github/actions/setup-claude-auth
+        uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
@@ -318,7 +389,6 @@ jobs:
           git fetch origin main
           git rebase origin/main || {
             echo "::error::Rebase failed — conflicts require manual resolution."
-            echo "Files in conflict:"
             git diff --name-only --diff-filter=U
             git rebase --abort
             exit 1
@@ -337,12 +407,10 @@ jobs:
         id: goose
         run: |
           BRANCH="${{ steps.branch.outputs.name }}"
-          # Retry up to 3 times to handle transient Claude Code rate-limit errors.
-          # Each retry picks up from the last committed task.
           for attempt in 1 2 3; do
             echo "--- Dev session attempt ${attempt} ---"
             goose run \
-              --recipe .goose/recipes/dev-session.yaml \
+              --recipe .ai/.goose/recipes/dev-session.yaml \
               --params feature_issue=${{ github.event.issue.number }} \
               --params branch_name=${BRANCH} \
               --params repo=${{ github.repository }} && break
@@ -351,12 +419,11 @@ jobs:
               echo "Attempt ${attempt} failed (exit ${EXIT_CODE}). Waiting 60s before retry..."
               sleep 60
             else
-              echo "All ${attempt} attempts failed."
               exit $EXIT_CODE
             fi
           done
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
           GOOSE_PROVIDER: ${{ vars.GOOSE_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
@@ -396,68 +463,28 @@ jobs:
         run: |
           COMMITS=$(git rev-list --count origin/main..HEAD)
           if [ "${COMMITS}" -eq 0 ]; then
-            echo "No commits — PR was not opened. Leaving issue in-development."
+            echo "No commits — leaving issue in-development."
             exit 0
           fi
           gh issue edit ${{ github.event.issue.number }} \
             --remove-label "in-development" \
             --add-label "in-review"
 
-          # Inline status update — set project status to "In Review"
           if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "ERROR: AGENTIC_PROJECT_ID is not configured. Set this repo variable to the ProjectV2 node ID."
-            echo "Command: gh variable set AGENTIC_PROJECT_ID --repo ${{ github.repository }} --body \"{project_node_id}\""
+            echo "ERROR: AGENTIC_PROJECT_ID is not configured."
             exit 1
           fi
           ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.node_id')
-          RESULT=$(gh api graphql -f query='
-            query($issueId: ID!) {
-              node(id: $issueId) {
-                ... on Issue {
-                  projectItems(first: 100) {
-                    nodes { id project { id } }
-                  }
-                }
-              }
-            }
-          ' -f issueId="${ISSUE_NODE_ID}")
-          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" \
-            '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
+          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
           if [ -z "${ITEM_ID}" ]; then
-            ADD_RESULT=$(gh api graphql -f query='
-              mutation($projectId: ID!, $contentId: ID!) {
-                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                  item { id }
-                }
-              }
-            ' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
+            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
             ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
           fi
-          FIELDS=$(gh api graphql -f query='
-            query($projectId: ID!) {
-              node(id: $projectId) {
-                ... on ProjectV2 {
-                  fields(first: 50) {
-                    nodes {
-                      ... on ProjectV2SingleSelectField {
-                        id name options { id name }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          ' -f projectId="${AGENTIC_PROJECT_ID}")
+          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
           FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
           OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "In Review") | .id')
-          gh api graphql -f query='
-            mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-              updateProjectV2ItemFieldValue(input: {
-                projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
-                value: { singleSelectOptionId: $optionId }
-              }) { projectV2Item { id } }
-            }
-          ' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
 
   # ---------------------------------------------------------------------------
   # Stage 4b — PR Review Session
@@ -477,21 +504,16 @@ jobs:
       contents: write
       pull-requests: write
     concurrency:
-      group: pr-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+      group: pr-review-${{ github.event.pull_request.number || inputs.pr_number || github.event.inputs.pr_number }}
       cancel-in-progress: false
 
     steps:
-      - name: Checkout
+      - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ref: ${{ github.event.inputs.branch_name || github.event.pull_request.head.ref }}
+          ref: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
-        with:
-          node-version: 'lts/*'
 
       - name: Resolve framework version
         id: version
@@ -499,28 +521,47 @@ jobs:
           AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
         run: |
           if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
-            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
+            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set."
             exit 1
           fi
           VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
+      - name: Checkout gh-agentic tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: eddiecarpenter/gh-agentic
+          ref: ${{ steps.version.outputs.version }}
+          path: .agentic-tools
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
+
       - name: Install tools
-        uses: ./.github/actions/install-ai-tools
+        uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Mount AI framework
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
+          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
-          echo "Mounting AI framework via gh agentic mount..."
-          gh agentic mount -y
-          echo "✓ Framework mounted at .ai/"
+          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
+          rm -rf .ai
+          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
+            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
+            .ai
+          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
+            echo '.ai/' >> .gitignore
+          fi
 
       - name: Setup Claude Code auth
-        uses: ./.github/actions/setup-claude-auth
+        uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
@@ -540,9 +581,9 @@ jobs:
 
       - name: Run PR review recipe
         env:
-          PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
-          BRANCH: ${{ github.event.inputs.branch_name || github.event.pull_request.head.ref }}
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.goose
+          PR_NUMBER: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
+          BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
           GOOSE_PROVIDER: ${{ vars.GOOSE_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
@@ -550,7 +591,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
           goose run \
-            --recipe .goose/recipes/pr-review-session.yaml \
+            --recipe .ai/.goose/recipes/pr-review-session.yaml \
             --params pr_number=${PR_NUMBER} \
             --params branch_name=${BRANCH} \
             --params repo=${{ github.repository }}
@@ -559,14 +600,14 @@ jobs:
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-          BRANCH: ${{ github.event.inputs.branch_name || github.event.pull_request.head.ref }}
+          BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
         run: |
           LOCAL=$(git rev-parse HEAD)
           REMOTE=$(git rev-parse origin/${BRANCH})
           if [ "$LOCAL" != "$REMOTE" ]; then
             git push origin ${BRANCH}
           else
-            echo "No code changes — only review replies posted, no push needed"
+            echo "No code changes — only review replies posted"
           fi
 
   # ---------------------------------------------------------------------------
@@ -589,17 +630,12 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Checkout
+      - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
-        with:
-          node-version: 'lts/*'
 
       - name: Resolve framework version
         id: version
@@ -607,28 +643,47 @@ jobs:
           AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
         run: |
           if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
-            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
+            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set."
             exit 1
           fi
           VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
+      - name: Checkout gh-agentic tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: eddiecarpenter/gh-agentic
+          ref: ${{ steps.version.outputs.version }}
+          path: .agentic-tools
+          token: ${{ secrets.GOOSE_AGENT_PAT }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: 'lts/*'
+
       - name: Install tools
-        uses: ./.github/actions/install-ai-tools
+        uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
 
       - name: Mount AI framework
         env:
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
+          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
         run: |
-          echo "Mounting AI framework via gh agentic mount..."
-          gh agentic mount -y
-          echo "✓ Framework mounted at .ai/"
+          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
+          rm -rf .ai
+          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
+            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
+            .ai
+          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
+            echo '.ai/' >> .gitignore
+          fi
 
       - name: Setup Claude Code auth
-        uses: ./.github/actions/setup-claude-auth
+        uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
@@ -649,11 +704,11 @@ jobs:
       - name: Run issue session recipe
         run: |
           goose run \
-            --recipe .goose/recipes/issue-session.yaml \
+            --recipe .ai/.goose/recipes/issue-session.yaml \
             --params issue_number=${{ github.event.issue.number }} \
             --params repo=${{ github.repository }}
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
           GOOSE_PROVIDER: ${{ vars.GOOSE_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
@@ -691,10 +746,6 @@ jobs:
   # ---------------------------------------------------------------------------
   # Stage 5 — Feature Complete
   # Trigger: feature branch PR merged to main
-  #
-  # Federated topology: set the AGENTIC_REPO repo variable to the full
-  # "owner/repo" of the agentic (control plane) repo. If not set, defaults
-  # to the current repo (single-repo topology).
   # ---------------------------------------------------------------------------
   feature-complete:
     name: Feature Complete (Stage 5)
@@ -727,14 +778,9 @@ jobs:
             echo "Could not extract issue number from branch — skipping"
             exit 0
           fi
-          # Verify the extracted number is an open issue (not a PR or non-existent)
           ISSUE_TYPE=$(gh api repos/${{ github.repository }}/issues/${ISSUE} --jq '.pull_request // "issue"' 2>/dev/null || echo "")
-          if [ -z "${ISSUE_TYPE}" ]; then
-            echo "Issue #${ISSUE} does not exist — branch may not correspond to a pipeline issue, skipping"
-            exit 0
-          fi
-          if [ "${ISSUE_TYPE}" != "issue" ]; then
-            echo "Issue #${ISSUE} is a pull request, not a feature issue — skipping"
+          if [ -z "${ISSUE_TYPE}" ] || [ "${ISSUE_TYPE}" != "issue" ]; then
+            echo "Issue #${ISSUE} is not an open feature issue — skipping"
             exit 0
           fi
           gh issue edit ${ISSUE} \
@@ -745,61 +791,21 @@ jobs:
             --remove-label "in-review" \
             --add-label "done"
 
-          # Inline status update — set project status to "Done"
           if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "ERROR: AGENTIC_PROJECT_ID is not configured. Set this repo variable to the ProjectV2 node ID."
-            echo "Command: gh variable set AGENTIC_PROJECT_ID --repo ${{ github.repository }} --body \"{project_node_id}\""
+            echo "ERROR: AGENTIC_PROJECT_ID is not configured."
             exit 1
           fi
           ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${ISSUE} --jq '.node_id')
-          RESULT=$(gh api graphql -f query='
-            query($issueId: ID!) {
-              node(id: $issueId) {
-                ... on Issue {
-                  projectItems(first: 100) {
-                    nodes { id project { id } }
-                  }
-                }
-              }
-            }
-          ' -f issueId="${ISSUE_NODE_ID}")
-          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" \
-            '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
+          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
           if [ -z "${ITEM_ID}" ]; then
-            ADD_RESULT=$(gh api graphql -f query='
-              mutation($projectId: ID!, $contentId: ID!) {
-                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                  item { id }
-                }
-              }
-            ' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
+            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
             ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
           fi
-          FIELDS=$(gh api graphql -f query='
-            query($projectId: ID!) {
-              node(id: $projectId) {
-                ... on ProjectV2 {
-                  fields(first: 50) {
-                    nodes {
-                      ... on ProjectV2SingleSelectField {
-                        id name options { id name }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          ' -f projectId="${AGENTIC_PROJECT_ID}")
+          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
           FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
           OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
-          gh api graphql -f query='
-            mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-              updateProjectV2ItemFieldValue(input: {
-                projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
-                value: { singleSelectOptionId: $optionId }
-              }) { projectV2Item { id } }
-            }
-          ' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
 
           gh issue close ${ISSUE} \
             --repo ${{ github.repository }} \
@@ -812,39 +818,21 @@ jobs:
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
-            echo "No feature issue number — skipping parent requirement check"
             exit 0
           fi
-
-          # Resolve the agentic repo — AGENTIC_REPO variable for federated topology,
-          # falls back to current repo for single-repo topology.
           AGENTIC_REPO="${{ vars.AGENTIC_REPO || github.repository }}"
-
-          # Read the feature issue body
           BODY=$(gh issue view ${ISSUE} --repo ${{ github.repository }} --json body --jq '.body')
-
-          # Extract parent requirement number.
-          # Matches: "Closes #N", "Closes part of #N",
-          #          "Closes owner/repo#N", "Closes part of owner/repo#N"
           PARENT=$(echo "${BODY}" | \
             grep -oP '(?:Closes(?:\s+part\s+of)?\s+(?:[a-zA-Z0-9_.\-]+/[a-zA-Z0-9_.\-]+#|#))(\d+)' | \
             grep -oP '\d+$' | head -1)
-
           if [ -z "${PARENT}" ]; then
-            echo "No parent requirement reference found in feature issue body — skipping"
             exit 0
           fi
-
-          # Verify the referenced issue has the 'requirement' label in the agentic repo
           HAS_LABEL=$(gh issue view ${PARENT} --repo ${AGENTIC_REPO} --json labels \
             --jq '.labels[].name' | grep -c '^requirement$' || true)
-
           if [ "${HAS_LABEL}" -eq 0 ]; then
-            echo "Issue #${PARENT} in ${AGENTIC_REPO} is not labelled 'requirement' — skipping"
             exit 0
           fi
-
-          echo "Parent requirement: ${AGENTIC_REPO}#${PARENT}"
           echo "requirement_number=${PARENT}" >> $GITHUB_OUTPUT
           echo "agentic_repo=${AGENTIC_REPO}" >> $GITHUB_OUTPUT
 
@@ -856,99 +844,36 @@ jobs:
           PARENT="${{ steps.parent.outputs.requirement_number }}"
           AGENTIC_REPO="${{ steps.parent.outputs.agentic_repo }}"
           if [ -z "${PARENT}" ]; then
-            echo "No parent requirement number — skipping"
             exit 0
           fi
-
-          # Get the requirement's node ID for the sub-issues GraphQL query.
-          # Sub-issues are the authoritative cross-repo child list —
-          # more reliable than text search and works in federated topology.
           REQ_NODE_ID=$(gh api repos/${AGENTIC_REPO}/issues/${PARENT} --jq '.node_id')
-
           if [ -z "${REQ_NODE_ID}" ]; then
-            echo "Could not resolve node ID for ${AGENTIC_REPO}#${PARENT} — skipping"
             exit 0
           fi
-
-          # Count open sub-issues on the requirement
-          OPEN_COUNT=$(gh api graphql -f query='
-            query($issueId: ID!) {
-              node(id: $issueId) {
-                ... on Issue {
-                  subIssues(first: 100) {
-                    nodes { state }
-                  }
-                }
-              }
-            }
-          ' -f issueId="${REQ_NODE_ID}" \
+          OPEN_COUNT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { subIssues(first: 100) { nodes { state } } } } }' -f issueId="${REQ_NODE_ID}" \
             --jq '[.data.node.subIssues.nodes[] | select(.state == "OPEN")] | length')
-
           if [ "${OPEN_COUNT}" -gt 0 ]; then
             echo "${OPEN_COUNT} sub-issue(s) still open — leaving requirement #${PARENT} open"
             exit 0
           fi
-
-          echo "All sub-issues closed — closing requirement ${AGENTIC_REPO}#${PARENT}"
           gh issue edit ${PARENT} \
             --repo ${AGENTIC_REPO} \
             --remove-label "backlog" \
             --remove-label "scoping" \
             --remove-label "scheduled" \
             --add-label "done"
-
-          # Inline project status update — set requirement to "Done"
           if [ -n "${AGENTIC_PROJECT_ID}" ]; then
-            RESULT=$(gh api graphql -f query='
-              query($issueId: ID!) {
-                node(id: $issueId) {
-                  ... on Issue {
-                    projectItems(first: 100) {
-                      nodes { id project { id } }
-                    }
-                  }
-                }
-              }
-            ' -f issueId="${REQ_NODE_ID}")
-            ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" \
-              '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+            RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${REQ_NODE_ID}")
+            ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
             if [ -z "${ITEM_ID}" ]; then
-              ADD_RESULT=$(gh api graphql -f query='
-                mutation($projectId: ID!, $contentId: ID!) {
-                  addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                    item { id }
-                  }
-                }
-              ' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${REQ_NODE_ID}")
+              ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${REQ_NODE_ID}")
               ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
             fi
-            FIELDS=$(gh api graphql -f query='
-              query($projectId: ID!) {
-                node(id: $projectId) {
-                  ... on ProjectV2 {
-                    fields(first: 50) {
-                      nodes {
-                        ... on ProjectV2SingleSelectField {
-                          id name options { id name }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            ' -f projectId="${AGENTIC_PROJECT_ID}")
+            FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
             FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
             OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
-            gh api graphql -f query='
-              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-                updateProjectV2ItemFieldValue(input: {
-                  projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
-                  value: { singleSelectOptionId: $optionId }
-                }) { projectV2Item { id } }
-              }
-            ' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+            gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
           fi
-
           gh issue close ${PARENT} \
             --repo ${AGENTIC_REPO} \
             --comment "All child feature issues are now complete. Auto-closing requirement."

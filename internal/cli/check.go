@@ -107,6 +107,16 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 				return fmt.Errorf("resolving working directory: %w", err)
 			}
 
+			// Framework-source mode (this repo IS gh-agentic): skip the
+			// project-scope checks entirely — those inspect mount state
+			// and project membership in ways that don't apply when the
+			// framework IS the source. The pipeline-scope doctor checks
+			// still run, configured with FrameworkSource: true so they
+			// substitute a synthetic "skipped — framework source" group
+			// for the content-layer checks and run the config-layer
+			// (variables, secrets, workflows, reachability) as normal.
+			isFrameworkSource := project.IsFrameworkSource(root)
+
 			projectDeps, err := resolveProjectDeps()
 			if err != nil {
 				return err
@@ -117,17 +127,24 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 			var pipelineSkipped bool
 
 			_ = ui.RunWithDynamicSpinner(w, "Running project checks...", func(setLabel func(string)) error {
-				// Project-scope checks first — they already handle topology internally.
-				projectReport = project.RunChecksWithProgress(projectDeps, setLabel)
+				if isFrameworkSource {
+					setLabel("Framework source detected — skipping project-scope checks...")
+					// Leave projectReport nil; the renderer treats nil as
+					// "no project-scope output" and moves straight to the
+					// pipeline-scope section.
+				} else {
+					// Project-scope checks first — they already handle topology internally.
+					projectReport = project.RunChecksWithProgress(projectDeps, setLabel)
 
-				// Short-circuit: if the mounted framework is out of sync
-				// with the authoritative version, pipeline-side checks
-				// (skill frontmatter, catalogue, workflow versions) will
-				// generate noise against a stale `.ai/`. Stop here and
-				// direct the user to `gh agentic mount` first.
-				if projectFrameworkOutOfSync(projectReport) {
-					pipelineSkipped = true
-					return nil
+					// Short-circuit: if the mounted framework is out of sync
+					// with the authoritative version, pipeline-side checks
+					// (skill frontmatter, catalogue, workflow versions) will
+					// generate noise against a stale `.ai/`. Stop here and
+					// direct the user to `gh agentic mount` first.
+					if projectFrameworkOutOfSync(projectReport) {
+						pipelineSkipped = true
+						return nil
+					}
 				}
 
 				// Pipeline-scope checks need repo identity + resolved topology mode.
@@ -161,6 +178,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 					Run:               deps.run,
 					ReadCreds:         deps.readCreds,
 					FetchProjectTitle: project.DefaultFetchProjectTitle,
+					FrameworkSource:   isFrameworkSource,
 				}
 				pipelineReport = doctor.RunAllChecksWithProgress(pipelineCheckDeps, setLabel)
 				return nil
@@ -171,16 +189,26 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("gh agentic — check"))
 			fmt.Fprintln(w, "")
 
-			// Project section.
-			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Project"))
-			fmt.Fprintln(w, "  "+ui.Divider(48))
-			for _, r := range projectReport.Results {
-				fmt.Fprintf(w, "  %s  %s\n", project.StatusIcon(r.Status), r.Message)
-				if r.Remediation != "" {
-					fmt.Fprintf(w, "       %s\n", ui.Muted.Render("→ "+r.Remediation))
-				}
+			if isFrameworkSource {
+				fmt.Fprintln(w, "  "+ui.StatusWarning.Render("⚠")+"  Framework source detected (.ai is a symlink)")
+				fmt.Fprintln(w, "  "+ui.Muted.Render("   Project-scope and content-layer checks are skipped — they do not apply"))
+				fmt.Fprintln(w, "  "+ui.Muted.Render("   when this repo IS the gh-agentic framework. Config-layer checks run below."))
+				fmt.Fprintln(w, "")
 			}
-			fmt.Fprintln(w, "")
+
+			// Project section — omitted in framework-source mode since
+			// projectReport is nil there.
+			if projectReport != nil {
+				fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Project"))
+				fmt.Fprintln(w, "  "+ui.Divider(48))
+				for _, r := range projectReport.Results {
+					fmt.Fprintf(w, "  %s  %s\n", project.StatusIcon(r.Status), r.Message)
+					if r.Remediation != "" {
+						fmt.Fprintf(w, "       %s\n", ui.Muted.Render("→ "+r.Remediation))
+					}
+				}
+				fmt.Fprintln(w, "")
+			}
 
 			// Pipeline section.
 			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
@@ -200,8 +228,13 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 				pipelineFails = pipelineReport.FailCount()
 				pipelineWarns = pipelineReport.WarningCount()
 			}
-			fails := projectReport.FailCount() + pipelineFails
-			warns := projectReport.WarnCount() + pipelineWarns
+			projFails, projWarns := 0, 0
+			if projectReport != nil {
+				projFails = projectReport.FailCount()
+				projWarns = projectReport.WarnCount()
+			}
+			fails := projFails + pipelineFails
+			warns := projWarns + pipelineWarns
 			fmt.Fprintln(w, "")
 			switch {
 			case fails > 0:

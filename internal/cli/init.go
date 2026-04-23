@@ -62,6 +62,17 @@ change membership, or --force to re-run setup from scratch.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
+			// Refuse on the framework source. `init` scaffolds CLAUDE.md,
+			// AGENTS.md, and the wrapper workflows — running on gh-agentic
+			// would overwrite committed source files.
+			initRoot, ierr := os.Getwd()
+			if ierr != nil {
+				return fmt.Errorf("resolving working directory: %w", ierr)
+			}
+			if err := refuseIfFrameworkSource(cmd, initRoot, "init"); err != nil {
+				return err
+			}
+
 			deps, err := resolveProjectDeps()
 			if err != nil {
 				return err

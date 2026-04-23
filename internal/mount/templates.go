@@ -31,6 +31,12 @@ Do not proceed with any other work until the framework is mounted.
 
 // workflowTemplate returns the agentic-pipeline wrapper workflow content
 // for a domain repo. The version parameter is substituted into the uses: tag.
+//
+// The wrapper subscribes to the domain repo's local events and forwards
+// them via `uses:` into the consolidated framework workflow. The
+// `workflow_dispatch` inputs (pr_number, branch_name) are forwarded
+// through the `with:` block — without that forwarding, the PR-review-
+// session branch of the reusable sees empty strings and fails.
 func workflowTemplate(version string) string {
 	return strings.ReplaceAll(`name: Agentic Pipeline
 
@@ -56,7 +62,10 @@ on:
 
 jobs:
   pipeline:
-    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline-reusable.yml@{{VERSION}}
+    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@{{VERSION}}
+    with:
+      pr_number: ${{ inputs.pr_number || '' }}
+      branch_name: ${{ inputs.branch_name || '' }}
     secrets: inherit
     permissions:
       contents: write
@@ -67,17 +76,21 @@ jobs:
 
 // releaseWorkflowTemplate returns the release wrapper workflow content
 // for a domain repo. The version parameter is substituted into the uses: tag.
+//
+// Triggers on `release: published` — the framework-provided workflow
+// handles AI release-note generation and updates the release body. Release
+// CREATION (GoReleaser, npm publish, cargo publish, etc.) is each domain
+// repo's own concern and lives in a separate workflow of its own.
 func releaseWorkflowTemplate(version string) string {
 	return strings.ReplaceAll(`name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
 jobs:
   release:
-    uses: eddiecarpenter/gh-agentic/.github/workflows/release-reusable.yml@{{VERSION}}
+    uses: eddiecarpenter/gh-agentic/.github/workflows/release.yml@{{VERSION}}
     secrets: inherit
     permissions:
       contents: write

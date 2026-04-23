@@ -8,7 +8,7 @@ import (
 )
 
 // TestReusableWorkflowHasNoCallerRelativeActionPaths guards against a
-// regression introduced in v2.2.2, where agentic-pipeline-reusable.yml
+// regression introduced in v2.2.2, where agentic-pipeline.yml
 // referenced local composite actions via `./.github/actions/...`. When the
 // reusable workflow is called from a domain repo, those paths resolve
 // against the domain repo's workspace — which does not contain the
@@ -82,7 +82,7 @@ func TestReusableWorkflowHasNoCallerRelativeActionPaths(t *testing.T) {
 // action relative to the **caller's workspace root**, not the composite's
 // own directory. When a composite references another composite by
 // `./.github/actions/...` and is consumed via nested checkout from a
-// different repo (the model in `agentic-pipeline-reusable.yml`), the path
+// different repo (the model in `agentic-pipeline.yml`), the path
 // does not resolve. Inline shared logic instead of composing composites.
 //
 // The v2.2.3 release hit this: `install-ai-tools` referenced
@@ -130,7 +130,7 @@ func TestCompositeActionsHaveNoInterCompositeUses(t *testing.T) {
 // internal/mount, so the walk is short.
 func reusableWorkflowPath(t *testing.T) string {
 	t.Helper()
-	return repoRelativePath(t, ".github", "workflows", "agentic-pipeline-reusable.yml")
+	return repoRelativePath(t, ".github", "workflows", "agentic-pipeline.yml")
 }
 
 // compositeActionsDir returns the absolute path to .github/actions/ at
