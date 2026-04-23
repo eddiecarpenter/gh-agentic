@@ -110,6 +110,123 @@ jobs:
           GOOSE_DISABLE_SESSION_NAMING: "true"
           GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
 
+      # Recipe never pushes — per RULEBOOK, "the workflow pushes after the
+      # recipe exits cleanly". The recipe creates `feature/<N>-*` locally
+      # and may have added commits (refactor tasks, scaffolding, etc.).
+      # Commit any leftover working-tree changes, then push the branch so
+      # Stage 4 can find it.
+      - name: Commit and push feature branch
+        id: push
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          BRANCH=$(git branch --list "feature/${ISSUE}-*" --format='%(refname:short)' | head -1)
+          if [ -z "${BRANCH}" ]; then
+            echo "::error::Feature Design recipe exited without creating a feature/${ISSUE}-* branch."
+            echo "Dev Session cannot proceed without the branch. Inspect the recipe log above."
+            exit 1
+          fi
+          echo "name=${BRANCH}" >> $GITHUB_OUTPUT
+          git checkout "${BRANCH}"
+          # Stage+commit any uncommitted work the recipe left behind (e.g. a
+          # refactor task that produced scaffolding). Empty working tree is
+          # fine — the commit is guarded by git diff-index.
+          git add -A
+          if ! git diff-index --quiet HEAD --; then
+            git commit -m "chore: feature-design scaffolding — feature #${ISSUE}"
+          else
+            echo "No working-tree changes to commit — branch is at main HEAD."
+          fi
+          git push --set-upstream origin "${BRANCH}"
+          echo "✓ Pushed ${BRANCH} to origin."
+
+      # The recipe attempts the in-design → in-development swap itself, but
+      # the agent's token can be denied that transition (seen in the wild as
+      # FORBIDDEN on AddLabelsToLabelable for fine-grained PATs). The workflow
+      # retries the swap here with the same PAT — if the recipe already swapped,
+      # this is a no-op; if it didn't, this is what triggers Stage 4.
+      - name: Swap in-design → in-development
+        if: success() && steps.push.outputs.name != ''
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          LABELS=$(gh issue view "${ISSUE}" --json labels --jq '[.labels[].name] | join(",")')
+          if echo ",${LABELS}," | grep -q ",in-development,"; then
+            echo "Issue #${ISSUE} already labelled in-development — swap already performed by recipe."
+            exit 0
+          fi
+          gh issue edit "${ISSUE}" \
+            --remove-label in-design \
+            --add-label in-development
+          echo "✓ Swapped in-design → in-development on #${ISSUE} (will trigger Dev Session)."
+
+      # Inline project status update — mirror the dev-session pattern so
+      # Stage 3 also keeps the project board in lockstep with the label.
+      # Hard-fails on missing AGENTIC_PROJECT_ID to surface misconfiguration.
+      - name: Set project status to 'In Development'
+        if: success() && steps.push.outputs.name != ''
+        env:
+          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
+            echo "::error::AGENTIC_PROJECT_ID is not configured. Set the repo variable to the ProjectV2 node ID."
+            exit 1
+          fi
+          ISSUE_NODE_ID=$(gh api "repos/${REPO}/issues/${ISSUE}" --jq '.node_id')
+          RESULT=$(gh api graphql -f query='
+            query($issueId: ID!) {
+              node(id: $issueId) {
+                ... on Issue {
+                  projectItems(first: 100) { nodes { id project { id } } }
+                }
+              }
+            }
+          ' -f issueId="${ISSUE_NODE_ID}")
+          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" \
+            '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+          if [ -z "${ITEM_ID}" ]; then
+            ADD_RESULT=$(gh api graphql -f query='
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                  item { id }
+                }
+              }
+            ' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
+            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
+          fi
+          FIELDS=$(gh api graphql -f query='
+            query($projectId: ID!) {
+              node(id: $projectId) {
+                ... on ProjectV2 {
+                  fields(first: 50) {
+                    nodes {
+                      ... on ProjectV2SingleSelectField {
+                        id name options { id name }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ' -f projectId="${AGENTIC_PROJECT_ID}")
+          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
+          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "In Development") | .id')
+          gh api graphql -f query='
+            mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+              updateProjectV2ItemFieldValue(input: {
+                projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
+                value: { singleSelectOptionId: $optionId }
+              }) { projectV2Item { id } }
+            }
+          ' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+          echo "✓ Project status set to 'In Development'."
+
   # ---------------------------------------------------------------------------
   # Stage 4 — Dev Session
   # Trigger: feature issue labelled 'in-development'
