@@ -205,16 +205,16 @@ func collectStackAndAgent(cfg *InitConfig, runForm FormRunFunc) error {
 	return nil
 }
 
-// collectPipelineConfig collects runner label, Goose provider, and model.
+// collectPipelineConfig collects runner label, agent provider, and model.
 func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 	if cfg.RunnerLabel == "" {
 		cfg.RunnerLabel = RunnerDefaultForTopology(cfg.Topology, cfg.Owner)
 	}
-	if cfg.GooseProvider == "" {
-		cfg.GooseProvider = DefaultGooseProvider
+	if cfg.AgentProvider == "" {
+		cfg.AgentProvider = DefaultAgentProvider
 	}
-	if cfg.GooseModel == "" {
-		cfg.GooseModel = DefaultGooseModel
+	if cfg.AgentModel == "" {
+		cfg.AgentModel = DefaultAgentModel
 	}
 
 	// Phase 3a: Runner select (mirrors bootstrap runner selection).
@@ -253,13 +253,13 @@ func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 	providerForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Goose provider").
+				Title("Agent provider").
 				Description("The LLM provider the agent will use").
-				Value(&cfg.GooseProvider),
+				Value(&cfg.AgentProvider),
 			huh.NewInput().
-				Title("Goose model").
+				Title("Agent model").
 				Description("The model the agent will use — leave as 'default' unless specific").
-				Value(&cfg.GooseModel),
+				Value(&cfg.AgentModel),
 		),
 	)
 	if err := runForm(providerForm); err != nil {

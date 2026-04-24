@@ -54,8 +54,8 @@ func TestRun_Success(t *testing.T) {
 		Stacks:        []string{"Go"},
 		AgentUser:     "goose-agent",
 		RunnerLabel:   "ubuntu-latest",
-		GooseProvider: "anthropic",
-		GooseModel:    "claude-sonnet-4-6",
+		AgentProvider: "anthropic",
+		AgentModel:    "claude-sonnet-4-6",
 		GooseAgentPAT: "ghp_test123",
 		ClaudeCreds:   "base64creds",
 		ProjectID:     "PVT_123",
@@ -197,8 +197,8 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 		RepoName:      "repo",
 		AgentUser:     "goose",
 		RunnerLabel:   "ubuntu-latest",
-		GooseProvider: "anthropic",
-		GooseModel:    "claude-sonnet-4-6",
+		AgentProvider: "anthropic",
+		AgentModel:    "claude-sonnet-4-6",
 		GooseAgentPAT: "ghp_test",
 		ClaudeCreds:   "creds",
 		ProjectID:     "PVT_123",
@@ -358,8 +358,8 @@ func configureRepoTestConfig(topology, owner, repoName string) *InitConfig {
 		Topology:      topology,
 		AgentUser:     "agent-bot",
 		RunnerLabel:   "ubuntu-latest",
-		GooseProvider: "claude-code",
-		GooseModel:    "default",
+		AgentProvider: "claude-code",
+		AgentModel:    "default",
 		GooseAgentPAT: "ghp_test",
 		ClaudeCreds:   "base64==",
 		ProjectID:     "PVT_x",
@@ -414,7 +414,7 @@ func TestConfigureRepo_Federated_SharedNames_RouteToOrg(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	shared := []string{"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON"}
+	shared := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON"}
 	for _, name := range shared {
 		args, ok := (*captured)[name]
 		if !ok {
@@ -460,7 +460,7 @@ func TestConfigureRepo_Single_AllNames_StayAtRepo(t *testing.T) {
 	}
 
 	all := []string{
-		"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL",
+		"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL",
 		"GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON",
 		"AGENTIC_PROJECT_ID",
 	}

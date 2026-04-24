@@ -31,8 +31,8 @@ const (
 var sharedNames = map[string]struct{}{
 	"AGENT_USER":              {},
 	"RUNNER_LABEL":            {},
-	"GOOSE_PROVIDER":          {},
-	"GOOSE_MODEL":             {},
+	"AGENT_PROVIDER":          {},
+	"AGENT_MODEL":             {},
 	"GOOSE_AGENT_PAT":         {},
 	"CLAUDE_CREDENTIALS_JSON": {},
 }
@@ -80,7 +80,7 @@ func IsFederatedTopology(topology string) bool {
 // name under a given topology.
 //
 // Rules:
-//   - Shared names (AGENT_USER, RUNNER_LABEL, GOOSE_PROVIDER, GOOSE_MODEL,
+//   - Shared names (AGENT_USER, RUNNER_LABEL, AGENT_PROVIDER, AGENT_MODEL,
 //     GOOSE_AGENT_PAT, CLAUDE_CREDENTIALS_JSON) route to --org under any
 //     federated topology variant and to --repo under single.
 //   - Per-repo identity names (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY,

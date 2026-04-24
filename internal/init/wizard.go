@@ -30,8 +30,8 @@ type InitConfig struct {
 	AgentUser      string
 	AgentUserScope string
 	RunnerLabel    string
-	GooseProvider  string
-	GooseModel     string
+	AgentProvider  string
+	AgentModel     string
 	GooseAgentPAT  string
 	ClaudeCreds    string
 	ProjectID      string
@@ -114,7 +114,7 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 // ConfigureRepo sets up GitHub secrets, variables, and collaborator access.
 //
 // Under federated topology the shared names (AGENT_USER, RUNNER_LABEL,
-// GOOSE_PROVIDER, GOOSE_MODEL, GOOSE_AGENT_PAT, CLAUDE_CREDENTIALS_JSON)
+// AGENT_PROVIDER, AGENT_MODEL, GOOSE_AGENT_PAT, CLAUDE_CREDENTIALS_JSON)
 // are routed to the organisation level via `scope.ScopeFor`. Per-repo
 // identity names (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY, and so on) stay at
 // `--repo`. Under single topology everything stays at `--repo` — the
@@ -158,8 +158,8 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	variables := map[string]string{
 		"AGENT_USER":     cfg.AgentUser,
 		"RUNNER_LABEL":   cfg.RunnerLabel,
-		"GOOSE_PROVIDER": cfg.GooseProvider,
-		"GOOSE_MODEL":    cfg.GooseModel,
+		"AGENT_PROVIDER": cfg.AgentProvider,
+		"AGENT_MODEL":    cfg.AgentModel,
 	}
 
 	for name, value := range variables {

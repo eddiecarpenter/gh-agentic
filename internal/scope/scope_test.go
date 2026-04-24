@@ -15,8 +15,8 @@ const (
 var allSharedNames = []string{
 	"AGENT_USER",
 	"RUNNER_LABEL",
-	"GOOSE_PROVIDER",
-	"GOOSE_MODEL",
+	"AGENT_PROVIDER",
+	"AGENT_MODEL",
 	"GOOSE_AGENT_PAT",
 	"CLAUDE_CREDENTIALS_JSON",
 }

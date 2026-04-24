@@ -231,8 +231,8 @@ var pendingDescriptions = map[string]struct {
 }{
 	"AGENT_USER":      {"GitHub username the agent commits as (e.g. goose-bot)", ""},
 	"RUNNER_LABEL":    {"GitHub Actions runner label", ""}, // resolved via select in cli layer
-	"GOOSE_PROVIDER":  {"The LLM provider the agent will use", "claude-code"},
-	"GOOSE_MODEL":     {"Goose model override", "default"},
+	"AGENT_PROVIDER":  {"The LLM provider the agent will use", "claude-code"},
+	"AGENT_MODEL":     {"Agent model override", "default"},
 	"GOOSE_AGENT_PAT": {"Personal Access Token for the agent (stored as a secret)", ""},
 }
 
