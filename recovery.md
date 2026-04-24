@@ -4,23 +4,17 @@
 |---------------------|------------------------------------|
 | Feature issue       | #652                               |
 | Branch              | feature/652-design-plan-comment    |
-| Last commit         | 40ddee4                            |
+| Last commit         | 9a9007d                            |
 | Total tasks         | 2                                  |
-| Last updated        | 2026-04-24T08:22:00Z               |
-
-## Current Task
-
-### #660 — Create skills/capture-design-plan.md — canonical Design Plan template
-- **Status:** in-progress
-- **Last step:** created skills/capture-design-plan.md (Reference-category skill body with Decomposition / Tasks / Alternatives Considered / Refactor Assessment / optional Codebase Findings / optional Risks sections, word-count bounds 300–500 soft / 1000 hard, append-only amendment rule, literal `_None — single obvious decomposition._` fallback)
-- **Next step:** create internal/frameworkcheck/capture_design_plan_test.go verifying the skill's frontmatter and required body content; then regenerate CATALOGUE.md
-- **Notes:** Reuse check complete — outcome: none — existing Reference templates (capture-feature.md, session-exit.md) target unrelated artefact shapes; generalising would couple unrelated templates
+| Last updated        | 2026-04-24T08:30:00Z               |
 
 ## Completed Tasks
 
-_(none yet)_
+### #660 — Create skills/capture-design-plan.md — canonical Design Plan template
+- **Implemented:** Created the Reference-category skill `skills/capture-design-plan.md` defining the Markdown template feature-design publishes as a Design Plan comment before Task creation. Sections: Decomposition, Tasks (with `[planned]` placeholders), Alternatives Considered (with literal `_None — single obvious decomposition._` fallback), Refactor Assessment, optional Codebase Findings, optional Risks. Word-count bounds 300–500 soft / 1000 hard documented in Rules. Append-only amendment discipline (`Tasks (created)` subsection) documented. Regenerated `CATALOGUE.md` to list the new skill alphabetically under Reference. Added Go test file `internal/frameworkcheck/capture_design_plan_test.go` verifying frontmatter conformance, required section headings, literal fallback phrase, word-count bounds, append-only amendment wording, and catalogue listing.
+- **Files changed:** skills/capture-design-plan.md, CATALOGUE.md, internal/frameworkcheck/capture_design_plan_test.go
+- **Decisions:** Skill is Reference-category (not Operation) — it defines a template consumed by feature-design, not a procedure. Amendment offers two approaches (edit original comment vs follow-up comment); feature-design.md (#661) will pick one deterministically. Cross-repo references deliberately excluded from template — Tasks always live in the same repo as the Feature.
 
 ## Remaining Tasks
 
-- [ ] #660 — Create skills/capture-design-plan.md — canonical Design Plan template ← current
-- [ ] #661 — Wire feature-design.md to publish Design Plan before tasks, halt on failure, amend with #N
+- [ ] #661 — Wire feature-design.md to publish Design Plan before tasks, halt on failure, amend with #N ← current
