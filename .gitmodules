@@ -1,0 +1,6 @@
+[submodule ".agentic-tools"]
+	path = .agentic-tools
+	url = https://github.com/eddiecarpenter/gh-agentic.git
+[submodule ".ai"]
+	path = .ai
+	url = https://github.com/eddiecarpenter/gh-agentic.git
