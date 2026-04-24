@@ -65,38 +65,43 @@ func PreflightSwitchVersion(deps Deps, version string) (SwitchVersionPreflight, 
 
 // SwitchVersion upgrades or downgrades the framework version using pre-resolved
 // preflight data to avoid duplicate API calls.
+//
+// AGENTIC_FRAMEWORK_VERSION is the authoritative version the pipeline
+// and `check`/`info` read. `create` (init) and `repair` both write it
+// unconditionally — `SwitchVersion` does the same so upgrade leaves no
+// drift between the mounted `.ai/` tree, the workflow file versions, and
+// the repo variable. Single topology uses the variable locally; a
+// federated control plane broadcasts it to domain repos. Either way it
+// must be written.
 func SwitchVersion(w io.Writer, deps Deps, version string, pre SwitchVersionPreflight, confirm func(string) (bool, error)) error {
-	if pre.CurrentVersion == version {
-		fmt.Fprintf(w, "  %s  Framework is already at %s\n", ui.StatusOK.Render("✓"), version)
-		// Still ensure AGENTIC_FRAMEWORK_VERSION is set if missing on a federated CP.
-		if pre.IsFederatedCP {
-			existing, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-			if existing != version {
-				if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName, version); err != nil {
-					return fmt.Errorf("updating %s: %w", FrameworkVersionVarName, err)
-				}
-				fmt.Fprintf(w, "  %s  %s set to %s — domain repos will sync on next mount\n",
-					ui.StatusOK.Render("✓"), FrameworkVersionVarName, version)
-			}
+	writeVariable := func() error {
+		existing, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
+		if existing == version {
+			return nil
 		}
+		if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName, version); err != nil {
+			return fmt.Errorf("updating %s: %w", FrameworkVersionVarName, err)
+		}
+		suffix := ""
+		if pre.IsFederatedCP {
+			suffix = " — domain repos will sync on next mount"
+		}
+		fmt.Fprintf(w, "  %s  %s set to %s%s\n",
+			ui.StatusOK.Render("✓"), FrameworkVersionVarName, version, suffix)
 		return nil
 	}
 
-	// Switch framework version.
+	if pre.CurrentVersion == version {
+		fmt.Fprintf(w, "  %s  Framework is already at %s\n", ui.StatusOK.Render("✓"), version)
+		return writeVariable()
+	}
+
+	// Switch framework version (mount the new version).
 	if err := mount.RunSwitch(w, deps.Root, pre.CurrentVersion, version, deps.Clone, confirm); err != nil {
 		return err
 	}
 
-	// For federated control plane: update AGENTIC_FRAMEWORK_VERSION so domain repos pick it up.
-	if pre.IsFederatedCP {
-		if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName, version); err != nil {
-			return fmt.Errorf("updating %s: %w", FrameworkVersionVarName, err)
-		}
-		fmt.Fprintf(w, "  %s  %s updated to %s — domain repos will sync on next mount\n",
-			ui.StatusOK.Render("✓"), FrameworkVersionVarName, version)
-	}
-
-	return nil
+	return writeVariable()
 }
 
 // switchProjectListFederated returns only the federated projects available to the owner.
