@@ -32,16 +32,20 @@ The App is initially owned by `eddiecarpenter` (personal account). It can be tra
 | `issues` | write | Manage Requirements, Features, Tasks |
 | `pull_requests` | write | Open PRs, comment on reviews |
 | `projects` | write | Move cards on the GitHub Project |
+| `secrets` | write | In-band rotation of `CLAUDE_CREDENTIALS_JSON` (transitional — see rationale) |
 | `metadata` | read | Always required by GitHub |
-| `secrets` | **NOT INCLUDED** | See rationale below |
 
-### `secrets: write` exclusion — rationale
+### `secrets: write` rationale (transitional)
 
-The legacy `setup-claude-auth` composite action used `goose-agent`'s PAT to call `gh secret set CLAUDE_CREDENTIALS_JSON`. That required `secrets: write`.
+`secrets: write` is included **as a pragmatic transitional measure**, not because it is the long-term right answer.
 
-The App **does not** carry `secrets: write`, deliberately. The App already holds `contents: write` (i.e. can rewrite anything in the repo). Adding `secrets: write` on top would make a leaked App key a clean privilege-escalation primitive — an attacker could swap the Claude credentials for their own and harvest every subsequent pipeline run.
+**Today.** Claude Code rotates its session credentials at runtime, and `setup-claude-auth/action.yml` writes the rotated credentials back to `CLAUDE_CREDENTIALS_JSON` via `gh secret set`. This requires `secrets: write` on the token. Removing the in-band rotation path would force a human to manually `gh secret set CLAUDE_CREDENTIALS_JSON ...` whenever Claude rotated — operationally painful for a workaround the framework was always going to outgrow.
 
-The trade: `CLAUDE_CREDENTIALS_JSON` refresh becomes a manual operation. A human with appropriate access runs `gh secret set CLAUDE_CREDENTIALS_JSON --repo eddiecarpenter/gh-agentic < credentials.json` when the credentials need updating. This is rare, and the security posture is worth it.
+**Production target.** Switch from Claude Code (with rotating session credentials) to a static **Anthropic API key**. API keys don't rotate in-band — they're set once and replaced only on intentional rotation. At that point, the `gh secret set` round-trip disappears entirely, `setup-claude-auth/action.yml` is replaced or trimmed, and **`secrets: write` should be removed from the App manifest** as a cleanup step.
+
+**Security trade we are accepting transitionally.** A leaked App private key gains the ability to silently rewrite repo Actions secrets — no commit, no diff, no git-history audit trail. With `contents: write` only, credential exfiltration would require pushing a malicious workflow change (visible in `git log`), giving a chance for detection. With `secrets: write`, an attacker can swap `CLAUDE_CREDENTIALS_JSON` invisibly. This is acceptable while we are still in the Claude-Code-credentials phase because the credentials themselves are short-lived; it would not be acceptable indefinitely.
+
+**Action when migrating to Anthropic API key:** open a Feature to remove `secrets: write` from the manifest, delete the in-band rotation logic from `setup-claude-auth`, and re-narrow the App's blast radius.
 
 ### Event subscriptions
 
