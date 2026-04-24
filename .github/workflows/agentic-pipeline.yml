@@ -67,6 +67,16 @@ on:
         required: true
       CLAUDE_CREDENTIALS_JSON:
         required: true
+      PROJECT_PAT:
+        required: false
+        description: |
+          Personal Access Token for user-owned Project v2 mutations only.
+          GitHub Apps cannot mutate user-owned Projects v2 (platform
+          limitation — see docs/github-app-setup.md). When unset, project
+          status updates are skipped with a warning; the rest of the
+          pipeline proceeds. When set but invalid/expired, the project
+          step fails non-blockingly (continue-on-error) so the PAT
+          refresh is visible in CI without halting work.
 
 jobs:
 
@@ -203,18 +213,29 @@ jobs:
 
       # Inline project status update — mirror the dev-session pattern so
       # Stage 3 also keeps the project board in lockstep with the label.
+      # Uses PROJECT_PAT (not the App token) because GitHub Apps cannot
+      # mutate user-owned Projects v2 (platform limitation). Skipped
+      # gracefully if PROJECT_PAT is unset; non-blocking on failure.
       - name: Set project status to 'In Development'
         if: success() && steps.push.outputs.name != ''
+        continue-on-error: true
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
           AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
           ISSUE: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
         run: |
+          if [ -z "${PROJECT_PAT}" ]; then
+            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
+            echo "::warning::To enable: create a PAT with user-level project read/write access, set it as PROJECT_PAT in repo secrets."
+            echo "::warning::Background: GitHub Apps cannot mutate user-owned Projects v2 (platform limit, see docs/github-app-setup.md)."
+            exit 0
+          fi
           if [ -z "${AGENTIC_PROJECT_ID}" ]; then
             echo "::error::AGENTIC_PROJECT_ID is not configured. Set the repo variable to the ProjectV2 node ID."
             exit 1
           fi
+          export GH_TOKEN="${PROJECT_PAT}"
           ISSUE_NODE_ID=$(gh api "repos/${REPO}/issues/${ISSUE}" --jq '.node_id')
           RESULT=$(gh api graphql -f query='
             query($issueId: ID!) {
@@ -416,25 +437,45 @@ jobs:
             --base main \
             --head ${BRANCH}
 
-      - name: Apply in-review label and set project status
+      # Label transition uses the App token (works fine, must succeed —
+      # downstream workflows trigger on the in-review label).
+      - name: Apply in-review label
+        id: relabel
         if: success()
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
         run: |
           COMMITS=$(git rev-list --count origin/main..HEAD)
           if [ "${COMMITS}" -eq 0 ]; then
             echo "No commits — leaving issue in-development."
+            echo "skipped=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           gh issue edit ${{ github.event.issue.number }} \
             --remove-label "in-development" \
             --add-label "in-review"
+          echo "skipped=false" >> $GITHUB_OUTPUT
 
+      # Project status update uses PROJECT_PAT — Apps cannot mutate
+      # user-owned Projects v2 (platform limit). Skipped gracefully if
+      # the PAT is unset; non-blocking on failure.
+      - name: Set project status to 'In Review'
+        if: success() && steps.relabel.outputs.skipped != 'true'
+        continue-on-error: true
+        env:
+          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
+          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
+        run: |
+          if [ -z "${PROJECT_PAT}" ]; then
+            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
+            echo "::warning::To enable: create a PAT with user-level project read/write access, set it as PROJECT_PAT in repo secrets."
+            exit 0
+          fi
           if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "ERROR: AGENTIC_PROJECT_ID is not configured."
+            echo "::error::AGENTIC_PROJECT_ID is not configured."
             exit 1
           fi
+          export GH_TOKEN="${PROJECT_PAT}"
           ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.node_id')
           RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
           ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
@@ -698,19 +739,23 @@ jobs:
           ISSUE_NUMBER=$(echo "${BRANCH}" | sed 's|feature/\([0-9]*\)-.*|\1|')
           echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
 
-      - name: Apply done label, set project status, and close feature issue
+      # Label transition + issue close use the App token. Must succeed —
+      # downstream auto-close-parent and branch-delete steps depend on it.
+      - name: Apply done label and close feature issue
+        id: doneclose
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
             echo "Could not extract issue number from branch — skipping"
+            echo "skipped=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           ISSUE_TYPE=$(gh api repos/${{ github.repository }}/issues/${ISSUE} --jq '.pull_request // "issue"' 2>/dev/null || echo "")
           if [ -z "${ISSUE_TYPE}" ] || [ "${ISSUE_TYPE}" != "issue" ]; then
             echo "Issue #${ISSUE} is not an open feature issue — skipping"
+            echo "skipped=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           gh issue edit ${ISSUE} \
@@ -720,11 +765,32 @@ jobs:
             --remove-label "in-development" \
             --remove-label "in-review" \
             --add-label "done"
+          gh issue close ${ISSUE} \
+            --repo ${{ github.repository }} \
+            --comment "Feature implemented and merged via PR #${{ github.event.pull_request.number }}."
+          echo "skipped=false" >> $GITHUB_OUTPUT
 
+      # Project status update uses PROJECT_PAT — Apps cannot mutate
+      # user-owned Projects v2 (platform limit). Skipped gracefully if
+      # the PAT is unset; non-blocking on failure.
+      - name: Set project status to 'Done'
+        if: success() && steps.doneclose.outputs.skipped != 'true'
+        continue-on-error: true
+        env:
+          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
+          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
+        run: |
+          ISSUE="${{ steps.feature.outputs.issue_number }}"
+          if [ -z "${PROJECT_PAT}" ]; then
+            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
+            echo "::warning::To enable: create a PAT with user-level project read/write access, set it as PROJECT_PAT in repo secrets."
+            exit 0
+          fi
           if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "ERROR: AGENTIC_PROJECT_ID is not configured."
+            echo "::error::AGENTIC_PROJECT_ID is not configured."
             exit 1
           fi
+          export GH_TOKEN="${PROJECT_PAT}"
           ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${ISSUE} --jq '.node_id')
           RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
           ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
@@ -736,10 +802,6 @@ jobs:
           FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
           OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
           gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
-
-          gh issue close ${ISSUE} \
-            --repo ${{ github.repository }} \
-            --comment "Feature implemented and merged via PR #${{ github.event.pull_request.number }}."
 
       - name: Parse parent requirement
         id: parent
@@ -766,24 +828,30 @@ jobs:
           echo "requirement_number=${PARENT}" >> $GITHUB_OUTPUT
           echo "agentic_repo=${AGENTIC_REPO}" >> $GITHUB_OUTPUT
 
+      # Label transition + parent close use the App token. Project status
+      # update for the parent requirement is split into the next step
+      # (uses PROJECT_PAT, non-blocking).
       - name: Auto-close parent requirement if all sub-issues complete
+        id: autoclose
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
         run: |
           PARENT="${{ steps.parent.outputs.requirement_number }}"
           AGENTIC_REPO="${{ steps.parent.outputs.agentic_repo }}"
           if [ -z "${PARENT}" ]; then
+            echo "no_parent=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           REQ_NODE_ID=$(gh api repos/${AGENTIC_REPO}/issues/${PARENT} --jq '.node_id')
           if [ -z "${REQ_NODE_ID}" ]; then
+            echo "no_parent=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           OPEN_COUNT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { subIssues(first: 100) { nodes { state } } } } }' -f issueId="${REQ_NODE_ID}" \
             --jq '[.data.node.subIssues.nodes[] | select(.state == "OPEN")] | length')
           if [ "${OPEN_COUNT}" -gt 0 ]; then
             echo "${OPEN_COUNT} sub-issue(s) still open — leaving requirement #${PARENT} open"
+            echo "still_open=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           gh issue edit ${PARENT} \
@@ -792,21 +860,43 @@ jobs:
             --remove-label "scoping" \
             --remove-label "scheduled" \
             --add-label "done"
-          if [ -n "${AGENTIC_PROJECT_ID}" ]; then
-            RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${REQ_NODE_ID}")
-            ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
-            if [ -z "${ITEM_ID}" ]; then
-              ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${REQ_NODE_ID}")
-              ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
-            fi
-            FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
-            FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
-            OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
-            gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
-          fi
           gh issue close ${PARENT} \
             --repo ${AGENTIC_REPO} \
             --comment "All child feature issues are now complete. Auto-closing requirement."
+          echo "req_node_id=${REQ_NODE_ID}" >> $GITHUB_OUTPUT
+          echo "no_parent=false" >> $GITHUB_OUTPUT
+          echo "still_open=false" >> $GITHUB_OUTPUT
+
+      # Project status update for the parent requirement uses PROJECT_PAT.
+      # Same pattern as the feature-status step: skip gracefully if the
+      # PAT isn't set; non-blocking on failure.
+      - name: Set parent requirement project status to 'Done'
+        if: success() && steps.autoclose.outputs.no_parent != 'true' && steps.autoclose.outputs.still_open != 'true'
+        continue-on-error: true
+        env:
+          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
+          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
+          REQ_NODE_ID: ${{ steps.autoclose.outputs.req_node_id }}
+        run: |
+          if [ -z "${PROJECT_PAT}" ]; then
+            echo "::warning::PROJECT_PAT secret is not set — parent requirement project status update skipped."
+            exit 0
+          fi
+          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
+            echo "::warning::AGENTIC_PROJECT_ID is not configured — skipping parent project status update."
+            exit 0
+          fi
+          export GH_TOKEN="${PROJECT_PAT}"
+          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${REQ_NODE_ID}")
+          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+          if [ -z "${ITEM_ID}" ]; then
+            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${REQ_NODE_ID}")
+            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
+          fi
+          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
+          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
+          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
+          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
 
       - name: Delete feature branch
         env:
