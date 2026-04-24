@@ -8,6 +8,7 @@ loads:
   - gh-agentic-tool
   - set-issue-status
   - refactor-assessment
+  - capture-design-plan
   - session-exit
 emits-exit-block: true
 exit-hands-to: "automation: dev-session (in-development label)"
@@ -63,38 +64,85 @@ Triggered automatically by GitHub Actions when a Feature issue is labelled `in-d
    adjacent code), record it explicitly as a "no refactor needed" note naming
    the scope searched (keywords, symbols, files inspected). Task emission is
    blocked until the assessment has been performed and recorded.
-5. Creates Task sub-issues under the Feature (ordered by implementation sequence), ensuring every acceptance criterion is covered by at least one task. If the Refactor Assessment emitted a refactor task, it is the first task in the order.
-6. Verifies full criteria-to-task coverage before proceeding
-7. Creates the feature branch: `feature/<N>-<description>`
-8. Applies `in-development` label on the Feature issue.
-   **Inline status update** — immediately after applying the `in-development` label, set
-   the feature's project status to `In Development` following the pattern in
-   `set-issue-status.md`:
-   - Verify `AGENTIC_PROJECT_ID` is set — hard-fail if not
-   - Resolve the issue node ID
-   - Find or create the project item
-   - Resolve the Status field and option IDs
-   - Set status to `In Development`
-9. Emits the canonical exit block (see `skills/session-exit.md`). The
-   `Produced` section includes a line summarising the Refactor Assessment
-   outcome. Shape:
+5. **Publish Design Plan comment.** Load `skills/capture-design-plan.md` and
+   fill the canonical template using the outputs of steps 2–4 (acceptance
+   criteria, codebase analysis, Refactor Assessment). Because Task sub-issues
+   do not yet exist, the `## Tasks` section lists planned task titles with
+   `[planned]` placeholders — not `#N` references. Post the filled comment on
+   the Feature issue:
 
-   ```
-   === Feature Design Session — Completed ===
-
-   Produced:
-     - M task sub-issues created (#N–#N) under Feature #N
-     - Feature branch feature/N-<description> created
-     - Acceptance-criteria-to-task coverage verified (all K criteria mapped)
-     - in-development label applied to Feature #N
-     - Refactor Assessment: <N refactor tasks emitted | no refactor needed — scope searched: <list>>
-
-   Blocked: none
-
-   Next: automation: dev-session (in-development label on #N)
+   ```bash
+   gh issue comment --repo <repo> <feature-number> --body-file <tmp-plan>.md
    ```
 
-10. **Terminate the session.** Immediately after the exit block, invoke the host
+   Capture the comment URL returned by `gh issue comment` — it is required
+   for the exit block (step 10) and for the amend step (step 7).
+
+   **Halt-on-failure.** If the `gh issue comment` call exits non-zero, the
+   design session halts immediately. Print the exact error output followed
+   by:
+
+   ```
+   REFUSED: Design Plan publication failed — halting before task creation
+   ```
+
+   When publication fails, the session **does not proceed to Task creation**,
+   **does not create the feature branch**, and **does not apply the
+   `in-development` label**. Task emission is blocked until the comment has
+   been successfully published and its URL captured; `gh issue comment`
+   failure halts the session with a diagnostic — it does not retry silently.
+6. Creates Task sub-issues under the Feature (ordered by implementation sequence), ensuring every acceptance criterion is covered by at least one task. If the Refactor Assessment emitted a refactor task, it is the first task in the order.
+7. **Amend Design Plan comment with `#N` references.** Append-only: append a
+   `### Tasks (created)` subsection to the original Design Plan comment
+   listing each created `#N` mapped to its planned title. Use the GitHub
+   API edit approach to preserve the original comment as the single
+   canonical artefact:
+
+   ```bash
+   gh api --method PATCH \
+     -H "Accept: application/vnd.github+json" \
+     /repos/<owner>/<repo>/issues/comments/<comment-id> \
+     -f body="$(cat <tmp-amended-plan>.md)"
+   ```
+
+   where `<tmp-amended-plan>.md` is the original plan body with the new
+   `### Tasks (created)` subsection appended at the end of the existing
+   `## Tasks` section. **Never rewrite prior sections** — the amend is
+   strictly append-only so the audit trail between the original `[planned]`
+   plan and the created tasks is preserved (see
+   `skills/capture-design-plan.md` Rules).
+8. Verifies full criteria-to-task coverage before proceeding
+9. Creates the feature branch: `feature/<N>-<description>`
+10. Applies `in-development` label on the Feature issue.
+    **Inline status update** — immediately after applying the `in-development` label, set
+    the feature's project status to `In Development` following the pattern in
+    `set-issue-status.md`:
+    - Verify `AGENTIC_PROJECT_ID` is set — hard-fail if not
+    - Resolve the issue node ID
+    - Find or create the project item
+    - Resolve the Status field and option IDs
+    - Set status to `In Development`
+11. Emits the canonical exit block (see `skills/session-exit.md`). The
+    `Produced` section includes a line summarising the Refactor Assessment
+    outcome and a line with the Design Plan comment URL. Shape:
+
+    ```
+    === Feature Design Session — Completed ===
+
+    Produced:
+      - Design Plan comment: <url>
+      - M task sub-issues created (#N–#N) under Feature #N
+      - Feature branch feature/N-<description> created
+      - Acceptance-criteria-to-task coverage verified (all K criteria mapped)
+      - in-development label applied to Feature #N
+      - Refactor Assessment: <N refactor tasks emitted | no refactor needed — scope searched: <list>>
+
+    Blocked: none
+
+    Next: automation: dev-session (in-development label on #N)
+    ```
+
+12. **Terminate the session.** Immediately after the exit block, invoke the host
     runtime's session-close API if exposed; otherwise halt. No code is written,
     no PR is opened (see RULEBOOK — Session Termination).
 
@@ -118,6 +166,12 @@ Each task issue contains:
   performed and its outcome recorded in the design output.** "I didn't look"
   is not a permitted outcome — see `skills/refactor-assessment.md` for the
   procedure, the three permitted outcomes, and the canonical recording format.
+- **Task emission is blocked until the Design Plan comment (step 5) has been
+  successfully published and its URL captured.** `gh issue comment` failure
+  halts the session with a diagnostic — it does not retry silently. On
+  publish failure the session does not create tasks, does not create the
+  feature branch, and does not apply the `in-development` label. See
+  `skills/capture-design-plan.md` for the comment template.
 
 ## Next Step
 
