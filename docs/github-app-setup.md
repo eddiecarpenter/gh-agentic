@@ -82,33 +82,43 @@ The App is now installed and can mint installation tokens for `gh-agentic` via `
 
 ---
 
-## Secret storage
+## Configuration storage
 
-Two repo-level secrets are required on `eddiecarpenter/gh-agentic`:
+The App's identity splits into one **variable** (not sensitive) and one **secret** (sensitive). Treating them according to their actual sensitivity is intentional — see "App ID is a variable, not a secret" in the Rationale section below.
+
+### Repo variable
+
+| Variable | Value |
+|---|---|
+| `AGENTIC_APP_ID` | The App ID integer (e.g. `1234567`). Public per GitHub's API; not sensitive. |
+
+```bash
+gh variable set AGENTIC_APP_ID --repo eddiecarpenter/gh-agentic --body "<app-id-integer>"
+```
+
+### Repo secret
 
 | Secret | Value |
 |---|---|
-| `AGENTIC_APP_ID` | The App ID integer noted above (e.g. `1234567`) |
 | `AGENTIC_APP_PRIVATE_KEY` | The full PEM contents — `-----BEGIN RSA PRIVATE KEY-----` through `-----END RSA PRIVATE KEY-----` inclusive, including newlines |
 
-Set them with:
-
 ```bash
-gh secret set AGENTIC_APP_ID --repo eddiecarpenter/gh-agentic --body "<app-id-integer>"
 gh secret set AGENTIC_APP_PRIVATE_KEY --repo eddiecarpenter/gh-agentic < /path/to/downloaded-key.pem
 ```
 
-The private key is stored as **raw PEM** — no base64 wrapping. `actions/create-github-app-token@v1` accepts this format natively. After the secrets are set, securely delete the local `.pem` file (`shred -u` or equivalent).
+The private key is stored as **raw PEM** — no base64 wrapping. `actions/create-github-app-token` accepts this format natively. After the secret is set, securely delete the local `.pem` file (`shred -u` or equivalent).
 
-### Manual `CLAUDE_CREDENTIALS_JSON` refresh
+### Existing Claude credential secret
 
-Because the App does not carry `secrets: write`, the pipeline cannot self-update the Claude credentials. When refresh is needed, a human runs:
+`CLAUDE_CREDENTIALS_JSON` remains as before. The App holds `secrets: write` (see Permissions section), which preserves the in-band credential refresh flow performed by `setup-claude-auth/action.yml`.
 
-```bash
-gh secret set CLAUDE_CREDENTIALS_JSON --repo eddiecarpenter/gh-agentic < /path/to/claude-credentials.json
-```
+### Webhook fields
 
-This is expected to be infrequent (typically only on Claude credential rotation events).
+The App has no backend service. When creating the App, leave both **Webhook URL** and **Webhook secret** blank (or untick "Active"). Nothing on GitHub will deliver a webhook anywhere.
+
+### Why App ID is a variable, not a secret
+
+The App ID is a small public integer that GitHub displays on the App's settings page; anyone who knows the App's slug can resolve it via the public REST API. Marking it as a secret would dilute the meaning of "secret" (which should mean *"leaking this is harmful"*) and add audit overhead. The private key alone is what authorizes API calls — the App ID without the private key is useless.
 
 ---
 

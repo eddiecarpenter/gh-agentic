@@ -63,8 +63,6 @@ on:
         type: string
         default: ''
     secrets:
-      AGENTIC_APP_ID:
-        required: true
       AGENTIC_APP_PRIVATE_KEY:
         required: true
       CLAUDE_CREDENTIALS_JSON:
@@ -93,7 +91,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
         with:
-          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          app-id: ${{ vars.AGENTIC_APP_ID }}
           private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
 
       - name: Checkout domain repo
@@ -288,7 +286,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
         with:
-          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          app-id: ${{ vars.AGENTIC_APP_ID }}
           private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
 
       - name: Resolve feature branch
@@ -475,7 +473,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
         with:
-          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          app-id: ${{ vars.AGENTIC_APP_ID }}
           private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
 
       - name: Checkout domain repo
@@ -578,7 +576,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
         with:
-          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          app-id: ${{ vars.AGENTIC_APP_ID }}
           private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
 
       - name: Checkout domain repo
@@ -688,7 +686,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
         with:
-          app-id: ${{ secrets.AGENTIC_APP_ID }}
+          app-id: ${{ vars.AGENTIC_APP_ID }}
           private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
 
       - name: Extract feature issue number
