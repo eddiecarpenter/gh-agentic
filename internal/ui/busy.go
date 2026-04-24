@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/term"
 )
 
 // busyDelay is the grace period before the busy indicator first appears.
@@ -46,11 +44,12 @@ var busySuppressed = func(w io.Writer) bool {
 	if os.Getenv("GH_NO_SPINNER") != "" {
 		return true
 	}
-	f, ok := w.(*os.File)
-	if !ok {
-		return true
-	}
-	return !term.IsTerminal(int(f.Fd()))
+	// TTY detection is delegated to IsInteractive so the notion of "is
+	// this stream a terminal?" has exactly one definition shared with
+	// the install-flow helpers. The NO_COLOR / GH_NO_SPINNER short-
+	// circuits above remain part of BusyRun's own suppression rules
+	// because they are UI-opt-outs, not TTY signals.
+	return !IsInteractive(w)
 }
 
 // BusyRun runs fn() and, when running on a TTY, displays a single-line

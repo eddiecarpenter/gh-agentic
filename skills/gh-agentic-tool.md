@@ -55,9 +55,19 @@ First-time setup wizard. Resolves topology (single vs. federated), creates
 or joins the project, mounts the framework, and configures pipeline
 infrastructure (variables, secrets, wrapper workflows).
 
+Between the framework mount and the pipeline-configuration step, the
+wizard checks whether the agentic GitHub App is installed on the target.
+If installed, it logs a skip message and continues. If missing and the
+session is interactive, it prompts the user to open the install page in a
+browser. If missing and the session is headless (CI / non-TTY), it prints
+the install URL and continues without blocking. `--skip-app-install`
+bypasses the check entirely.
+
 Flags:
 - `--force` — overwrite existing configuration on a repo that is already
   initialised.
+- `--skip-app-install` — bypass the agentic GitHub App install-state check
+  and install guidance.
 
 ### `gh agentic check`
 
@@ -171,9 +181,19 @@ Flags:
 
 Bring this repo into an existing project as a domain repo.
 
+Before the join variable is written, the command checks whether the
+agentic GitHub App is installed on the target. Organisation owners check
+at the org level (one install covers every repo under the org); personal-
+account owners check at the repo level. If missing and the session is
+interactive, the user is prompted to open the install page. If missing
+and the session is headless (CI / non-TTY), the install URL is printed
+and the command continues. `--skip-app-install` bypasses the check.
+
 Flags:
 - `--list` (`-l`) — list available projects and exit.
 - `--interactive` (`-i`) — select project interactively.
+- `--skip-app-install` — bypass the agentic GitHub App install-state
+  check and install guidance.
 
 ### `gh agentic project switch [project-name]`
 
@@ -455,6 +475,25 @@ gh agentic info
 Read the Framework section. The three lines are local, remote (control
 plane authoritative), and latest available — with sync indicators.
 
+### "Is the agentic GitHub App installed on this repo / org?"
+
+There is no dedicated subcommand for this yet — the check is performed
+inline as part of `gh agentic init` and `gh agentic project join`. Read
+the command output for one of these three lines:
+
+- `GitHub App already installed on <target> — skipping install step` —
+  the App is present and matches the expected slug. No action required.
+- `Install the agentic GitHub App at https://github.com/apps/... before
+  running the pipeline.` — missing, headless session (CI / non-TTY). The
+  command continued without blocking; the human or the operator must
+  click the URL before the pipeline runs.
+- `Install the agentic GitHub App at https://github.com/apps/... when
+  ready.` — missing, interactive session where the user declined the
+  prompt. Same remediation.
+
+To bypass the step entirely (useful for CI smoke tests or when the
+install state is known-good out-of-band), pass `--skip-app-install`.
+
 ---
 
 ## Rules for the Agent
@@ -479,3 +518,9 @@ plane authoritative), and latest available — with sync indicators.
   --requirements` or `--features`.
 - **The `--json` flag has been removed end-to-end.** Cobra now responds
   `unknown flag: --json` on every status command. Use `--raw` instead.
+- **App install check runs inline in `init` and `project join`.** Neither
+  command blocks on the install flow — installed, declined, and headless
+  all let the command continue. Scrape the output lines above (or the
+  install URL prefix `https://github.com/apps/`) to detect the branch
+  that executed. Use `--skip-app-install` when running in automation
+  that has out-of-band confirmation the App is present.
