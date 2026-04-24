@@ -181,9 +181,19 @@ Flags:
 
 Bring this repo into an existing project as a domain repo.
 
+Before the join variable is written, the command checks whether the
+agentic GitHub App is installed on the target. Organisation owners check
+at the org level (one install covers every repo under the org); personal-
+account owners check at the repo level. If missing and the session is
+interactive, the user is prompted to open the install page. If missing
+and the session is headless (CI / non-TTY), the install URL is printed
+and the command continues. `--skip-app-install` bypasses the check.
+
 Flags:
 - `--list` (`-l`) — list available projects and exit.
 - `--interactive` (`-i`) — select project interactively.
+- `--skip-app-install` — bypass the agentic GitHub App install-state
+  check and install guidance.
 
 ### `gh agentic project switch [project-name]`
 
