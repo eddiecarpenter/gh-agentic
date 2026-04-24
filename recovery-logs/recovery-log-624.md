@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #624                               |
 | Branch              | feature/624-rename-goose-vars      |
-| Last commit         | b097257                            |
+| Last commit         | 9817cce                            |
 | Total tasks         | 3                                  |
-| Last updated        | 2026-04-24T03:56:33Z               |
+| Last updated        | 2026-04-24T03:58:00Z               |
 
 ## Completed Tasks
 
@@ -42,6 +42,23 @@
   Go is not installed on this self-hosted runner; task #637 already verified
   the Go side end-to-end.
 
+### #639 — Document GOOSE_* → AGENT_* rename as a breaking-change migration
+- **Implemented:** Added `docs/migration-agent-vars-rename.md` describing the
+  two renames, the canonical default values
+  (`AGENT_PROVIDER=claude-code`, `AGENT_MODEL=default`), the required user
+  action to set the new variables at the same scope before bumping framework
+  version, and the scope note that `GOOSE_AGENT_PAT` is unaffected (handled
+  by #622). Commit body carries `BREAKING CHANGE:` footer so
+  `skills/release-notes.md` categorises it under Breaking Changes.
+  `docs/PROJECT_BRIEF.md` required no change — never referenced the renamed
+  variables. Final repo-wide grep confirms zero `GOOSE_PROVIDER` /
+  `GOOSE_MODEL` references outside the Goose-CLI contract sites
+  (workflow `env:` LHS, heredoc YAML keys) and the migration doc itself.
+- **Files changed:** docs/migration-agent-vars-rename.md (new).
+- **Decisions:** Issue had been closed externally without commits; reopened,
+  completed the work, and re-closed. Same Go-runner caveat as #638 — task
+  is doc-only, no Go regression risk.
+
 ## Remaining Tasks
 
-- [ ] #639 — Document GOOSE_* → AGENT_* rename as a breaking-change migration ← current
+_(none — all three tasks complete)_
