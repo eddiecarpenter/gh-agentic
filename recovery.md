@@ -4,24 +4,28 @@
 |---------------------|-------------------------------------------|
 | Feature issue       | #625                                      |
 | Branch              | feature/625-cli-app-install-helper        |
-| Last commit         | e53c946                                   |
+| Last commit         | 1dcaa58                                   |
 | Total tasks         | 5                                         |
-| Last updated        | 2026-04-24T04:50:00Z                      |
+| Last updated        | 2026-04-24T05:05:00Z                      |
 
 ## Completed Tasks
 
 ### #641 — Add GitHub App installation detection API
-- **Implemented:** `internal/githubapp.Checker` with `CheckRepoInstallation`, `CheckOrgInstallation`; injectable `RESTClient` interface for tests.
+- **Implemented:** `internal/githubapp.Checker` with `CheckRepoInstallation`, `CheckOrgInstallation`; injectable `RESTClient` interface.
 - **Files changed:** `internal/githubapp/installation.go`, `internal/githubapp/installation_test.go`
-- **Decisions:** Used `DoWithContext` to propagate `context.Context`. `DefaultAppSlug = "gh-agentic-app"`.
+- **Decisions:** Context-propagating via `DoWithContext`; `DefaultAppSlug = "gh-agentic-app"`.
 
 ### #642 — Add install URL builder, browser opener, and IsInteractive helper
-- **Implemented:** `InstallURL(slug,targetType,targetName)`, `ui.OpenURL` (injectable var), `ui.IsInteractive` / `ui.IsCI`, and refactored `busy.go:busySuppressed` to delegate TTY detection to `IsInteractive`.
-- **Files changed:** `internal/githubapp/installurl.go`, `internal/githubapp/installurl_test.go`, `internal/ui/browser.go`, `internal/ui/browser_test.go`, `internal/ui/tty.go`, `internal/ui/tty_test.go`, `internal/ui/busy.go`, `go.mod`, `go.sum`
-- **Decisions:** Two indirect deps added transitively via go-gh browser (`cli/browser`, `google/shlex`). `IsCI` is strict — only `GITHUB_ACTIONS=true` or `CI=true`.
+- **Implemented:** `InstallURL`, `ui.OpenURL`/`OpenURLFunc`, `ui.IsInteractive`/`ui.IsCI`; refactored `busy.go:busySuppressed` to delegate to `IsInteractive`.
+- **Files changed:** `internal/githubapp/installurl.go` (+ test), `internal/ui/browser.go` (+ test), `internal/ui/tty.go` (+ test), `internal/ui/busy.go`, `go.mod`, `go.sum`
+- **Decisions:** Indirect deps added transitively via go-gh browser. `IsCI` strict — only `GITHUB_ACTIONS=true` / `CI=true`.
+
+### #643 — Wire GitHub App install detection into gh agentic init
+- **Implemented:** `githubapp.Flow` + `EnsureInstalled` four-path flow (installed / interactive-accept / interactive-decline / headless). Hooked into `wizard.Run()` between mount and ConfigureRepo. `--skip-app-install` flag and production flow wiring in `cli/init.go`. `skills/gh-agentic-tool.md` updated for init.
+- **Files changed:** `internal/githubapp/flow.go`, `internal/githubapp/flow_test.go`, `internal/init/wizard.go`, `internal/init/appinstall_test.go`, `internal/cli/init.go`, `internal/cli/init_test.go`, `skills/gh-agentic-tool.md`
+- **Decisions:** Federated topology routes to `TargetOrg` so one install covers all domain repos under the org. Browser-open failures log a fallback and continue — not fatal.
 
 ## Remaining Tasks
 
-- [ ] #643 — Wire GitHub App install detection into gh agentic init ← current
-- [ ] #644 — Wire GitHub App install detection into gh agentic project join
+- [ ] #644 — Wire GitHub App install detection into gh agentic project join ← current
 - [ ] #645 — Update skills/gh-agentic-tool.md to document App install behaviour
