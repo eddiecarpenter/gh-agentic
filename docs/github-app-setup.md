@@ -112,6 +112,24 @@ gh secret set AGENTIC_APP_PRIVATE_KEY --repo eddiecarpenter/gh-agentic < /path/t
 
 The private key is stored as **raw PEM** — no base64 wrapping. `actions/create-github-app-token` accepts this format natively. After the secret is set, securely delete the local `.pem` file (`shred -u` or equivalent).
 
+### `PROJECT_PAT` (optional but strongly recommended)
+
+GitHub Apps installed on a personal account **cannot mutate user-owned Projects v2** — confirmed limitation by GitHub Support ([community discussion #46681](https://github.com/orgs/community/discussions/46681)). The App can do everything else; project board sync alone needs a separate credential.
+
+To keep the project board in lockstep with pipeline labels, set a **Personal Access Token** as the `PROJECT_PAT` secret:
+
+```bash
+gh secret set PROJECT_PAT --repo eddiecarpenter/gh-agentic --body "<your-pat>"
+```
+
+**Required scope:** the PAT needs read/write access to the user-owned Projects v2. For a fine-grained PAT: enable **Account permissions → Projects: Read and write**. For a classic PAT: the `project` scope.
+
+**When unset:** every pipeline workflow that would update project status emits a `::warning::` and skips the project step cleanly (✓ outcome — no red noise). The pipeline itself works fully — labels carry pipeline state; only the visual project board stops auto-syncing. This is a documented, supported degradation mode.
+
+**When set but invalid/expired:** the project step exits non-zero (visible red ✗ in the run summary), but `continue-on-error: true` keeps the overall workflow green. Refresh the PAT and project sync resumes on the next run.
+
+**Rotation:** PATs do not auto-rotate. Plan for periodic refresh (annually if the PAT has an expiration, or on any suspected leak). When migrating to an organization topology (where the App's `Projects: Write` permission becomes effective), the `PROJECT_PAT` secret can be deleted entirely.
+
 ### Existing Claude credential secret
 
 `CLAUDE_CREDENTIALS_JSON` remains as before. The App holds `secrets: write` (see Permissions section), which preserves the in-band credential refresh flow performed by `setup-claude-auth/action.yml`.
