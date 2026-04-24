@@ -55,9 +55,19 @@ First-time setup wizard. Resolves topology (single vs. federated), creates
 or joins the project, mounts the framework, and configures pipeline
 infrastructure (variables, secrets, wrapper workflows).
 
+Between the framework mount and the pipeline-configuration step, the
+wizard checks whether the agentic GitHub App is installed on the target.
+If installed, it logs a skip message and continues. If missing and the
+session is interactive, it prompts the user to open the install page in a
+browser. If missing and the session is headless (CI / non-TTY), it prints
+the install URL and continues without blocking. `--skip-app-install`
+bypasses the check entirely.
+
 Flags:
 - `--force` — overwrite existing configuration on a repo that is already
   initialised.
+- `--skip-app-install` — bypass the agentic GitHub App install-state check
+  and install guidance.
 
 ### `gh agentic check`
 

@@ -59,12 +59,24 @@ type ConfirmFunc func(title, message string) (bool, error)
 // RunCommandFunc is a function type for running shell commands.
 type RunCommandFunc = auth.RunCommandFunc
 
+// EnsureAppInstalledFunc runs the agentic-GitHub-App install-state check
+// after the framework has been mounted and before ConfigureRepo writes
+// secrets/variables. Production wiring invokes
+// githubapp.EnsureInstalled; tests inject a no-op or a recording fake.
+// It never fails the wizard on a user-decline or headless path — the
+// helper is expected to handle those internally and return nil.
+type EnsureAppInstalledFunc func(w io.Writer, cfg *InitConfig) error
+
 // Deps holds injectable dependencies for the init wizard.
 type Deps struct {
 	Run   RunCommandFunc
 	Clone mount.CloneFunc
 	// CollectConfig gathers configuration interactively (or from test injection).
 	CollectConfig func(w io.Writer, repoFullName string) (*InitConfig, error)
+	// EnsureAppInstalled, when non-nil, runs the agentic-App install
+	// guidance step between mount and ConfigureRepo. When nil the step
+	// is skipped silently — matches the --skip-app-install flag.
+	EnsureAppInstalled EnsureAppInstalledFunc
 }
 
 // Run executes the init wizard.
@@ -94,6 +106,17 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 	// Run first-time mount.
 	if err := mount.RunFirstTime(w, root, cfg.Version, deps.Clone); err != nil {
 		return fmt.Errorf("mount: %w", err)
+	}
+
+	// Detect / guide the agentic GitHub App install before secrets are
+	// written — the App must be installed before the pipeline can
+	// receive webhooks, so it belongs at the same boundary as the
+	// identity writes. A nil hook (or the --skip-app-install flag on
+	// the caller) short-circuits to a no-op.
+	if deps.EnsureAppInstalled != nil {
+		if err := deps.EnsureAppInstalled(w, cfg); err != nil {
+			return fmt.Errorf("App install check: %w", err)
+		}
 	}
 
 	// Configure secrets and variables.
