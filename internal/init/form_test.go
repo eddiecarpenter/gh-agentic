@@ -45,8 +45,8 @@ func TestCollectConfigInteractive_Success(t *testing.T) {
 				cfg.AgentUser = "goose-agent"
 			case 2: // Phase 3: pipeline config
 				cfg.RunnerLabel = "ubuntu-latest"
-				cfg.GooseProvider = "claude-code"
-				cfg.GooseModel = "default"
+				cfg.AgentProvider = "claude-code"
+				cfg.AgentModel = "default"
 			case 3: // Phase 4: credentials + project
 				cfg.GooseAgentPAT = "ghp_test123"
 				cfg.ClaudeCreds = "base64creds"
@@ -310,11 +310,11 @@ func TestCollectConfigInteractive_PipelineDefaults(t *testing.T) {
 	if result.RunnerLabel != DefaultRunnerLabel {
 		t.Errorf("expected default runner label %q, got %q", DefaultRunnerLabel, result.RunnerLabel)
 	}
-	if result.GooseProvider != DefaultGooseProvider {
-		t.Errorf("expected default provider %q, got %q", DefaultGooseProvider, result.GooseProvider)
+	if result.AgentProvider != DefaultAgentProvider {
+		t.Errorf("expected default provider %q, got %q", DefaultAgentProvider, result.AgentProvider)
 	}
-	if result.GooseModel != DefaultGooseModel {
-		t.Errorf("expected default model %q, got %q", DefaultGooseModel, result.GooseModel)
+	if result.AgentModel != DefaultAgentModel {
+		t.Errorf("expected default model %q, got %q", DefaultAgentModel, result.AgentModel)
 	}
 }
 

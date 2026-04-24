@@ -354,7 +354,7 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 	g := Group{Name: "Variables & secrets"}
 
 	// Check variables via gh CLI.
-	variables := []string{"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL"}
+	variables := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL"}
 	for _, v := range variables {
 		result := checkVariable(deps, v)
 		g.Results = append(g.Results, result)
@@ -552,7 +552,7 @@ func checkProjectReachability(deps CheckDeps) Group {
 // checkVariable checks if a GitHub variable exists.
 //
 // Under federated topology the shared names (AGENT_USER, RUNNER_LABEL,
-// GOOSE_PROVIDER, GOOSE_MODEL) live at the organisation level and are not
+// AGENT_PROVIDER, AGENT_MODEL) live at the organisation level and are not
 // visible via `gh variable list --repo OWNER/REPO`. The check therefore
 // consults the org scope for shared names under federated topology, treating
 // a hit at either scope as "configured". Identity names (AGENTIC_*) are
@@ -734,8 +734,8 @@ func FindShadowValues(deps CheckDeps) []ShadowValue {
 	shared := []string{
 		"AGENT_USER",
 		"RUNNER_LABEL",
-		"GOOSE_PROVIDER",
-		"GOOSE_MODEL",
+		"AGENT_PROVIDER",
+		"AGENT_MODEL",
 		"GOOSE_AGENT_PAT",
 		"CLAUDE_CREDENTIALS_JSON",
 	}

@@ -142,7 +142,7 @@ func assertGHScope(t *testing.T, c *capturedGH, wantFlag, wantTarget string) {
 }
 
 func TestApplyPendingPrompt_Federated_SharedName_RoutesToOrg(t *testing.T) {
-	shared := []string{"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON"}
+	shared := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON"}
 	for _, name := range shared {
 		t.Run(name, func(t *testing.T) {
 			c := &capturedGH{}
@@ -184,7 +184,7 @@ func TestApplyPendingPrompt_Federated_IdentityName_StaysAtRepo(t *testing.T) {
 
 func TestApplyPendingPrompt_Single_AllNames_StayAtRepo(t *testing.T) {
 	all := []string{
-		"AGENT_USER", "RUNNER_LABEL", "GOOSE_PROVIDER", "GOOSE_MODEL",
+		"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL",
 		"GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON",
 		"AGENTIC_PROJECT_ID", "AGENTIC_TOPOLOGY", "AGENTIC_FRAMEWORK_VERSION",
 	}

@@ -14,10 +14,14 @@ const (
 	// AgentUserScopeRepo indicates the AGENT_USER variable is set at repo level.
 	AgentUserScopeRepo = "repo"
 
-	// DefaultGooseProvider is the default Goose LLM provider.
-	DefaultGooseProvider = "claude-code"
-	// DefaultGooseModel is the default Goose model override.
-	DefaultGooseModel = "default"
+	// DefaultAgentProvider is the default agent LLM provider. The value
+	// stays "claude-code" — this is the identifier the Goose CLI recognises
+	// for the Claude Code provider; only the constant name changes.
+	DefaultAgentProvider = "claude-code"
+	// DefaultAgentModel is the default agent model override. The value
+	// stays "default" — it is the literal Goose CLI sentinel meaning
+	// "use the provider default"; only the constant name changes.
+	DefaultAgentModel = "default"
 )
 
 // RunnerDefaultForTopology returns the smart default runner label based on topology.
