@@ -130,6 +130,11 @@ See `concepts/delivery-philosophy.md` for the full context.
   deploy directly — no switch. The human may waive the switch during scoping; the
   decision and reason must be recorded in the feature issue. See
   `concepts/feature-switches.md` for the full taxonomy and implementation guidance.
+- **Autonomous phases publish their reasoning as durable artefacts.** Each autonomous
+  phase (Feature Design, Dev Session, PR Review) follows the SAPAV pattern — Stop,
+  Assess, Plan, Act, Verify — and publishes a rationale artefact before the
+  irreversible action. See `concepts/agent-rationale-as-artefact.md` for the pattern
+  and its limits.
 - **To cancel a requirement or feature, delete the GitHub Issue.** The agent will detect
   its absence during the next session and will not attempt work against it. Clean up any
   associated feature branch manually if one was already created.
