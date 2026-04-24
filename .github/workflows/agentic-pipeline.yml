@@ -163,6 +163,48 @@ jobs:
           GOOSE_DISABLE_SESSION_NAMING: "true"
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
+      # Structural enforcement of the Design Plan publication contract
+      # introduced by #652 (under #632). The skill (feature-design.md)
+      # already instructs the agent to publish a Design Plan comment on
+      # the Feature issue per capture-design-plan.md before proceeding to
+      # Task creation. Empirically, the agent silently skipped this step
+      # on multi-task Features (#666 was the first proof). Skill prose
+      # alone does not enforce the artefact — this step does, by checking
+      # the comment exists immediately after the recipe exits and halting
+      # the workflow if not, BEFORE the branch is committed/pushed and
+      # the in-development label is applied. Halting here keeps the
+      # broken state visible: Tasks may exist (created by the agent
+      # during the recipe run; we cannot un-create them from the
+      # workflow), but no branch is pushed and no label transition
+      # happens, so foreground-recovery has a clean handle on the state.
+      - name: Verify Design Plan comment was published
+        if: success()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Look for at least one comment on the Feature issue authored
+          # by the agentic bot whose body starts with the canonical
+          # Design Plan header. The header pattern matches what
+          # capture-design-plan.md prescribes: "## Design Plan".
+          COMMENT_COUNT=$(gh api "repos/${REPO}/issues/${ISSUE}/comments" \
+            --jq '[.[] | select(.user.type == "Bot") | select(.body | startswith("## Design Plan"))] | length')
+          if [ "${COMMENT_COUNT}" -lt 1 ]; then
+            echo "::error::Design Plan comment was not published on issue #${ISSUE} by the feature-design recipe."
+            echo ""
+            echo "Per skills/feature-design.md (updated by #652), the design phase MUST publish a Design Plan comment on the Feature issue, structured per skills/capture-design-plan.md, BEFORE Task creation. The recipe's agent run did not produce this artefact."
+            echo ""
+            echo "To recover:"
+            echo "  1. Close any Task issues created on this Feature."
+            echo "  2. Delete the local feature branch (it has not been pushed)."
+            echo "  3. Re-trigger design (toggle in-design label off and back on)."
+            echo ""
+            echo "If this failure recurs across multiple runs, the skill or recipe has a regression — investigate before relabelling."
+            exit 1
+          fi
+          echo "✓ Design Plan comment found on issue #${ISSUE} (${COMMENT_COUNT} match(es))."
+
       # Recipe never pushes — per RULEBOOK, "the workflow pushes after the
       # recipe exits cleanly". The recipe creates `feature/<N>-*` locally
       # and may have added commits (refactor tasks, scaffolding, etc.).
