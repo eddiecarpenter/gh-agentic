@@ -82,3 +82,10 @@ gh variable set AGENTIC_FRAMEWORK_VERSION --repo eddiecarpenter/gh-agentic --bod
 ```
 
 This applies to this repo only because `gh-agentic` is its own framework source — a circular dependency unique to the control-plane-of-itself arrangement. Other domain repos get the version from the control plane via `gh agentic mount` and do not need this step.
+
+## Migration
+
+Domain repos moving onto the current framework identity follow these guides. Each document is the single source of truth — do not copy their contents into a repo's own `LOCALRULES.md`, reference them:
+
+- [`concepts/migration-to-github-app.md`](concepts/migration-to-github-app.md) — required cutover doc for moving off the legacy `goose-agent` PAT identity onto the agentic GitHub App.
+- [`docs/migration-agent-vars-rename.md`](docs/migration-agent-vars-rename.md) — sibling migration covering the `GOOSE_PROVIDER` / `GOOSE_MODEL` → `AGENT_PROVIDER` / `AGENT_MODEL` variable rename; typically performed alongside the App cutover (both land under parent #621).
