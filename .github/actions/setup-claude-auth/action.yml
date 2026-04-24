@@ -1,14 +1,23 @@
 name: Setup Claude Code Auth
 description: >
   Restore Claude Code credentials from secret, validate the session,
-  and rotate the secret if the credentials were refreshed.
+  and rotate the secret if Claude refreshed the credentials at runtime.
+  Requires the gh-token to carry secrets:write — the agentic GitHub App
+  carries this transitionally (see docs/github-app-setup.md
+  "secrets: write rationale"). When the production switch to the
+  Anthropic API key lands, this action's rotation step and the
+  secrets:write requirement both go away.
 
 inputs:
   claude-credentials-json:
     description: 'Base64-encoded Claude Code credentials JSON (CLAUDE_CREDENTIALS_JSON secret)'
     required: true
   gh-token:
-    description: 'GitHub token with secrets:write permission for credential rotation (GOOSE_AGENT_PAT)'
+    description: >
+      GitHub App installation token with secrets:write. Used to update
+      CLAUDE_CREDENTIALS_JSON when Claude Code rotates the credentials
+      at runtime. If the token lacks secrets:write, the rotation step
+      will fail and the secret will go stale until refreshed manually.
     required: true
 
 runs:
@@ -19,6 +28,12 @@ runs:
       env:
         CLAUDE_CREDENTIALS_JSON: ${{ inputs.claude-credentials-json }}
       run: |
+        if [ -z "${CLAUDE_CREDENTIALS_JSON}" ]; then
+          echo "::error::CLAUDE_CREDENTIALS_JSON is empty. Set the repo secret manually:"
+          echo "  gh secret set CLAUDE_CREDENTIALS_JSON --repo <owner>/<repo> < credentials.json"
+          echo "(See docs/github-app-setup.md)"
+          exit 1
+        fi
         mkdir -p ~/.claude
         echo "${CLAUDE_CREDENTIALS_JSON}" | base64 -d > ~/.claude/.credentials.json
         chmod 0600 ~/.claude/.credentials.json
@@ -29,14 +44,15 @@ runs:
         GH_TOKEN: ${{ inputs.gh-token }}
       run: |
         if [ ! -s ~/.claude/.credentials.json ]; then
-          echo "ERROR: ~/.claude/.credentials.json is empty or missing."
-          echo "Regenerate: run the refresh-credentials skill locally, then re-run this job."
+          echo "::error::~/.claude/.credentials.json is empty or missing."
+          echo "Regenerate locally and run: gh secret set CLAUDE_CREDENTIALS_JSON ..."
           exit 1
         fi
         CREDS_BEFORE=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
         claude -p "hi" > /dev/null || {
-          echo "ERROR: Claude Code authentication failed — session may be revoked."
-          echo "Run the refresh-credentials skill locally to restore the secret."
+          echo "::error::Claude Code authentication failed — session may be revoked."
+          echo "Run the refresh-credentials skill locally to regenerate, then:"
+          echo "  gh secret set CLAUDE_CREDENTIALS_JSON --repo <owner>/<repo> < credentials.json"
           exit 1
         }
         echo "Claude Code credentials valid."

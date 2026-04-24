@@ -9,19 +9,17 @@ name: Release Notes
 # concern (GoReleaser, npm publish, cargo publish, etc.). This workflow
 # only augments the release body after it already exists.
 #
-# Mounts the framework at .ai/ the same way the pipeline workflow does:
-# nested-checkout of gh-agentic into .agentic-tools/ (so composite actions
-# resolve) and direct git clone into .ai/ (no dependency on the gh-agentic
-# extension being callable). On the framework repo itself, .ai is a
-# committed symlink to . — the CI workspace step replaces it with a real
-# clone for the duration of the job.
+# Authentication mirrors agentic-pipeline.yml: a GitHub App installation
+# token is minted at the start of the job. The framework is mounted via
+# git submodules (`.ai/` and `.agentic-tools/` in the parent repo) — no
+# bespoke `Mount AI framework` step.
 
 on:
   release:
     types: [published]
   workflow_call:
     secrets:
-      GOOSE_AGENT_PAT:
+      AGENTIC_APP_PRIVATE_KEY:
         required: true
       CLAUDE_CREDENTIALS_JSON:
         required: true
@@ -34,11 +32,19 @@ jobs:
       contents: write
 
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
+        with:
+          app-id: ${{ vars.AGENTIC_APP_ID }}
+          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
+
       - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0  # full history required to find previous tag and commits
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
+          submodules: recursive
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Resolve framework version
         id: version
@@ -59,14 +65,6 @@ jobs:
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Checkout gh-agentic tools
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: eddiecarpenter/gh-agentic
-          ref: ${{ steps.version.outputs.version }}
-          path: .agentic-tools
-          token: ${{ secrets.GOOSE_AGENT_PAT }}
-
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
@@ -75,33 +73,13 @@ jobs:
       - name: Install tools
         uses: ./.agentic-tools/.github/actions/install-ai-tools
         with:
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Mount AI framework
-        env:
-          FRAMEWORK_VERSION: ${{ steps.version.outputs.version }}
-          FRAMEWORK_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
-        run: |
-          echo "Mounting framework ${FRAMEWORK_VERSION} into .ai/ via git clone..."
-          rm -rf .ai
-          git clone --depth 1 --branch "${FRAMEWORK_VERSION}" \
-            "https://x-access-token:${FRAMEWORK_TOKEN}@github.com/eddiecarpenter/gh-agentic.git" \
-            .ai
-          if ! grep -qxF '.ai/' .gitignore 2>/dev/null; then
-            echo '.ai/' >> .gitignore
-          fi
-          echo "✓ Framework mounted at .ai/ (ref: $(git -C .ai describe --tags --exact-match 2>/dev/null || echo 'unknown'))"
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
         uses: ./.agentic-tools/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
-          gh-token: ${{ secrets.GOOSE_AGENT_PAT }}
-
-      - name: Configure environment
-        run: |
-          git config user.name "${{ vars.AGENT_USER || 'github-actions[bot]' }}"
-          git config user.email "${{ vars.AGENT_USER || 'github-actions[bot]' }}@users.noreply.github.com"
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Goose
         run: |
@@ -123,14 +101,14 @@ jobs:
           GOOSE_MODEL: ${{ vars.GOOSE_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Verify release notes were updated
         env:
-          GOOSE_AGENT_PAT: ${{ secrets.GOOSE_AGENT_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           BODY=$(curl --proto '=https' --tlsv1.2 -sf \
-            -H "Authorization: token ${GOOSE_AGENT_PAT}" \
+            -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.event.release.tag_name }}" \
             | jq -r '.body')

@@ -31,7 +31,7 @@ the session being run.
 | Feature Design | `feature-design.md` | Automatic — `in-design` label |
 | Dev Session | `dev-session.md` | Automatic — `in-development` label |
 | PR Review | `pr-review-session.md` | Automatic — PR review submitted |
-| Issue Session | `issue-session.md` | Automatic — issue assigned to agent |
+| Issue Session | `issue-session.md` | Automatic — issue labelled `assigned-to-agent` |
 | Foreground Recovery | `foreground-recovery.md` | Human (interactive) — any blocked state |
 
 ### Skill Taxonomy

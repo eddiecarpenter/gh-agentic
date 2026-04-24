@@ -23,7 +23,7 @@ contexts: interactive sessions (macOS, Windows, Linux) and automated CI workflow
 
 - `gh` CLI authenticated and in PATH
 - `AGENTIC_PROJECT_ID` repo variable set to the ProjectV2 node ID (e.g. `PVT_kwHOBODmNc4BTwOo`)
-- `GH_TOKEN` set to a PAT with `project` scope (in CI: `GOOSE_AGENT_PAT`)
+- `GH_TOKEN` set to a token with `projects: write` scope (in CI: the GitHub App installation token from `actions/create-github-app-token`, exposed as `steps.app-token.outputs.token`)
 
 If `AGENTIC_PROJECT_ID` is not set, **fail with a clear error message** — do not
 skip silently. All repos must have this variable configured before running sessions.
