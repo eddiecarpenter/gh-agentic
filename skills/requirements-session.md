@@ -83,7 +83,14 @@ When the scope is clear enough to define the Feature(s) without a separate sessi
    - MVP scope and acceptance criteria
    - Serial vs parallel decomposition
    - UX design (if applicable)
-3. Create Feature issue(s) using the `capture-feature` skill
+3. Create Feature issue(s) using the `capture-feature` skill.
+   **Critical:** the Feature body's parent reference must use the literal
+   `Closes part of #<requirement-number>` (or `Closes #<requirement>` for
+   single-Feature Requirements) — never `Parent: #N` or any other phrasing.
+   The `feature-complete` workflow's parent-parse regex matches only the
+   `Closes` form; any other phrasing silently breaks the auto-close-parent
+   logic, leaving the Requirement open after all its sub-issues complete.
+   See `capture-feature.md` "Parent Requirement" section.
 4. Wire sub-issue: Feature → parent Requirement
 5. Apply `in-design` to features that are ready to proceed (cross-repo dependency rules apply)
 6. Transition requirement: `scoping` → `scheduled`

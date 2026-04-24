@@ -31,7 +31,9 @@ The App is initially owned by `eddiecarpenter` (personal account). It can be tra
 | `contents` | write | Push commits, branches, files |
 | `issues` | write | Manage Requirements, Features, Tasks |
 | `pull_requests` | write | Open PRs, comment on reviews |
-| `projects` | write | Move cards on the GitHub Project |
+| `projects` (org) | write | Mutate Project v2 boards. **Ineffective for user-owned Projects v2** (platform limitation — see `PROJECT_PAT` below). |
+| `repository_projects` | admin | Mutate legacy "Projects classic" boards attached to a repository. |
+| `workflows` | write | Required for agent commits that touch `.github/workflows/*.yml`. Without it, dev-session pushes are rejected for any Task editing workflows. |
 | `secrets` | write | In-band rotation of `CLAUDE_CREDENTIALS_JSON` (transitional — see rationale) |
 | `metadata` | read | Always required by GitHub |
 
@@ -88,17 +90,19 @@ The App is now installed and can mint installation tokens for `gh-agentic` via `
 
 ## Configuration storage
 
-The App's identity splits into one **variable** (not sensitive) and one **secret** (sensitive). Treating them according to their actual sensitivity is intentional — see "App ID is a variable, not a secret" in the Rationale section below.
+The App's identity splits into one **variable** (not sensitive) and one **secret** (sensitive). Treating them according to their actual sensitivity is intentional — see "Client ID is a variable, not a secret" below.
 
 ### Repo variable
 
 | Variable | Value |
 |---|---|
-| `AGENTIC_APP_ID` | The App ID integer (e.g. `1234567`). Public per GitHub's API; not sensitive. |
+| `AGENTIC_APP_CLIENT_ID` | The App's **Client ID** (alphanumeric string like `Iv23li8K3O...`). Found on the App settings page under "About → Client ID". Not sensitive — the App's Client ID is public information surfaced wherever the App is installed. |
 
 ```bash
-gh variable set AGENTIC_APP_ID --repo eddiecarpenter/gh-agentic --body "<app-id-integer>"
+gh variable set AGENTIC_APP_CLIENT_ID --repo eddiecarpenter/gh-agentic --body "<client-id-string>"
 ```
+
+**Why Client ID, not App ID.** GitHub's `actions/create-github-app-token` action deprecated `app-id` in favour of `client-id` (the OAuth-conventional identifier). Both still work for now, but the App ID input emits a deprecation warning on every run. Future versions of the action will remove `app-id` entirely; setting `AGENTIC_APP_CLIENT_ID` is forward-compatible.
 
 ### Repo secret
 
@@ -138,9 +142,9 @@ gh secret set PROJECT_PAT --repo eddiecarpenter/gh-agentic --body "<your-pat>"
 
 The App has no backend service. When creating the App, leave both **Webhook URL** and **Webhook secret** blank (or untick "Active"). Nothing on GitHub will deliver a webhook anywhere.
 
-### Why App ID is a variable, not a secret
+### Why Client ID is a variable, not a secret
 
-The App ID is a small public integer that GitHub displays on the App's settings page; anyone who knows the App's slug can resolve it via the public REST API. Marking it as a secret would dilute the meaning of "secret" (which should mean *"leaking this is harmful"*) and add audit overhead. The private key alone is what authorizes API calls — the App ID without the private key is useless.
+The Client ID (and the legacy App ID) is a public identifier — GitHub displays it on the App's settings page, surfaces it wherever the App acts, and exposes it via the public REST API. Marking it as a secret would dilute the meaning of "secret" (which should mean *"leaking this is harmful"*) and add audit overhead with no security benefit. The private key alone is what authorizes API calls — the Client ID without the private key is useless.
 
 ---
 
