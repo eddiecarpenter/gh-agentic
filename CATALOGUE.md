@@ -59,6 +59,9 @@ Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by ha
 - **ask-user** — Canonical harness-neutral interaction shape for every confirmation, classification, disambiguation, or choice prompt raised by any skill — defines when to use a selectable prompt, option constraints, fallback phrasing, and the four canonical prompt shapes (confirm/revise, multi-choice selection, yes/no/later, name-collision). Use inline whenever a skill needs to ask the human for a decision, never as a standalone session.
   Triggers: on-demand
 
+- **capture-design-plan** — Defines the canonical Markdown template for the Design Plan comment feature-design publishes on a Feature issue before any Task sub-issues are created — decomposition rationale, planned tasks, alternatives considered, refactor assessment, and optional codebase findings and risks. Use when feature-design is about to publish its pre-task decomposition rationale as a durable comment on the Feature issue, or when verifying that a published Design Plan comment conforms to the required shape.
+  Triggers: on-demand
+
 - **capture-feature** — Defines the canonical markdown body template for every Feature issue created during scoping — user story, context, scope, acceptance criteria in Given/When/Then format, deployment strategy, UX design, notes, and parent link. Use when authoring the body of any new Feature issue, or when reviewing that a Feature issue conforms to the required shape.
   Triggers: on-demand
 
