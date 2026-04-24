@@ -4,9 +4,9 @@
 |---------------------|------------------------------------|
 | Feature issue       | #626                               |
 | Branch              | feature/626-migration-guide-goose-agent |
-| Last commit         | cf85349                            |
+| Last commit         | aa845a7                            |
 | Total tasks         | 3                                  |
-| Last updated        | 2026-04-24T05:33:00Z               |
+| Last updated        | 2026-04-24T05:34:59Z               |
 
 ## Completed Tasks
 
@@ -20,6 +20,11 @@
 - **Files changed:** LOCALRULES.md
 - **Decisions:** None
 
+### #649 — Update release-notes skill to call out the goose-agent migration as a required action
+- **Implemented:** Added a new Step 3 to `skills/release-notes.md` that detects newly added `concepts/migration-*.md` / `docs/migration-*.md` files in the release range via `git diff --diff-filter=A` and emits a `## ⚠️ Required Action` callout at the top of the release notes. Includes a worked example for the goose-agent → App migration, fixes the callout's placement in the Rules block, and renumbers the remaining steps. Existing Features/Fixes/Documentation/Chores categorisation unchanged.
+- **Files changed:** skills/release-notes.md
+- **Decisions:** None
+
 ## Remaining Tasks
 
-- [ ] #649 — Update release-notes skill to call out the goose-agent migration as a required action ← current
+_All tasks complete._
