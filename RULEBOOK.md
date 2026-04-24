@@ -323,3 +323,23 @@ the GraphQL API. External clients depend on these names and shapes.
 **When all tasks are complete:**
 1. Exit cleanly — do not push, do not open a PR
 2. The workflow pushes and opens the PR automatically
+
+---
+
+<!--
+  TEST FIXTURE — DELIBERATE DUPLICATE for #666
+
+  The "## Communication" heading below intentionally duplicates the heading
+  at line ~307. It exists so that #666 (Detect and remove duplicate headings)
+  has a real duplicate to find and remove during its dev session, AND so
+  the new CI guard test can be exercised end-to-end on a known-bad starting
+  state.
+
+  Once #666 lands, both this duplicate section AND this comment block must
+  be removed. The CI guard added by #666 will then prevent any future
+  duplicates from being introduced silently.
+-->
+
+## Communication
+
+(Duplicate test fixture — see HTML comment above. To be removed by #666.)
