@@ -265,9 +265,17 @@ def check_description_third_person(skill: Skill) -> CheckResult:
 
 
 def check_references_resolve(skill: Skill) -> CheckResult:
-    """Paths in Definitions and Dependencies sections resolve to existing files."""
+    """Paths declared in the `loads:` frontmatter resolve to existing files.
+
+    The frontmatter `loads:` list is the canonical, machine-readable
+    declaration of every Definition and Dependency the skill consults
+    or invokes. Body-section mentions of paths (for illustration,
+    forward-references, examples) are documentation only and are not
+    checked here — the spec requires `loads:` to mirror Definitions +
+    Dependencies, so the frontmatter is the source of truth.
+    """
     repo_root = _find_repo_root(skill.path)
-    referenced = _extract_referenced_paths(skill.body)
+    referenced = list(skill.frontmatter.get("loads") or [])
     if not referenced:
         return CheckResult("references_resolve", passed=True, detail="no references")
     missing = []

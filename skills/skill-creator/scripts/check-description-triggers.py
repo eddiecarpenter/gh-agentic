@@ -40,6 +40,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Apply the in-development label": False,
         "What's the weather in Cape Town?": False,
     },
+    "session-init": {
+        "Let's start a new session": True,
+        "What should we work on?": True,
+        "I'm starting a new session": True,
+        "Apply the in-development label": False,
+        "What's the weather in Cape Town?": False,
+    },
     "prompt-user": {
         "Find out from the user which approach they want": True,
         "Confirm with the human before proceeding": True,
@@ -76,8 +83,17 @@ def strip_fence(s: str) -> str:
     return m.group(1) if m else s
 
 
+def derive_skill_name(skill_path: Path) -> str:
+    """Skill names live in the parent directory under the SKILL.md layout
+    (skills/<name>/SKILL.md), so .stem returns "SKILL" — use the parent
+    dir name instead. Fall back to .stem for the legacy flat layout."""
+    if skill_path.name == "SKILL.md":
+        return skill_path.parent.name
+    return skill_path.stem
+
+
 def check(skill_path: Path) -> int:
-    name = skill_path.stem
+    name = derive_skill_name(skill_path)
     if name not in GROUND_TRUTH:
         print(f"SKIP {name}: no ground truth defined for this skill", file=sys.stderr)
         return 0

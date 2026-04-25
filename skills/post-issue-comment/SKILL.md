@@ -101,8 +101,8 @@ invoke any other skill.
 Run the framework checks against this skill:
 
 ```bash
-python3 skills/tools/verify-skill-mechanical.py skills/post-issue-comment.md
-python3 skills/tools/check-description-triggers.py skills/post-issue-comment.md
+python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/post-issue-comment/SKILL.md
+python3 skills/skill-creator/scripts/check-description-triggers.py skills/post-issue-comment/SKILL.md
 ```
 
 Pass criteria: both commands exit 0.

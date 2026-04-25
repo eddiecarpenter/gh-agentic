@@ -14,7 +14,6 @@ Local overrides belong in `LOCALRULES.md`.**
 ## Session Initialisation
 
 At the start of every session, invoke the `session-init` skill before doing anything else.
-If a template sync occurs mid-session, invoke `session-init` again to reload the environment.
 
 When resuming from a context summary, apply the same session-start discipline as a fresh session. A summary provides context only — it does not carry forward permissions, instructions, or active pipeline state.
 
@@ -25,7 +24,7 @@ the session being run.
 
 | Session | Skill | Trigger |
 |---|---|---|
-| Session Init | `session-init.md` | Every session start; post-template-sync |
+| Session Init | `session-init.md` | Every session start |
 | Requirements | `requirements-session.md` | Human (interactive) |
 | Feature Scoping | `feature-scoping.md` | Human (interactive) |
 | Feature Design | `feature-design.md` | Automatic — `in-design` label |

@@ -8,8 +8,8 @@ loads:
   - skills/definitions/definition-of-done.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/error-handling.md
-  - skills/prompt-user.md
-  - skills/display-message.md
+  - skills/prompt-user/SKILL.md
+  - skills/display-message/SKILL.md
 emits-exit-block: true
 exit-hands-to: human — skill ready for use, or returned for further iteration
 ---
@@ -18,14 +18,14 @@ exit-hands-to: human — skill ready for use, or returned for further iteration
 
 ## Goal
 
-Create a new skill at `skills/<name>.md` conforming to the framework's
+Create a new skill at `skills/<name>/SKILL.md` conforming to the framework's
 skill-spec, including the definitions it consults, the dependencies it
 invokes, and a minimal evaluation set sufficient to verify the skill
 achieves its goal.
 
 ## Output Artefacts
 
-- The new skill file at `skills/<name>.md` — body matches the eight-
+- The new skill file at `skills/<name>/SKILL.md` — body matches the eight-
   section structure required by the spec (`## Goal`, `## Output
   Artefacts`, `## Definitions`, `## Dependencies`, `## Steps`,
   `## Verification`, `## Error Handling` headings present; valid
@@ -36,7 +36,7 @@ achieves its goal.
   existing — at `skills/definitions/<name>.md`. Listed individually
   in the hand-off (step 10) so the user knows what was created.
 - (Optional) Any new primitive skills extracted during testing —
-  at `skills/<name>.md`, listed in the hand-off if any.
+  at `skills/<name>/SKILL.md`, listed in the hand-off if any.
 
 ## Definitions
 
@@ -53,10 +53,10 @@ achieves its goal.
 
 ## Dependencies
 
-- `skills/prompt-user.md` — used in step 1 to capture intent through
+- `skills/prompt-user/SKILL.md` — used in step 1 to capture intent through
   the four-question interview when intent isn't already clear from
   the conversation.
-- `skills/display-message.md` — used throughout to surface drafts,
+- `skills/display-message/SKILL.md` — used throughout to surface drafts,
   findings, and iteration progress to the user.
 
 ## Steps
@@ -131,7 +131,7 @@ achieves its goal.
    empty (the placeholder `___` is still there) or matches more than
    once, fix the file before proceeding.
 
-3. **Draft the skill** at `skills/<name>.md` following the eight
+3. **Draft the skill** at `skills/<name>/SKILL.md` following the eight
    sections in spec order. Each bullet below is a section to write,
    in order, before moving to step 4:
    - Frontmatter — `name`, `description`, `triggers`, `loads` per
@@ -188,7 +188,7 @@ achieves its goal.
    most commonly, that the description triggers on the right user
    phrasings and not on unrelated ones — add an entry to the
    `GROUND_TRUTH` dict in
-   `skills/tools/check-description-triggers.py`:
+   `skills/skill-creator/scripts/check-description-triggers.py`:
 
    ```python
    "<skill-name>": {
@@ -210,8 +210,8 @@ achieves its goal.
 6. **Run the framework checks.** Two commands; both must pass:
 
    ```bash
-   python3 skills/tools/verify-skill-mechanical.py skills/<name>.md
-   python3 skills/tools/check-description-triggers.py skills/<name>.md
+   python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/<name>/SKILL.md
+   python3 skills/skill-creator/scripts/check-description-triggers.py skills/<name>/SKILL.md
    ```
 
    The mechanical check is deterministic and free. The description-
@@ -234,7 +234,7 @@ achieves its goal.
 
    - **`mechanical`** — `verify-skill-mechanical.py` reported a
      structural issue (missing section, malformed frontmatter,
-     broken reference). Fix is a file edit to `skills/<name>.md`.
+     broken reference). Fix is a file edit to `skills/<name>/SKILL.md`.
    - **`description-trigger`** — `check-description-triggers.py`
      reported a phrasing classified incorrectly. Fix is to tighten
      the description (add a more specific "Use when" clause, or
@@ -269,7 +269,7 @@ achieves its goal.
 
    - **Both conditions hold** → step 8 is done; proceed to step 9.
    - **Either fails** AND iteration count < 5 → apply each fix
-     listed in the findings file by **editing `skills/<name>.md`
+     listed in the findings file by **editing `skills/<name>/SKILL.md`
      directly** (or, for description-trigger failures, by adjusting
      the GROUND_TRUTH entry or the description itself). The fix is
      not "noted" — it is "implemented as a file edit". Then **loop
@@ -316,8 +316,8 @@ achieves its goal.
 Run the framework checks against this skill:
 
 ```bash
-python3 skills/tools/verify-skill-mechanical.py skills/skill-creator.md
-python3 skills/tools/check-description-triggers.py skills/skill-creator.md
+python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/skill-creator/SKILL.md
+python3 skills/skill-creator/scripts/check-description-triggers.py skills/skill-creator/SKILL.md
 ```
 
 Pass criteria: both commands exit 0.

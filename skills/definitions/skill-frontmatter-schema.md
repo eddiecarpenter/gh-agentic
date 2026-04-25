@@ -2,7 +2,7 @@
 
 Canonical schema for the YAML frontmatter block at the top of every
 skill in `skills/`. The mechanical verifier
-(`skills/tools/verify-skill-mechanical.py`) validates against this
+(`skills/skill-creator/scripts/verify-skill-mechanical.py`) validates against this
 schema; skill-creator drafts against it.
 
 This is a schema definition. It does not duplicate the rationale in
@@ -65,7 +65,7 @@ triggers: human-interactive
 loads:
   - skills/definitions/skill-spec.md
   - skills/definitions/skill-frontmatter-schema.md
-  - skills/prompt-user.md
+  - skills/prompt-user/SKILL.md
 emits-exit-block: true
 exit-hands-to: human — skill ready for use, or returned for further iteration
 ---

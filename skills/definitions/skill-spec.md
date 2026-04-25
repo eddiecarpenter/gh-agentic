@@ -23,10 +23,13 @@ Four top-level locations matter for the skill ecosystem:
 
 ```
 skills/
-├── (active skills go here as flat .md files)
+├── <skill-name>/
+│   ├── SKILL.md          (the skill itself — frontmatter + body)
+│   └── scripts/          (optional — bundled executables, prompts,
+│                          examples that the skill ships)
 └── definitions/
-    └── (canonical schemas, templates, and component definitions
-         that skills load on demand)
+    └── <name>.md         (canonical schemas, templates, rules
+                           consulted by skills via loads:)
 
 concepts/
 └── (framework concepts and design rationale)
@@ -35,14 +38,20 @@ docs/
 └── (project information and operational guides)
 ```
 
-- **`skills/`** — active skills, executed by agents, written for agent
-  consumption but human-readable.
-- **`skills/definitions/`** — formal canonical sources that skills load.
-  Schemas, templates, rules (e.g., what a Definition of Done section
-  must contain, what change-pinning verification means, the severity
-  taxonomy for errors). This file (the skill spec) is itself a
-  definition — it defines the rules every skill must follow, and is
-  loaded by skill-creator. Loaded via the `loads:` frontmatter field.
+- **`skills/<skill-name>/SKILL.md`** — the active skill, executed by
+  agents, written for agent consumption but human-readable. This
+  layout matches Claude Code's slash-command convention: a single
+  repo-level symlink (`.claude/skills` → `../skills`) makes every
+  skill invocable as `/<skill-name>` while the canonical path stays
+  runtime-agnostic.
+- **`skills/<skill-name>/scripts/`** — bundled resources the skill
+  ships (Python/Bash executables, prompt templates, examples). Per
+  Anthropic's skill-folder convention.
+- **`skills/definitions/`** — formal canonical sources that skills
+  load. Schemas, templates, rules (e.g., what a Definition of Done
+  section must contain, what change-pinning verification means, the
+  severity taxonomy for errors). Definitions are flat `.md` files
+  here — they are not skills and do not have a `SKILL.md` wrapper.
 - **`concepts/`** — framework concepts and design rationale. The "why"
   documents. Agents may read for context; do not execute.
 - **`docs/`** — project information and operational guides for humans
@@ -182,7 +191,7 @@ an unambiguous list of things to check for presence.
 
 Common artefact kinds:
 
-- **Files** — `docs/<name>.md`, `skills/<name>.md`, etc.
+- **Files** — `docs/<name>.md`, `skills/<name>/SKILL.md`, etc.
 - **GitHub state** — comments on an issue, sub-issues, labels, branches,
   PRs, project status changes.
 - **In-memory responses** — a structured value returned to the caller
@@ -272,9 +281,9 @@ Example:
 ```markdown
 ## Dependencies
 
-- `skills/post-issue-comment.md` — used in step 4 to publish the
+- `skills/post-issue-comment/SKILL.md` — used in step 4 to publish the
   Design Plan comment.
-- `skills/apply-label.md` — used in step 7 to transition the Feature
+- `skills/apply-label/SKILL.md` — used in step 7 to transition the Feature
   to `in-development`.
 ```
 
@@ -411,8 +420,8 @@ The skill writer specifies two kinds of checks:
 
 | Layer | What it checks | How it runs |
 |---|---|---|
-| **Mechanical** | Structure, schema conformance, references resolve — deterministic | `skills/tools/verify-skill-mechanical.py <skill-path>` |
-| **Ground-truth** | Specific behavioural assertions with a pinned answer key (e.g., "this description triggers on these phrasings, not those") | `skills/tools/check-description-triggers.py <skill-path>` and similar narrow scripts |
+| **Mechanical** | Structure, schema conformance, references resolve — deterministic | `skills/skill-creator/scripts/verify-skill-mechanical.py <skill-path>` |
+| **Ground-truth** | Specific behavioural assertions with a pinned answer key (e.g., "this description triggers on these phrasings, not those") | `skills/skill-creator/scripts/check-description-triggers.py <skill-path>` and similar narrow scripts |
 
 Both run as plain Python scripts. There is no orchestration layer,
 no recipe, no rubric grader. Checks pass deterministically (or
@@ -436,8 +445,8 @@ script.
 Run the framework checks against this skill:
 
 ```bash
-python3 skills/tools/verify-skill-mechanical.py skills/<name>.md
-python3 skills/tools/check-description-triggers.py skills/<name>.md
+python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/<name>/SKILL.md
+python3 skills/skill-creator/scripts/check-description-triggers.py skills/<name>/SKILL.md
 ```
 
 Pass criteria: both commands exit 0.

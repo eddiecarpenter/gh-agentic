@@ -158,8 +158,8 @@ not a framework skill and therefore not declared in `loads:`.
 Run the framework checks against this skill:
 
 ```bash
-python3 skills/tools/verify-skill-mechanical.py skills/prompt-user.md
-python3 skills/tools/check-description-triggers.py skills/prompt-user.md
+python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/prompt-user/SKILL.md
+python3 skills/skill-creator/scripts/check-description-triggers.py skills/prompt-user/SKILL.md
 ```
 
 Pass criteria: both commands exit 0.

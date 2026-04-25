@@ -121,7 +121,7 @@ declaring the skill done.
 - All assertions in a skill's eval prompts under
   `skills/evals/<name>.json`.
 - Mechanical checks implemented in
-  `skills/tools/verify-skill-mechanical.py`.
+  `skills/skill-creator/scripts/verify-skill-mechanical.py`.
 
 It does not apply to:
 
