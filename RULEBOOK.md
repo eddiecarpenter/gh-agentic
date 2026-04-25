@@ -11,20 +11,17 @@ Local overrides belong in `LOCALRULES.md`.**
 
 ---
 
-## Session Initialisation
+## Session Types
 
-At the start of every session, invoke the `session-init` skill before doing anything else.
+Session bootstrap is mandated by `AGENTS.md` (Session Bootstrap rule).
+The procedure lives in `skills/session-init/SKILL.md`.
 
-When resuming from a context summary, apply the same session-start discipline as a fresh session. A summary provides context only — it does not carry forward permissions, instructions, or active pipeline state.
-
-### Session Types
-
-Each session type has a dedicated skill in `skills/`. Load the relevant skill for
-the session being run.
+Each session type below has a dedicated skill in `skills/`. Load the
+relevant skill for the session being run.
 
 | Session | Skill | Trigger |
 |---|---|---|
-| Session Init | `session-init.md` | Every session start |
+| Session Init | `session-init/SKILL.md` | Every session start (mandated by AGENTS.md bootstrap rule) |
 | Requirements | `requirements-session.md` | Human (interactive) |
 | Feature Scoping | `feature-scoping.md` | Human (interactive) |
 | Feature Design | `feature-design.md` | Automatic — `in-design` label |
