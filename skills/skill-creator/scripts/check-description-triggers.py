@@ -47,6 +47,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Create a new skill that posts comments": False,
         "What's the weather in Cape Town?": False,
     },
+    "requirements-session": {
+        "I want to capture a new requirement": True,
+        "Let's record this idea as a requirement": True,
+        "Add a new business need to the backlog": True,
+        "What's blocked in the pipeline?": False,
+        "What's the weather in Cape Town?": False,
+    },
     "session-init": {
         "Let's start a new session": True,
         "What should we work on?": True,

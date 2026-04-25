@@ -7,6 +7,7 @@ loads:
   - skills/definitions/skill-frontmatter-schema.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
+  - skills/requirements-session/SKILL.md
 emits-exit-block: false
 ---
 
@@ -66,16 +67,10 @@ flow — there is no agent-side post-sync work.
   contract; session-init defers to it rather than shelling out to
   bare `gh agentic` commands.
 
-Other skills referenced as dispatch targets in step 5 (currently
-forward-references — they will be rewritten under the new spec
-in subsequent sessions and are not yet present):
+Step 5's dispatch targets:
 
-- `skills/requirements-session/SKILL.md` (option: add a new requirement)
-- `skills/feature-scoping/SKILL.md` (option: scope a requirement)
-
-These are not declared in `loads:` because they don't yet exist on
-disk; the framework's `references_resolve` mechanical check would
-fail. They will be added to `loads:` when each is rewritten.
+- `skills/requirements-session/SKILL.md` — option "Add a new requirement"; declared in `loads:` above.
+- `skills/feature-scoping/SKILL.md` — option "Scope a requirement"; still archived, will be added to `loads:` when rewritten.
 
 ## Steps
 
