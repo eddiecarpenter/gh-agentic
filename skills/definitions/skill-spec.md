@@ -662,7 +662,6 @@ actions.
 
 ### Likely groupings
 
-- **Output to user** — display-message, show-progress, notify-completion
 - **Input from user** — prompt-user, confirm-action, select-from-list
 - **GitHub interactions** — post-issue-comment, apply-label,
   transition-issue-state

@@ -9,7 +9,6 @@ loads:
   - skills/definitions/verification-procedure.md
   - skills/definitions/error-handling.md
   - skills/prompt-user/SKILL.md
-  - skills/display-message/SKILL.md
 emits-exit-block: true
 exit-hands-to: human — skill ready for use, or returned for further iteration
 ---
@@ -56,8 +55,10 @@ achieves its goal.
 - `skills/prompt-user/SKILL.md` — used in step 1 to capture intent through
   the four-question interview when intent isn't already clear from
   the conversation.
-- `skills/display-message/SKILL.md` — used throughout to surface drafts,
-  findings, and iteration progress to the user.
+
+Drafts, findings, iteration progress, and the final hand-off are
+surfaced as direct conversation messages — the agent talks to the
+user. No display primitive needed.
 
 ## Steps
 
@@ -115,7 +116,7 @@ achieves its goal.
       line:
       - 1 bullet → `## Decision: inline (1 consumer)` followed by a
         one-sentence reason. Then surface the recommendation via
-        `display-message`, emit `DECLINE_CREATE_SKILL`, and end the
+        chat, emit `DECLINE_CREATE_SKILL`, and end the
         skill normally.
       - 2+ bullets → `## Decision: proceed (≥2 consumers)`. Continue
         to step 3.
@@ -278,14 +279,14 @@ achieves its goal.
      step 9.
    - **Either fails** AND iteration count == 5 → halt with
      `FAILED_TO_CONVERGE`. Surface the persistent findings via
-     `display-message` and hand back to the user — they decide
+     chat and hand back to the user — they decide
      whether to accept partial conformance, escalate, or rework the
      skill. **Do not delete `skills/evals/<name>/`** in this branch;
      leave it in place so the user (or a follow-up session) can
      inspect intent.md, the iteration findings, and the INDEX log
      to diagnose what went wrong.
 
-9. **Hand off.** Surface to the user via `display-message`:
+9. **Hand off.** Surface to the user directly in chat:
    - Path to the new skill.
    - Any new definitions created.
    - Any primitives observed during testing that should be considered

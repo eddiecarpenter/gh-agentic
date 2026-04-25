@@ -120,10 +120,9 @@ fail. They will be added to `loads:` when each is rewritten.
    session bootstrap; surface the issue to the user at the end.
 
    **Verification gate:** the index must be non-empty and must
-   contain at least the canonical primitives (`prompt-user`,
-   `display-message`) and `skill-creator`. If any of those are
-   missing, raise `INDEX_INCOMPLETE` (`ERROR`) — the framework is in
-   a broken state.
+   contain at least `prompt-user`, `skill-creator`, and `gh-agentic`.
+   If any of those are missing, raise `INDEX_INCOMPLETE` (`ERROR`) —
+   the framework is in a broken state.
 
 3. **Run `gh agentic check`.** Verify the repo's pipeline-readiness:
 
