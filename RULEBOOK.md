@@ -30,25 +30,18 @@ relevant skill for the session being run.
 | Issue Session | `issue-session.md` | Automatic — issue labelled `assigned-to-agent`  |
 | Foreground Recovery | `foreground-recovery.md` | Human (interactive) — any blocked state |
 
-### Skill Taxonomy
-
-Every skill belongs to exactly one of six categories: **Session**, **Recovery**,
-**Bootstrap**, **Operation**, **Information**, **Reference**. Category
-definitions, frontmatter schema, and classification criteria are defined in
-`skills/skill-categories.md` — read that file when authoring, classifying, or
-validating a skill.
-
 ### Session Termination
 
-A session-ending skill (`category: Session` or `category: Recovery`, with
-`emits-exit-block: true`) **must terminate the session when it emits its exit
-block**. Immediately after the block:
+A skill with `emits-exit-block: true` in its frontmatter **must terminate the
+session when it emits its exit block**. Immediately after the block:
+
 - If the host runtime exposes a session-close API, the agent invokes it.
 - Otherwise, the agent halts and performs no further work.
 
 Continuation in the same session after the exit block is forbidden — any
-further work must occur in a new session. See `skills/session-exit.md` for the
-exit block template.
+further work must occur in a new session. The frontmatter contract for
+`emits-exit-block` and `exit-hands-to` lives in
+`skills/definitions/skill-frontmatter-schema.md`.
 
 ---
 
@@ -165,16 +158,18 @@ See `concepts/delivery-philosophy.md` for the full context.
   manually, even if the next steps are obvious. The automation runs the next session.
   This rule is unconditional and overrides any "completing early" logic.
 
-- **If the agent performs the same substantive action repeatedly in a session,** invoke
-  `skills/skill-creation.md` in proactive-suggestion mode. Detection thresholds and
-  classification logic are defined in that skill.
+- **If the agent performs the same substantive action repeatedly in a session,**
+  consider whether the action should be captured as a skill. The criterion is
+  reuse: 2+ consumers (real or concretely planned in the next 1–2 features)
+  justifies a skill. Surface the suggestion to the user; let them decide whether
+  to invoke `skill-creator`.
 
 ---
 
 ## Reuse & Refactor Discipline
 
-Before writing any new function, type, module, or schema, the agent invokes
-`skills/refactor-assessment.md` and records one of the three permitted outcomes:
+Before writing any new function, type, module, or schema, record one of the
+three permitted outcomes for the change:
 
 - **Reuse as-is** — an existing symbol already covers the need.
 - **Reuse via refactor** — an existing symbol nearly covers the need; extend
@@ -182,25 +177,17 @@ Before writing any new function, type, module, or schema, the agent invokes
 - **Do not reuse** — with a recorded motivation for why the existing code is
   genuinely unsuitable.
 
-This discipline applies to **every** code-touching action in the framework —
-inside a Session skill (`feature-design`, `dev-session`, `issue-session`),
-inside a Recovery skill (e.g. `foreground-recovery`), and inside any ad-hoc
-human-prompted change. It closes the coverage gap the per-session
-integrations cannot reach.
-
-The outcome is recorded in the canonical annotation format defined by
-`skills/refactor-assessment.md` — a single-line `Reuse: <outcome> — <reason>`
-placed in the commit trailer (for code-touching commits) or in a task
-comment (where no commit is produced).
-
-The discipline is **skippable only with explicit human opt-out**. The opt-out
-and its reason must be captured alongside the change using the same
-annotation slot: `Reuse: opt-out — <reason>`. "I didn't look" is never a
+This discipline applies to every code-touching action in the framework, and
+is skippable only with explicit human opt-out. The opt-out and its reason
+must be captured alongside the change. *"I didn't look"* is never a
 permitted outcome.
 
-`skills/refactor-assessment.md` is the single source of truth for the
-procedure, the outcomes, the recording format, and the loader phrase. Do not
-restate any of it here — consult the skill.
+The outcome is recorded as a single-line annotation in either:
+- the commit trailer (for code-touching commits), e.g.
+  `Reuse: refactor — extended pkg/foo.Bar to accept the new options struct`
+- or a task issue comment (when no commit is produced).
+
+Opt-out is recorded the same way: `Reuse: opt-out — <reason>`.
 
 ---
 
@@ -237,20 +224,20 @@ Always ask a human before:
 
 ---
 
-## Recipe Rules
+## Skill & Recipe Editability
 
 | Path | Editable | Purpose |
 |---|---|---|
-| `.goose/recipes/*.yaml` | ❌ Never (managed by framework) | Complete recipe — instructions, parameters, model settings |
-| `skills/*.md` (inside `.ai/`) | ❌ Never | Framework playbooks — read-only in domain repos |
-| `skills/*.md` (at repo root) | ✅ Yes (local, project-specific) | Local playbooks — override framework skills of the same name |
+| `recipes/*.yaml` | ❌ Never (managed by framework) | Goose recipes — instructions, parameters, model settings |
+| `skills/<name>/SKILL.md` (inside `.ai/`) | ❌ Never | Framework playbooks — read-only in domain repos |
+| `skills/<name>/SKILL.md` (at repo root) | ✅ Yes (local, project-specific) | Local playbooks — override framework skills of the same name |
 
 **Framework skills** (`skills/` inside the mounted `.ai/`) are managed by `gh-agentic`.
 Never modify them in a domain repo — they will be overwritten on the next mount update.
 
 **Local skills** (`skills/` at the domain repo root, outside `.ai/`) are project-specific
-playbooks that can be freely created and edited. A local skill with the same filename as a
-framework skill takes precedence.
+playbooks that can be freely created and edited. A local skill with the same `name` field
+as a framework skill takes precedence.
 
 - Customisation of agent behaviour belongs in `LOCALRULES.md`
 - If a recipe or framework skill needs to change, raise it against `eddiecarpenter/gh-agentic`
