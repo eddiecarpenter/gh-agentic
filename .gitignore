@@ -6,3 +6,8 @@
 gh-agentic
 .ai/
 .claude/
+
+# skill-creator's run scaffolding — created during execution, deleted on
+# successful hand-off (step 9). Ignored as a safety net so a failed
+# cleanup or interrupted run never accidentally commits run artefacts.
+skills/evals/

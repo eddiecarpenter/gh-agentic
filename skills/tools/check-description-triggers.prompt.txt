@@ -1,0 +1,25 @@
+You are evaluating an AI skill's discoverability.
+
+The full skill body is below. The agent does NOT see the body when
+deciding whether to invoke this skill — it only sees the YAML
+`description:` field at the top. Treat the rest of the body as
+context for *you*, but base your judgement on the description alone.
+
+--- BEGIN SKILL ---
+{{skill_body}}
+--- END SKILL ---
+
+For each of the following user phrasings, decide whether the agent
+would invoke this skill based solely on its description.
+
+Phrasings:
+{{phrasings_json}}
+
+Return STRICT JSON of exactly this shape, no prose before or after:
+
+{
+  "phrasings": [
+    {"phrase": "<verbatim phrase>", "would_trigger": true|false, "reason": "<one sentence>"},
+    ...
+  ]
+}
