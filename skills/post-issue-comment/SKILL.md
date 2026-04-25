@@ -2,6 +2,7 @@
 name: post-issue-comment
 description: Posts a comment to a GitHub issue or pull request with the body the caller supplies, and returns the URL and ID of the created comment so the caller can verify or reference it. Use when a calling skill needs to publish text content tied to an issue or PR — Design Plans, iteration reports, PR review notes, status updates, or general issue-thread communication. Use even when the calling skill doesn't say "post comment" — phrases like "publish the plan", "report progress on the issue", "leave a note on the PR" should trigger this primitive.
 triggers: automated
+user-invocable: false
 loads:
   - skills/definitions/error-handling.md
 emits-exit-block: false

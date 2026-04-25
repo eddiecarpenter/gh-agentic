@@ -2,6 +2,7 @@
 name: display-message
 description: Surfaces a structured message — progress update, intermediate finding, draft for review, or final hand-off report — from the calling skill to the human in a consistent format. Use when a skill needs to show the human something mid-execution or at hand-off. Use even when the calling skill doesn't say "display" — phrases like "let the user know", "show the draft", "report progress", or "hand off the result" should trigger this primitive.
 triggers: automated
+user-invocable: false
 loads:
   - skills/definitions/error-handling.md
 emits-exit-block: false

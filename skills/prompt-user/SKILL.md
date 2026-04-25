@@ -2,6 +2,7 @@
 name: prompt-user
 description: Asks the human a single question through the best available UI primitive — Claude Code's structured AskUserQuestion card when running interactively, or an inline conversation prompt when running headlessly — and returns the reply as a structured value to the calling skill. Use when a skill needs information only the human can supply — intent, choice between options, confirmation, or a free-form value. Use even when the calling skill doesn't say "ask" — phrases like "find out from the user", "confirm with the human", "check what they want", or "let the user decide" should trigger this primitive.
 triggers: automated
+user-invocable: false
 loads:
   - skills/definitions/error-handling.md
 emits-exit-block: false

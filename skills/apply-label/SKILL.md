@@ -2,6 +2,7 @@
 name: apply-label
 description: Applies one or more labels to a GitHub issue or pull request and optionally removes conflicting labels in the same call so phase-state transitions are atomic from the caller's perspective. Returns the resulting label set so the caller can verify without a second round-trip. Use when a calling skill needs to add, remove, or swap labels on an issue/PR — phase transitions like `in-design`→`in-development`, marking PRs `ready-for-review` or `approved`, tagging during triage, or any label-driven workflow signal. Use even when the calling skill doesn't say "apply label" — phrases like "transition the issue to in-development", "mark the PR approved", "tag this triaged" should trigger this primitive.
 triggers: automated
+user-invocable: false
 loads:
   - skills/definitions/error-handling.md
 emits-exit-block: false
