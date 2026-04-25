@@ -35,7 +35,7 @@ appropriate phase skill.
   picks "Free-form").
 
 No file artefacts. No GitHub state mutation. Side effects are limited
-to invoking the chosen phase skill (step 4) and reading repo state.
+to invoking the chosen phase skill (step 5) and reading repo state.
 Framework-version mechanics (mount, upgrade, post-upgrade migrations)
 are owned by the `gh agentic` CLI, not by this skill or any session
 flow — there is no agent-side post-sync work.
@@ -43,25 +43,25 @@ flow — there is no agent-side post-sync work.
 ## Definitions
 
 - `skills/definitions/error-handling.md` — the severity taxonomy
-  applied to the failure modes detected in step 2, and to the
-  `INTERACTION_REQUIRED` downgrade in step 4.
+  applied to the failure modes detected in step 3, and to the
+  `INTERACTION_REQUIRED` downgrade in step 5.
 - `skills/definitions/skill-frontmatter-schema.md` — the schema that
-  defines what fields the skill-index walk reads (step 1).
+  defines what fields the skill-index walk reads (step 2).
 
 ## Dependencies
 
-- `skills/prompt-user/SKILL.md` — used in step 4 to present the menu to the
+- `skills/prompt-user/SKILL.md` — used in step 5 to present the menu to the
   user. When prompt-user raises `INTERACTION_REQUIRED` (the session
   is non-interactive and `AskUserQuestion` is unavailable),
   session-init catches that error and ends cleanly.
-- `skills/gh-agentic/SKILL.md` — used in step 2 to invoke
-  `gh agentic check` (and `repair` if needed) and in step 3 to
+- `skills/gh-agentic/SKILL.md` — used in step 3 to invoke
+  `gh agentic check` (and `repair` if needed) and in step 4 to
   invoke `gh agentic info` for the greeting. The gh-agentic skill
   centralises the correct flag choices and the `--raw` token-cost
   contract; session-init defers to it rather than shelling out to
   bare `gh agentic` commands.
 
-Other skills referenced as dispatch targets in step 4 (currently
+Other skills referenced as dispatch targets in step 5 (currently
 forward-references — they will be rewritten under the new spec
 in subsequent sessions and are not yet present):
 
@@ -74,7 +74,25 @@ fail. They will be added to `loads:` when each is rewritten.
 
 ## Steps
 
-1. **Build the in-memory skill index.** Walk both `skills/*.md`
+1. **Show the loading message.** Bootstrap takes a moment — the
+   skill-index walk, the `gh agentic check`, and the `gh agentic info`
+   render together can run for several seconds, longer if `repair`
+   needs to fire. Surface a clear "we're working on it" message to
+   the user as the very first agent output, so they know not to
+   re-prompt or assume the session is stuck:
+
+   ```
+   ## Session bootstrap
+
+   ⏳ AI-Native Software Delivery framework loading — please give it
+   a moment to initialise. The full bootstrap will appear here when
+   ready.
+   ```
+
+   Render this message immediately, before any other step runs.
+   This is the agent's first user-facing output of the session.
+
+2. **Build the in-memory skill index.** Walk both `skills/*/SKILL.md`
    (active skills) and `skills/definitions/*.md` (reference
    definitions), reading the YAML frontmatter from each file. Build
    a working-memory dict keyed by `name`:
@@ -102,7 +120,7 @@ fail. They will be added to `loads:` when each is rewritten.
    missing, raise `INDEX_INCOMPLETE` (`ERROR`) — the framework is in
    a broken state.
 
-2. **Run `gh agentic check`.** Verify the repo's pipeline-readiness:
+3. **Run `gh agentic check`.** Verify the repo's pipeline-readiness:
 
    ```bash
    gh agentic check
@@ -110,7 +128,7 @@ fail. They will be added to `loads:` when each is rewritten.
 
    Branch on the result:
 
-   - All checks pass → continue to step 3.
+   - All checks pass → continue to step 4.
    - Any check fails → run `gh agentic repair`, then re-run
      `gh agentic check`.
      - Now passes → continue.
@@ -119,7 +137,7 @@ fail. They will be added to `loads:` when each is rewritten.
        greeting or menu. The repo is not in a state where any phase
        skill can run safely.
 
-3. **Display the greeting.** Run `gh agentic info` and surface its
+4. **Display the greeting.** Run `gh agentic info` and surface its
    output to the user as a tidy welcome message:
 
    ```bash
@@ -137,7 +155,7 @@ fail. They will be added to `loads:` when each is rewritten.
    in `LOCALRULES.md` (which is already in context via AGENTS.md
    auto-load).
 
-4. **Present the menu and dispatch.** Invoke `prompt-user` with the
+5. **Present the menu and dispatch.** Invoke `prompt-user` with the
    four phase options:
 
    ```
@@ -223,21 +241,21 @@ Run by `check-description-triggers.py`:
 
 ## Error Handling
 
-- `INDEX_INCOMPLETE` from step 1 (the skill index is missing core
+- `INDEX_INCOMPLETE` from step 2 (the skill index is missing core
   primitives) → severity `ERROR`; propagate. The framework is in a
   broken state and the agent cannot reliably proceed.
-- `PIPELINE_UNHEALTHY` from step 2 (`gh agentic check` failed and
+- `PIPELINE_UNHEALTHY` from step 3 (`gh agentic check` failed and
   `gh agentic repair` could not fix it) → severity `FATAL`. No
   caller may catch — the agent must not proceed with phase work
   against an unhealthy pipeline.
-- `INTERACTION_REQUIRED` from step 4's `prompt-user` invocation
+- `INTERACTION_REQUIRED` from step 5's `prompt-user` invocation
   (the session is non-interactive, no `AskUserQuestion` tool
   available) → severity `INFO`; record the downgrade in the
   conversation transcript and end session-init cleanly. The
   bootstrap has already completed; the menu is interactive-only
   and skipping it in a non-interactive session is expected, not an
   error.
-- `MENU_DISPATCH_FAILED` from step 4 (a chosen phase skill is not
+- `MENU_DISPATCH_FAILED` from step 5 (a chosen phase skill is not
   yet present in the framework — currently true for
   requirements-session, feature-scoping, post-sync until they are
   rewritten) → severity `ERROR`; propagate. The user picked a
