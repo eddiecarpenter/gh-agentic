@@ -6,6 +6,7 @@ loads:
   - skills/definitions/error-handling.md
   - skills/definitions/skill-frontmatter-schema.md
   - skills/prompt-user/SKILL.md
+  - skills/gh-agentic/SKILL.md
 emits-exit-block: false
 ---
 
@@ -53,6 +54,12 @@ flow — there is no agent-side post-sync work.
   user. When prompt-user raises `INTERACTION_REQUIRED` (the session
   is non-interactive and `AskUserQuestion` is unavailable),
   session-init catches that error and ends cleanly.
+- `skills/gh-agentic/SKILL.md` — used in step 2 to invoke
+  `gh agentic check` (and `repair` if needed) and in step 3 to
+  invoke `gh agentic info` for the greeting. The gh-agentic skill
+  centralises the correct flag choices and the `--raw` token-cost
+  contract; session-init defers to it rather than shelling out to
+  bare `gh agentic` commands.
 
 Other skills referenced as dispatch targets in step 4 (currently
 forward-references — they will be rewritten under the new spec

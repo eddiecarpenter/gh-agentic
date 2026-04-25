@@ -40,6 +40,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Apply the in-development label": False,
         "What's the weather in Cape Town?": False,
     },
+    "gh-agentic": {
+        "What version are we on?": True,
+        "What's blocked in the pipeline?": True,
+        "List the open features": True,
+        "Create a new skill that posts comments": False,
+        "What's the weather in Cape Town?": False,
+    },
     "session-init": {
         "Let's start a new session": True,
         "What should we work on?": True,

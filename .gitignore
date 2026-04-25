@@ -3,7 +3,7 @@
 .goose/config/
 .goose/data/
 .goose/state/
-gh-agentic
+/gh-agentic
 .ai/
 .claude/
 
