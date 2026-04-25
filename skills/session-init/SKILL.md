@@ -29,10 +29,15 @@ appropriate phase skill.
 - A **greeting message** rendered to the user containing the output
   of `gh agentic info` (framework version, project membership, repo
   state).
-- Either: a **dispatch to a downstream phase skill** the user chose
-  from the menu, OR a **clean exit** (when the session is
-  non-interactive, when the user declines the menu, or when the user
-  picks "Free-form").
+- One of three exit paths:
+  1. **Dispatch to a downstream phase skill** — when the user picked
+     a menu option that maps to a known phase.
+  2. **Bootstrap-then-answer** — when the user's first message was
+     substantive (a question or request); session-init skips the menu
+     and the agent goes on to address the user's actual message.
+  3. **Clean exit, no dispatch** — when the session is
+     non-interactive, when the user declined the menu, or when the
+     user picked "Free-form".
 
 No file artefacts. No GitHub state mutation. Side effects are limited
 to invoking the chosen phase skill (step 5) and reading repo state.
@@ -155,8 +160,30 @@ fail. They will be added to `loads:` when each is rewritten.
    in `LOCALRULES.md` (which is already in context via AGENTS.md
    auto-load).
 
-5. **Present the menu and dispatch.** Invoke `prompt-user` with the
-   four phase options:
+5. **Present the menu and dispatch — only when the user's first
+   message did not declare intent.** Before showing the menu, classify
+   the user's first message:
+
+   - **Casual / greeting** ("hi", "hello", "good morning", "let's
+     start", an empty message, or anything that does not carry a
+     specific question or request) → **show the menu** as described
+     below.
+   - **Substantive** (a question, a request, a directive — anything
+     where the human has already told you what they want) →
+     **skip the menu**. The user's message IS their declared intent
+     for this session. After the bootstrap greeting from step 4,
+     proceed to address the user's actual message. Session-init
+     ends without a menu prompt; the conversation continues with
+     the user's question as the first thing the agent answers.
+
+   The classification is judgement-based — there is no clean
+   pattern match. Lean toward "substantive" when in doubt: a
+   redundant menu after the user has spoken is worse UX than a
+   menu skipped when they wanted one. The user can always invoke
+   `/session-init` later to bring the menu up explicitly.
+
+   When the menu IS shown, invoke `prompt-user` with the four
+   phase options:
 
    ```
    prompt-user(
