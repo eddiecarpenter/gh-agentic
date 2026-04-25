@@ -40,6 +40,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Apply the in-development label": False,
         "What's the weather in Cape Town?": False,
     },
+    "prompt-user": {
+        "Find out from the user which approach they want": True,
+        "Confirm with the human before proceeding": True,
+        "Let the user decide between these options": True,
+        "Read the configuration file": False,
+        "What's the weather in Cape Town?": False,
+    },
     "apply-label": {
         "Transition the issue to in-development": True,
         "Mark the PR approved": True,
