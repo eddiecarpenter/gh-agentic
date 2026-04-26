@@ -24,7 +24,7 @@ well-formed Feature issues through a structured artefact walk, then
 trigger selected Features for headless Feature Design. Produces
 ready-for-design Features (with full acceptance criteria, deployment
 strategy, and UX triage decision) and transitions the parent
-Requirement from `Scoping` to `Scheduled` on the project board.
+Requirement from `Scoping` to `Ready to Implement` on the project board.
 
 ## Output Artefacts
 
@@ -33,23 +33,23 @@ invocation:
 
 **A. All Features triggered.** Every Feature created received the
 `in-design` label and project status `In Design`. Requirement
-transitioned to `scheduled`. Headless Feature Design will pick up
+transitioned to `ready-to-implement`. Headless Feature Design will pick up
 each triggered Feature.
 
 **B. Some Features held.** Some Features triggered, others held at
 `backlog` (cross-repo dependency awaiting upstream PR, or deliberate
-hold by human). Requirement transitioned to `scheduled`.
+hold by human). Requirement transitioned to `ready-to-implement`.
 
 **C. All Features held.** Features created but none triggered (all
 blocked by deps or held by human). Requirement transitioned to
-`scheduled`.
+`ready-to-implement`.
 
 **D. Cancelled mid-scope.** The human aborted during the artefact
 walk. No Features created. Requirement reverted to `backlog`. No
 project status change persists.
 
 **E. Already scoped.** Detected on entry: the picked Requirement is
-at `scheduled` and has child Features. Skill exits clean with a
+at `ready-to-implement` and has child Features. Skill exits clean with a
 pointer to the existing Features. No-op.
 
 **F. Orphan re-entry.** Detected on entry: the picked Requirement
@@ -90,10 +90,10 @@ body as a `## Parking Lot` section, not as separate artefacts.
   landed.
 - `skills/apply-label/SKILL.md` — used for label transitions on the
   Requirement (`backlog`→removed, `scoping`→added; later `scoping`→removed,
-  `scheduled`→added) and for Feature creation labels and the
+  `ready-to-implement`→added) and for Feature creation labels and the
   `in-design`/`backlog` swap during trigger.
 - `skills/set-issue-status/SKILL.md` — used for project status
-  transitions: Requirement to `Scoping` (entry), `Scheduled` (exit);
+  transitions: Requirement to `Scoping` (entry), `Ready to Implement` (exit);
   Features to `In Design` (when triggered).
 - `skills/post-issue-comment/SKILL.md` — used to surface decomposition
   context or the parking lot to the parent Requirement when relevant.
@@ -124,7 +124,7 @@ check` / `repair`. If a label is missing at the apply moment,
 propagate `ISSUE_CREATION_FAILED` and recommend `gh agentic repair`.
 
 **Required project Status options precondition.** The Requirement's
-project status moves through `Backlog` → `Scoping` → `Scheduled`,
+project status moves through `Backlog` → `Scoping` → `Ready to Implement`,
 and triggered Features move to `In Design`. All four option names
 must exist on the project's Status field; if any is missing,
 `set-issue-status` will raise `STATUS_OPTION_NOT_FOUND` and we
@@ -175,7 +175,7 @@ failure correctly.
 | **T0 → T1** | step 4 | Requirement Backlog → Scoping (label + status) | Yes — revertible to Backlog |
 | **T1 → T2** | step 18 | Create Feature issue(s) with labels + sub-issue link to parent | **No — point of no return.** Created issues cannot be auto-removed |
 | **T2 → T3** | step 21 | Triggered Features Backlog → In Design (label + status) | Partial — failed triggers leave Features at Backlog |
-| **T3 → T4** | step 23 | Requirement Scoping → Scheduled (label + status) | Partial — failed transition leaves Requirement at Scoping with Features in their final states |
+| **T3 → T4** | step 23 | Requirement Scoping → Ready to Implement (label + status) | Partial — failed transition leaves Requirement at Scoping with Features in their final states |
 
 **Cancel rules by state:**
 
@@ -189,7 +189,7 @@ failure correctly.
   the Requirement's current state. Recommend manual cleanup
   (close orphan Features) or completing the work manually (apply
   `in-design` to selected Features and transition the Requirement
-  to Scheduled). Do NOT auto-revert the Requirement to Backlog
+  to Ready to Implement). Do NOT auto-revert the Requirement to Backlog
   when Features exist — they would be left as orphans pointing
   to a backlog-stage parent.
 
@@ -390,7 +390,7 @@ on it:
        1. Inspect each Feature; if the partial work is correct,
           apply `in-design` (and project status In Design) to those
           you want to trigger, then run set-issue-status to transition
-          the Requirement to Scheduled.
+          the Requirement to Ready to Implement.
        2. If the partial work is wrong, close the orphan Features
           (gh issue close), then re-run requirement-scoping which will
           revert the Requirement to Backlog and start fresh.
@@ -398,7 +398,7 @@ on it:
      ```
      Exit cleanly with Output F (the variant explicitly says "no
      auto-recovery — manual action required").
-   - `scheduled` → already-scoped (Output E). The
+   - `ready-to-implement` → already-scoped (Output E). The
      `gh agentic status requirement <N> --raw` output already
      includes a `linked_features:` line listing the child Features —
      read it from the same query, surface the list to the human,
@@ -1032,8 +1032,8 @@ prompt-user(
       - Manually re-trigger the failed Features (apply in-design
         and run set-issue-status to In Design)
       - Once all intended Features are at In Design, manually
-        transition the Requirement to Scheduled (apply scheduled
-        label, remove scoping, set-issue-status to Scheduled)
+        transition the Requirement to Ready to Implement (apply ready-to-implement
+        label, remove scoping, set-issue-status to Ready to Implement)
     ```
 
     Raise `STATUS_TRANSITION_FAILED`.
@@ -1058,12 +1058,12 @@ prompt-user(
 
 ### Section F — Closeout
 
-23. **Transition Requirement: Scoping → Scheduled.**
+23. **Transition Requirement: Scoping → Ready to Implement.**
 
     ```
     apply-label(repo=<active-repo>, issue=<requirement-N>,
-                add=["scheduled"], remove=["scoping"])
-    set-issue-status(repo=<active-repo>, issue=<requirement-N>, status="Scheduled")
+                add=["ready-to-implement"], remove=["scoping"])
+    set-issue-status(repo=<active-repo>, issue=<requirement-N>, status="Ready to Implement")
     ```
 
     On any failure, propagate `STATUS_TRANSITION_FAILED`.
@@ -1078,7 +1078,7 @@ prompt-user(
     Produced:
       - Feature #<F1> created (triggered for design)
       - Feature #<F2> created (triggered for design)
-      - Requirement #<N> transitioned: scoping → scheduled
+      - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: none
 
@@ -1093,7 +1093,7 @@ prompt-user(
     Produced:
       - Feature #<F1> created (triggered for design)
       - Feature #<F2> created (held at backlog — cross-repo dep)
-      - Requirement #<N> transitioned: scoping → scheduled
+      - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: #<F2> — upstream PR
 
@@ -1108,7 +1108,7 @@ prompt-user(
     Produced:
       - Feature #<F1> created (held at backlog — cross-repo dep)
       - Feature #<F2> created (held at backlog — deliberate hold)
-      - Requirement #<N> transitioned: scoping → scheduled
+      - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: #<F1> — upstream PR; #<F2> — human chose to hold
 
@@ -1131,7 +1131,7 @@ prompt-user(
     ```
     === Requirement Scoping Session — No-op ===
 
-    Produced: nothing — Requirement #<N> already scheduled.
+    Produced: nothing — Requirement #<N> already ready-to-implement.
 
     Existing Features: #<F1>, #<F2>, ...
 

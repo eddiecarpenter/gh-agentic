@@ -353,7 +353,7 @@ gh agentic status features --raw
 Filter rows where `stage == backlog`. Cross-check parent requirement
 stage with `gh agentic status requirements --raw`. A feature is
 triggerable when `stage == backlog` AND parent requirement is
-`scheduled` or beyond.
+`ready-to-implement` or beyond.
 
 ### "What's blocked?"
 
