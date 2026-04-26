@@ -133,10 +133,38 @@ conditional. Every other step is mandatory.
    error and end the skill cleanly — the rest of the flow assumes a
    resolvable repo.
 
+   **Foundation SA precondition (hard gate).** Verify that
+   `docs/ARCHITECTURE.md` exists in the active repo:
+
+   ```bash
+   test -f docs/ARCHITECTURE.md
+   ```
+
+   If the file does not exist, the skill MUST hard-fail. Surface to
+   the human:
+
+   ```
+   Cannot capture a Requirement: docs/ARCHITECTURE.md is missing.
+
+   Foundation Solution Architecture is a precondition for capturing
+   Requirements — without an architectural baseline, Requirements
+   have nothing to anchor against and tend to be vague or
+   contradictory. Run the solution-architecture skill to bootstrap
+   docs/ARCHITECTURE.md, then re-invoke this skill.
+   ```
+
+   Then exit cleanly. Do not proceed to step 2.
+
+   This is a single point of enforcement at the entry of the pipeline
+   — downstream phases (scoping, feature design, etc.) trust this
+   precondition rather than re-checking it. The check exists here to
+   prevent any Requirement entering the pipeline without a Foundation
+   SA in place.
+
    This step runs once per session. On subsequent capture loops
    (when the human chose "capture another" in step 9), skip the
-   banner *and* the repo resolution — both are already done — and
-   resume from step 2.
+   banner, the repo resolution, *and* the precondition check — all
+   three are already done — and resume from step 2.
 
 2. **Survey existing requirements and offer to continue one.** Query
    the active repo's open requirements for context (used in step 4
