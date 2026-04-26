@@ -274,10 +274,11 @@ artefact walk (steps in section C):
      - Revert → use `apply-label` to remove `scoping`, add `backlog`,
        and `set-issue-status` to set status to `Backlog`. Exit cleanly.
      - Cancel → `USER_CANCELLED`, exit.
-   - `scheduled` → already-scoped (Output E). Surface the existing
-     child Features (query via `gh issue list --search 'parent:<N>'`
-     or via the Requirement's body if linked) and exit cleanly with
-     a no-op message.
+   - `scheduled` → already-scoped (Output E). The
+     `gh agentic status requirement <N> --raw` output already
+     includes a `linked_features:` line listing the child Features —
+     read it from the same query, surface the list to the human,
+     and exit cleanly with a no-op message.
    - Any other stage → raise `UNEXPECTED_STAGE` (`ERROR`); the
      framework is in an unexpected state. Recommend `gh agentic check`.
 
@@ -661,18 +662,29 @@ prompt-user(
     )
     ```
 
-18. **Create each Feature issue.** For each Feature, invoke:
+18. **Create each Feature issue.** Build the labels list from artefact 7's
+    answer:
+
+    - If UX triage = "no" → labels are `feature,backlog`
+    - If UX triage = "yes" → labels are `feature,backlog,needs-ux-design`
+
+    Write the Feature body from step 17 to a temporary file using
+    the agent's `Write` tool — never via shell `echo` or heredoc, as
+    user-supplied content may contain shell metacharacters (backticks,
+    dollar signs, quotes) that would corrupt the file. Then invoke:
 
     ```bash
     gh issue create \
       --repo "<active-repo>" \
       --title "<Feature title>" \
-      --label "feature,backlog" \
-      $([ "<UX triage>" = "yes" ] && echo "--label needs-ux-design") \
-      --body-file <temp-file with the body from step 17>
+      --label "<labels>" \
+      --body-file <path-to-temp-file>
     ```
 
-    Capture the resulting issue number `<F>` and URL.
+    Capture the resulting issue number `<F>` and URL from the
+    command's stdout. The output is the full URL
+    (`https://github.com/<active-repo>/issues/<F>`); parse `<F>`
+    from the trailing path segment.
 
     **Feature title rule.** ≤70 characters. Noun-phrase summary of
     the outcome. NOT a verb-imperative ("Add CSV export"). NOT
