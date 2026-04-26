@@ -49,8 +49,19 @@ walk. No Features created. Requirement reverted to `backlog`. No
 project status change persists.
 
 **E. Already scoped.** Detected on entry: the picked Requirement is
-at `ready-to-implement` and has child Features. Skill exits clean with a
-pointer to the existing Features. No-op.
+at `ready-to-implement` and has child Features. The skill offers
+the human three paths (extend / replace / no-op):
+
+- **No-op exit** → exits clean with a pointer to the existing
+  Features. Variant of E.
+- **Extend** → transitions Requirement back to `scoping`, runs the
+  artefact walk to add new sibling Features (existing untouched),
+  transitions back to `ready-to-implement`. Outputs A/B/C apply
+  for the newly-created Features.
+- **Replace** → human picks existing Features to close; closes
+  them; then proceeds as Extend for the replacements. Outputs
+  A/B/C apply for the new Features; closed Features are reported
+  in the exit block.
 
 **F. Orphan re-entry.** Detected on entry: the picked Requirement
 is at `scoping` (a prior session left it there). The skill asks
@@ -398,11 +409,64 @@ on it:
      ```
      Exit cleanly with Output F (the variant explicitly says "no
      auto-recovery — manual action required").
-   - `ready-to-implement` → already-scoped (Output E). The
-     `gh agentic status requirement <N> --raw` output already
-     includes a `linked_features:` line listing the child Features —
-     read it from the same query, surface the list to the human,
-     and exit cleanly with a no-op message.
+   - `ready-to-implement` → already-scoped, but the human may want
+     to extend or replace. The `gh agentic status requirement <N>
+     --raw` output's `linked_features:` line lists the existing
+     child Features. Surface them to the human and ask:
+
+     ```
+     prompt-user(
+       question: "This Requirement is already scoped (stage: ready-to-implement) with the Features listed above. Why are you re-invoking?",
+       header: "Already-scoped Requirement",
+       options: [
+         {label: "Add more Features (extend scope)",
+          description: "Create new sibling Features under this Requirement. Existing Features are not modified."},
+         {label: "Replace existing Feature(s)",
+          description: "Close some existing Features and create replacements."},
+         {label: "No-op — exit",
+          description: "I'm here by mistake; do nothing."}
+       ]
+     )
+     ```
+
+     Branch on the answer:
+
+     - **No-op** → exit cleanly with Output E (the no-op variant).
+
+     - **Add more Features (extend)** → continue to step 4 with a
+       transition variation: instead of `backlog → scoping`, the
+       transition is `ready-to-implement → scoping` (apply
+       `scoping`, remove `ready-to-implement`, set status to
+       `Scoping`). Then proceed normally through the artefact walk.
+       At artefact 3 (decomposition), the existing Features are
+       surfaced as context: the human is choosing how many
+       *additional* Features to spawn, not redoing the existing
+       ones. Artefacts 4–8 run only for the new Features (the
+       existing Features remain untouched in their current state).
+       At step 21 (trigger), only the newly-created Features go
+       through the trigger flow; existing Features keep their
+       current trigger state. At step 23 (closeout), transition
+       Requirement back to `ready-to-implement`.
+
+     - **Replace existing Feature(s)** → ask the human which
+       existing Features to close (free-text reply with the
+       numbers, e.g., `"#F1, #F3"`). For each named Feature, run:
+       ```
+       gh issue close <F> --reason "Replaced during requirement-scoping re-run"
+       ```
+       Then proceed as in the extend case above: the artefact walk
+       creates replacement Features under the same parent
+       Requirement; at step 21 only the new Features go through
+       trigger; at step 23 the Requirement returns to
+       `ready-to-implement`.
+
+     **Important:** the artefact walk in extend/replace mode
+     should NOT re-do artefacts 1 and 2 (the Requirement-level
+     framing) — those were settled when the Requirement was first
+     scoped. Surface them to the human as known context but skip
+     the confirm/revise gate. Start the walk from artefact 3
+     (decomposition) and proceed normally from there.
+
    - Any other stage → raise `UNEXPECTED_STAGE` (`ERROR`); the
      framework is in an unexpected state. Recommend `gh agentic check`.
 
