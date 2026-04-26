@@ -703,21 +703,52 @@ prompt-user(
 
 19. **Wire sub-issue relationships.** For each created Feature,
     establish the Feature → parent Requirement link via GitHub's
-    sub-issue mechanism. The exact gh API call depends on the
-    framework's current convention — typically:
+    sub-issue mechanism.
+
+    GraphQL operates on node IDs, not issue numbers, so resolve
+    each issue's node ID first (same pattern used in
+    `set-issue-status` step 3):
 
     ```bash
+    # Parent Requirement node ID (resolve once at the start of
+    # this step, reuse across all child Features):
+    PARENT_NODE_ID=$(gh api graphql -f query='
+      query($owner:String!, $name:String!, $num:Int!) {
+        repository(owner:$owner, name:$name) {
+          issue(number:$num) { id }
+        }
+      }' \
+      -F owner="${active_repo%/*}" \
+      -F name="${active_repo#*/}" \
+      -F num="<requirement-N>" \
+      --jq '.data.repository.issue.id')
+
+    # Per Feature, resolve the child node ID then link:
+    CHILD_NODE_ID=$(gh api graphql -f query='
+      query($owner:String!, $name:String!, $num:Int!) {
+        repository(owner:$owner, name:$name) {
+          issue(number:$num) { id }
+        }
+      }' \
+      -F owner="${active_repo%/*}" \
+      -F name="${active_repo#*/}" \
+      -F num="<F>" \
+      --jq '.data.repository.issue.id')
+
     gh api graphql -f query='
       mutation($parent:ID!, $child:ID!) {
         addSubIssue(input:{issueId:$parent, subIssueId:$child}) {
           issue { id }
         }
-      }' -F parent=<requirement-node-id> -F child=<feature-node-id>
+      }' \
+      -F parent="$PARENT_NODE_ID" \
+      -F child="$CHILD_NODE_ID"
     ```
 
-    On any failure, propagate `ISSUE_CREATION_FAILED`. The Feature
-    body's `Closes #<parent>` / `Part of #<parent>` line is a fallback;
-    the API-level sub-issue link is the durable signal.
+    On any failure (node-ID lookup or the mutation itself), propagate
+    `ISSUE_CREATION_FAILED`. The Feature body's `Closes #<parent>` /
+    `Part of #<parent>` line is a fallback; the API-level sub-issue
+    link is the durable signal.
 
 ---
 
