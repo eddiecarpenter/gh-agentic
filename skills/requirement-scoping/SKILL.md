@@ -1056,8 +1056,12 @@ prompt-user(
     decision rule.
 
     ```
-    trigger-design(repo=<active-repo>, issue=<F>)
+    trigger-design(issue=<F>)
     ```
+
+    `repo` is omitted — `trigger-design` resolves it to the active
+    repo, which is what we want here (the Features were just created
+    in the active repo in step 18).
 
     The primitive returns `{ trigger_label, status, triggered: true }`
     on success. Capture `trigger_label` per Feature so step 22 (held

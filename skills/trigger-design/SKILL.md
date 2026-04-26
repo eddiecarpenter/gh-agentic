@@ -55,9 +55,20 @@ No file artefacts. No state outside the named Feature changes.
 
 ## Steps
 
-1. **Receive the inputs from the caller.** Required fields:
-   - `repo` (string, `owner/name` format).
-   - `issue` (int) — the Feature issue number.
+1. **Receive the inputs from the caller.**
+   - `issue` (int, required) — the Feature issue number.
+   - `repo` (string, optional, `owner/name` format) — the repo the
+     Feature lives in. The normal case is that the Feature lives in
+     the active repo and the caller omits this; resolve it via:
+
+     ```bash
+     gh repo view --json nameWithOwner -q .nameWithOwner
+     ```
+
+     Power-user / cross-repo callers may pass `repo` explicitly to
+     target a Feature in another repo (e.g., the human re-triggering
+     a held Feature from a different working directory). When given,
+     use it verbatim and do NOT call `gh repo view`.
 
 2. **Query the Feature's current labels.** Determines which trigger
    label to apply and validates the Feature is in a triggerable state:
