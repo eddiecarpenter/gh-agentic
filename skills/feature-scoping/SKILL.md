@@ -165,6 +165,86 @@ artefact walk (steps in section C):
       now: <new value>
     <unchanged fields are omitted>
   ```
+**State model & cancel semantics.** This skill performs four
+sequential GitHub-side transitions whose recoverability differs.
+The agent must know which state it is in to handle cancellation and
+failure correctly.
+
+| Transition | Where | Effect | Skill-recoverable? |
+|---|---|---|---|
+| **T0 → T1** | step 4 | Requirement Backlog → Scoping (label + status) | Yes — revertible to Backlog |
+| **T1 → T2** | step 18 | Create Feature issue(s) with labels + sub-issue link to parent | **No — point of no return.** Created issues cannot be auto-removed |
+| **T2 → T3** | step 21 | Triggered Features Backlog → In Design (label + status) | Partial — failed triggers leave Features at Backlog |
+| **T3 → T4** | step 23 | Requirement Scoping → Scheduled (label + status) | Partial — failed transition leaves Requirement at Scoping with Features in their final states |
+
+**Cancel rules by state:**
+
+- **Before T1** (during Requirement pick or exploration) → clean
+  exit; no mutations to revert.
+- **At T1** (Requirement at Scoping, no Features yet) → revert
+  the Requirement to Backlog (label + status) and exit (Output D).
+- **At T2 or later** (Features have been created) → the skill
+  CANNOT cleanly undo. Surface the partial state to the human:
+  which Features were created, their current labels and statuses,
+  the Requirement's current state. Recommend manual cleanup
+  (close orphan Features) or completing the work manually (apply
+  `in-design` to selected Features and transition the Requirement
+  to Scheduled). Do NOT auto-revert the Requirement to Backlog
+  when Features exist — they would be left as orphans pointing
+  to a backlog-stage parent.
+
+The issue-creation confirmation gate (step 17) MUST warn the human
+about this boundary before T2 fires:
+> "Once you confirm, Feature issues will be created in GitHub.
+> Cancellation after this point cannot remove the created issues
+> automatically; the session would exit with the Features in place
+> and the Requirement still at Scoping."
+
+**Failure-during-transition rules:**
+
+- **T0 → T1 fails partway** (e.g., label applied but status not
+  set) → raise `STATUS_TRANSITION_FAILED`. Exit. The Requirement
+  is in a label/status mismatch state; the next session's pre-entry
+  check (step 3) detects and surfaces it. Recommend
+  `gh agentic repair`.
+- **T1 → T2 partial** (Feature 1 created, Feature 2 fails) → raise
+  `ISSUE_CREATION_FAILED`. DO NOT continue with trigger
+  confirmation — the Feature set is incomplete and partial trigger
+  on a partial set leaves the framework in a worse state. Surface
+  which Features succeeded and which didn't; recommend keeping the
+  successful Features (already valid pipeline artefacts), closing
+  any partial-creation orphans manually, and re-running scoping
+  for the failed ones (which will create them as additional
+  Features under the same parent).
+- **T2 → T3 partial** (some Features triggered, others failed) →
+  raise `STATUS_TRANSITION_FAILED`. DO NOT proceed to T3 → T4 —
+  the Requirement transition is conditional on all triggers
+  succeeding. Surface which Features are at `in-design` vs still
+  at `backlog`; recommend manual re-trigger. The Requirement
+  remains at Scoping.
+- **T3 → T4 fails** → raise `STATUS_TRANSITION_FAILED`. Features
+  are in their intended states; the Requirement is stuck at
+  Scoping. Recommend `gh agentic repair` and manual re-run of
+  the final transition only.
+
+**Orphan re-entry refinement.** When step 3 detects the picked
+Requirement at `scoping`, the same `gh agentic status requirement
+<N> --raw` query also returns a `linked_features:` line. Branch
+on it:
+
+- **No child Features** → T1 leftover. Offer Continue scoping
+  (start over) or Revert to backlog (the existing flow).
+- **Has child Features** → T2-or-later leftover. The skill cannot
+  cleanly resume from artefact 1 (would duplicate Features) and
+  cannot cleanly revert (Features reference the parent). Surface
+  the existing Features to the human and recommend they:
+  - Inspect the partial Features
+  - Either complete the work manually (apply `in-design` and
+    transition the Requirement) or close the orphan Features
+    *before* reverting the Requirement to Backlog.
+
+  Exit cleanly. The skill does not auto-recover from this state.
+
 - **Impact-delta on revision.** When a previously-confirmed artefact
   is revised, the agent must re-evaluate downstream artefacts that
   depend on it. Re-confirm only those flagged as affected; leave
@@ -270,11 +350,18 @@ artefact walk (steps in section C):
    Read the `stage:` line. Branch:
 
    - `backlog` → continue to step 4 (normal flow).
-   - `scoping` → orphan re-entry (Output F). Ask `prompt-user`:
+   - `scoping` → orphan re-entry (Output F). Apply the
+     **Orphan re-entry refinement** from the Steps preamble: read
+     the `linked_features:` line returned by the same
+     `gh agentic status requirement <N> --raw` call to determine
+     whether this is a T1 leftover (no children) or T2-or-later
+     leftover (has children).
+
+     **No child Features (T1 leftover):**
      ```
      prompt-user(
-       question: "This Requirement is mid-scoping (stage: scoping). A prior session was interrupted. Continue from scratch, or revert to backlog?",
-       header: "Orphan scoping detected",
+       question: "This Requirement is mid-scoping (stage: scoping). A prior session was interrupted before any Features were created. Continue from scratch, or revert to backlog?",
+       header: "Orphan scoping detected — no Features yet",
        options: [
          {label: "Continue scoping (start over)", description: "Run the artefact walk fresh; previous conversation state is not recoverable."},
          {label: "Revert to backlog", description: "Set the Requirement back to backlog and exit. Re-invoke later."},
@@ -282,10 +369,35 @@ artefact walk (steps in section C):
        ]
      )
      ```
-     - Continue → proceed to step 4 (no transition needed; already at scoping).
+     - Continue → proceed to step 5 (no transition needed; already
+       at scoping). Skip step 4.
      - Revert → use `apply-label` to remove `scoping`, add `backlog`,
        and `set-issue-status` to set status to `Backlog`. Exit cleanly.
-     - Cancel → `USER_CANCELLED`, exit.
+     - Cancel → `USER_CANCELLED`, exit (no changes).
+
+     **Has child Features (T2-or-later leftover):** the skill cannot
+     cleanly resume or revert. Render the existing Features to the
+     human:
+     ```
+     This Requirement is mid-scoping (stage: scoping) and already has
+     child Features:
+       - #<F1> <title> [labels]
+       - #<F2> <title> [labels]
+       - ...
+     The skill cannot cleanly resume (artefact walk would create
+     duplicates) and cannot cleanly revert (Features reference this
+     parent). Recommended actions, manual:
+       1. Inspect each Feature; if the partial work is correct,
+          apply `in-design` (and project status In Design) to those
+          you want to trigger, then run set-issue-status to transition
+          the Requirement to Scheduled.
+       2. If the partial work is wrong, close the orphan Features
+          (gh issue close), then re-run feature-scoping which will
+          revert the Requirement to Backlog and start fresh.
+     Exiting now without changes.
+     ```
+     Exit cleanly with Output F (the variant explicitly says "no
+     auto-recovery — manual action required").
    - `scheduled` → already-scoped (Output E). The
      `gh agentic status requirement <N> --raw` output already
      includes a `linked_features:` line listing the child Features —
@@ -670,6 +782,18 @@ prompt-user(
     Part of #<parent-N> (when multiple Features share the parent)
     ```
 
+    Then surface the **point-of-no-return warning** to the human as
+    plain conversation BEFORE the prompt-user call (see "State model
+    & cancel semantics" in the Steps preamble for the full rules):
+
+    ```
+    ⚠ Once you confirm, Feature issues will be created in GitHub.
+       Cancellation after this point cannot remove the created
+       issues automatically — the session would exit with the
+       Features in place and the Requirement still at Scoping,
+       requiring manual cleanup.
+    ```
+
     Then invoke a single confirmation prompt covering all Features
     being created:
 
@@ -679,7 +803,7 @@ prompt-user(
       header: "Confirm Feature creation",
       options: [
         {label: "Yes, create them",
-         description: "<N> Feature(s) will be created in <active-repo>."},
+         description: "<N> Feature(s) will be created in <active-repo>. Point of no return."},
         {label: "Revise — go back to a specific artefact",
          description: "Pick which artefact to revisit."},
         {label: "Cancel scoping",
@@ -726,6 +850,31 @@ prompt-user(
 
     Verify the issue exists with the expected labels. If missing
     or inconsistent, raise `ISSUE_CREATION_FAILED` (`ERROR`).
+
+    **Partial-creation handling.** If Feature K of N fails (Features
+    1..K-1 already exist on GitHub), STOP — do not continue creating
+    Features K+1..N, and DO NOT proceed to step 19, 20, or beyond.
+    Per "State model & cancel semantics", T1→T2 partial leaves the
+    framework in a state the skill cannot auto-recover from. Surface:
+
+    ```
+    Partial Feature creation:
+      - #<F1> created successfully (labels: ...)
+      - ...
+      - Feature K (<title>) failed: <gh stderr>
+      - Features K+1..N not attempted
+
+    The Requirement remains at Scoping. The successfully-created
+    Features are valid pipeline artefacts; the failed one needs
+    investigation. Recommended:
+      - Run `gh agentic repair`
+      - Re-invoke feature-scoping; the orphan re-entry flow will
+        detect the existing Features and surface them. From there,
+        either close them and start over, or complete the work
+        manually.
+    ```
+
+    Exit with `ISSUE_CREATION_FAILED`.
 
 19. **Wire sub-issue relationships.** For each created Feature,
     establish the Feature → parent Requirement link via GitHub's
@@ -819,9 +968,33 @@ prompt-user(
     set-issue-status(repo=<active-repo>, issue=<F>, status="In Design")
     ```
 
-    On failure for any Feature, propagate
-    `STATUS_TRANSITION_FAILED`. Surface which Features succeeded
-    and which failed; recommend `gh agentic repair` and re-trigger.
+    **Partial-trigger handling.** If trigger K of M fails, STOP —
+    do not attempt the remaining triggers, and DO NOT proceed to
+    step 22, 23, or beyond. Per "State model & cancel semantics",
+    T2→T3 partial means the Requirement transition (T3→T4) is
+    unsafe. Surface:
+
+    ```
+    Partial trigger:
+      Triggered (now at In Design):
+        - #<F1> in-design ✓
+        - ...
+      Failed (still at backlog):
+        - Feature K: <stderr>
+        - Features K+1..M not attempted
+      Not selected (held at backlog by design):
+        - ...
+
+    The Requirement remains at Scoping. Recommended:
+      - Run `gh agentic repair` to investigate the failure
+      - Manually re-trigger the failed Features (apply in-design
+        and run set-issue-status to In Design)
+      - Once all intended Features are at In Design, manually
+        transition the Requirement to Scheduled (apply scheduled
+        label, remove scoping, set-issue-status to Scheduled)
+    ```
+
+    Raise `STATUS_TRANSITION_FAILED`.
 
 22. **Annotate held Features.** For each non-triggered Feature,
     post a comment via `post-issue-comment`:
