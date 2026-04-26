@@ -10,6 +10,7 @@ loads:
   - skills/gh-agentic/SKILL.md
   - skills/apply-label/SKILL.md
   - skills/set-issue-status/SKILL.md
+  - skills/trigger-design/SKILL.md
   - skills/post-issue-comment/SKILL.md
 emits-exit-block: true
 exit-hands-to: "automation: feature-design (in-design label on triggered Features) | human: re-trigger held Features when their blockers clear"
@@ -101,11 +102,15 @@ body as a `## Parking Lot` section, not as separate artefacts.
   landed.
 - `skills/apply-label/SKILL.md` — used for label transitions on the
   Requirement (`backlog`→removed, `scoping`→added; later `scoping`→removed,
-  `ready-to-implement`→added) and for Feature creation labels and the
-  `in-design`/`backlog` swap during trigger.
+  `ready-to-implement`→added).
 - `skills/set-issue-status/SKILL.md` — used for project status
-  transitions: Requirement to `Scoping` (entry), `Ready to Implement` (exit);
-  Features to `In Design` (when triggered).
+  transitions on the Requirement: to `Scoping` (entry) and
+  `Ready to Implement` (exit).
+- `skills/trigger-design/SKILL.md` — used in step 21 to transition each
+  selected Feature from `backlog` to `in-design` (or `interactive-design`,
+  if the Feature carries `needs-interactive-design`) with project status
+  `In Design`. Encapsulates the trigger-label decision so this skill
+  doesn't repeat it.
 - `skills/post-issue-comment/SKILL.md` — used to surface decomposition
   context or the parking lot to the parent Requirement when relevant.
 
@@ -1042,37 +1047,36 @@ prompt-user(
       - Anything else → ask once for clarification, cap at 3
         invalid attempts (then `USER_CANCELLED`).
 
-21. **Apply triggers atomically (per selected Feature).** For each
-    selected Feature, the trigger label depends on whether it has
-    `needs-interactive-design`:
-
-    - **Has `needs-interactive-design`** → apply `interactive-design`,
-      remove `backlog`. The design skill will run in foreground when
-      invoked manually.
-    - **No `needs-interactive-design`** → apply `in-design`, remove
-      `backlog`. Workflow automation will trigger headless design.
-
-    Either way, set project status to `In Design`:
+21. **Apply triggers atomically (per selected Feature).** Invoke the
+    `trigger-design` primitive once per selected Feature. The
+    primitive reads the Feature's labels, picks `interactive-design`
+    if `needs-interactive-design` is present and `in-design`
+    otherwise, swaps the trigger label against `backlog`, and sets
+    project status to `In Design`. This skill does not repeat the
+    decision rule.
 
     ```
-    # If needs-interactive-design is set:
-    apply-label(repo=<active-repo>, issue=<F>,
-                add=["interactive-design"], remove=["backlog"])
-
-    # Otherwise:
-    apply-label(repo=<active-repo>, issue=<F>,
-                add=["in-design"], remove=["backlog"])
-
-    # Both paths:
-    set-issue-status(repo=<active-repo>, issue=<F>, status="In Design")
+    trigger-design(repo=<active-repo>, issue=<F>)
     ```
 
-    **TODO (refactor):** when the `trigger-design` primitive skill
-    exists, replace the inline label/status logic above with a single
-    call: `trigger-design(repo=<active-repo>, issue=<F>)`. The
-    primitive will encapsulate the label decision and status update.
-    This refactor is tracked separately and does not block the
-    skill's correctness today.
+    The primitive returns `{ trigger_label, status, triggered: true }`
+    on success. Capture `trigger_label` per Feature so step 22 (held
+    annotation) and step 24 (exit block) can report which Features
+    landed on `in-design` vs `interactive-design`.
+
+    On failure, propagate the primitive's error code:
+
+    - `INVALID_TRIGGER_STATE` — the Feature is not at `backlog`. This
+      should not happen mid-walk (we just created the Features at
+      `backlog` in step 18); if it does, treat as
+      `STATUS_TRANSITION_FAILED` and surface for investigation.
+    - `ALREADY_TRIGGERED` (`WARN`) — the Feature is already at
+      `in-design` or `interactive-design`. Treat as a no-op for that
+      Feature: capture its existing trigger label, count it as
+      triggered, and continue with the remaining selected Features.
+    - `LABEL_OPERATION_FAILED` / `STATUS_OPERATION_FAILED` /
+      `GH_API_FAILED` — propagate as `STATUS_TRANSITION_FAILED` and
+      apply the partial-trigger handling below.
 
     **Partial-trigger handling.** If trigger K of M fails, STOP —
     do not attempt the remaining triggers, and DO NOT proceed to
