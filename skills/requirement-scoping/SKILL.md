@@ -1,6 +1,6 @@
 ---
 name: requirement-scoping
-description: Decomposes a Requirement into one or more well-formed Feature issues through a conversational, agent-led artefact walk — exploration, framing, MVP, decomposition, acceptance criteria, UX triage, deployment, parking lot — and triggers selected Features for headless design via the in-design label. Use when a human wants to scope a Requirement that has reached backlog into Features. Use even when the user doesn't explicitly say "feature scoping" — phrases like "let's scope this requirement", "break this requirement into features", "scope requirement #N", "decompose into features" should trigger this skill.
+description: Decomposes a Requirement into one or more well-formed Feature issues through a conversational, agent-led artefact walk — exploration, framing, MVP, decomposition, acceptance criteria, interactive-design triage, deployment, parking lot — and triggers selected Features for design via the in-design or interactive-design label. Use when a human wants to scope a Requirement that has reached backlog into Features. Use even when the user doesn't explicitly say "feature scoping" — phrases like "let's scope this requirement", "break this requirement into features", "scope requirement #N", "decompose into features" should trigger this skill.
 triggers: human-interactive
 loads:
   - skills/definitions/error-handling.md
@@ -37,12 +37,12 @@ transitioned to `scheduled`. Headless Feature Design will pick up
 each triggered Feature.
 
 **B. Some Features held.** Some Features triggered, others held at
-`backlog` (cross-repo dependency, awaiting upstream PR, or
-`needs-ux-design` blocking until UX Design completes). Requirement
-transitioned to `scheduled`.
+`backlog` (cross-repo dependency awaiting upstream PR, or deliberate
+hold by human). Requirement transitioned to `scheduled`.
 
 **C. All Features held.** Features created but none triggered (all
-blocked by deps or UX). Requirement transitioned to `scheduled`.
+blocked by deps or held by human). Requirement transitioned to
+`scheduled`.
 
 **D. Cancelled mid-scope.** The human aborted during the artefact
 walk. No Features created. Requirement reverted to `backlog`. No
@@ -60,7 +60,7 @@ new agent has no access to the prior conversation.
 
 In all create-issue cases (A, B, C):
 - Each Feature issue is created in the active repo with labels
-  `feature, backlog`, and additionally `needs-ux-design` if
+  `feature, backlog`, and additionally `needs-interactive-design` if
   artefact 7 returned "yes".
 - Each Feature is wired as a sub-issue of the parent Requirement.
 - A confirmation-gate transcript shows the human's explicit
@@ -115,7 +115,7 @@ gh repo view --json nameWithOwner -q .nameWithOwner
 and reuse the value. Never hard-code the repo.
 
 **Required labels precondition.** Step E (issue creation) applies
-the labels `feature`, `backlog`, and conditionally `needs-ux-design`
+the labels `feature`, `backlog`, and conditionally `needs-interactive-design`
 to created Features, plus swaps `backlog`→`in-design` during trigger
 confirmation. All these labels must exist on the active repo. Per
 the framework's defense-in-depth approach, the agent does not
@@ -134,7 +134,7 @@ propagate as `STATUS_TRANSITION_FAILED`.
 skipped when their precondition does not fire — they are simply
 *not applicable*. The skip rule does not apply, and no
 skip-justification is needed. In this skill: artefact 7's downstream
-(applying `needs-ux-design`) is conditional on the artefact's
+(applying `needs-interactive-design`) is conditional on the artefact's
 "yes" answer; the revision sub-loop in any artefact is conditional
 on the human choosing "Revise"; the impact-delta re-confirmation in
 later artefacts is conditional on a prior artefact being revised.
@@ -616,33 +616,43 @@ prompt-user(
     Then  <observable outcome>
     ```
 
-14. **Artefact 7 — UX triage (per Feature).** A binary yes/no
-    question:
+14. **Artefact 7 — Interactive-design triage (per-Feature).** A
+    binary yes/no question. The decision is whether this Feature's
+    *design phase* must run in foreground (interactive) — typically
+    because it involves UX/UI work, novel architecture, or anything
+    else that cannot be settled headlessly.
 
     ```
     prompt-user(
-      question: "Does this Feature involve any UX or UI changes?",
-      header: "Artefact 7: UX triage — <Feature name>",
+      question: "Is this Feature interactive-only — does its design phase need to be done in the foreground (interactive)?",
+      header: "Artefact 7: Interactive-design triage — <Feature name>",
       options: [
-        {label: "No", description: "No UX or UI work needed."},
-        {label: "Yes", description: "UX/UI changes are required; the Feature will be flagged for the UX Design phase."},
-        {label: "Cancel scoping", description: "End the session."}
+        {label: "No",
+         description: "Headless design is fine. Feature will be triggered with the in-design label."},
+        {label: "Yes",
+         description: "Design must run interactively (UX/UI work, novel architecture, or other reasons). Feature will be flagged with needs-interactive-design."},
+        {label: "Cancel scoping",
+         description: "End the session."}
       ]
     )
     ```
 
-    - **No** → no flag; the Feature can proceed straight to headless
-      Feature Design when triggered.
-    - **Yes** → record `UX impact: required` in the Feature body
-      and flag the Feature with `needs-ux-design` at issue creation
-      time. The dedicated UX Design session will produce the actual
-      design later.
+    - **No** → no flag; the Feature is eligible for headless design
+      when triggered.
+    - **Yes** → flag the Feature with `needs-interactive-design` at
+      issue creation. Recorded in the Feature body as the design
+      mode. The Feature is still eligible for triggering — the
+      design skill checks the label at runtime and runs in
+      foreground.
     - **Cancel** → revert to backlog, raise `USER_CANCELLED`, exit.
 
-    **Important:** scoping does not produce UX content (sketches,
-    Figma, descriptions). The yes/no answer is the only output of
-    this artefact. UX content is the dedicated UX Design phase's
-    deliverable.
+    **Note on UX work specifically.** If the Feature is itself a
+    UX/design Feature (its deliverable is design notes and a Figma
+    URL, not running code), the human handles this in the body of
+    the Feature and selects "Yes" here. There is no separate "UX
+    Design" session type — UX work is just a Feature whose design
+    phase runs interactively, with design notes committed to the
+    feature branch like any other Feature.
 
 15. **Artefact 8 — Deployment strategy (per Feature).** Multi-choice:
 
@@ -761,11 +771,13 @@ prompt-user(
     - **Given** <…> **When** <…> **Then** <…>
     - **Given** <…> **When** <…> **Then** <…>
 
-    ## UX Impact
+    ## Design Mode
 
-    <"None" — no UX changes required>
+    <"Headless" — design phase can run automated when this Feature is triggered>
     OR
-    <"Required — flagged with needs-ux-design. The UX Design phase will produce the design before this Feature can enter Feature Design.">
+    <"Interactive — flagged with needs-interactive-design. The design phase must be invoked in foreground; headless automation skips this Feature.">
+
+    <If interactive: a one-line reason — "UX/UI work" / "novel architecture" / etc.>
 
     ## Deployment Strategy
 
@@ -815,8 +827,8 @@ prompt-user(
 18. **Create each Feature issue.** Build the labels list from artefact 7's
     answer:
 
-    - If UX triage = "no" → labels are `feature,backlog`
-    - If UX triage = "yes" → labels are `feature,backlog,needs-ux-design`
+    - If artefact 7 = "No" (headless design) → labels are `feature,backlog`
+    - If artefact 7 = "Yes" (interactive-design) → labels are `feature,backlog,needs-interactive-design`
 
     Write the Feature body from step 17 to a temporary file using
     the agent's `Write` tool — never via shell `echo` or heredoc, as
@@ -930,43 +942,73 @@ prompt-user(
 ### Section E — Trigger confirmation
 
 20. **Render the list and ask which Features to trigger.** For
-    each created Feature, render `#<F>  <title>  [needs-ux-design]?`
-    (annotate Features that have the UX flag — they CANNOT be
-    triggered for design until the UX Design phase clears them).
+    each created Feature, render `#<F>  <title>  [interactive]?`
+    (annotate Features flagged with `needs-interactive-design`).
+    These Features ARE eligible for triggering — the design skill
+    detects the label at runtime and runs in foreground for them.
+    The human is informed so they know which Features will need
+    interactive attention.
+
+    Also surface a recommended trigger order if dependencies between
+    Features are evident in their bodies (e.g., one Feature
+    references another by issue number). Recommend serial ordering
+    for dependency chains; parallel triggers when independent. The
+    human can accept or override.
 
     Branch by Feature count:
 
-    - **1–4 Features without UX flag** → use `prompt-user`:
+    - **1–4 Features** → use `prompt-user`:
       ```
       prompt-user(
         question: "Which Features should be triggered for design now?",
         header: "Trigger confirmation",
         options: [
-          ...one option per non-flagged Feature, label "#<F> <title>"...,
-          {label: "All", description: "Trigger every non-flagged Feature."},
+          ...one option per Feature, label "#<F> <title>"...,
+          {label: "All", description: "Trigger every Feature."},
           {label: "None", description: "Hold all at backlog."}
         ]
       )
       ```
-    - **>4 Features OR any UX-flagged Feature** → use plain
-      conversation. Render the list, ask the human to reply with
-      numbers (`"1, 3"`, `"all"`, or `"none"`). Parse the reply:
-      - Numbers matching rendered `#<F>` (and not flagged
-        `needs-ux-design`) → trigger those.
-      - "all" → trigger every non-flagged Feature.
+    - **>4 Features** → use plain conversation. Render the list,
+      ask the human to reply with numbers (`"1, 3"`, `"all"`, or
+      `"none"`). Parse the reply:
+      - Numbers matching rendered `#<F>` → trigger those.
+      - "all" → trigger every Feature.
       - "none" → trigger nothing.
-      - A number that is flagged `needs-ux-design` → tell the human
-        the Feature is blocked and ask them to revise their pick.
-        Cap at 3 invalid attempts.
+      - Anything else → ask once for clarification, cap at 3
+        invalid attempts (then `USER_CANCELLED`).
 
 21. **Apply triggers atomically (per selected Feature).** For each
-    selected Feature:
+    selected Feature, the trigger label depends on whether it has
+    `needs-interactive-design`:
+
+    - **Has `needs-interactive-design`** → apply `interactive-design`,
+      remove `backlog`. The design skill will run in foreground when
+      invoked manually.
+    - **No `needs-interactive-design`** → apply `in-design`, remove
+      `backlog`. Workflow automation will trigger headless design.
+
+    Either way, set project status to `In Design`:
 
     ```
+    # If needs-interactive-design is set:
+    apply-label(repo=<active-repo>, issue=<F>,
+                add=["interactive-design"], remove=["backlog"])
+
+    # Otherwise:
     apply-label(repo=<active-repo>, issue=<F>,
                 add=["in-design"], remove=["backlog"])
+
+    # Both paths:
     set-issue-status(repo=<active-repo>, issue=<F>, status="In Design")
     ```
+
+    **TODO (refactor):** when the `trigger-design` primitive skill
+    exists, replace the inline label/status logic above with a single
+    call: `trigger-design(repo=<active-repo>, issue=<F>)`. The
+    primitive will encapsulate the label decision and status update.
+    This refactor is tracked separately and does not block the
+    skill's correctness today.
 
     **Partial-trigger handling.** If trigger K of M fails, STOP —
     do not attempt the remaining triggers, and DO NOT proceed to
@@ -1002,13 +1044,15 @@ prompt-user(
     ```
     Held at backlog — not triggered during scoping.
     Reason: <reason from the agent's understanding>
-    Re-trigger: apply the in-design label and run set-issue-status
-    to In Design when ready.
+    Re-trigger: apply the trigger label (in-design or
+    interactive-design depending on needs-interactive-design label
+    presence) and run set-issue-status to In Design when ready.
     ```
 
-    The reason is one of: `needs-ux-design (UX Design phase pending)`,
-    `cross-repo dependency (awaiting upstream PR)`, or `deliberate
-    hold by human`.
+    The reason is one of: `cross-repo dependency (awaiting upstream
+    PR)`, or `deliberate hold by human`. (Features flagged
+    `needs-interactive-design` are no longer auto-held; they're
+    triggered to `interactive-design` when selected.)
 
 ---
 
@@ -1038,7 +1082,8 @@ prompt-user(
 
     Blocked: none
 
-    Next: automation: feature-design (in-design on #<F1>, #<F2>)
+    Next: automation: design (in-design on headless Features);
+          human: run design interactively for any interactive-design Features
     ```
 
     **Output B — Some held:**
@@ -1047,13 +1092,13 @@ prompt-user(
 
     Produced:
       - Feature #<F1> created (triggered for design)
-      - Feature #<F2> created (held at backlog — needs-ux-design)
+      - Feature #<F2> created (held at backlog — cross-repo dep)
       - Requirement #<N> transitioned: scoping → scheduled
 
-    Blocked: #<F2> — UX Design phase pending
+    Blocked: #<F2> — upstream PR
 
-    Next: automation: feature-design (in-design on #<F1>);
-          human: run UX Design for #<F2>, then re-trigger
+    Next: automation: design (in-design on #<F1>);
+          human: re-trigger #<F2> when upstream PR merges
     ```
 
     **Output C — All held:**
@@ -1061,11 +1106,11 @@ prompt-user(
     === Requirement Scoping Session — Completed ===
 
     Produced:
-      - Feature #<F1> created (held at backlog — needs-ux-design)
-      - Feature #<F2> created (held at backlog — cross-repo dep)
+      - Feature #<F1> created (held at backlog — cross-repo dep)
+      - Feature #<F2> created (held at backlog — deliberate hold)
       - Requirement #<N> transitioned: scoping → scheduled
 
-    Blocked: #<F1> — UX Design pending; #<F2> — upstream PR
+    Blocked: #<F1> — upstream PR; #<F2> — human chose to hold
 
     Next: human: clear blockers and re-trigger each Feature
     ```
