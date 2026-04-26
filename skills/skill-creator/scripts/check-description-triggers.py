@@ -82,6 +82,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Add the in-development label": False,
         "What's the weather in Cape Town?": False,
     },
+    "trigger-design": {
+        "Start design for #42": True,
+        "Begin the design phase on this Feature": True,
+        "Send Feature #100 to design": True,
+        "Capture a new requirement": False,
+        "What's the weather in Cape Town?": False,
+    },
     "requirement-scoping": {
         "Let's scope requirement #234": True,
         "Break this requirement into features": True,
