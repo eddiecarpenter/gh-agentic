@@ -75,6 +75,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Post the design plan comment": False,
         "What's the weather in Cape Town?": False,
     },
+    "set-issue-status": {
+        "Transition the requirement to scoping": True,
+        "Move the feature to in-design": True,
+        "Mark this issue scheduled on the project board": True,
+        "Add the in-development label": False,
+        "What's the weather in Cape Town?": False,
+    },
 }
 
 PROMPT_TEMPLATE = (Path(__file__).parent / "check-description-triggers.prompt.txt").read_text()
