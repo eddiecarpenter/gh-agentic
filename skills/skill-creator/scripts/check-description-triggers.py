@@ -82,7 +82,7 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Add the in-development label": False,
         "What's the weather in Cape Town?": False,
     },
-    "feature-scoping": {
+    "requirement-scoping": {
         "Let's scope requirement #234": True,
         "Break this requirement into features": True,
         "Decompose this requirement into one or more features": True,

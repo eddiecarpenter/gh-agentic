@@ -10,7 +10,7 @@ Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by ha
 - **feature-design** — Decomposes a Feature issue into ordered Task sub-issues that cover every acceptance criterion, creates the feature branch, and hands off to Dev Session via the in-development label. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-design label — never run interactively.
   Triggers: automation: in-design
 
-- **feature-scoping** — Decomposes a Requirement issue into one or more well-formed Feature issues with acceptance criteria, UX design, and deployment strategy, and hands selected features to Feature Design via the in-design label. Use when a human opens the Feature Scoping (Stage 2) recipe to scope a backlog requirement into features.
+- **requirement-scoping** — Decomposes a Requirement issue into one or more well-formed Feature issues with acceptance criteria, UX triage, and deployment strategy, and hands selected features to Feature Design via the in-design label. Use when a human invokes the requirement-scoping skill to scope a backlog requirement into features.
   Triggers: human-interactive
 
 - **issue-session** — Handles a GitHub Issue assigned to the agent — routes by label to either fix a bug on a new branch or answer a question as a comment, and exits cleanly so the workflow can open a PR if code changed. Use when GitHub Actions triggers this session automatically on an issue being assigned to the agent user — never run interactively.
@@ -19,7 +19,7 @@ Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by ha
 - **pr-review-session** — Processes inline review comments on a PR — answers questions, implements change requests with tests, and escalates ambiguous or scope-changing feedback via the needs-foreground-review label. Use when GitHub Actions triggers this session automatically on a PR review being submitted — never run interactively.
   Triggers: automation: pr-review-submitted
 
-- **requirements-session** — Captures a new business need as a Requirement issue in GitHub and, when the scope is clear, completes Feature Scoping inline. Use when a human opens the Requirements Session (Stage 1) recipe to record a new idea, need, or enhancement request.
+- **requirements-session** — Captures a new business need as a Requirement issue in GitHub and, when the scope is clear, completes Requirement Scoping inline. Use when a human invokes the requirements-session skill to record a new idea, need, or enhancement request.
   Triggers: human-interactive
 
 ## Recovery skills

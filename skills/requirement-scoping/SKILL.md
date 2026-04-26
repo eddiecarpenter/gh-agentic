@@ -1,5 +1,5 @@
 ---
-name: feature-scoping
+name: requirement-scoping
 description: Decomposes a Requirement into one or more well-formed Feature issues through a conversational, agent-led artefact walk — exploration, framing, MVP, decomposition, acceptance criteria, UX triage, deployment, parking lot — and triggers selected Features for headless design via the in-design label. Use when a human wants to scope a Requirement that has reached backlog into Features. Use even when the user doesn't explicitly say "feature scoping" — phrases like "let's scope this requirement", "break this requirement into features", "scope requirement #N", "decompose into features" should trigger this skill.
 triggers: human-interactive
 loads:
@@ -15,7 +15,7 @@ emits-exit-block: true
 exit-hands-to: "automation: feature-design (in-design label on triggered Features) | human: re-trigger held Features when their blockers clear"
 ---
 
-# Feature Scoping
+# Requirement Scoping
 
 ## Goal
 
@@ -277,9 +277,9 @@ on it:
 
    ```
    ==========================================================
-   === Feature Scoping Session — Started                  ===
+   === Requirement Scoping Session — Started                  ===
    ==========================================================
-   You are now in Feature Scoping mode. We will pick a
+   You are now in Requirement Scoping mode. We will pick a
    Requirement, walk through 9 artefacts to define one or
    more Features, and trigger selected Features for design.
    ==========================================================
@@ -392,7 +392,7 @@ on it:
           you want to trigger, then run set-issue-status to transition
           the Requirement to Scheduled.
        2. If the partial work is wrong, close the orphan Features
-          (gh issue close), then re-run feature-scoping which will
+          (gh issue close), then re-run requirement-scoping which will
           revert the Requirement to Backlog and start fresh.
      Exiting now without changes.
      ```
@@ -868,7 +868,7 @@ prompt-user(
     Features are valid pipeline artefacts; the failed one needs
     investigation. Recommended:
       - Run `gh agentic repair`
-      - Re-invoke feature-scoping; the orphan re-entry flow will
+      - Re-invoke requirement-scoping; the orphan re-entry flow will
         detect the existing Features and surface them. From there,
         either close them and start over, or complete the work
         manually.
@@ -1029,7 +1029,7 @@ prompt-user(
 
     **Output A — All Features triggered:**
     ```
-    === Feature Scoping Session — Completed ===
+    === Requirement Scoping Session — Completed ===
 
     Produced:
       - Feature #<F1> created (triggered for design)
@@ -1043,7 +1043,7 @@ prompt-user(
 
     **Output B — Some held:**
     ```
-    === Feature Scoping Session — Completed ===
+    === Requirement Scoping Session — Completed ===
 
     Produced:
       - Feature #<F1> created (triggered for design)
@@ -1058,7 +1058,7 @@ prompt-user(
 
     **Output C — All held:**
     ```
-    === Feature Scoping Session — Completed ===
+    === Requirement Scoping Session — Completed ===
 
     Produced:
       - Feature #<F1> created (held at backlog — needs-ux-design)
@@ -1072,19 +1072,19 @@ prompt-user(
 
     **Output D — Cancelled mid-scope:**
     ```
-    === Feature Scoping Session — Cancelled ===
+    === Requirement Scoping Session — Cancelled ===
 
     Produced: nothing
 
     Blocked: nothing
 
     Next: Requirement #<N> reverted to backlog. Re-invoke
-          feature-scoping when ready to scope again.
+          requirement-scoping when ready to scope again.
     ```
 
     **Output E — Already scoped (early exit from step 3):**
     ```
-    === Feature Scoping Session — No-op ===
+    === Requirement Scoping Session — No-op ===
 
     Produced: nothing — Requirement #<N> already scheduled.
 
@@ -1096,13 +1096,13 @@ prompt-user(
 
     **Output F — Orphan re-entry:**
     ```
-    === Feature Scoping Session — Reverted ===
+    === Requirement Scoping Session — Reverted ===
 
     Produced: Requirement #<N> reverted: scoping → backlog
 
     Blocked: none
 
-    Next: re-invoke feature-scoping when ready to start fresh.
+    Next: re-invoke requirement-scoping when ready to start fresh.
     ```
 
 25. **Terminate the session.** Per `emits-exit-block: true`, invoke
@@ -1114,8 +1114,8 @@ prompt-user(
 Run the framework checks against this skill:
 
 ```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/feature-scoping/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/feature-scoping/SKILL.md
+python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/requirement-scoping/SKILL.md
+python3 skills/skill-creator/scripts/check-description-triggers.py skills/requirement-scoping/SKILL.md
 ```
 
 Pass criteria: both commands exit 0.
@@ -1144,7 +1144,7 @@ Run by `verify-skill-mechanical.py`:
 Run by `check-description-triggers.py`:
 
 - `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `feature-scoping`.
+  the `GROUND_TRUTH` entry for `requirement-scoping`.
 
 ## Error Handling
 

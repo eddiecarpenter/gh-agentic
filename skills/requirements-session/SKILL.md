@@ -9,7 +9,7 @@ loads:
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
 emits-exit-block: true
-exit-hands-to: human — Requirement issue created; run Feature Scoping when ready to scope it
+exit-hands-to: human — Requirement issue created; run Requirement Scoping when ready to scope it
 ---
 
 # Requirements Session
@@ -38,7 +38,7 @@ invocation:
   acceptance of the captured content before the issue was created.
   Recorded in conversation, not as a file.
 - A hand-off message naming the issue number, URL, and the next
-  recommended phase (Feature Scoping).
+  recommended phase (Requirement Scoping).
 
 **B. Hand-off to an existing requirement (step 2 pick-existing exit).**
 
@@ -552,9 +552,9 @@ conditional. Every other step is mandatory.
    - The issue number(s) and URL(s) created in this session.
    - The labels that were applied.
    - The recommended next phase: *"When you're ready to scope these
-     into Feature(s), run Feature Scoping (Stage 2)."*
+     into Feature(s), run Requirement Scoping (Stage 2)."*
    - Note that an `## Acceptance Criteria` section was deliberately
-     not included in these issues — that's the Feature Scoping
+     not included in these issues — that's the Requirement Scoping
      phase's deliverable, not this one's.
 
    Then emit the session exit block per the framework's

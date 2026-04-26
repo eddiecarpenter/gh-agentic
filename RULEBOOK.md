@@ -23,7 +23,7 @@ relevant skill for the session being run.
 |---|---|---|
 | Session Init | `session-init/SKILL.md` | Every session start (mandated by AGENTS.md bootstrap rule) |
 | Requirements | `requirements-session.md` | Human (interactive) |
-| Feature Scoping | `feature-scoping.md` | Human (interactive) |
+| Requirement Scoping | `requirement-scoping/SKILL.md` | Human (interactive) |
 | Feature Design | `feature-design.md` | Automatic — `in-design` label |
 | Dev Session | `dev-session.md` | Automatic — `in-development` label |
 | PR Review | `pr-review-session.md` | Automatic — PR review submitted |
