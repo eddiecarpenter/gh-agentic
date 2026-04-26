@@ -168,12 +168,24 @@ artefact walk (steps in section C):
 - **Impact-delta on revision.** When a previously-confirmed artefact
   is revised, the agent must re-evaluate downstream artefacts that
   depend on it. Re-confirm only those flagged as affected; leave
-  unaffected ones as-is. Surface the delta reasoning in the response
-  stream:
+  unaffected ones as-is.
+
+  Scope-aware propagation:
+  - **Revising a Requirement-level artefact (1, 2, or 3)** can
+    affect every per-Feature artefact downstream — across all
+    Features. Evaluate each Feature's per-Feature artefacts
+    individually and only re-confirm those genuinely affected.
+  - **Revising a per-Feature artefact (4, 5, 6, 7, or 8) for one
+    Feature** affects only later per-Feature artefacts *for that
+    same Feature*. Other Features' artefacts are not in scope.
+  - **Revising artefact 9 (parking lot)** does not propagate
+    downstream — it is the wrap-up.
+
+  Surface the delta reasoning in the response stream:
   ```
   Impact delta from Revision N (artefact M):
-    - Artefact P → affected (because <reason>) — re-confirm
-    - Artefact Q → not affected — keep as-is
+    - Artefact P (Feature X) → affected (because <reason>) — re-confirm
+    - Artefact Q (Feature Y) → not affected — keep as-is
   ```
 
 ---
@@ -358,11 +370,18 @@ artefact walk (steps in section C):
 
 ### Section C — Artefact walk (9 artefacts)
 
-The walk runs **once** for the picked Requirement, producing one or
-more Features. Artefact 5 (parallel/serial) is the moment the walk
-decides whether to spawn 1 or N Features; subsequent artefacts (6–9)
-are captured against each spawned Feature when N > 1, or against
-the single Feature when N = 1.
+Artefacts 1, 2, 3, and 9 are **Requirement-level** — they run once
+per scoping session. Artefacts 4 through 8 are **per-Feature** —
+they run once per Feature (so N times when artefact 3 decides on
+N parallel Features).
+
+For the common N=1 case the walk is exactly 9 artefacts; for N>1
+it grows by 5 per additional Feature (N=2 → 14 artefacts; N=3 → 19).
+
+The pivot is artefact 3 (decomposition checkpoint), which decides
+whether the Requirement spawns 1 or N Features. Everything before
+the pivot is Requirement-level; everything between the pivot and
+artefact 9 is per-Feature.
 
 **Each artefact follows the same gate pattern.** The agent proposes
 content, surfaces it to the human, and invokes `prompt-user`:
@@ -388,43 +407,29 @@ prompt-user(
 - **Cancel** → revert Requirement to `backlog`, raise
   `USER_CANCELLED` (`WARN`), exit (Output D).
 
-8. **Artefact 1 — Raw idea summary.** A 1–3 sentence plain-language
+8. **Artefact 1 — Raw idea summary (Requirement-level).** A 1–3 sentence plain-language
    summary of what this Requirement is about. The agent drafts from
    the Requirement issue body and the exploration conversation.
 
-9. **Artefact 2 — Problem statement.** 2–4 sentences explaining the
+9. **Artefact 2 — Problem statement (Requirement-level).** 2–4 sentences explaining the
    underlying problem (not a solution). Anchored in a specific user
    role and the consequence of the current state. Drafted from the
    parent Requirement's `## Business Need` section plus the
    exploration conversation.
 
-10. **Artefact 3 — Feature definition + User Story.** A short
-    paragraph describing what the Feature delivers, plus a User
-    Story in the canonical format:
-    ```
-    As a <role>
-    I want <capability>
-    So that <outcome>
-    ```
-    All three slots must trace to specific things the human said in
-    exploration or earlier artefacts (anti-fabrication).
-
-11. **Artefact 4 — MVP scope.** The smallest version of the Feature
-    that delivers real value. Push toward minimum: every item in
-    scope must be necessary for the value the Feature claims to
-    deliver. Items that are nice-to-have go into the parking lot
-    (artefact 9), not into MVP.
-
-12. **Artefact 5 — Parallel/serial checkpoint.** Decide whether the
-    work captured so far is one Feature with ordered tasks, or
-    multiple parallel Features.
+10. **Artefact 3 — Decomposition checkpoint (Requirement-level).**
+    Decide whether this Requirement spawns one Feature with ordered
+    tasks, or multiple parallel Features. The decision is informed
+    by the framing from artefacts 1–2; per-Feature detail (MVP, AC,
+    deployment) has not yet been captured — this pivot is *before*
+    the per-Feature work, not after it.
 
     Use a multi-choice prompt instead of confirm/revise:
 
     ```
     prompt-user(
-      question: "How should this work be decomposed?",
-      header: "Artefact 5: Parallel/serial decomposition",
+      question: "How should this Requirement be decomposed?",
+      header: "Artefact 3: Decomposition checkpoint",
       options: [
         {label: "Single Feature, ordered tasks",
          description: "One branch, one PR, sequential work."},
@@ -452,12 +457,33 @@ prompt-user(
     prompt-user call so the human sees the rationale.
 
     Branch on the answer:
-    - **Single Feature** → continue artefacts 6–9 once.
+    - **Single Feature** → continue artefacts 4–8 once (then
+      artefact 9 to wrap up).
     - **Multiple parallel Features** → ask the human to name the
       Features (free-text reply, one per line). Then run artefacts
-      6–9 once per Feature, prefixing each prompt's header with
-      the Feature name (e.g., `Artefact 6 — <Feature name>`).
+      4–8 once per Feature, prefixing each prompt's header with the
+      Feature name (e.g., `Artefact 4 — <Feature name>`). After all
+      Features have walked through 4–8, run artefact 9 once.
     - **Cancel** → revert to backlog, raise `USER_CANCELLED`, exit.
+
+11. **Artefact 4 — Feature definition + User Story (per-Feature).**
+    A short paragraph describing what the Feature delivers, plus a
+    User Story in the canonical format:
+    ```
+    As a <role>
+    I want <capability>
+    So that <outcome>
+    ```
+    All three slots must trace to specific things the human said in
+    exploration or earlier artefacts (anti-fabrication). For
+    multi-Feature scoping, each Feature has its own User Story —
+    typically a refinement or slice of the parent Requirement's.
+
+12. **Artefact 5 — MVP scope (per-Feature).** The smallest version
+    of the Feature that delivers real value. Push toward minimum:
+    every item in scope must be necessary for the value the Feature
+    claims to deliver. Items that are nice-to-have go into the
+    parking lot (artefact 9), not into MVP.
 
 13. **Artefact 6 — Acceptance Criteria (per Feature).** At minimum
     three criteria, all in **Given/When/Then** format. Cover at
@@ -563,7 +589,7 @@ prompt-user(
 
     See `concepts/feature-switches.md` for the full taxonomy.
 
-16. **Artefact 9 — Parking lot review.** Before issue creation,
+16. **Artefact 9 — Parking lot review (Requirement-level).** Before issue creation,
     surface the running list of out-of-scope ideas the conversation
     produced (items pushed out of MVP, deferred questions,
     architectural updates that need `solution-architecture`). Render
@@ -615,7 +641,7 @@ prompt-user(
 
     ## MVP Scope
 
-    <items in scope, from artefact 4>
+    <items in scope, from artefact 5>
 
     ## Acceptance Criteria
 
