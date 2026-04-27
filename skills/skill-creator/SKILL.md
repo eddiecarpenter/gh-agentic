@@ -314,7 +314,8 @@ user. No display primitive needed.
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/skill-creator/SKILL.md
@@ -322,31 +323,6 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/skill-
 ```
 
 Pass criteria: both commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present` — every mandatory section heading exists
-  (Goal, Output Artefacts, Definitions, Dependencies, Steps,
-  Verification, Error Handling).
-- `frontmatter_required_fields(name, description, triggers, loads)`.
-- `frontmatter_name_valid` — kebab-case, matches filename.
-- `description_within_length_limit` — ≤ 1024 chars.
-- `description_assertive` — contains "Use when" and at least one
-  "even if not explicitly asked"-style assertive clause.
-- `description_third_person`.
-- `references_resolve` — every path in Definitions and Dependencies
-  resolves to an existing file.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — the description correctly
-  classifies the 5 phrasings pinned in the script's `GROUND_TRUTH`
-  dict for `skill-creator`.
-
 ## Error Handling
 
 - `INTENT_AMBIGUOUS` detected during step 1 → propagate. The user

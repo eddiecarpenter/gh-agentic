@@ -7,6 +7,7 @@ loads:
   - skills/definitions/error-handling.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
+  - skills/definitions/state-model-pattern.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
   - skills/apply-label/SKILL.md
@@ -167,8 +168,19 @@ The step-skip rule does not require justification when the step is
 not applicable to the running mode. Steps without a mode tag run in
 both modes.
 
-**State model & cancel semantics.** This skill performs four
-sequential GitHub-side mutations whose recoverability differs:
+**State model & cancel semantics.** This skill follows the pattern
+in `skills/definitions/state-model-pattern.md`. The concrete tier
+table below is this skill's specifics; the universal cancel rules
+and failure-during-transition rules come from the definition.
+
+Headless mode has no cancel — only interactive mode applies the
+cancel rules.
+
+Skill-specific cancel override (T1): the rationale comment cannot
+be unposted; on cancel-at-T1 the skill MUST edit the comment to
+prepend `**[CANCELLED — design did not complete]**` rather than
+leaving it as a misleading active rationale. Cancel-at-T2 also
+applies this comment-marking step before deleting the branch.
 
 | Transition | Where | Effect | Skill-recoverable? |
 |---|---|---|---|
@@ -176,24 +188,6 @@ sequential GitHub-side mutations whose recoverability differs:
 | **T2** | step 13 | Feature branch created in active repo | Yes — branch can be deleted |
 | **T3** | step 16 | Task issues created with sub-issue links | **No — point of no return.** Created issues cannot be auto-removed |
 | **T4** | step 18 | Feature label/status transitioned (via `trigger-implementation` or to `designed`) | Partial — depends on the primitive's outcome |
-
-**Cancel rules by state (interactive mode only — headless has no cancel):**
-
-- **Before T1** (during rationale draft) → Output E. No mutations.
-  Exit cleanly; Feature unchanged.
-- **At T1** (rationale posted, no branch yet) → Output F variant.
-  Comment cannot be unposted; the rationale lives on the issue. Mark
-  the comment as cancelled by editing it to prepend
-  `**[CANCELLED — design did not complete]**` and exit.
-- **At T2** (branch created, no tasks yet) → Output F variant.
-  Delete the local branch (`git branch -D feature/<N>-<slug>`); the
-  remote was never pushed by this skill. Mark the rationale comment
-  as cancelled per T1. Exit.
-- **At T3 or later** (tasks created) → Output F. Surface the partial
-  state — rationale comment, branch, K of M tasks created, label
-  unchanged. Recommend either manual cleanup (close orphan tasks,
-  delete branch, edit comment) or manual completion. Do NOT
-  auto-revert.
 
 **Re-run safety (fail softly).** Step 4 detects whether design has
 already been run for this Feature. The skill exits cleanly in any
@@ -257,42 +251,23 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
 
 4. **Entry guards.** Two checks fire in order before any work:
 
-   **4a. Concurrency check.** Look for the `design-in-progress`
-   label. The label is a beacon: while set, another session is —
-   or recently was — actively designing this Feature.
+   **4a. Concurrency check.** Apply the beacon-claim probe per
+   `skills/definitions/concurrency-beacon.md` for beacon
+   `design-in-progress`:
 
    ```bash
    gh issue view <N> --repo <active-repo> --json labels \
      --jq '[.labels[].name] | index("design-in-progress")'
    ```
 
-   - **Headless** + label set → another session is running. Exit
-     cleanly with Output B variant: "Another design session is in
-     flight; this run is a no-op." Do NOT remove the label (it
-     belongs to the other session).
-   - **Interactive** + label set → render the warning:
-     ```
-     ⚠ design-in-progress is set on this Feature. Another session
-        (workflow run or a separate human session) may be actively
-        designing it. Continuing will likely cause conflicts.
-     ```
-     Then `prompt-user`:
-     ```
-     prompt-user(
-       question: "Another design session may be in progress. Continue anyway?",
-       header: "Concurrent design detected",
-       options: [
-         {label: "Continue anyway",
-          description: "I know the other session is dead or stuck. Proceed."},
-         {label: "Cancel",
-          description: "Exit; the other session keeps its claim."}
-       ]
-     )
-     ```
-     - Continue → fall through to 4b. Step 4c will re-claim the slot.
-     - Cancel → exit cleanly (Output E variant); do NOT remove the
-       label.
-   - Label not set → continue to 4b.
+   Mode-specific exit shapes (per definition's claim-semantics):
+   - **Headless** + beacon set → exit with **Output B variant**:
+     "Another design session is in flight; this run is a no-op."
+   - **Interactive** + beacon set → use the definition's warning
+     and Continue/Cancel prompt (header "Concurrent design
+     detected"). Continue → fall through to 4b (step 4c re-claims).
+     Cancel → Output E variant; do NOT remove the beacon.
+   - **Beacon not set** → continue to 4b.
 
    **4b. Re-run safety check (fail softly).** Detect prior-run artefacts:
 
@@ -333,8 +308,8 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
      ```
      Exit cleanly (Output B variant).
 
-   **4c. Claim the slot.** Apply the `design-in-progress` label to
-   mark this session as the active designer:
+   **4c. Claim the slot.** Apply `design-in-progress` per the
+   concurrency-beacon definition:
 
    ```
    apply-label(repo=<active-repo>, issue=<N>,
@@ -342,13 +317,9 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
    ```
 
    On failure → raise `INVALID_DESIGN_STATE` (`ERROR`); exit before
-   any further work. The label is the lock; without it we cannot
-   guarantee single-writer semantics.
-
-   From this point on, every exit path (success, parked, error,
-   cancel) MUST remove the label as part of its cleanup. See step
-   18 for the happy-path removal and the Error Handling section
-   for the failure-path rule.
+   any further work. From this point on, every exit path MUST
+   release the beacon (see step 18 happy-path and the slot-release
+   rule in Error Handling).
 
 5. **Architecture context.** Read `docs/ARCHITECTURE.md` if it
    exists; hold its contents as Slice SA context for the rationale.
@@ -840,7 +811,8 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/feature-design/SKILL.md
@@ -848,34 +820,11 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/featur
 ```
 
 Pass criteria: both commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present` — every mandatory section heading exists.
-- `frontmatter_required_fields(name, description, triggers, loads)`.
-- `frontmatter_name_valid` — kebab-case, matches filename.
-- `description_within_length_limit` — ≤ 1024 chars.
-- `description_assertive` — contains "Use when" + assertive clause.
-- `description_third_person`.
-- `references_resolve` — every `loads:` path resolves to a file.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `feature-design`.
-
 ## Error Handling
 
-**Slot-release rule (universal).** Every error path AND every
-cancel path that fires AFTER step 4c (the label was claimed) MUST
-attempt to remove `design-in-progress` before exit, on a best-effort
-basis. If the removal itself fails, surface it as a `WARN` and exit
-anyway — the original error is what matters; a stuck beacon is a
-secondary concern the human can clear by hand.
+**Slot-release rule.** Per `skills/definitions/concurrency-beacon.md`
+— every error path AND every cancel path that fires AFTER step 4c
+(beacon claimed) MUST best-effort remove `design-in-progress`.
 
 - `INVALID_DESIGN_STATE` from steps 2–3 (Feature missing, not a
   Feature, wrong/multiple/missing trigger labels) → severity

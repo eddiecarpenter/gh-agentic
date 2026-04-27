@@ -569,7 +569,8 @@ conditional. Every other step is mandatory.
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/requirements-session/SKILL.md
@@ -577,37 +578,6 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/requir
 ```
 
 Pass criteria: both commands exit 0.
-
-**Behavioural-ceiling note.** Passing the framework checks is a
-necessary but not sufficient signal of quality. The checks verify
-structure (frontmatter, sections, trigger phrasings) and reference
-integrity — they do NOT verify that the agent honours the
-anti-fabrication clause, quoted-evidence gate, or per-revision
-diff at runtime. Those disciplines are self-policed by the agent.
-Treat "passes verification" as "the skill is well-formed", not "the
-skill produces correct requirements".
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present` — every mandatory section heading exists.
-- `frontmatter_required_fields(name, description, triggers, loads)`.
-- `frontmatter_name_valid` — kebab-case, matches filename.
-- `description_within_length_limit` — ≤ 1024 chars.
-- `description_assertive` — contains "Use when" + assertive clause.
-- `description_third_person`.
-- `references_resolve` — every `loads:` path resolves to a file.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `requirements-session` (e.g.
-  *"capture a new requirement"* triggers; *"check the build"*
-  doesn't).
-
 ## Error Handling
 
 - `USER_CANCELLED` (raised from any user-cancel choice — step 2

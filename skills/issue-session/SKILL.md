@@ -5,6 +5,7 @@ triggers: automated
 user-invocable: false
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/concurrency-beacon.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
   - skills/definitions/commit-discipline.md
@@ -455,7 +456,8 @@ Hold as `<self>`.
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/issue-session/SKILL.md
@@ -463,32 +465,11 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/issue-
 ```
 
 Pass criteria: both commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present` — every mandatory section heading exists.
-- `frontmatter_required_fields(name, description, triggers, loads)`.
-- `frontmatter_name_valid` — kebab-case, matches filename.
-- `description_within_length_limit` — ≤ 1024 chars.
-- `description_assertive` — contains "Use when" + assertive clause.
-- `description_third_person`.
-- `references_resolve` — every `loads:` path resolves to a file.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `issue-session`.
-
 ## Error Handling
 
-**Slot-release rule (universal).** Every error path AND every
-graceful exit AFTER step 4 (the slot was claimed) MUST attempt to
-remove `issue-in-progress` before exit, on a best-effort basis.
-If the removal itself fails, surface as a `WARN` and exit anyway.
+**Slot-release rule.** Per `skills/definitions/concurrency-beacon.md`
+— every error path AND every graceful exit AFTER step 4 (beacon
+claimed) MUST best-effort remove `issue-in-progress`.
 
 - `INVALID_ISSUE_STATE` from steps 2–4 (issue closed, label
   missing, issue is a pipeline artefact, slot-claim failed) →

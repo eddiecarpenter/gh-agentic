@@ -166,21 +166,18 @@ prompt-user(
    Resolve the active repo (informational) and hold as
    `<active-repo>`.
 
-2. **Branch check.** Confirm we are NOT on `main`:
+2. **Branch check.** Apply the refuse-on-main guard per
+   `skills/definitions/branch-safety.md`:
 
    ```bash
    git branch --show-current
    ```
 
-   - Result `main` (or `master`) → raise `ON_MAIN_BRANCH` (`ERROR`)
-     with a clear remediation:
-     ```
-     This skill refuses to run on main. Switch to a branch first
-     (e.g. `git checkout -b chore/architecture-update`), then
-     re-invoke /solution-architecture.
-     ```
-     Exit cleanly. No mutations.
-   - Anything else → continue. Hold the branch name as `<branch>`.
+   On `main` / `master` → raise `ON_MAIN_BRANCH` (`ERROR`) using the
+   remediation template from the definition with `<suggested-prefix>`
+   = `chore/architecture-update`. Exit cleanly. No mutations.
+
+   Otherwise → hold the branch name as `<branch>` and continue.
 
 3. **Detect mode.** Check whether `docs/ARCHITECTURE.md` exists:
 
@@ -480,7 +477,8 @@ right; the human will extend over time.
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/solution-architecture/SKILL.md
@@ -488,26 +486,6 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/soluti
 ```
 
 Pass criteria: both commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present` — every mandatory section heading exists.
-- `frontmatter_required_fields(name, description, triggers, loads)`.
-- `frontmatter_name_valid` — kebab-case, matches filename.
-- `description_within_length_limit` — ≤ 1024 chars.
-- `description_assertive` — contains "Use when" + assertive clause.
-- `description_third_person`.
-- `references_resolve` — every `loads:` path resolves to a file.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `solution-architecture`.
-
 ## Error Handling
 
 - `ON_MAIN_BRANCH` from step 2 (current branch is `main` /

@@ -5,6 +5,7 @@ triggers: human-interactive
 user-invocable: true
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/concurrency-beacon.md
   - skills/definitions/step-skip-rule.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
@@ -126,25 +127,20 @@ exact mutation. Human-in-the-loop is the entire point — bulk
    Resolve the active repo per the rule above and hold as
    `<active-repo>`.
 
-   **Branch-safety check.** Some remediations in this skill touch
-   the local working tree (deleting branches, possibly closing
-   issues that auto-update branches via gh hooks). The agent MUST
-   refuse to operate from `main` to prevent any chance of
-   accidental main-branch mutations.
+   **Branch-safety check.** Apply the refuse-on-main guard per
+   `skills/definitions/branch-safety.md`. Some remediations in this
+   skill touch the local working tree (deleting branches, closing
+   issues that auto-update branches via gh hooks).
 
    ```bash
    git branch --show-current
    ```
 
-   - Result `main` (or `master`) → exit cleanly with a clear
-     remediation message:
-     ```
-     This skill refuses to run on main. Switch to a branch first
-     (e.g. `git checkout -b chore/recovery-<timestamp>`), then
-     re-invoke /foreground-recovery.
-     ```
-     No prompt, no scan, no mutations.
-   - Anything else → continue. Hold the branch name as `<branch>`.
+   On `main` / `master` → exit cleanly using the remediation
+   template from the definition with `<suggested-prefix>` =
+   `chore/recovery-<timestamp>`. No prompt, no scan, no mutations.
+
+   Otherwise → hold the branch name as `<branch>` and continue.
 
 2. **Pick mode.** Ask the human:
 
@@ -415,7 +411,8 @@ exact mutation. Human-in-the-loop is the entire point — bulk
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/foreground-recovery/SKILL.md
@@ -423,26 +420,6 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/foregr
 ```
 
 Pass criteria: both commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present` — every mandatory section heading exists.
-- `frontmatter_required_fields(name, description, triggers, loads)`.
-- `frontmatter_name_valid` — kebab-case, matches filename.
-- `description_within_length_limit` — ≤ 1024 chars.
-- `description_assertive` — contains "Use when" + assertive clause.
-- `description_third_person`.
-- `references_resolve` — every `loads:` path resolves to a file.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `foreground-recovery`.
-
 ## Error Handling
 
 - `INVALID_TARGET` from step 3 (target issue number unparseable
