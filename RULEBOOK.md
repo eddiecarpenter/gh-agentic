@@ -22,7 +22,8 @@ relevant skill for the session being run.
 | Session | Skill | Trigger |
 |---|---|---|
 | Session Init | `session-init/SKILL.md` | Every session start (mandated by AGENTS.md bootstrap rule) |
-| Requirements | `requirements-session.md` | Human (interactive) |
+| Solution Architecture | `solution-architecture/SKILL.md` | Human (interactive) — invoked when authoring or extending `docs/ARCHITECTURE.md` |
+| Requirements | `requirements-session/SKILL.md` | Human (interactive) |
 | Requirement Scoping | `requirement-scoping/SKILL.md` | Human (interactive) |
 | Feature Design | `feature-design/SKILL.md` | Automatic — `in-design`; interactive — `interactive-design` |
 | Dev Session | `dev-session/SKILL.md` | Automatic — `in-development` label |
