@@ -229,7 +229,7 @@ Always ask a human before:
 
 | Path | Editable | Purpose |
 |---|---|---|
-| `recipes/*.yaml` | ❌ Never (managed by framework) | Goose recipes — instructions, parameters, model settings |
+| `recipes/*.yaml` | ❌ Never (managed by framework — must be thin shells) | Goose recipes — Goose-specific config plus a one-line pointer at the corresponding `skills/<name>/SKILL.md`. Recipes MUST NOT contain numbered steps, inline gh / git commands, decision logic, or any other playbook content; that all belongs in the SKILL.md. Use `/recipe-creation` to author or update recipes — it enforces this. |
 | `skills/<name>/SKILL.md` (inside `.ai/`) | ❌ Never | Framework playbooks — read-only in domain repos |
 | `skills/<name>/SKILL.md` (at repo root) | ✅ Yes (local, project-specific) | Local playbooks — override framework skills of the same name |
 

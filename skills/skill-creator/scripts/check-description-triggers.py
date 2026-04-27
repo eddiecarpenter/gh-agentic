@@ -89,6 +89,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Capture a new requirement": False,
         "What's the weather in Cape Town?": False,
     },
+    "recipe-creation": {
+        "Create a new recipe for the dev session": True,
+        "Lint the recipes for inline steps": True,
+        "Update the feature-design recipe to point at the skill": True,
+        "Create a new skill": False,
+        "What's the weather in Cape Town?": False,
+    },
     "release-notes": {
         "Generate release notes for v1.2.3": True,
         "Update the release body for the latest tag": True,
