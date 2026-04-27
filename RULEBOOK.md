@@ -25,7 +25,7 @@ relevant skill for the session being run.
 | Requirements | `requirements-session.md` | Human (interactive) |
 | Requirement Scoping | `requirement-scoping/SKILL.md` | Human (interactive) |
 | Feature Design | `feature-design/SKILL.md` | Automatic — `in-design`; interactive — `interactive-design` |
-| Dev Session | `dev-session.md` | Automatic — `in-development` label |
+| Dev Session | `dev-session/SKILL.md` | Automatic — `in-development` label |
 | PR Review | `pr-review-session.md` | Automatic — PR review submitted |
 | Issue Session | `issue-session.md` | Automatic — issue labelled `assigned-to-agent`  |
 | Foreground Recovery | `foreground-recovery.md` | Human (interactive) — any blocked state |
@@ -299,11 +299,7 @@ the GraphQL API. External clients depend on these names and shapes.
 
 ## Task Lifecycle
 
-**After each task completes (before moving to the next):**
-1. Close the Task issue: `gh issue close <task-number> --repo <domain-repo>`
-2. Commit: `feat: [task description] — task N of N (#feature-issue)`
-
-**When all tasks are complete:**
-1. Exit cleanly — do not push, do not open a PR
-2. The workflow pushes and opens the PR automatically
+The per-task lifecycle (close-after-commit, commit format,
+push-after-commit, exit-on-completion) is owned by `dev-session/SKILL.md`.
+RULEBOOK does not duplicate it — see the skill for the playbook.
 

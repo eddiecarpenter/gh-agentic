@@ -35,6 +35,19 @@ before this branch can be deployed in any domain repo:
 | (none) | `interactive-design` | New trigger label, parallel to `in-design` |
 | (none) | `designed` | Feature parked state — design complete, awaiting `trigger-implementation`. Only set when interactive feature-design ends with the "Stop here" choice. Headless and trigger-now paths skip this label. |
 | (none) | `design-in-progress` | Concurrency beacon for `feature-design`. Applied at session entry, removed on exit (success, parked, error, or cancel). A second session sees this label and refuses to compete (headless) or warns the human and asks before continuing (interactive). |
+| (none) | `development-in-progress` | Concurrency beacon for `dev-session`. Same shape as `design-in-progress` but headless-only — a second invocation sees the label and exits no-op. |
+
+## Workflow change — agent now pushes per-task
+
+The rewritten `dev-session` skill commits AND pushes each task as it
+completes, rather than leaving the push to the workflow's "Push
+branch" step. The workflow's push step becomes idempotent (already
+up to date) but stays as a safety net. No workflow file change is
+strictly required — the existing `git push origin <branch>` is a
+no-op when the agent has already pushed.
+
+The agent does NOT apply `in-review` — that remains the workflow's
+job, after the PR is opened. Same shape as today.
 
 ### Project Status field options (additions)
 
