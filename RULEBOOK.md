@@ -29,7 +29,7 @@ relevant skill for the session being run.
 | Dev Session | `dev-session/SKILL.md` | Automatic — `in-development` label |
 | PR Review | `pr-review-session/SKILL.md` | Automatic — PR review with state ≠ approved/dismissed, or comment on PR |
 | Issue Session | `issue-session/SKILL.md` | Automatic — issue labelled `assigned-to-agent` |
-| Foreground Recovery | `foreground-recovery.md` | Human (interactive) — any blocked state |
+| Foreground Recovery | `foreground-recovery/SKILL.md` | Human (interactive) — any blocked state |
 
 ### Session Termination
 

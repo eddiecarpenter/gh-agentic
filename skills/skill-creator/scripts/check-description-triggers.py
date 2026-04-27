@@ -89,6 +89,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Capture a new requirement": False,
         "What's the weather in Cape Town?": False,
     },
+    "foreground-recovery": {
+        "This Feature is stuck — recover it": True,
+        "The design-in-progress label is stuck on #42": True,
+        "Fix the broken pipeline state on this Requirement": True,
+        "Capture a new requirement": False,
+        "What's the weather in Cape Town?": False,
+    },
     "issue-session": {
         "Address the assigned issue #42": True,
         "Handle the agent-assigned issue": True,
