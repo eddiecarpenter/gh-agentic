@@ -5,6 +5,7 @@ triggers: human-interactive
 user-invocable: true
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/concurrency-beacon.md
   - skills/definitions/step-skip-rule.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md

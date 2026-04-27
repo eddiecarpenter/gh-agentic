@@ -5,6 +5,7 @@ triggers: automated
 user-invocable: false
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/concurrency-beacon.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
   - skills/definitions/commit-discipline.md
@@ -466,10 +467,9 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/issue-
 Pass criteria: both commands exit 0.
 ## Error Handling
 
-**Slot-release rule (universal).** Every error path AND every
-graceful exit AFTER step 4 (the slot was claimed) MUST attempt to
-remove `issue-in-progress` before exit, on a best-effort basis.
-If the removal itself fails, surface as a `WARN` and exit anyway.
+**Slot-release rule.** Per `skills/definitions/concurrency-beacon.md`
+— every error path AND every graceful exit AFTER step 4 (beacon
+claimed) MUST best-effort remove `issue-in-progress`.
 
 - `INVALID_ISSUE_STATE` from steps 2–4 (issue closed, label
   missing, issue is a pipeline artefact, slot-claim failed) →

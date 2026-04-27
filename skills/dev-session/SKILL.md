@@ -5,6 +5,7 @@ triggers: automated
 user-invocable: false
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/concurrency-beacon.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
   - skills/definitions/commit-discipline.md
@@ -597,11 +598,9 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/dev-se
 Pass criteria: both commands exit 0.
 ## Error Handling
 
-**Slot-release rule (universal).** Every error path AND every
-graceful exit AFTER step 5 (the slot was claimed) MUST attempt to
-remove `development-in-progress` before exit, on a best-effort
-basis. If the removal itself fails, surface it as a `WARN` and exit
-anyway — the original error is what matters.
+**Slot-release rule.** Per `skills/definitions/concurrency-beacon.md`
+— every error path AND every graceful exit AFTER step 5 (beacon
+claimed) MUST best-effort remove `development-in-progress`.
 
 - `INVALID_DEV_STATE` from steps 2–5 (Feature missing, wrong
   labels, no rationale, no tasks, slot-claim failed) → severity
