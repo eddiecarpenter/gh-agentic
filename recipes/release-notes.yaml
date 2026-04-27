@@ -1,0 +1,25 @@
+version: "1.0.0"
+title: "Release Notes"
+description: "As the release-notes agent, I want to generate human-readable, structured release notes from the commit history between the current tag and the previous one and update the existing GitHub release body, so that downstream consumers see what changed and any required actions at a glance."
+
+parameters:
+  - key: tag
+    input_type: string
+    requirement: required
+    default: ""
+    description: "The version tag for this release (e.g. v1.2.3)."
+
+extensions:
+  - type: builtin
+    name: developer
+    display_name: Developer
+    timeout: 300
+    bundled: true
+
+settings:
+  max_turns: 50
+
+instructions: |
+  Load `AGENTS.md` (the project rulebook). Then execute the
+  `release-notes` skill for tag {{ tag }}. The skill is the
+  authoritative playbook; do not improvise.

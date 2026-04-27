@@ -103,13 +103,15 @@ jobs:
           STATUS=""
           for LABEL in $(echo "${LABELS}" | jq -r '.[]'); do
             case "${LABEL}" in
-              backlog)          STATUS="Backlog"; break ;;
-              scoping)          STATUS="Scoping"; break ;;
-              scheduled)        STATUS="Scheduled"; break ;;
-              in-design)        STATUS="In Design"; break ;;
-              in-development)   STATUS="In Development"; break ;;
-              in-review)        STATUS="In Review"; break ;;
-              done)             STATUS="Done"; break ;;
+              backlog)             STATUS="Backlog"; break ;;
+              scoping)             STATUS="Scoping"; break ;;
+              ready-to-implement)  STATUS="Ready to Implement"; break ;;
+              in-design)           STATUS="In Design"; break ;;
+              interactive-design)  STATUS="In Design"; break ;;
+              designed)            STATUS="Designed"; break ;;
+              in-development)      STATUS="In Development"; break ;;
+              in-review)           STATUS="In Review"; break ;;
+              done)                STATUS="Done"; break ;;
             esac
           done
 

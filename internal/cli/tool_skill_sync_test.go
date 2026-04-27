@@ -14,13 +14,13 @@ import (
 // agentic CLI surface. The lock-step test reads this file once and checks
 // that every cobra command path and every declared non-hidden flag appears
 // somewhere in its body.
-const skillFilePath = "../../skills/gh-agentic-tool.md"
+const skillFilePath = "../../skills/gh-agentic/SKILL.md"
 
 // TestGhAgenticToolSkillCoversCLI is the build-time enforcement of the
 // Tool / Skill Sync rule (LOCALRULES.md). It walks the cobra command tree
 // rooted at `gh-agentic` and asserts that every fully-qualified command
 // path and every declared non-hidden flag appears in
-// `skills/gh-agentic-tool.md`. When either side drifts the test fails
+// `skills/gh-agentic/SKILL.md`. When either side drifts the test fails
 // with a readable diff naming the missing entries.
 //
 // Hidden flags are excluded — they are intercept points, not part of the

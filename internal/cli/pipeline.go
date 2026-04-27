@@ -16,7 +16,7 @@ import (
 var requirementPipelineColumns = []projectstatus.Stage{
 	projectstatus.StageBacklog,
 	projectstatus.StageScoping,
-	projectstatus.StageScheduled,
+	projectstatus.StageReadyToImplement,
 }
 
 // featurePipelineColumns is the canonical left-to-right column order for the

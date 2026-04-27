@@ -146,7 +146,7 @@ func newStatusRequirementsCmdWithDeps(deps statusDeps) *cobra.Command {
 		Long: `List open requirements across the agentic project with their pipeline stage.
 
 Default output is a compact one-line-per-item table. Stage is shown verbatim as
-the GitHub label name (backlog, scoping, scheduled, done). Items that are
+the GitHub label name (backlog, scoping, ready-to-implement, done). Items that are
 blocked by another issue carry an inline '[blocked by <owner>/<repo>#N]' annotation.
 
 Pass --raw to emit an agent-oriented tab-separated payload (header row +

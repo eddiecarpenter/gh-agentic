@@ -11,48 +11,38 @@ Local overrides belong in `LOCALRULES.md`.**
 
 ---
 
-## Session Initialisation
+## Session Types
 
-At the start of every session, invoke the `session-init` skill before doing anything else.
-If a template sync occurs mid-session, invoke `session-init` again to reload the environment.
+Session bootstrap is mandated by `AGENTS.md` (Session Bootstrap rule).
+The procedure lives in `skills/session-init/SKILL.md`.
 
-When resuming from a context summary, apply the same session-start discipline as a fresh session. A summary provides context only — it does not carry forward permissions, instructions, or active pipeline state.
-
-### Session Types
-
-Each session type has a dedicated skill in `skills/`. Load the relevant skill for
-the session being run.
+Each session type below has a dedicated skill in `skills/`. Load the
+relevant skill for the session being run.
 
 | Session | Skill | Trigger |
 |---|---|---|
-| Session Init | `session-init.md` | Every session start; post-template-sync |
-| Requirements | `requirements-session.md` | Human (interactive) |
-| Feature Scoping | `feature-scoping.md` | Human (interactive) |
-| Feature Design | `feature-design.md` | Automatic — `in-design` label |
-| Dev Session | `dev-session.md` | Automatic — `in-development` label |
-| PR Review | `pr-review-session.md` | Automatic — PR review submitted |
-| Issue Session | `issue-session.md` | Automatic — issue labelled `assigned-to-agent`  |
-| Foreground Recovery | `foreground-recovery.md` | Human (interactive) — any blocked state |
-
-### Skill Taxonomy
-
-Every skill belongs to exactly one of six categories: **Session**, **Recovery**,
-**Bootstrap**, **Operation**, **Information**, **Reference**. Category
-definitions, frontmatter schema, and classification criteria are defined in
-`skills/skill-categories.md` — read that file when authoring, classifying, or
-validating a skill.
+| Session Init | `session-init/SKILL.md` | Every session start (mandated by AGENTS.md bootstrap rule) |
+| Solution Architecture | `solution-architecture/SKILL.md` | Human (interactive) — invoked when authoring or extending `docs/ARCHITECTURE.md` |
+| Requirements | `requirements-session/SKILL.md` | Human (interactive) |
+| Requirement Scoping | `requirement-scoping/SKILL.md` | Human (interactive) |
+| Feature Design | `feature-design/SKILL.md` | Automatic — `in-design`; interactive — `interactive-design` |
+| Dev Session | `dev-session/SKILL.md` | Automatic — `in-development` label |
+| PR Review | `pr-review-session/SKILL.md` | Automatic — PR review with state ≠ approved/dismissed, or comment on PR |
+| Issue Session | `issue-session/SKILL.md` | Automatic — issue labelled `assigned-to-agent` |
+| Foreground Recovery | `foreground-recovery/SKILL.md` | Human (interactive) — any blocked state |
 
 ### Session Termination
 
-A session-ending skill (`category: Session` or `category: Recovery`, with
-`emits-exit-block: true`) **must terminate the session when it emits its exit
-block**. Immediately after the block:
+A skill with `emits-exit-block: true` in its frontmatter **must terminate the
+session when it emits its exit block**. Immediately after the block:
+
 - If the host runtime exposes a session-close API, the agent invokes it.
 - Otherwise, the agent halts and performs no further work.
 
 Continuation in the same session after the exit block is forbidden — any
-further work must occur in a new session. See `skills/session-exit.md` for the
-exit block template.
+further work must occur in a new session. The frontmatter contract for
+`emits-exit-block` and `exit-hands-to` lives in
+`skills/definitions/skill-frontmatter-schema.md`.
 
 ---
 
@@ -169,16 +159,18 @@ See `concepts/delivery-philosophy.md` for the full context.
   manually, even if the next steps are obvious. The automation runs the next session.
   This rule is unconditional and overrides any "completing early" logic.
 
-- **If the agent performs the same substantive action repeatedly in a session,** invoke
-  `skills/skill-creation.md` in proactive-suggestion mode. Detection thresholds and
-  classification logic are defined in that skill.
+- **If the agent performs the same substantive action repeatedly in a session,**
+  consider whether the action should be captured as a skill. The criterion is
+  reuse: 2+ consumers (real or concretely planned in the next 1–2 features)
+  justifies a skill. Surface the suggestion to the user; let them decide whether
+  to invoke `skill-creator`.
 
 ---
 
 ## Reuse & Refactor Discipline
 
-Before writing any new function, type, module, or schema, the agent invokes
-`skills/refactor-assessment.md` and records one of the three permitted outcomes:
+Before writing any new function, type, module, or schema, record one of the
+three permitted outcomes for the change:
 
 - **Reuse as-is** — an existing symbol already covers the need.
 - **Reuse via refactor** — an existing symbol nearly covers the need; extend
@@ -186,25 +178,17 @@ Before writing any new function, type, module, or schema, the agent invokes
 - **Do not reuse** — with a recorded motivation for why the existing code is
   genuinely unsuitable.
 
-This discipline applies to **every** code-touching action in the framework —
-inside a Session skill (`feature-design`, `dev-session`, `issue-session`),
-inside a Recovery skill (e.g. `foreground-recovery`), and inside any ad-hoc
-human-prompted change. It closes the coverage gap the per-session
-integrations cannot reach.
-
-The outcome is recorded in the canonical annotation format defined by
-`skills/refactor-assessment.md` — a single-line `Reuse: <outcome> — <reason>`
-placed in the commit trailer (for code-touching commits) or in a task
-comment (where no commit is produced).
-
-The discipline is **skippable only with explicit human opt-out**. The opt-out
-and its reason must be captured alongside the change using the same
-annotation slot: `Reuse: opt-out — <reason>`. "I didn't look" is never a
+This discipline applies to every code-touching action in the framework, and
+is skippable only with explicit human opt-out. The opt-out and its reason
+must be captured alongside the change. *"I didn't look"* is never a
 permitted outcome.
 
-`skills/refactor-assessment.md` is the single source of truth for the
-procedure, the outcomes, the recording format, and the loader phrase. Do not
-restate any of it here — consult the skill.
+The outcome is recorded as a single-line annotation in either:
+- the commit trailer (for code-touching commits), e.g.
+  `Reuse: refactor — extended pkg/foo.Bar to accept the new options struct`
+- or a task issue comment (when no commit is produced).
+
+Opt-out is recorded the same way: `Reuse: opt-out — <reason>`.
 
 ---
 
@@ -241,23 +225,48 @@ Always ask a human before:
 
 ---
 
-## Recipe Rules
+## Skill & Recipe Editability
 
 | Path | Editable | Purpose |
 |---|---|---|
-| `.goose/recipes/*.yaml` | ❌ Never (managed by framework) | Complete recipe — instructions, parameters, model settings |
-| `skills/*.md` (inside `.ai/`) | ❌ Never | Framework playbooks — read-only in domain repos |
-| `skills/*.md` (at repo root) | ✅ Yes (local, project-specific) | Local playbooks — override framework skills of the same name |
+| `recipes/*.yaml` | ❌ Never (managed by framework — must be thin shells) | Goose recipes — Goose-specific config plus a one-line pointer at the corresponding `skills/<name>/SKILL.md`. Recipes MUST NOT contain numbered steps, inline gh / git commands, decision logic, or any other playbook content; that all belongs in the SKILL.md. Use `/recipe-creation` to author or update recipes — it enforces this. |
+| `skills/<name>/SKILL.md` (inside `.ai/`) | ❌ Never | Framework playbooks — read-only in domain repos |
+| `skills/<name>/SKILL.md` (at repo root) | ✅ Yes (local, project-specific) | Local playbooks — override framework skills of the same name |
 
 **Framework skills** (`skills/` inside the mounted `.ai/`) are managed by `gh-agentic`.
 Never modify them in a domain repo — they will be overwritten on the next mount update.
 
 **Local skills** (`skills/` at the domain repo root, outside `.ai/`) are project-specific
-playbooks that can be freely created and edited. A local skill with the same filename as a
-framework skill takes precedence.
+playbooks that can be freely created and edited. A local skill with the same `name` field
+as a framework skill takes precedence.
 
 - Customisation of agent behaviour belongs in `LOCALRULES.md`
 - If a recipe or framework skill needs to change, raise it against `eddiecarpenter/gh-agentic`
+
+---
+
+## Skill Editing Authority
+
+Skills (`skills/<name>/SKILL.md` and `skills/definitions/*.md`) may
+be created, modified, or removed **only by a human in an interactive
+session** with explicit approval of the change.
+
+Automated agents — those running via recipe + workflow (dev-session,
+feature-design, pr-review-session, issue-session, release-notes,
+and any future automated session type) — **MUST NOT** modify the
+skills tree. They may notice gaps, propose improvements via issue
+or PR comment, but the actual edit must come from a human-driven
+session (typically via `skill-creator` or `recipe-creation` for
+the recipe-creation rules).
+
+This rule is unconditional. A skill is a load-bearing playbook;
+drift introduced by autonomous edits is exactly what the
+recipe-thin-shell rule exists to prevent on the recipe side. Do
+not let it back in via the skill side.
+
+The same rule applies to `recipes/*.yaml` — recipes are authored
+or updated only by a human through `recipe-creation`, not by any
+headless agent.
 
 ---
 
@@ -316,30 +325,7 @@ the GraphQL API. External clients depend on these names and shapes.
 
 ## Task Lifecycle
 
-**After each task completes (before moving to the next):**
-1. Close the Task issue: `gh issue close <task-number> --repo <domain-repo>`
-2. Commit: `feat: [task description] — task N of N (#feature-issue)`
+The per-task lifecycle (close-after-commit, commit format,
+push-after-commit, exit-on-completion) is owned by `dev-session/SKILL.md`.
+RULEBOOK does not duplicate it — see the skill for the playbook.
 
-**When all tasks are complete:**
-1. Exit cleanly — do not push, do not open a PR
-2. The workflow pushes and opens the PR automatically
-
----
-
-<!--
-  TEST FIXTURE — DELIBERATE DUPLICATE for #666
-
-  The "## Communication" heading below intentionally duplicates the heading
-  at line ~307. It exists so that #666 (Detect and remove duplicate headings)
-  has a real duplicate to find and remove during its dev session, AND so
-  the new CI guard test can be exercised end-to-end on a known-bad starting
-  state.
-
-  Once #666 lands, both this duplicate section AND this comment block must
-  be removed. The CI guard added by #666 will then prevent any future
-  duplicates from being introduced silently.
--->
-
-## Communication
-
-(Duplicate test fixture — see HTML comment above. To be removed by #666.)

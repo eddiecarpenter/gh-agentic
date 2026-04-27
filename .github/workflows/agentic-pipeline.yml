@@ -153,8 +153,7 @@ jobs:
         run: |
           goose run \
             --recipe .ai/.goose/recipes/feature-design.yaml \
-            --params feature_issue=${{ github.event.issue.number }} \
-            --params repo=${{ github.repository }}
+            --params feature_number=${{ github.event.issue.number }}
         env:
           GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
@@ -435,9 +434,7 @@ jobs:
             echo "--- Dev session attempt ${attempt} ---"
             goose run \
               --recipe .ai/.goose/recipes/dev-session.yaml \
-              --params feature_issue=${{ github.event.issue.number }} \
-              --params branch_name=${BRANCH} \
-              --params repo=${{ github.repository }} && break
+              --params feature_number=${{ github.event.issue.number }} && break
             EXIT_CODE=$?
             if [ $attempt -lt 3 ]; then
               echo "Attempt ${attempt} failed (exit ${EXIT_CODE}). Waiting 60s before retry..."
@@ -617,9 +614,7 @@ jobs:
         run: |
           goose run \
             --recipe .ai/.goose/recipes/pr-review-session.yaml \
-            --params pr_number=${PR_NUMBER} \
-            --params branch_name=${BRANCH} \
-            --params repo=${{ github.repository }}
+            --params pr_number=${PR_NUMBER}
 
       - name: Push fixes
         if: success()
@@ -711,8 +706,7 @@ jobs:
         run: |
           goose run \
             --recipe .ai/.goose/recipes/issue-session.yaml \
-            --params issue_number=${{ github.event.issue.number }} \
-            --params repo=${{ github.repository }}
+            --params issue_number=${{ github.event.issue.number }}
         env:
           GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
@@ -900,7 +894,7 @@ jobs:
             --repo ${AGENTIC_REPO} \
             --remove-label "backlog" \
             --remove-label "scoping" \
-            --remove-label "scheduled" \
+            --remove-label "ready-to-implement" \
             --add-label "done"
           gh issue close ${PARENT} \
             --repo ${AGENTIC_REPO} \

@@ -69,7 +69,7 @@ Do not reinvent what already exists in charging-domain. Adapt it.
 
 ## Tool / Skill Sync
 
-When the `gh agentic` CLI surface changes (new command, removed command, new/removed/renamed flag, changed `--raw` output shape), `skills/gh-agentic-tool.md` must be updated in the same PR. CI enforces this via `TestGhAgenticToolSkillCoversCLI` — the build fails if the skill is out of sync with the CLI.
+When the `gh agentic` CLI surface changes (new command, removed command, new/removed/renamed flag, changed `--raw` output shape), `skills/gh-agentic/SKILL.md` must be updated in the same PR. CI enforces this via `TestGhAgenticToolSkillCoversCLI` — the build fails if the skill is out of sync with the CLI.
 
 ## Release Version Sync
 

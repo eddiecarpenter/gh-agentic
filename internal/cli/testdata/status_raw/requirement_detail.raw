@@ -1,5 +1,5 @@
 number: 569
-stage: scheduled
+stage: ready-to-implement
 title: Centralised project context resolution
 owning_repo: eddiecarpenter/gh-agentic
 blocked_by:
