@@ -333,6 +333,102 @@ def _extract_referenced_paths(body: str) -> set[str]:
     return paths
 
 
+# A skill loading a skills/definitions/*.md file MUST NOT also restate
+# the definition's content inline — the load directive is the canonical
+# reference. The check below catches drift where a maintainer adds a
+# load directive but forgets to remove the now-duplicate inline prose.
+DUPLICATION_RUN_LENGTH = 4
+_TRIVIAL_LINE_RE = re.compile(r"^(?:\s*|\s*```.*|\s*#+\s*.*|\s*[-*]\s*|\s*\|.*)$")
+
+
+def _meaningful_lines(text: str) -> list[tuple[int, str]]:
+    """Return (1-based line number, stripped content) for non-trivial lines.
+
+    Trivial lines (blank, fence markers, headings, list-bullet skeletons,
+    table separators) are excluded so a run of N consecutive meaningful
+    lines is a strong duplication signal rather than coincidental
+    structural overlap.
+    """
+    out: list[tuple[int, str]] = []
+    for i, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or _TRIVIAL_LINE_RE.match(line):
+            continue
+        # Drop very short lines (under 20 chars) — phrase-level overlap
+        # is not duplication of substance.
+        if len(stripped) < 20:
+            continue
+        out.append((i, stripped))
+    return out
+
+
+def check_no_duplicated_definition_content(skill: Skill) -> CheckResult:
+    """A skill loading a definition MUST NOT restate its content inline.
+
+    For each `skills/definitions/*.md` entry in the skill's `loads:`
+    frontmatter, look for a run of `DUPLICATION_RUN_LENGTH` consecutive
+    meaningful lines from the definition appearing verbatim in the skill
+    body. Failure surfaces the skill, the definition, and the line
+    range of the first offending run.
+    """
+    loads = skill.frontmatter.get("loads", [])
+    if not isinstance(loads, list):
+        return CheckResult("no_duplicated_definition_content", passed=True,
+                           detail="no loads list to check")
+
+    repo_root = _find_repo_root(skill.path)
+    skill_body_set = set(line for _, line in _meaningful_lines(skill.body))
+    skill_body_lines = [line for _, line in _meaningful_lines(skill.body)]
+
+    duplications: list[dict] = []
+    for ref in loads:
+        if not ref.startswith("skills/definitions/"):
+            continue
+        def_path = repo_root / ref
+        if not def_path.exists():
+            continue  # references_resolve catches this separately
+        def_lines = _meaningful_lines(def_path.read_text())
+        # Slide a window of DUPLICATION_RUN_LENGTH over the definition's
+        # meaningful lines; flag if every line in the window also appears
+        # in the skill body.
+        for i in range(len(def_lines) - DUPLICATION_RUN_LENGTH + 1):
+            window = def_lines[i:i + DUPLICATION_RUN_LENGTH]
+            if all(line in skill_body_set for _, line in window):
+                # Now require the matching skill-body lines to be
+                # contiguous as well — otherwise it's coincidental
+                # phrase reuse, not block duplication.
+                first_def_line = window[0][1]
+                if first_def_line not in skill_body_lines:
+                    continue
+                start_idx = skill_body_lines.index(first_def_line)
+                contiguous = all(
+                    start_idx + k < len(skill_body_lines)
+                    and skill_body_lines[start_idx + k] == window[k][1]
+                    for k in range(DUPLICATION_RUN_LENGTH)
+                )
+                if contiguous:
+                    duplications.append({
+                        "definition": ref,
+                        "definition_lines": f"{window[0][0]}-{window[-1][0]}",
+                        "first_match": first_def_line[:80],
+                    })
+                    break  # one report per definition is enough
+
+    if duplications:
+        first = duplications[0]
+        detail = (
+            f"skill body restates {len(duplications)} loaded definition(s); "
+            f"first: {first['definition']} lines {first['definition_lines']}"
+        )
+        return CheckResult(
+            "no_duplicated_definition_content",
+            passed=False,
+            detail=detail,
+            extra={"duplications": duplications},
+        )
+    return CheckResult("no_duplicated_definition_content", passed=True)
+
+
 # ---------------------------------------------------------------------------
 # Check registry
 # ---------------------------------------------------------------------------
@@ -345,6 +441,7 @@ CHECKS: dict[str, Callable[[Skill], CheckResult]] = {
     "description_assertive": check_description_assertive,
     "description_third_person": check_description_third_person,
     "references_resolve": check_references_resolve,
+    "no_duplicated_definition_content": check_no_duplicated_definition_content,
 }
 
 
