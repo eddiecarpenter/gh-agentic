@@ -89,6 +89,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Capture a new requirement": False,
         "What's the weather in Cape Town?": False,
     },
+    "feature-design": {
+        "Design feature #42": True,
+        "Run the design phase on this Feature": True,
+        "Do the design for Feature #100": True,
+        "Capture a new requirement": False,
+        "What's the weather in Cape Town?": False,
+    },
     "trigger-implementation": {
         "Trigger implementation for #42": True,
         "Send this Feature to development": True,
