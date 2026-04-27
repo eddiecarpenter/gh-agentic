@@ -89,6 +89,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Capture a new requirement": False,
         "What's the weather in Cape Town?": False,
     },
+    "issue-session": {
+        "Address the assigned issue #42": True,
+        "Handle the agent-assigned issue": True,
+        "Respond to issue #100 — assigned to agent": True,
+        "Capture a new requirement": False,
+        "What's the weather in Cape Town?": False,
+    },
     "solution-architecture": {
         "Create the architecture document": True,
         "Set up Solution Architecture for this project": True,

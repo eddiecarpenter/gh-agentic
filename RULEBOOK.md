@@ -28,7 +28,7 @@ relevant skill for the session being run.
 | Feature Design | `feature-design/SKILL.md` | Automatic — `in-design`; interactive — `interactive-design` |
 | Dev Session | `dev-session/SKILL.md` | Automatic — `in-development` label |
 | PR Review | `pr-review-session/SKILL.md` | Automatic — PR review with state ≠ approved/dismissed, or comment on PR |
-| Issue Session | `issue-session.md` | Automatic — issue labelled `assigned-to-agent`  |
+| Issue Session | `issue-session/SKILL.md` | Automatic — issue labelled `assigned-to-agent` |
 | Foreground Recovery | `foreground-recovery.md` | Human (interactive) — any blocked state |
 
 ### Session Termination
