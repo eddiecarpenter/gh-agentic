@@ -7,6 +7,7 @@ loads:
   - skills/definitions/error-handling.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
+  - skills/definitions/state-model-pattern.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
   - skills/apply-label/SKILL.md
@@ -167,8 +168,19 @@ The step-skip rule does not require justification when the step is
 not applicable to the running mode. Steps without a mode tag run in
 both modes.
 
-**State model & cancel semantics.** This skill performs four
-sequential GitHub-side mutations whose recoverability differs:
+**State model & cancel semantics.** This skill follows the pattern
+in `skills/definitions/state-model-pattern.md`. The concrete tier
+table below is this skill's specifics; the universal cancel rules
+and failure-during-transition rules come from the definition.
+
+Headless mode has no cancel — only interactive mode applies the
+cancel rules.
+
+Skill-specific cancel override (T1): the rationale comment cannot
+be unposted; on cancel-at-T1 the skill MUST edit the comment to
+prepend `**[CANCELLED — design did not complete]**` rather than
+leaving it as a misleading active rationale. Cancel-at-T2 also
+applies this comment-marking step before deleting the branch.
 
 | Transition | Where | Effect | Skill-recoverable? |
 |---|---|---|---|
@@ -176,24 +188,6 @@ sequential GitHub-side mutations whose recoverability differs:
 | **T2** | step 13 | Feature branch created in active repo | Yes — branch can be deleted |
 | **T3** | step 16 | Task issues created with sub-issue links | **No — point of no return.** Created issues cannot be auto-removed |
 | **T4** | step 18 | Feature label/status transitioned (via `trigger-implementation` or to `designed`) | Partial — depends on the primitive's outcome |
-
-**Cancel rules by state (interactive mode only — headless has no cancel):**
-
-- **Before T1** (during rationale draft) → Output E. No mutations.
-  Exit cleanly; Feature unchanged.
-- **At T1** (rationale posted, no branch yet) → Output F variant.
-  Comment cannot be unposted; the rationale lives on the issue. Mark
-  the comment as cancelled by editing it to prepend
-  `**[CANCELLED — design did not complete]**` and exit.
-- **At T2** (branch created, no tasks yet) → Output F variant.
-  Delete the local branch (`git branch -D feature/<N>-<slug>`); the
-  remote was never pushed by this skill. Mark the rationale comment
-  as cancelled per T1. Exit.
-- **At T3 or later** (tasks created) → Output F. Surface the partial
-  state — rationale comment, branch, K of M tasks created, label
-  unchanged. Recommend either manual cleanup (close orphan tasks,
-  delete branch, edit comment) or manual completion. Do NOT
-  auto-revert.
 
 **Re-run safety (fail softly).** Step 4 detects whether design has
 already been run for this Feature. The skill exits cleanly in any

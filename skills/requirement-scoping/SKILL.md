@@ -6,6 +6,7 @@ loads:
   - skills/definitions/error-handling.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
+  - skills/definitions/state-model-pattern.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
   - skills/apply-label/SKILL.md
@@ -181,10 +182,13 @@ artefact walk (steps in section C):
       now: <new value>
     <unchanged fields are omitted>
   ```
-**State model & cancel semantics.** This skill performs four
-sequential GitHub-side transitions whose recoverability differs.
-The agent must know which state it is in to handle cancellation and
-failure correctly.
+**State model & cancel semantics.** This skill follows the pattern
+in `skills/definitions/state-model-pattern.md`. The concrete tier
+table below is this skill's specifics; the universal cancel rules
+and failure-during-transition rules come from the definition.
+
+Transition errors raised by this skill: `STATUS_TRANSITION_FAILED`
+(label/status flips), `ISSUE_CREATION_FAILED` (Feature creation).
 
 | Transition | Where | Effect | Skill-recoverable? |
 |---|---|---|---|
@@ -193,55 +197,9 @@ failure correctly.
 | **T2 → T3** | step 21 | Triggered Features Backlog → In Design (label + status) | Partial — failed triggers leave Features at Backlog |
 | **T3 → T4** | step 23 | Requirement Scoping → Ready to Implement (label + status) | Partial — failed transition leaves Requirement at Scoping with Features in their final states |
 
-**Cancel rules by state:**
-
-- **Before T1** (during Requirement pick or exploration) → clean
-  exit; no mutations to revert.
-- **At T1** (Requirement at Scoping, no Features yet) → revert
-  the Requirement to Backlog (label + status) and exit (Output D).
-- **At T2 or later** (Features have been created) → the skill
-  CANNOT cleanly undo. Surface the partial state to the human:
-  which Features were created, their current labels and statuses,
-  the Requirement's current state. Recommend manual cleanup
-  (close orphan Features) or completing the work manually (apply
-  `in-design` to selected Features and transition the Requirement
-  to Ready to Implement). Do NOT auto-revert the Requirement to Backlog
-  when Features exist — they would be left as orphans pointing
-  to a backlog-stage parent.
-
-The issue-creation confirmation gate (step 17) MUST warn the human
-about this boundary before T2 fires:
-> "Once you confirm, Feature issues will be created in GitHub.
-> Cancellation after this point cannot remove the created issues
-> automatically; the session would exit with the Features in place
-> and the Requirement still at Scoping."
-
-**Failure-during-transition rules:**
-
-- **T0 → T1 fails partway** (e.g., label applied but status not
-  set) → raise `STATUS_TRANSITION_FAILED`. Exit. The Requirement
-  is in a label/status mismatch state; the next session's pre-entry
-  check (step 3) detects and surfaces it. Recommend
-  `gh agentic repair`.
-- **T1 → T2 partial** (Feature 1 created, Feature 2 fails) → raise
-  `ISSUE_CREATION_FAILED`. DO NOT continue with trigger
-  confirmation — the Feature set is incomplete and partial trigger
-  on a partial set leaves the framework in a worse state. Surface
-  which Features succeeded and which didn't; recommend keeping the
-  successful Features (already valid pipeline artefacts), closing
-  any partial-creation orphans manually, and re-running scoping
-  for the failed ones (which will create them as additional
-  Features under the same parent).
-- **T2 → T3 partial** (some Features triggered, others failed) →
-  raise `STATUS_TRANSITION_FAILED`. DO NOT proceed to T3 → T4 —
-  the Requirement transition is conditional on all triggers
-  succeeding. Surface which Features are at `in-design` vs still
-  at `backlog`; recommend manual re-trigger. The Requirement
-  remains at Scoping.
-- **T3 → T4 fails** → raise `STATUS_TRANSITION_FAILED`. Features
-  are in their intended states; the Requirement is stuck at
-  Scoping. Recommend `gh agentic repair` and manual re-run of
-  the final transition only.
+The issue-creation confirmation gate (step 17) is where the
+"point-of-no-return" warning required by the definition fires;
+see step 17 for the exact phrasing.
 
 **Orphan re-entry refinement.** When step 3 detects the picked
 Requirement at `scoping`, the same `gh agentic status requirement
