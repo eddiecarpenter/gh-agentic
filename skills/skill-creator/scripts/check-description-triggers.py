@@ -89,6 +89,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Capture a new requirement": False,
         "What's the weather in Cape Town?": False,
     },
+    "release-notes": {
+        "Generate release notes for v1.2.3": True,
+        "Update the release body for the latest tag": True,
+        "Publish notes for v0.9": True,
+        "Capture a new requirement": False,
+        "What's the weather in Cape Town?": False,
+    },
     "foreground-recovery": {
         "This Feature is stuck — recover it": True,
         "The design-in-progress label is stuck on #42": True,
