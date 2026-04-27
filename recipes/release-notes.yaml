@@ -9,12 +9,6 @@ parameters:
     default: ""
     description: "The version tag for this release (e.g. v1.2.3)."
 
-  - key: repo
-    input_type: string
-    requirement: required
-    default: ""
-    description: "The active repo in owner/name form."
-
 extensions:
   - type: builtin
     name: developer
@@ -27,5 +21,5 @@ settings:
 
 instructions: |
   Load `AGENTS.md` (the project rulebook). Then execute the
-  `release-notes` skill for tag {{ tag }} in {{ repo }}. The
-  skill is the authoritative playbook; do not improvise.
+  `release-notes` skill for tag {{ tag }}. The skill is the
+  authoritative playbook; do not improvise.

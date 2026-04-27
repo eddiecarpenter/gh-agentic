@@ -93,8 +93,7 @@ jobs:
         run: |
           goose run \
             --recipe .ai/.goose/recipes/release-notes.yaml \
-            --params tag=${{ github.event.release.tag_name }} \
-            --params repo=${{ github.repository }}
+            --params tag=${{ github.event.release.tag_name }}
         env:
           GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}

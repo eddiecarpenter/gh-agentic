@@ -93,7 +93,6 @@ set. Custom parameter names fail the lint.
 
 | Param | Meaning | Type | Used by |
 |---|---|---|---|
-| `repo` | Active repo in `owner/name` form. Always passed by the workflow. | string | every recipe |
 | `requirement_number` | A Requirement issue | number | (when wired to a recipe) |
 | `feature_number` | A Feature issue | number | feature-design, dev-session |
 | `issue_number` | A non-pipeline issue (`assigned-to-agent`) | number | issue-session |
@@ -103,9 +102,14 @@ set. Custom parameter names fail the lint.
 Extending the vocabulary requires updating this document
 explicitly. Do NOT add ad-hoc parameter names to recipes.
 
-The workflow always passes `repo`. Skills consume it directly; they
-no longer need to fall back to `gh repo view --json nameWithOwner`
-when invoked via a recipe.
+**Note on the active repo.** Recipes do NOT pass `repo` — Goose
+runs in the workflow's checkout, so the working directory IS the
+active repo. Skills resolve it via
+`gh repo view --json nameWithOwner -q .nameWithOwner` when they
+need the `owner/name` string explicitly. If a future cross-repo
+use case arises (e.g., federated workflows acting on a repo other
+than the workspace), `repo` can be reintroduced as an optional
+parameter at that point.
 
 ## Recipes wrap automated / hybrid skills only
 
@@ -317,12 +321,6 @@ parameters:
     default: ""
     description: "The Feature issue to design."
 
-  - key: repo
-    input_type: string
-    requirement: required
-    default: ""
-    description: "The active repo in owner/name form."
-
 extensions:
   - type: builtin
     name: developer
@@ -335,9 +333,8 @@ settings:
 
 instructions: |
   Load `AGENTS.md` (the project rulebook). Then execute the
-  `feature-design` skill for Feature {{ feature_number }} in
-  {{ repo }}. The skill is the authoritative playbook; do not
-  improvise.
+  `feature-design` skill for Feature {{ feature_number }}. The
+  skill is the authoritative playbook; do not improvise.
 ```
 
 That's the entire recipe. Below `instructions: |` are exactly

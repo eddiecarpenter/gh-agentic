@@ -9,12 +9,6 @@ parameters:
     default: ""
     description: "The Feature issue to implement."
 
-  - key: repo
-    input_type: string
-    requirement: required
-    default: ""
-    description: "The active repo in owner/name form."
-
 extensions:
   - type: builtin
     name: developer
@@ -27,6 +21,5 @@ settings:
 
 instructions: |
   Load `AGENTS.md` (the project rulebook). Then execute the
-  `dev-session` skill for Feature {{ feature_number }} in
-  {{ repo }}. The skill is the authoritative playbook; do not
-  improvise.
+  `dev-session` skill for Feature {{ feature_number }}. The
+  skill is the authoritative playbook; do not improvise.

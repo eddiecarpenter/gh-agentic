@@ -9,12 +9,6 @@ parameters:
     default: ""
     description: "The non-pipeline issue number to handle."
 
-  - key: repo
-    input_type: string
-    requirement: required
-    default: ""
-    description: "The active repo in owner/name form."
-
 extensions:
   - type: builtin
     name: developer
@@ -27,6 +21,5 @@ settings:
 
 instructions: |
   Load `AGENTS.md` (the project rulebook). Then execute the
-  `issue-session` skill for issue {{ issue_number }} in
-  {{ repo }}. The skill is the authoritative playbook; do not
-  improvise.
+  `issue-session` skill for issue {{ issue_number }}. The skill
+  is the authoritative playbook; do not improvise.
