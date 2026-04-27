@@ -89,6 +89,13 @@ GROUND_TRUTH: dict[str, dict[str, bool]] = {
         "Capture a new requirement": False,
         "What's the weather in Cape Town?": False,
     },
+    "pr-review-session": {
+        "Address PR feedback on #42": True,
+        "Respond to the review on the PR": True,
+        "Implement the requested changes from the reviewer": True,
+        "Open a new PR": False,
+        "What's the weather in Cape Town?": False,
+    },
     "dev-session": {
         "Implement Feature #42": True,
         "Run dev on this in-development Feature": True,

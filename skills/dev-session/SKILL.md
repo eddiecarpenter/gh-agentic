@@ -7,6 +7,7 @@ loads:
   - skills/definitions/error-handling.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
+  - skills/definitions/commit-discipline.md
   - skills/gh-agentic/SKILL.md
   - skills/apply-label/SKILL.md
 emits-exit-block: true
@@ -124,43 +125,15 @@ it; step 17 releases it; the Error Handling section makes
 best-effort release universal across error paths.
 
 **Per-task discipline.** Steps 8–14 run once per open task in
-order. The discipline:
+order. The reuse outcome, test/build pass-before-commit rule,
+commit format, and push-after-commit rule come from
+`skills/definitions/commit-discipline.md`. This skill applies that
+discipline at task granularity:
 
-- **Reuse outcome (mandatory).** Before writing any new function,
-  type, module, or schema, record one of three outcomes:
-  - `reuse — as-is` — an existing symbol covers the need.
-  - `reuse — refactor — <one-line>` — extended an existing symbol.
-  - `reuse — opt-out — <reason>` — genuinely new; existing code
-    is unsuitable for a stated reason.
-
-  The outcome is written into the commit trailer (step 12). *"I
-  didn't look"* is never permitted.
-
-- **Tests are first-class.**
-  - All existing tests must pass after the changes.
-  - New code must have tests covering success, failure, and edge
-    cases.
-  - Modified functionality must have its tests updated to match.
-  - Tests must be **executed** — writing them without running them
-    does not count.
-  - The build must pass cleanly before the commit.
-
-  If a test or build fails, fix it before committing. There is no
-  retry cap; keep working until passing. If genuinely stuck (no
-  forward progress on consecutive attempts, environment issue,
-  ambiguous task), raise `TASK_BLOCKED` and exit (Output D).
-
-- **Commit format (per RULEBOOK).**
-  ```
-  feat: <task description> — task <K> of <M> (#<feature>)
-
-  <optional body>
-
-  Reuse: <outcome>
-  ```
-
-- **Push after every commit.** No batching. Each task lands as a
-  separate commit on the remote, in order.
+- The `<context tag>` in the commit subject is `— task <K> of <M> (#<feature>)`.
+- The persistent-failure error codes are `TEST_FAILED_PERSISTENT`,
+  `BUILD_FAILED_PERSISTENT`, `TASK_BLOCKED` (raised by this skill
+  per the discipline's "fix-before-commit, raise if stuck" rule).
 
 ---
 

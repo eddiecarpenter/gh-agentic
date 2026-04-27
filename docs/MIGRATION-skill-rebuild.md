@@ -49,6 +49,30 @@ no-op when the agent has already pushed.
 The agent does NOT apply `in-review` — that remains the workflow's
 job, after the PR is opened. Same shape as today.
 
+## Workflow change — PR-merged handler
+
+The pipeline currently lacks a step that fires on PR merge. With the
+new `pr-review-session` skill in place, the lifecycle's closure is
+also workflow-side (no skill involved):
+
+On `pull_request: closed` with `merged == true`:
+
+1. The Feature issue auto-closes via the PR body's `Closes #<N>`
+   line (already in place).
+2. Workflow applies the `done` label on the Feature, removes
+   `in-review`, and sets project status `Done`.
+3. **Cascading Requirement close.** Workflow queries the parent
+   Requirement's child Features. If ALL are closed, workflow:
+   - Closes the Requirement issue.
+   - Applies `done` label, removes `ready-to-implement`.
+   - Sets project status `Done`.
+4. If not all sibling Features are closed, the Requirement stays at
+   `ready-to-implement` until the last sibling lands.
+
+This is a workflow-side change; no skill is invoked. Track in the
+GitHub Actions yaml as a new job parallel to the existing post-agent
+steps.
+
 ### Project Status field options (additions)
 
 | Old | New |
