@@ -20,6 +20,9 @@ settings:
   max_turns: 100
 
 instructions: |
+  You are an automated agent in this project's agentic delivery pipeline.
+
+prompt: |
   Load `AGENTS.md` (the project rulebook). Then execute the
   `issue-session` skill for issue {{ issue_number }}. The skill
   is the authoritative playbook; do not improvise.
