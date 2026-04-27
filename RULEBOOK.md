@@ -245,6 +245,31 @@ as a framework skill takes precedence.
 
 ---
 
+## Skill Editing Authority
+
+Skills (`skills/<name>/SKILL.md` and `skills/definitions/*.md`) may
+be created, modified, or removed **only by a human in an interactive
+session** with explicit approval of the change.
+
+Automated agents — those running via recipe + workflow (dev-session,
+feature-design, pr-review-session, issue-session, release-notes,
+and any future automated session type) — **MUST NOT** modify the
+skills tree. They may notice gaps, propose improvements via issue
+or PR comment, but the actual edit must come from a human-driven
+session (typically via `skill-creator` or `recipe-creation` for
+the recipe-creation rules).
+
+This rule is unconditional. A skill is a load-bearing playbook;
+drift introduced by autonomous edits is exactly what the
+recipe-thin-shell rule exists to prevent on the recipe side. Do
+not let it back in via the skill side.
+
+The same rule applies to `recipes/*.yaml` — recipes are authored
+or updated only by a human through `recipe-creation`, not by any
+headless agent.
+
+---
+
 ## Contract Rules
 
 A **contract** is any structure or schema shared with an external system or process.

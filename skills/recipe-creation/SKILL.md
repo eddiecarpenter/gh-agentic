@@ -6,6 +6,7 @@ user-invocable: true
 loads:
   - skills/definitions/error-handling.md
   - skills/definitions/step-skip-rule.md
+  - skills/definitions/recipe-pattern.md
   - skills/prompt-user/SKILL.md
 emits-exit-block: true
 exit-hands-to: "human: review the recipe diff, commit and push; the workflow uses the recipe on the next pipeline trigger"
@@ -142,49 +143,34 @@ mirroring the rule from `solution-architecture` and
 
 ### Section B — Lint rules (shared by all modes)
 
-**These rules define what counts as "thin shell". Used by Create
-to template, by Update to slim, by Audit to report.**
+The canonical pattern lives in
+`skills/definitions/recipe-pattern.md`. That file is the single
+source of truth for both the recipe template (used by Create) and
+the lint rules (used by Update and Audit). This skill does NOT
+restate the pattern — it loads it, points at it, and applies it.
 
-A recipe is **compliant** when:
+The lint algorithm:
 
-1. Top-level keys are limited to the canonical set:
-   `version`, `title`, `description`, `parameters`, `extensions`,
-   `settings`, `instructions`.
-2. `instructions:` block content fits the canonical template
-   (step 6 below). Specifically the `instructions:` block:
-   - References the SKILL.md by path exactly once.
-   - Contains AT MOST these sections, in this order:
-     - One-line role statement.
-     - Parameter resolution (≤ 5 lines).
-     - Active-repo resolution boilerplate (≤ 3 lines).
-     - "Follow the playbook in skills/<name>/SKILL.md" pointer.
-     - "Do NOT improvise steps" reminder.
+1. Read the recipe YAML.
+2. Verify top-level keys match the set documented in
+   `recipe-pattern.md` § "Required structure". Any extra key →
+   non-compliant.
+3. Walk the `instructions:` block against `recipe-pattern.md`
+   § "Anti-patterns". First-hit categories:
+   - Numbered step markers
+   - Inline `gh` commands beyond setup
+   - Inline git operations beyond status
+   - Decision keywords
+   - Sub-headings beyond context-only
+   - `prompt-user(` invocations
+   - Skill-internal terminology
 
-A recipe is **non-compliant** when its `instructions:` block
-contains ANY of the following anti-patterns:
+Any single anti-pattern hit flags the recipe as non-compliant.
+Surface ALL violations in lint reports — don't stop at the first.
 
-- **Numbered step markers**: lines matching `^\s*\d+\.\s`,
-  `^Step \d+`, `^## Step`, `^### Step`.
-- **Inline `gh` commands** beyond the active-repo resolver:
-  any `gh issue create`, `gh issue edit`, `gh issue close`,
-  `gh issue list`, `gh label`, `gh pr create`, `gh pr view`,
-  `gh api`, `gh release`.
-- **Inline git operations** beyond status checks: `git commit`,
-  `git checkout`, `git push`, `git merge`, `git branch -D`,
-  `git fetch origin <branch>`.
-- **Decision keywords** in agent-instruction context: lines
-  containing `If <condition> then`, `Branch on`, `raise <ERROR>`,
-  `verify the result`, `loop until passing`.
-- **Sub-headings beyond context-only**: `## Steps`, `## Verification`,
-  `## Error Handling`, `## Acceptance Criteria`,
-  `## Output Artefacts`, `## State Model`, `## Definitions`.
-- **Per-artefact prompts** or `prompt-user(` invocations.
-- **Skill-internal terminology**: anti-fabrication clause,
-  step-skip rule, per-revision diff, impact-delta — these are
-  skill-level disciplines and must live in the SKILL.md.
-
-The presence of ANY anti-pattern flags the recipe as
-non-compliant.
+When the pattern document and this skill disagree, the pattern
+document wins. Update `recipe-pattern.md` first; this skill picks
+up the change automatically since it loads the file.
 
 ---
 
@@ -217,55 +203,35 @@ non-compliant.
 5. **Read the skill's frontmatter. (create only)** Open
    `skills/<name>/SKILL.md` and extract:
    - `name` (sanity-check matches)
-   - `description` (used as recipe `description`)
-   - `triggers` (used to set `requirement: required` vs `optional`
-     on parameters)
-   - any frontmatter fields useful for the recipe shape
+   - `description` (used to author the recipe `description` in
+     User Story shape — see step 6)
+   - `triggers` — MUST be `automated` or `hybrid`; if it's
+     exclusively `human-interactive`, raise `INTERACTIVE_ONLY_SKILL`
+     (`ERROR`) and exit. Recipes wrap headless skills only.
 
    Hold as `<frontmatter>`.
 
-6. **Generate the recipe YAML. (create only)** Apply the canonical
-   template:
+6. **Generate the recipe YAML. (create only)** The canonical shape
+   is defined in `skills/definitions/recipe-pattern.md` § "Required
+   YAML structure" and § "The instructions block — canonical shape".
+   Follow it verbatim.
 
-   ```yaml
-   version: "1.0.0"
-   title: "<Human-readable session name from <frontmatter>.description>"
-   description: "<Single-sentence rephrase of <frontmatter>.description>. Triggered by <how the workflow fires this>."
-
-   parameters:
-     # Most recipes need at least one parameter (e.g. issue_number).
-     # Read the SKILL.md's "Inputs" or first step to figure out what
-     # the agent needs at session start. Each parameter is one entry:
-     - key: <name>
-       input_type: <string | number>
-       requirement: required
-       description: "<one-liner on what this parameter is>"
-
-   extensions:
-     - type: builtin
-       name: developer
-       display_name: Developer
-       timeout: 600
-       bundled: true
-
-   settings:
-     max_turns: 100
-
-   instructions: |
-     You are running the <skill-display-name> session.
-     Follow the playbook in `skills/<name>/SKILL.md` — read it in
-     full at session start and execute it. Do NOT improvise steps;
-     the skill is the authoritative playbook.
-
-     Parameter binding: <name the parameters from above and how
-     the skill consumes them>.
-
-     Resolve the active repo once via:
-       gh repo view --json nameWithOwner -q .nameWithOwner
-
-     If `docs/ARCHITECTURE.md` exists, the skill will read it; the
-     recipe does not.
-   ```
+   Key derivations from the skill:
+   - `title` — human-readable session name from the skill's
+     identity (e.g. "Feature Design").
+   - `description` — User Story format:
+     `"As the <name> agent, I want <action drawn from the skill's
+     Goal>, so that <outcome>."`
+     Cross-reference `recipe-pattern.md` § "The `description:`
+     field — User Story shape" for the shape.
+   - `parameters` — pick from the standardised vocabulary
+     documented in `recipe-pattern.md` § "Standardised parameter
+     vocabulary". Custom parameter names are forbidden. Read the
+     skill's first few steps to determine which canonical
+     parameters it consumes.
+   - `instructions` — apply the floor template from `recipe-pattern.md`
+     § "Default: single skill", weaving parameters inline. Skill is
+     referenced by NAME ONLY (no path).
 
    Walk the lint rules (Section B) over the generated YAML to
    confirm compliance before write. Any anti-pattern flagged →
@@ -518,6 +484,11 @@ candidate Requirement.
 - `INVALID_RECIPE_NAME` from step 3 (chosen name is not
   kebab-case or contains path separators) → severity `ERROR`;
   exit. Recipes follow the same naming as skills.
+- `INTERACTIVE_ONLY_SKILL` from step 5 (the named skill's
+  `triggers:` is exclusively `human-interactive`) → severity
+  `ERROR`; exit. Recipes wrap headless skills only. The human can
+  invoke an interactive skill directly via Claude Code without a
+  recipe.
 - `SKILL_NOT_FOUND` from step 3 (`skills/<name>/SKILL.md` does
   not exist) → severity `ERROR`; exit. Recipes wrap existing
   skills only — there is no "create a recipe for a skill that
