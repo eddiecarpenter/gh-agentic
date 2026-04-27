@@ -119,7 +119,7 @@ const rawDetailSeparator = "---"
 // requirement detail per the `--raw` contract:
 //
 //	number: 569
-//	stage: scheduled
+//	stage: ready-to-implement
 //	title: ...
 //	owning_repo: ...
 //	blocked_by:

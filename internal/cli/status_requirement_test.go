@@ -225,7 +225,7 @@ func TestRunStatusRequirement_RawVerbatimBody(t *testing.T) {
 		"```go\nfunc Resolve(ctx context.Context) (*Project, error) {\n    return nil, nil\n}\n```\n\n" +
 		"Steps: scope → design → develop → review."
 	issues := []projectstatus.ProjectIssue{
-		{Number: 569, Title: "Centralised project context resolution", Body: body, Stage: projectstatus.StageScheduled, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 569, Title: "Centralised project context resolution", Body: body, Stage: projectstatus.StageReadyToImplement, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 		// Two linked features so the linked_features header field is non-empty.
 		{Number: 571, Title: "feat: a", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
 		{Number: 572, Title: "feat: b", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
@@ -296,7 +296,7 @@ func TestRunStatusRequirement_RawVerboseInsertsTimestamps(t *testing.T) {
 		"```go\nfunc Resolve(ctx context.Context) (*Project, error) {\n    return nil, nil\n}\n```\n\n" +
 		"Steps: scope → design → develop → review."
 	issues := []projectstatus.ProjectIssue{
-		{Number: 569, Title: "Centralised project context resolution", Body: body, Stage: projectstatus.StageScheduled, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 569, Title: "Centralised project context resolution", Body: body, Stage: projectstatus.StageReadyToImplement, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 		{Number: 571, Title: "feat: a", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
 		{Number: 572, Title: "feat: b", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
 	}
@@ -329,7 +329,7 @@ func TestRunStatusRequirement_RawVerboseInsertsTimestamps(t *testing.T) {
 func TestRunStatusRequirement_VerboseWithoutRawIsNoOp(t *testing.T) {
 	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
 	issues := []projectstatus.ProjectIssue{
-		{Number: 569, Title: "t", Stage: projectstatus.StageScheduled, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 569, Title: "t", Stage: projectstatus.StageReadyToImplement, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
 	sd := requirementDetailFixture(issues, nil, nil)
 	bare := &bytes.Buffer{}

@@ -92,19 +92,38 @@ the archived flat-skill layout and need their own cleanup pass.
 
 ## Files that need updating in the Go CLI
 
-### Stage / status enum and parser
+### Stage / status enum and parser — DONE
 
-- `internal/projectstatus/types.go`
-  - `StageScheduled = "scheduled"` → `StageReadyToImplement = "ready-to-implement"` (rename const + value)
-  - `ParseStage`: match `"scheduled"` → match `"ready-to-implement"` (and `"ready to implement"` once `space → hyphen` normalisation runs)
-- `internal/projectstatus/types_test.go` — tests reference the old names
+- `internal/projectstatus/types.go` — `StageScheduled` renamed to
+  `StageReadyToImplement` (value `"ready-to-implement"`); new
+  `StageDesigned` (value `"designed"`) added; `ParseStage` updated.
+- `internal/projectstatus/types_test.go` — tests updated, including
+  spaced/hyphenated forms for both new stages.
 
-### Pipeline command
+### Pipeline command — DONE
 
-- `internal/cli/pipeline.go` — references `StageScheduled` in the stage-order list
-- `internal/cli/pipeline_test.go` — test fixtures
-- `internal/cli/status.go` — may reference `in-design` (unchanged) but check for related usage
-- `internal/cli/status_requirements_test.go` — fixtures
+- `internal/cli/pipeline.go` — `requirementPipelineColumns` updated.
+- `internal/cli/pipeline_test.go` — fixtures + render-string assertions
+  updated.
+- `internal/cli/status.go` — docstring updated.
+- `internal/cli/status_requirement.go` — docstring updated.
+- `internal/cli/status_requirement_test.go` — fixtures updated.
+- `internal/cli/testdata/status_raw/requirement_detail{,_verbose}.raw`
+  — golden files updated.
+
+### Stale frameworkcheck package — DELETED
+
+`internal/frameworkcheck/` was structural-test scaffolding for the
+OLD skill spec (capture-design-plan, ask-user, skill-creation,
+skill-categories, feature-scoping, plus a RULEBOOK proactive-rule
+test). Every test in the package referenced an archived/renamed
+skill file; none of the assertions apply to the rebuilt skills. The
+new spec is verified by the Python framework checks
+(`skills/skill-creator/scripts/verify-skill-mechanical.py` +
+`check-description-triggers.py`).
+
+If we want a Go-side guard that the new skill spec doesn't drift,
+that's a separate piece of work — not part of the Go CLI catch-up.
 
 ### init / check / repair
 

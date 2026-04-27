@@ -21,14 +21,15 @@ type Stage string
 // ParseStage when it cannot recognise the input — callers treat it as
 // "stage missing" rather than falling back to a guess.
 const (
-	StageBacklog       Stage = "backlog"
-	StageScoping       Stage = "scoping"
-	StageScheduled     Stage = "scheduled"
-	StageInDesign      Stage = "in-design"
-	StageInDevelopment Stage = "in-development"
-	StageInReview      Stage = "in-review"
-	StageDone          Stage = "done"
-	StageUnknown       Stage = ""
+	StageBacklog          Stage = "backlog"
+	StageScoping          Stage = "scoping"
+	StageReadyToImplement Stage = "ready-to-implement"
+	StageInDesign         Stage = "in-design"
+	StageDesigned         Stage = "designed"
+	StageInDevelopment    Stage = "in-development"
+	StageInReview         Stage = "in-review"
+	StageDone             Stage = "done"
+	StageUnknown          Stage = ""
 )
 
 // String returns the stage in canonical lower-kebab form.
@@ -52,10 +53,12 @@ func ParseStage(raw string) Stage {
 		return StageBacklog
 	case "scoping":
 		return StageScoping
-	case "scheduled":
-		return StageScheduled
+	case "ready-to-implement":
+		return StageReadyToImplement
 	case "in-design":
 		return StageInDesign
+	case "designed":
+		return StageDesigned
 	case "in-development":
 		return StageInDevelopment
 	case "in-review":

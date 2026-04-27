@@ -12,7 +12,7 @@ import (
 // the --include-done suffix behaviour.
 func TestColumnsForRequirements_OrderAndDone(t *testing.T) {
 	got := columnsForRequirements(false)
-	want := []projectstatus.Stage{projectstatus.StageBacklog, projectstatus.StageScoping, projectstatus.StageScheduled}
+	want := []projectstatus.Stage{projectstatus.StageBacklog, projectstatus.StageScoping, projectstatus.StageReadyToImplement}
 	if !equalStages(got, want) {
 		t.Errorf("columnsForRequirements(false) = %v, want %v", got, want)
 	}
@@ -160,15 +160,15 @@ func TestHorizontalPipeline_TopBorderHasLeadingDashBeforeLabel(t *testing.T) {
 	out := buf.String()
 	topLine := strings.SplitN(out, "\n", 2)[0]
 	// Each column header must be preceded by a horiz glyph: `┌─ backlog`
-	// for the first column, `┬─ scoping` and `┬─ scheduled` for the joins.
-	for _, want := range []string{"┌─ backlog", "┬─ scoping", "┬─ scheduled"} {
+	// for the first column, `┬─ scoping` and `┬─ ready-to-implement` for the joins.
+	for _, want := range []string{"┌─ backlog", "┬─ scoping", "┬─ ready-to-implement"} {
 		if !strings.Contains(topLine, want) {
 			t.Errorf("expected top border to contain %q; got:\n%s", want, topLine)
 		}
 	}
 	// And it must NOT contain the broken form (label directly after the
 	// corner / join with no leading dash).
-	for _, bad := range []string{"┌ backlog", "┬ scoping", "┬ scheduled"} {
+	for _, bad := range []string{"┌ backlog", "┬ scoping", "┬ ready-to-implement"} {
 		if strings.Contains(topLine, bad) {
 			t.Errorf("unexpected unspaced form %q in top border:\n%s", bad, topLine)
 		}
@@ -187,7 +187,7 @@ func TestHorizontalPipeline_TopBorderHasLeadingDashASCII(t *testing.T) {
 		t.Fatalf("writeHorizontalPipeline: %v", err)
 	}
 	topLine := strings.SplitN(buf.String(), "\n", 2)[0]
-	for _, want := range []string{"+- backlog", "+- scoping", "+- scheduled"} {
+	for _, want := range []string{"+- backlog", "+- scoping", "+- ready-to-implement"} {
 		if !strings.Contains(topLine, want) {
 			t.Errorf("expected ASCII top border to contain %q; got:\n%s", want, topLine)
 		}

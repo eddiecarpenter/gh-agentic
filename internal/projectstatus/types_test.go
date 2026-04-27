@@ -17,10 +17,13 @@ func TestParseStage_AllKnownForms(t *testing.T) {
 		{name: "Backlog title", input: "Backlog", expected: StageBacklog},
 		{name: "  Backlog  whitespace", input: "  Backlog  ", expected: StageBacklog},
 		{name: "scoping", input: "Scoping", expected: StageScoping},
-		{name: "scheduled", input: "Scheduled", expected: StageScheduled},
+		{name: "ready-to-implement hyphenated", input: "ready-to-implement", expected: StageReadyToImplement},
+		{name: "Ready to Implement spaced", input: "Ready to Implement", expected: StageReadyToImplement},
 		{name: "in design with space", input: "In Design", expected: StageInDesign},
 		{name: "in-design hyphenated", input: "in-design", expected: StageInDesign},
 		{name: "IN DESIGN upper", input: "IN DESIGN", expected: StageInDesign},
+		{name: "designed lower", input: "designed", expected: StageDesigned},
+		{name: "Designed title", input: "Designed", expected: StageDesigned},
 		{name: "in development space", input: "In Development", expected: StageInDevelopment},
 		{name: "in-development hyphenated", input: "in-development", expected: StageInDevelopment},
 		{name: "in review space", input: "In Review", expected: StageInReview},
@@ -64,8 +67,8 @@ func TestParseStage_UnknownInputs(t *testing.T) {
 
 // TestStage_String_ReturnsCanonicalForm verifies the String method round-trips.
 func TestStage_String_ReturnsCanonicalForm(t *testing.T) {
-	cases := []Stage{StageBacklog, StageScoping, StageScheduled, StageInDesign,
-		StageInDevelopment, StageInReview, StageDone}
+	cases := []Stage{StageBacklog, StageScoping, StageReadyToImplement, StageInDesign,
+		StageDesigned, StageInDevelopment, StageInReview, StageDone}
 	for _, s := range cases {
 		got := s.String()
 		if got != string(s) {
