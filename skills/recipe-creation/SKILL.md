@@ -447,7 +447,8 @@ up the change automatically since it loads the file.
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/recipe-creation/SKILL.md
@@ -455,30 +456,6 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/recipe
 ```
 
 Pass criteria: both commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present`, `frontmatter_required_fields`,
-  `frontmatter_name_valid`, `description_within_length_limit`,
-  `description_assertive`, `description_third_person`,
-  `references_resolve`.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `recipe-creation`.
-
-### Self-application
-
-A future enhancement: a Go-side or Python-side lint that re-applies
-the Section B rules to every `recipes/*.yaml` and fails CI on
-non-compliance. Out of scope for this skill itself; tracked as a
-candidate Requirement.
-
 ## Error Handling
 
 - `INVALID_RECIPE_NAME` from step 3 (chosen name is not

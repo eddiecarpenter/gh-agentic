@@ -129,3 +129,93 @@ It does not apply to:
   are setup verification, not change verification.
 - Logging/telemetry assertions — these are observability, not
   fidelity.
+
+## Section format — the canonical `## Verification` stanza
+
+Every skill that loads this definition replaces its `## Verification`
+section with the canonical stanza below. The framework's two scripts
+(`verify-skill-mechanical.py`, `check-description-triggers.py`) and
+the universal check list are described here so each consumer skill
+need not restate them.
+
+### Canonical stanza
+
+```markdown
+## Verification
+
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
+
+\`\`\`bash
+python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/<name>/SKILL.md
+python3 skills/skill-creator/scripts/check-description-triggers.py skills/<name>/SKILL.md
+\`\`\`
+
+Pass criteria: both commands exit 0.
+```
+
+Replace `<name>` with the skill's directory name. The two script
+invocations are skill-specific because the path argument names the
+skill's own SKILL.md — they cannot be hoisted into the definition.
+
+### What the two scripts check (universal — do not restate per skill)
+
+`verify-skill-mechanical.py` runs the following mechanical checks
+on every skill:
+
+- `all_sections_present` — every mandatory section heading exists
+  (Goal, Output Artefacts, Definitions, Dependencies, Steps,
+  Verification, Error Handling).
+- `frontmatter_required_fields(name, description, triggers, loads)`.
+- `frontmatter_name_valid` — kebab-case, matches the file's
+  parent-directory name.
+- `description_within_length_limit` — ≤ 1024 chars.
+- `description_assertive` — contains "Use when" plus an assertive
+  clause directing when the skill should fire.
+- `description_third_person` — written about the skill, not in
+  first-person voice.
+- `references_resolve` — every `loads:` path resolves to an
+  existing file.
+
+`check-description-triggers.py` runs the following ground-truth
+check:
+
+- `description_triggers_appropriately` — the skill's `description:`
+  classifies the canonical phrasings (per the `GROUND_TRUTH` entry
+  for the skill) into trigger / no-trigger correctly.
+
+Consumer skills do not list these bullets in their own Verification
+sections. The canonical stanza above is the entire body for any
+skill whose verification is exactly the framework checks.
+
+### Skill-specific extensions
+
+A skill MAY append a "Skill-specific extension" subsection after
+the canonical stanza when it has additional verification beyond the
+framework checks (e.g., a CI-enforced sync test, a domain-specific
+fixture, a benchmark threshold). Format:
+
+```markdown
+### Skill-specific extension
+
+<one paragraph naming the extra check, what it covers, and how to
+run it. Followed by the command in a fenced code block.>
+
+\`\`\`bash
+<command>
+\`\`\`
+
+Pass criteria: <when this check passes>.
+```
+
+Examples in the live framework:
+
+- `gh-agentic/SKILL.md` adds the `TestGhAgenticToolSkillCoversCLI`
+  Go test as a CI-enforced sync check.
+- `skill-creator/SKILL.md` adds skill-creator-specific mechanical
+  bullets that don't apply to other skills.
+
+The extension is *additive* — never copy the universal-check bullets
+into the skill-specific extension. If a check applies to every
+skill, it lives in this definition; if it applies only to one
+skill, it goes in that skill's extension.

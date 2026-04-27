@@ -438,7 +438,8 @@ authors use this login.
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/pr-review-session/SKILL.md
@@ -446,26 +447,6 @@ python3 skills/skill-creator/scripts/check-description-triggers.py skills/pr-rev
 ```
 
 Pass criteria: both commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present` — every mandatory section heading exists.
-- `frontmatter_required_fields(name, description, triggers, loads)`.
-- `frontmatter_name_valid` — kebab-case, matches filename.
-- `description_within_length_limit` — ≤ 1024 chars.
-- `description_assertive` — contains "Use when" + assertive clause.
-- `description_third_person`.
-- `references_resolve` — every `loads:` path resolves to a file.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `pr-review-session`.
-
 ## Error Handling
 
 - `INVALID_REVIEW_STATE` from steps 2–3 (PR not open, head branch

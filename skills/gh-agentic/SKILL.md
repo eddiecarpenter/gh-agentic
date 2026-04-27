@@ -415,48 +415,31 @@ Bypass via `--skip-app-install`.
 
 ## Verification
 
-Run the framework checks against this skill:
+Per `skills/definitions/verification-procedure.md` "Section format".
+Skill-specific commands:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/gh-agentic/SKILL.md
 python3 skills/skill-creator/scripts/check-description-triggers.py skills/gh-agentic/SKILL.md
 ```
 
-Plus the live CI sync check:
+Pass criteria: both commands exit 0.
+
+### Skill-specific extension
+
+This skill is the only one with a CI-enforced sync check between
+its body and the live CLI surface. Run alongside the framework
+checks:
 
 ```bash
 go test ./internal/... -run TestGhAgenticToolSkillCoversCLI
 ```
 
-Pass criteria: all three commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- `all_sections_present`, `frontmatter_required_fields`,
-  `frontmatter_name_valid`, `description_within_length_limit`,
-  `description_assertive`, `description_third_person`,
-  `references_resolve`.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py`:
-
-- `description_triggers_appropriately` — phrasings classified per
-  the `GROUND_TRUTH` entry for `gh-agentic`.
-
-### CI-enforced sync check
-
-Run by `TestGhAgenticToolSkillCoversCLI` in the Go test suite:
-
-- Every cobra command path is mentioned by name in this skill's
-  Command Reference.
-- Every declared flag is mentioned for its command.
-- Removed commands/flags are not mentioned (false positives caught).
-
-If the test fails, the CLI surface drifted. Update this skill in
-the same PR as the CLI change.
+Pass criteria: exit 0. The test asserts every cobra command path
+and flag is mentioned in this skill's Command Reference, and that
+removed commands/flags are not mentioned. If it fails, the CLI
+surface drifted; update this skill in the same PR as the CLI
+change.
 
 ## Error Handling
 
