@@ -9,6 +9,8 @@ loads:
   - skills/definitions/step-skip-rule.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
+  - skills/apply-label/SKILL.md
+  - skills/set-issue-status/SKILL.md
   - skills/post-issue-comment/SKILL.md
   - skills/trigger-implementation/SKILL.md
 emits-exit-block: true
@@ -131,7 +133,13 @@ the work.
   used in headless mode.
 - `skills/gh-agentic/SKILL.md` — used in step 2 to query the
   Feature's full state (`gh agentic status feature <N> --raw`),
-  and in step 4's re-run detection.
+  and in step 4's re-run / concurrency detection.
+- `skills/apply-label/SKILL.md` — used in step 4 to apply the
+  `design-in-progress` beacon and in step 18 / cancel paths to
+  remove it; also used to transition `interactive-design` →
+  `designed` in the parked-exit branch of step 18.
+- `skills/set-issue-status/SKILL.md` — used in step 18's parked
+  branch to set project status to `Designed`.
 - `skills/post-issue-comment/SKILL.md` — used in step 11 to post
   the rationale.
 - `skills/trigger-implementation/SKILL.md` — used at end-of-flow
@@ -247,7 +255,46 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
      step 4 will surface a cleaner Output B; this check is the
      defensive guard for outright corruption.
 
-4. **Re-run safety check (fail softly).** Detect prior-run artefacts:
+4. **Entry guards.** Two checks fire in order before any work:
+
+   **4a. Concurrency check.** Look for the `design-in-progress`
+   label. The label is a beacon: while set, another session is —
+   or recently was — actively designing this Feature.
+
+   ```bash
+   gh issue view <N> --repo <active-repo> --json labels \
+     --jq '[.labels[].name] | index("design-in-progress")'
+   ```
+
+   - **Headless** + label set → another session is running. Exit
+     cleanly with Output B variant: "Another design session is in
+     flight; this run is a no-op." Do NOT remove the label (it
+     belongs to the other session).
+   - **Interactive** + label set → render the warning:
+     ```
+     ⚠ design-in-progress is set on this Feature. Another session
+        (workflow run or a separate human session) may be actively
+        designing it. Continuing will likely cause conflicts.
+     ```
+     Then `prompt-user`:
+     ```
+     prompt-user(
+       question: "Another design session may be in progress. Continue anyway?",
+       header: "Concurrent design detected",
+       options: [
+         {label: "Continue anyway",
+          description: "I know the other session is dead or stuck. Proceed."},
+         {label: "Cancel",
+          description: "Exit; the other session keeps its claim."}
+       ]
+     )
+     ```
+     - Continue → fall through to 4b. Step 4c will re-claim the slot.
+     - Cancel → exit cleanly (Output E variant); do NOT remove the
+       label.
+   - Label not set → continue to 4b.
+
+   **4b. Re-run safety check (fail softly).** Detect prior-run artefacts:
 
    - Rationale comment already posted:
      ```bash
@@ -285,6 +332,23 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
      to clean up the prior artefacts manually first.
      ```
      Exit cleanly (Output B variant).
+
+   **4c. Claim the slot.** Apply the `design-in-progress` label to
+   mark this session as the active designer:
+
+   ```
+   apply-label(repo=<active-repo>, issue=<N>,
+               add=["design-in-progress"], remove=[])
+   ```
+
+   On failure → raise `INVALID_DESIGN_STATE` (`ERROR`); exit before
+   any further work. The label is the lock; without it we cannot
+   guarantee single-writer semantics.
+
+   From this point on, every exit path (success, parked, error,
+   cancel) MUST remove the label as part of its cleanup. See step
+   18 for the happy-path removal and the Error Handling section
+   for the failure-path rule.
 
 5. **Architecture context.** Read `docs/ARCHITECTURE.md` if it
    exists; hold its contents as Slice SA context for the rationale.
@@ -566,7 +630,19 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
 
 ### Section F — Exit
 
-18. **Hand off to implementation.**
+18. **Release the slot, then hand off to implementation.**
+
+    Before any label transition below, remove the
+    `design-in-progress` claim:
+
+    ```
+    apply-label(repo=<active-repo>, issue=<N>,
+                add=[], remove=["design-in-progress"])
+    ```
+
+    Failures here are surfaced as a `WARN` and do not block exit —
+    the design work itself is complete. The stale label can be
+    cleared by the human if it sticks.
 
     **Headless mode** → invoke directly:
 
@@ -743,6 +819,13 @@ Run by `check-description-triggers.py`:
   the `GROUND_TRUTH` entry for `feature-design`.
 
 ## Error Handling
+
+**Slot-release rule (universal).** Every error path AND every
+cancel path that fires AFTER step 4c (the label was claimed) MUST
+attempt to remove `design-in-progress` before exit, on a best-effort
+basis. If the removal itself fails, surface it as a `WARN` and exit
+anyway — the original error is what matters; a stuck beacon is a
+secondary concern the human can clear by hand.
 
 - `INVALID_DESIGN_STATE` from steps 2–3 (Feature missing, not a
   Feature, wrong/multiple/missing trigger labels) → severity

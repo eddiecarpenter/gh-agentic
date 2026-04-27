@@ -34,6 +34,7 @@ before this branch can be deployed in any domain repo:
 | `needs-ux-design` | `needs-interactive-design` | Classification: design must run interactively |
 | (none) | `interactive-design` | New trigger label, parallel to `in-design` |
 | (none) | `designed` | Feature parked state — design complete, awaiting `trigger-implementation`. Only set when interactive feature-design ends with the "Stop here" choice. Headless and trigger-now paths skip this label. |
+| (none) | `design-in-progress` | Concurrency beacon for `feature-design`. Applied at session entry, removed on exit (success, parked, error, or cancel). A second session sees this label and refuses to compete (headless) or warns the human and asks before continuing (interactive). |
 
 ### Project Status field options (additions)
 
