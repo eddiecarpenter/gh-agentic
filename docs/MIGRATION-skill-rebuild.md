@@ -33,6 +33,13 @@ before this branch can be deployed in any domain repo:
 | `scheduled` | `ready-to-implement` | Requirement lifecycle label |
 | `needs-ux-design` | `needs-interactive-design` | Classification: design must run interactively |
 | (none) | `interactive-design` | New trigger label, parallel to `in-design` |
+| (none) | `designed` | Feature parked state — design complete, awaiting `trigger-implementation`. Only set when interactive feature-design ends with the "Stop here" choice. Headless and trigger-now paths skip this label. |
+
+### Project Status field options (additions)
+
+| Old | New |
+|---|---|
+| (none) | `Designed` — paired with the `designed` label above |
 
 ### Skill name (path/dir)
 
