@@ -81,7 +81,7 @@ func TestRunAllChecks_HealthyRepo(t *testing.T) {
 					return "some-value", nil
 				}
 				if args[0] == "secret" && args[1] == "list" {
-					return "GOOSE_AGENT_PAT\tUpdated 2026-04-01", nil
+					return "AGENTIC_APP_PRIVATE_KEY\tUpdated 2026-04-01\nPROJECT_PAT\tUpdated 2026-04-01\nCLAUDE_CREDENTIALS_JSON\tUpdated 2026-04-01", nil
 				}
 			}
 			return "", nil
@@ -560,7 +560,7 @@ func (r *ghRun) fn() func(string, ...string) (string, error) {
 func TestCheckSecret_Federated_SecretAtOrgOnly_Pass(t *testing.T) {
 	r := &ghRun{
 		Outputs: map[string]string{
-			"secret|--org": "GOOSE_AGENT_PAT\tUpdated 2026-04-01",
+			"secret|--org": "PROJECT_PAT\tUpdated 2026-04-01",
 			// repo listing returns nothing
 		},
 	}
@@ -568,7 +568,7 @@ func TestCheckSecret_Federated_SecretAtOrgOnly_Pass(t *testing.T) {
 		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
 		Run: r.fn(),
 	}
-	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	res := checkSecret(deps, "PROJECT_PAT")
 	if res.Status != Pass {
 		t.Fatalf("got %d (%s), want Pass — calls: %v", res.Status, res.Message, r.Calls)
 	}
@@ -578,7 +578,7 @@ func TestCheckSecret_Federated_SecretAtRepoOnly_Pass(t *testing.T) {
 	// Pass-and-overlap is fine here; shadow is a separate check (#532).
 	r := &ghRun{
 		Outputs: map[string]string{
-			"secret|--repo": "GOOSE_AGENT_PAT\tUpdated 2026-04-01",
+			"secret|--repo": "PROJECT_PAT\tUpdated 2026-04-01",
 			// org listing returns nothing
 		},
 	}
@@ -586,7 +586,7 @@ func TestCheckSecret_Federated_SecretAtRepoOnly_Pass(t *testing.T) {
 		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
 		Run: r.fn(),
 	}
-	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	res := checkSecret(deps, "PROJECT_PAT")
 	if res.Status != Pass {
 		t.Fatalf("got %d (%s), want Pass", res.Status, res.Message)
 	}
@@ -598,11 +598,11 @@ func TestCheckSecret_Federated_SecretAtNeither_FailWithOrgRemediation(t *testing
 		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
 		Run: r.fn(),
 	}
-	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	res := checkSecret(deps, "PROJECT_PAT")
 	if res.Status != Fail {
 		t.Fatalf("got %d (%s), want Fail", res.Status, res.Message)
 	}
-	wantHint := "gh secret set GOOSE_AGENT_PAT --org acme"
+	wantHint := "gh secret set PROJECT_PAT --org acme"
 	if res.Remediation != wantHint {
 		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
 	}
@@ -626,14 +626,14 @@ func TestCheckSecret_Federated_SecretAtNeither_FailWithOrgRemediation(t *testing
 func TestCheckSecret_Single_SecretAtRepo_Pass(t *testing.T) {
 	r := &ghRun{
 		Outputs: map[string]string{
-			"secret|--repo": "GOOSE_AGENT_PAT\tUpdated 2026-04-01",
+			"secret|--repo": "PROJECT_PAT\tUpdated 2026-04-01",
 		},
 	}
 	deps := CheckDeps{
 		RepoFullName: "eddie/repo", Owner: "eddie", Topology: "single",
 		Run: r.fn(),
 	}
-	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	res := checkSecret(deps, "PROJECT_PAT")
 	if res.Status != Pass {
 		t.Fatalf("got %d (%s), want Pass", res.Status, res.Message)
 	}
@@ -652,18 +652,18 @@ func TestCheckSecret_Single_SecretAtOrgOnly_Fail(t *testing.T) {
 	// the check treats it as not-configured for this repo.
 	r := &ghRun{
 		Outputs: map[string]string{
-			"secret|--org": "GOOSE_AGENT_PAT\tUpdated 2026-04-01",
+			"secret|--org": "PROJECT_PAT\tUpdated 2026-04-01",
 		},
 	}
 	deps := CheckDeps{
 		RepoFullName: "eddie/repo", Owner: "eddie", Topology: "single",
 		Run: r.fn(),
 	}
-	res := checkSecret(deps, "GOOSE_AGENT_PAT")
+	res := checkSecret(deps, "PROJECT_PAT")
 	if res.Status != Fail {
 		t.Fatalf("got %d (%s), want Fail", res.Status, res.Message)
 	}
-	wantHint := "gh secret set GOOSE_AGENT_PAT --repo eddie/repo"
+	wantHint := "gh secret set PROJECT_PAT --repo eddie/repo"
 	if res.Remediation != wantHint {
 		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
 	}
@@ -730,7 +730,7 @@ func TestCheckShadowVars_Federated_NoShadows_Pass(t *testing.T) {
 	r := shadowScenario{
 		// Shared name present only at org — correct federated placement.
 		VarOrg: "AGENT_USER\tvalue",
-		SecOrg: "GOOSE_AGENT_PAT\tupdated",
+		SecOrg: "PROJECT_PAT\tupdated",
 	}.ghRun()
 	deps := CheckDeps{
 		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
@@ -780,8 +780,8 @@ func TestCheckShadowVars_Federated_VariableShadow_FailWithDeleteCommand(t *testi
 
 func TestCheckShadowVars_Federated_SecretShadow_FailWithDeleteCommand(t *testing.T) {
 	r := shadowScenario{
-		SecRepo: "GOOSE_AGENT_PAT\tshadow",
-		SecOrg:  "GOOSE_AGENT_PAT\ttrue-value",
+		SecRepo: "PROJECT_PAT\tshadow",
+		SecOrg:  "PROJECT_PAT\ttrue-value",
 	}.ghRun()
 	deps := CheckDeps{
 		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
@@ -792,10 +792,10 @@ func TestCheckShadowVars_Federated_SecretShadow_FailWithDeleteCommand(t *testing
 	if !ok || len(data) != 1 {
 		t.Fatalf("expected 1 shadow, got %v", g.Results[0].Data)
 	}
-	if data[0].Kind != "secret" || data[0].Name != "GOOSE_AGENT_PAT" {
-		t.Errorf("got %+v, want secret/GOOSE_AGENT_PAT", data[0])
+	if data[0].Kind != "secret" || data[0].Name != "PROJECT_PAT" {
+		t.Errorf("got %+v, want secret/PROJECT_PAT", data[0])
 	}
-	wantCmd := "gh secret delete --repo acme/cp GOOSE_AGENT_PAT"
+	wantCmd := "gh secret delete --repo acme/cp PROJECT_PAT"
 	if data[0].DeleteCommand != wantCmd {
 		t.Errorf("delete command: got %q, want %q", data[0].DeleteCommand, wantCmd)
 	}
@@ -805,8 +805,8 @@ func TestCheckShadowVars_Federated_MixedShadows_AllListed(t *testing.T) {
 	r := shadowScenario{
 		VarRepo: "AGENT_USER\tx\nRUNNER_LABEL\ty",
 		VarOrg:  "AGENT_USER\tx\nRUNNER_LABEL\ty",
-		SecRepo: "GOOSE_AGENT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
-		SecOrg:  "GOOSE_AGENT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
+		SecRepo: "PROJECT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
+		SecOrg:  "PROJECT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
 	}.ghRun()
 	deps := CheckDeps{
 		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",

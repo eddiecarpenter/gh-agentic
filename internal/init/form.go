@@ -273,8 +273,8 @@ func collectCredentialsAndProject(cfg *InitConfig, runForm FormRunFunc) error {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("GOOSE_AGENT_PAT").
-				Description("GitHub PAT for the agent user (scopes: repo, workflow, read:org)").
+				Title("PROJECT_PAT").
+				Description("Personal Access Token for Projects v2 mutations (scopes: repo, project, read:org)").
 				Value(&cfg.GooseAgentPAT).
 				EchoMode(huh.EchoModePassword),
 			huh.NewInput().

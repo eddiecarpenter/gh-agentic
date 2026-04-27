@@ -89,8 +89,8 @@ func TestRun_Success(t *testing.T) {
 	if !strings.Contains(output, "AGENT_USER saved") {
 		t.Error("expected AGENT_USER to be configured")
 	}
-	if !strings.Contains(output, "GOOSE_AGENT_PAT saved") {
-		t.Error("expected GOOSE_AGENT_PAT to be configured")
+	if !strings.Contains(output, "PROJECT_PAT saved") {
+		t.Error("expected PROJECT_PAT to be configured")
 	}
 	if !strings.Contains(output, "CLAUDE_CREDENTIALS_JSON saved") {
 		t.Error("expected CLAUDE_CREDENTIALS_JSON to be configured")
@@ -220,8 +220,8 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 		if strings.Contains(cmd, "AGENT_USER") {
 			found["AGENT_USER"] = true
 		}
-		if strings.Contains(cmd, "GOOSE_AGENT_PAT") {
-			found["GOOSE_AGENT_PAT"] = true
+		if strings.Contains(cmd, "PROJECT_PAT") {
+			found["PROJECT_PAT"] = true
 		}
 		if strings.Contains(cmd, "CLAUDE_CREDENTIALS_JSON") {
 			found["CLAUDE_CREDENTIALS_JSON"] = true
@@ -231,7 +231,7 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"AGENT_USER", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON", "AGENTIC_PROJECT_ID"} {
+	for _, expected := range []string{"AGENT_USER", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON", "AGENTIC_PROJECT_ID"} {
 		if !found[expected] {
 			t.Errorf("expected %s to be configured", expected)
 		}
@@ -414,7 +414,7 @@ func TestConfigureRepo_Federated_SharedNames_RouteToOrg(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	shared := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON"}
+	shared := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON"}
 	for _, name := range shared {
 		args, ok := (*captured)[name]
 		if !ok {
@@ -461,7 +461,7 @@ func TestConfigureRepo_Single_AllNames_StayAtRepo(t *testing.T) {
 
 	all := []string{
 		"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL",
-		"GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON",
+		"PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON",
 		"AGENTIC_PROJECT_ID",
 	}
 	for _, name := range all {
