@@ -162,6 +162,25 @@ Hold as `<tag>` and `<repo>`.
    | `Merge pull request ...` | Omit |
    | Auto-bump / sync / no-prefix junk commits | Omit |
 
+   **Specific automated-commit patterns to omit** (release notes
+   are for human-visible changes; these are tooling noise):
+
+   - `Merge pull request #...` and `Merge branch ...`
+   - `chore: update TEMPLATE_VERSION ...`
+   - `chore: update AGENTIC_FRAMEWORK_VERSION ...`
+   - `chore: sync ...` (any sync commit from the framework mount
+     or a downstream mirror operation)
+   - `chore: bump ...` (version-bump-only commits)
+   - `chore: archive recovery log for #...` (the dev-session's
+     end-of-session bookkeeping commit; not human-visible)
+   - `chore: recovery checkpoint — ...` (the dev-session's
+     mid-task breadcrumb commits; not human-visible)
+   - Commits with no conventional-commits prefix and no clear
+     human content (e.g. `WIP`, `fixup`, `temp`)
+
+   When in doubt, omit. A release-note bullet for tooling noise
+   adds nothing for the human reader.
+
    For each retained commit, write a one-sentence, present-tense
    bullet that answers "what changed and why it matters" — NOT
    "what was the commit message". Examples:

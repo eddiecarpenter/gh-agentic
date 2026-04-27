@@ -126,6 +126,26 @@ exact mutation. Human-in-the-loop is the entire point — bulk
    Resolve the active repo per the rule above and hold as
    `<active-repo>`.
 
+   **Branch-safety check.** Some remediations in this skill touch
+   the local working tree (deleting branches, possibly closing
+   issues that auto-update branches via gh hooks). The agent MUST
+   refuse to operate from `main` to prevent any chance of
+   accidental main-branch mutations.
+
+   ```bash
+   git branch --show-current
+   ```
+
+   - Result `main` (or `master`) → exit cleanly with a clear
+     remediation message:
+     ```
+     This skill refuses to run on main. Switch to a branch first
+     (e.g. `git checkout -b chore/recovery-<timestamp>`), then
+     re-invoke /foreground-recovery.
+     ```
+     No prompt, no scan, no mutations.
+   - Anything else → continue. Hold the branch name as `<branch>`.
+
 2. **Pick mode.** Ask the human:
 
    ```

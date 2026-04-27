@@ -52,6 +52,20 @@ The outcome is recorded as a `Reuse:` trailer on the commit (see §4).
 The project's build must pass cleanly before the commit. Same rule as
 tests: fix-before-commit, no cap on attempts, raise and exit if stuck.
 
+**Stack-aware build/test commands.** The exact `build` and `test`
+invocations differ per stack (Go: `go build ./... && go test ./...`;
+Node: `npm run build && npm test`; Python: `pytest`; etc.). The
+canonical commands for the project's stack live in
+`standards/<stack>.md` (or `base/standards/<stack>.md` when mounted
+under `.ai/`). The stack identifier is set in `LOCALRULES.md` under
+`Stack:`.
+
+The agent MUST consult the matching standards file at the start of
+each code-touching session to pick the correct commands; it MUST
+NOT guess. If `standards/<stack>.md` is missing for the configured
+stack, raise `STACK_STANDARDS_MISSING` and exit — running tests with
+the wrong runner is worse than not running them.
+
 ## 4. Commit format
 
 Conventional-commits prefix; descriptive subject; optional body;

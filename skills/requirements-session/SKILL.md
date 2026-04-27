@@ -166,6 +166,13 @@ conditional. Every other step is mandatory.
    banner, the repo resolution, *and* the precondition check — all
    three are already done — and resume from step 2.
 
+   **Project context read (optional).** When `docs/PROJECT_BRIEF.md`
+   is present, read it into working memory — it sharpens vocabulary
+   and gives the agent grounded reference for what's in scope. Skip
+   silently if missing. Hold the contents available for reference;
+   do NOT quote them verbatim into Requirement bodies (they're
+   context, not source).
+
 2. **Survey existing requirements and offer to continue one.** Query
    the active repo's open requirements for context (used in step 4
    for informational duplicate articulation, and below to offer

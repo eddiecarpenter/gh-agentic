@@ -548,7 +548,18 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
 ### Section E — Tasks
 
 15. **Generate the task list.** From the rationale's "Task Breakdown
-    Rationale" section, expand each task to a full body:
+    Rationale" section, expand each task to a full body. Every task
+    must declare which Feature acceptance criterion (or criteria)
+    it satisfies — the link from a task back to the Feature's AC
+    is the basis for the coverage gate in step 15a and the
+    AC-verification gate at the end of dev-session.
+
+    **Read the Feature's Acceptance Criteria first.** Re-read the
+    Feature issue body, locate the `## Acceptance Criteria` section,
+    and list each criterion as `AC-1`, `AC-2`, ... `AC-N`. Each
+    task body MUST cite at least one AC by its index.
+
+    Task body shape:
 
     ```markdown
     ## Task <K> of <M>
@@ -560,11 +571,15 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
     <2–4 sentences on what this task delivers and why it's
      this size / at this point in the order.>
 
-    ## Acceptance hint
+    ## Acceptance Criteria
 
-    <One or two outcome-shaped statements describing what
-     "done" looks like for this task — derived from, but
-     narrower than, the Feature's full Acceptance Criteria.>
+    - [ ] <Testable, outcome-shaped condition 1 for THIS task>
+    - [ ] <Condition 2>
+    - [ ] Tests pass
+
+    **Satisfies feature acceptance criteria:** AC-<K1>, AC-<K2>
+    <Indices into the Feature's AC list. At least one entry is
+     mandatory; multiple are allowed when a task spans criteria.>
 
     ## Notes
 
@@ -574,7 +589,29 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
     ```
 
     `K` and `M` are stable — task #1 of M, task #2 of M, in the
-    intended execution order.
+    intended execution order. The checkbox-formatted Acceptance
+    Criteria are the dev-session's Definition of Done for the
+    task; the `Satisfies feature acceptance criteria:` line is the
+    traceability backstop ensuring no Feature AC is left uncovered.
+
+15a. **Acceptance-coverage gate.** Before continuing to step 16,
+    verify that every Feature acceptance criterion (`AC-1` through
+    `AC-N`) is cited by at least one task's `Satisfies feature
+    acceptance criteria:` line.
+
+    Walk the task list; build the union set of AC indices cited.
+    Compute `<uncovered>` = Feature AC indices not in the union.
+
+    - **`<uncovered>` empty** → continue to step 16.
+    - **`<uncovered>` non-empty** → the task list does not cover
+      every Feature AC. Render the uncovered criteria to the human
+      (interactive) or log them and add an extra task that covers
+      them (headless), then re-run the coverage check. Do NOT
+      proceed to issue creation with uncovered AC — the dev-session
+      will not be able to mark the Feature complete.
+
+    The gate is non-negotiable: a Feature whose AC are not 1:1
+    traceable to tasks is malformed.
 
 16. **Confirm task list. (interactive only)** Render each task as
     a fenced markdown block prefaced by `Task K of M (title):`,
@@ -609,9 +646,14 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
     gh issue create \
       --repo "<active-repo>" \
       --title "Task <K>: <task-title>" \
-      --label "task" \
+      --label "task,backlog" \
       --body-file <path-to-task-body-file>
     ```
+
+    The `backlog` label pairs with `task` so each task carries the
+    same lifecycle-state convention as Requirements and Features
+    on creation. The dev-session does NOT close tasks until each
+    has a corresponding commit landed.
 
     Capture the issue number `<T_K>`. Wire as a sub-issue of the
     parent Feature using the same GraphQL pattern as
@@ -625,6 +667,14 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
     ```bash
     gh issue view <T_K> --repo <active-repo> --json labels,title --jq .
     ```
+
+    **CRITICAL: Do NOT close task issues after creating them.**
+    Tasks remain open until the dev-session commits and closes
+    each one in turn. Premature closure breaks the dev-session's
+    open-vs-closed cursor (the resume mechanism) and leaves the
+    Feature stuck in a state where dev cannot reliably tell which
+    tasks were genuinely completed vs accidentally closed at design
+    time. This rule is non-negotiable.
 
 ---
 

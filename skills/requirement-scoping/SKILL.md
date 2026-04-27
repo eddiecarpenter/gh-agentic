@@ -322,6 +322,20 @@ on it:
    requirements-session boundary. Proceeding without
    ARCHITECTURE.md is a degraded mode the human is choosing.
 
+   **Project context reads.** Two further repo-root files inform
+   the scoping conversation when present; read each if it exists,
+   skip silently if not (they are optional, not load-bearing):
+
+   - `docs/PROJECT_BRIEF.md` — the project's high-level brief
+     (one level above ARCHITECTURE.md). Use for vocabulary
+     alignment when discussing capability domains.
+   - `AGENTS.md` — repo-specific agent rules and project metadata
+     loaded at session bootstrap. Already in scope via the
+     bootstrap auto-load; this is a reminder not to re-read.
+
+   Hold the contents available for reference; do NOT quote them
+   verbatim into Feature bodies (they're context, not source).
+
 2. **Pick the parent Requirement.** Query the active repo's
    Requirements:
 
@@ -956,6 +970,25 @@ prompt-user(
     ```
 
     Exit with `ISSUE_CREATION_FAILED`.
+
+18a. **Add each Feature to the GitHub Project.** For each created
+    Feature `<F>`, add it to the project board so it appears in
+    pipeline / kanban views. The project ID lives in
+    `AGENTIC_PROJECT_ID`; the project number is the trailing
+    integer of the project URL.
+
+    ```bash
+    gh project item-add <project-number> \
+      --owner "${active_repo%/*}" \
+      --url "https://github.com/<active-repo>/issues/<F>"
+    ```
+
+    On failure → surface as `WARN`; do NOT block scoping. The
+    Feature exists on GitHub and is wired as a sub-issue; missing
+    project membership is a presentational gap that the pipeline
+    workflow's `add-issue-to-project.yml` will repair on the next
+    label change. Surface the failed adds in the exit block so
+    the human knows.
 
 19. **Wire sub-issue relationships.** For each created Feature,
     establish the Feature → parent Requirement link via GitHub's

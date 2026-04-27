@@ -168,19 +168,27 @@ authors use this login.
 
    Capture `<head-branch>` (the feature branch).
 
-3. **Find the Feature issue.** Parse the PR body for the `Closes
-   #<feature>` line:
+3. **Find the Feature issue.** Read the PR body and extract the
+   referenced Feature issue number from the `Closes #<feature>`
+   line:
 
    ```bash
-   gh pr view <N> --repo <active-repo> --json body \
-     --jq .body
+   PR_BODY=$(gh pr view <N> --repo <active-repo> --json body --jq .body)
+   FEATURE_NUMBER=$(echo "$PR_BODY" | grep -oE 'Closes #[0-9]+' | head -1 | grep -oE '[0-9]+')
    ```
 
-   Extract the Feature issue number. If missing → raise
-   `INVALID_REVIEW_STATE` — the PR is not properly linked.
+   - `FEATURE_NUMBER` empty → raise `INVALID_REVIEW_STATE` (`ERROR`);
+     exit. The PR is not properly linked to a Feature, which means
+     the agent cannot trace replies back to the design rationale or
+     the Feature's acceptance criteria. PR review on an unlinked PR
+     is out of scope for this skill.
+   - Otherwise → hold as `<feature>` for use in reply formatting and
+     for cross-checking against the design rationale when answering
+     questions.
 
-   The Feature issue is metadata only for this skill (referenced in
-   reply comments, not mutated).
+   The Feature issue is metadata for this skill — referenced in
+   reply comments and used to retrieve the design rationale (the
+   `<!-- design-plan:v1 -->` comment), not mutated.
 
 4. **Check out the head branch.** Mirror `dev-session` step 6:
 

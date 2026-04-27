@@ -249,12 +249,52 @@ discipline at task granularity:
    `BRANCH_MISSING` with the underlying error and let a human
    reconcile.
 
+6a. **Recovery probe.** A prior dev-session may have left a
+    `recovery.md` file at the repo root with mid-task progress. The
+    open-vs-closed task state (step 7) is the coarse cursor;
+    `recovery.md` is the fine cursor inside a task that was
+    interrupted before its closing commit landed.
+
+    ```bash
+    test -f recovery.md && cat recovery.md || echo MISSING
+    ```
+
+    Parse the file when present. The expected shape:
+
+    ```markdown
+    # Dev Session Recovery — Feature #<N>
+
+    ## Completed Tasks
+    - #<T_a> — <title>  (commit <sha>)
+    - #<T_b> — <title>  (commit <sha>)
+
+    ## Current Task
+    Task <K> of <M>: #<T_K> — <title>
+    Progress: <one-line status>
+    Files in flight: <paths>
+    ```
+
+    Cross-check the listed completed tasks against GitHub state:
+    each cited issue must actually be closed AND the cited commit
+    must be present on the local branch. If both true, treat as
+    truly completed (skip in step 7's filter). If either is false,
+    the recovery file is stale or a prior run partially failed —
+    surface the inconsistency and treat the task as still open.
+
+    Hold the verified completed-set as `<recovered-completed>` and
+    the current-task pointer (if any) as `<resume-task>`.
+
+    Missing recovery.md → fresh run; `<recovered-completed>` is
+    empty.
+
 ---
 
 ### Section B — Task walk
 
 7. **Filter to open tasks.** Compute `<open-tasks>` =
-   `[t for t in <tasks> if t.state == OPEN]`, preserving order.
+   `[t for t in <tasks> if t.state == OPEN AND t not in <recovered-completed>]`,
+   preserving order. The recovery probe (step 6a) trims tasks
+   already completed by a prior run.
 
    - **`<open-tasks>` empty** → all tasks already closed. Skip the
      walk; emit Output C in step 18.
@@ -281,6 +321,38 @@ discipline at task granularity:
      unbuildable as written (the rationale or the dependency chain
      is wrong), raise `TASK_BLOCKED` (`WARN`) and exit with Output D.
      Do NOT silently re-scope a task; that's a human-review event.
+
+   **Per-unit commits (permitted, not required).** Tasks vary in
+   size; for non-trivial tasks the agent MAY commit and push
+   intermediate units of work as they become coherent ("a complete
+   sub-piece — refactored helper, schema migration, isolated test
+   suite"). Each intermediate commit follows the same
+   commit-discipline (reuse outcome, tests pass, build pass) and
+   uses a body that names what the unit is. The task's CLOSING
+   commit (step 12) is still mandatory and is what triggers the
+   issue close in step 14. Per-unit commits in between are opt-in
+   and reduce the size of the "currently in flight" diff that a
+   recovery run would need to re-establish.
+
+   **Recovery checkpoint (between sub-pieces).** After completing
+   any intermediate unit, OR at any natural break inside a long
+   task, write/update `recovery.md` at the repo root with the
+   shape documented in step 6a, then commit + push the recovery
+   file as a `chore: recovery checkpoint` commit:
+
+   ```bash
+   git add recovery.md
+   git commit -m "chore: recovery checkpoint — task <K> of <M>
+
+   Reuse: opt-out — checkpoint metadata, not derived from existing code"
+   git push origin "$BRANCH"
+   ```
+
+   Recovery checkpoints are independent of per-unit commits — they
+   are orientation breadcrumbs, not deliverables. A task with no
+   intermediate units may still emit one or more checkpoints. The
+   checkpoint commit will be visible in the merged PR and that's
+   acceptable; it is the cost of robust resume.
 
 10. **Per-task — verify tests.** Run the project's test suite
     against the changed code.
@@ -369,6 +441,37 @@ discipline at task granularity:
 
 ### Section C — Closeout
 
+15a. **Acceptance-criteria coverage gate.** Before the closeout
+    label flips, verify that every Feature acceptance criterion
+    is satisfied by the work that just landed.
+
+    Re-read the Feature issue body and extract the canonical AC
+    list (`AC-1` ... `AC-N`). Then for each AC:
+
+    - Locate the task(s) whose `Satisfies feature acceptance
+      criteria:` line cited that AC index.
+    - Confirm those tasks are CLOSED with their commits on the
+      branch.
+    - Confirm test coverage exists that exercises the AC's
+      observable behaviour. The agent inspects the test suite
+      (test files in the changed range, plus any newly-added
+      tests) and confirms they assert the AC's stated outcome.
+
+    Compute `<uncovered-ac>` = AC indices where any of the three
+    conditions failed.
+
+    - **`<uncovered-ac>` empty** → continue to step 16.
+    - **`<uncovered-ac>` non-empty** → raise
+      `AC_COVERAGE_INCOMPLETE` (`WARN`). Surface which AC are
+      uncovered and why (no task cites them, the citing task is
+      open, or no test asserts the outcome). Exit with Output D.
+      The Feature is not done; the human inspects.
+
+    For Features whose body has no `## Acceptance Criteria`
+    section at all (older Features predating the new
+    feature-design spec), log the omission and skip the gate —
+    no enforcement is possible without the AC list.
+
 16. **Verify completion.** Re-query the task list:
 
     ```bash
@@ -381,6 +484,25 @@ discipline at task granularity:
     open, or a new task appeared mid-session), raise
     `TASK_BLOCKED` (`WARN`) — surface the discrepancy and exit
     Output D.
+
+16a. **Archive the recovery file.** If `recovery.md` exists at the
+    repo root (it will, given step 9 wrote it during the run),
+    archive it under `recovery-logs/recovery-log-<N>.md` and
+    remove the live file from the branch:
+
+    ```bash
+    mkdir -p recovery-logs/
+    git mv recovery.md recovery-logs/recovery-log-<N>.md
+    git commit -m "chore: archive recovery log for #<N>
+
+    Reuse: opt-out — checkpoint metadata, not derived from existing code"
+    git push origin "$BRANCH"
+    ```
+
+    The archive lives on the feature branch and merges with the PR
+    so the recovery trail is captured in the merged history. If
+    `recovery.md` is missing (a fresh, fast run that produced no
+    checkpoints), skip this step.
 
 17. **Release the slot.** Remove the `development-in-progress`
     beacon:
@@ -509,6 +631,11 @@ anyway — the original error is what matters.
   have reached `in-development` without a branch; if push fails
   mid-session, the local commit is preserved and a re-run will
   push it.
+- `AC_COVERAGE_INCOMPLETE` from step 15a (an acceptance criterion
+  is uncovered after the per-task walk completed) → severity
+  `WARN`; propagate. The Feature is not done; the human inspects
+  the uncovered AC and either retroactively adds tests or
+  re-scopes via `requirement-scoping` extend mode.
 - `TASK_BLOCKED` from step 9 (task is unimplementable as written),
   step 14 (issue did not close), or step 16 (final task list
   inconsistent) → severity `WARN`; propagate. The Feature stays at
