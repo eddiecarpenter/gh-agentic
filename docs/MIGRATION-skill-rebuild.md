@@ -125,6 +125,32 @@ new spec is verified by the Python framework checks
 If we want a Go-side guard that the new skill spec doesn't drift,
 that's a separate piece of work — not part of the Go CLI catch-up.
 
+### Project template — DONE
+
+`internal/project/assets/project-template.json`:
+- Status options: `Scheduled` renamed to `Ready to Implement`; new
+  `Designed` option added (TEAL).
+- README content updated with the new status table, the new label
+  groupings (type / lifecycle / classification / beacons), and the
+  new pipeline phases (interactive-design path, parked Designed
+  state).
+- Views filter updated to use `Ready to Implement` instead of
+  `Scheduled`.
+- Removed the Goose tool reference (the framework no longer ships
+  with Goose recipes as the agent runtime).
+
+### Workflows — DONE
+
+- `.github/workflows/add-issue-to-project.yml` — label-to-status
+  mapping updated: `scheduled → Scheduled` removed; new mappings
+  added for `ready-to-implement`, `interactive-design` (also maps
+  to `In Design`), and `designed`.
+- `.github/workflows/agentic-pipeline.yml` — the parent-requirement
+  closure step now removes the `ready-to-implement` label instead
+  of `scheduled` when transitioning the Requirement to `done`.
+
+### Still outstanding
+
 ### init / check / repair
 
 The init wizard does NOT currently create the lifecycle labels

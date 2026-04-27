@@ -900,7 +900,7 @@ jobs:
             --repo ${AGENTIC_REPO} \
             --remove-label "backlog" \
             --remove-label "scoping" \
-            --remove-label "scheduled" \
+            --remove-label "ready-to-implement" \
             --add-label "done"
           gh issue close ${PARENT} \
             --repo ${AGENTIC_REPO} \
