@@ -63,10 +63,30 @@ settings:
   max_turns: <integer>
 
 instructions: |
-  <thin-shell instructions block — see below>
+  <one-line orientation — see "The instructions block" below>
+
+prompt: |
+  <thin-shell directive — see "The prompt block" below>
 ```
 
 No other top-level keys are permitted.
+
+### Why both `instructions:` and `prompt:`
+
+Goose requires a `prompt:` in headless mode — it is the user
+message that initiates the session. Without it, `goose run
+--recipe <file>` exits immediately with `Error: no text provided
+for prompt in headless mode`. The `instructions:` block is the
+system prompt (persistent context); the `prompt:` block is the
+kick-off (the first user turn).
+
+For a thin-shell recipe both are short, and they carry different
+content:
+
+- `instructions:` — one line of orientation. Names the agent's
+  role abstractly so the system prompt isn't empty.
+- `prompt:` — the actual directive: load the rulebook and execute
+  the named skill with parameters. This is what the agent acts on.
 
 ### The `description:` field — User Story shape
 
@@ -128,11 +148,23 @@ If you need to invoke an interactive skill non-interactively,
 that's an architectural change to the skill (add a hybrid mode),
 not a recipe trick.
 
-## The instructions block — canonical shape
+## The instructions block — orientation only
 
-The `instructions:` block is the only place where recipe-vs-skill
-discipline is at risk. It MUST follow this floor template and
-nothing else.
+`instructions:` is the system prompt. For a thin-shell recipe it
+is one line stating the agent's role abstractly:
+
+```
+You are an automated agent in this project's agentic delivery pipeline.
+```
+
+That is the entire body. No directive, no parameters, no skill
+name. The directive lives in `prompt:`.
+
+## The prompt block — canonical shape
+
+`prompt:` is the kick-off directive. It is the one place where
+recipe-vs-skill discipline is at risk and MUST follow this floor
+template.
 
 ### Default: single skill
 
@@ -332,15 +364,19 @@ settings:
   max_turns: 100
 
 instructions: |
+  You are an automated agent in this project's agentic delivery pipeline.
+
+prompt: |
   Load `AGENTS.md` (the project rulebook). Then execute the
   `feature-design` skill for Feature {{ feature_number }}. The
   skill is the authoritative playbook; do not improvise.
 ```
 
-That's the entire recipe. Below `instructions: |` are exactly
-three lines of directive: load the rulebook, execute the named
-skill with parameters, do not improvise. No steps, no gh commands,
-no decisions, no sub-headings.
+That's the entire recipe. `instructions:` is one line of
+orientation. Below `prompt: |` are exactly three lines of
+directive: load the rulebook, execute the named skill with
+parameters, do not improvise. No steps, no gh commands, no
+decisions, no sub-headings.
 
 ## What changes go in the recipe vs the skill
 
