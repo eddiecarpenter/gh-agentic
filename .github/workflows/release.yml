@@ -92,7 +92,7 @@ jobs:
       - name: Run release recipe
         run: |
           goose run \
-            --recipe .ai/.goose/recipes/release.yaml \
+            --recipe .ai/.goose/recipes/release-notes.yaml \
             --params tag=${{ github.event.release.tag_name }} \
             --params repo=${{ github.repository }}
         env:

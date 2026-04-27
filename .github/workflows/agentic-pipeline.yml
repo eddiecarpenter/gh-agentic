@@ -153,7 +153,7 @@ jobs:
         run: |
           goose run \
             --recipe .ai/.goose/recipes/feature-design.yaml \
-            --params feature_issue=${{ github.event.issue.number }} \
+            --params feature_number=${{ github.event.issue.number }} \
             --params repo=${{ github.repository }}
         env:
           GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
@@ -435,8 +435,7 @@ jobs:
             echo "--- Dev session attempt ${attempt} ---"
             goose run \
               --recipe .ai/.goose/recipes/dev-session.yaml \
-              --params feature_issue=${{ github.event.issue.number }} \
-              --params branch_name=${BRANCH} \
+              --params feature_number=${{ github.event.issue.number }} \
               --params repo=${{ github.repository }} && break
             EXIT_CODE=$?
             if [ $attempt -lt 3 ]; then
@@ -618,7 +617,6 @@ jobs:
           goose run \
             --recipe .ai/.goose/recipes/pr-review-session.yaml \
             --params pr_number=${PR_NUMBER} \
-            --params branch_name=${BRANCH} \
             --params repo=${{ github.repository }}
 
       - name: Push fixes
