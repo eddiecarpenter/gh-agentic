@@ -21,7 +21,12 @@ func TestRunSwitch_ConfirmAndUpdate(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(root, ".github", "workflows", "release.yml"),
 		[]byte(releaseWorkflowTemplate("v1.5.6")), 0o644)
 
-	fetch := fakeClone(map[string]string{
+	// Pre-existing submodule state — the switch path must hit
+	// SwapSubmodule, not Install.
+	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
+		[]byte(`[submodule ".ai"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
+
+	withStubSwap(t, map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
 	})
 
@@ -29,7 +34,7 @@ func TestRunSwitch_ConfirmAndUpdate(t *testing.T) {
 		return true, nil
 	}
 
-	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", fetch, confirm)
+	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", nil, confirm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +73,7 @@ func TestRunSwitch_Declined(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	fetch := fakeClone(map[string]string{
+	withStubInstall(t, map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
 	})
 
@@ -76,7 +81,7 @@ func TestRunSwitch_Declined(t *testing.T) {
 		return false, nil // Decline.
 	}
 
-	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", fetch, confirm)
+	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", nil, confirm)
 	if err != nil {
 		t.Fatalf("expected nil error when declined, got: %v", err)
 	}
@@ -96,12 +101,15 @@ func TestRunSwitch_NilConfirm(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(root, ".github", "workflows", "agentic-pipeline.yml"),
 		[]byte(workflowTemplate("v1.5.6")), 0o644)
 
-	fetch := fakeClone(map[string]string{
+	// Pre-existing submodule state for the swap dispatch.
+	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
+		[]byte(`[submodule ".ai"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
+	withStubSwap(t, map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
 	})
 
 	// nil confirm should proceed without prompting.
-	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", fetch, nil)
+	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,7 +125,9 @@ func TestRunSwitch_DownloadFailure(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", fakeCloneError("network"), nil)
+	withStubInstallError(t, "network")
+
+	err := RunSwitch(&buf, root, "v1.5.6", "v2.0.0", nil, nil)
 	if err == nil {
 		t.Fatal("expected error on download failure")
 	}

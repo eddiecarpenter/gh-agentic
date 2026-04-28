@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -12,6 +13,7 @@ import (
 
 func TestJoin_Clear_SetsVariable(t *testing.T) {
 	tmp := t.TempDir()
+	withFakeInstall(t)
 
 	var setVar string
 	deps := testDeps("owner", "repo")
@@ -25,12 +27,7 @@ func TestJoin_Clear_SetsVariable(t *testing.T) {
 		}
 		return nil
 	}
-	// .ai/ does not exist — Clone should be called.
-	var cloneCalled bool
-	deps.Clone = func(repoURL, tag, destDir string) error {
-		cloneCalled = true
-		return nil
-	}
+	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
 
 	var buf bytes.Buffer
 	if err := Join(&buf, deps, "PVT_target"); err != nil {
@@ -40,8 +37,10 @@ func TestJoin_Clear_SetsVariable(t *testing.T) {
 	if setVar != "PVT_target" {
 		t.Errorf("expected AGENTIC_PROJECT_ID set to PVT_target, got %q", setVar)
 	}
-	if !cloneCalled {
-		t.Error("expected Clone to be called when .ai/ is absent")
+
+	// .ai/ should now exist via the install stub.
+	if _, err := os.Stat(filepath.Join(tmp, ".ai", "RULEBOOK.md")); err != nil {
+		t.Errorf("expected .ai/RULEBOOK.md to exist after install: %v", err)
 	}
 }
 
@@ -68,6 +67,7 @@ func TestJoin_SameProject_NoOp(t *testing.T) {
 
 func TestJoin_WarnConfirm_Confirmed(t *testing.T) {
 	tmp := t.TempDir()
+	withFakeInstall(t)
 
 	deps := testDeps("owner", "repo")
 	deps.Root = tmp

@@ -57,7 +57,7 @@ func ReadAIVersionFromGit(root string) (string, error) {
 
 // DownloadFramework installs or updates the framework mount at
 // destRoot/.ai/ as a tracked git submodule pointing at the framework
-// repo at the given version tag. The dispatch is idempotent over four
+// repo at the given version tag. The dispatch is idempotent over five
 // working-tree states (see DetectMountState):
 //
 //   - MountStateNone           → InstallSubmodule (fresh install)
@@ -66,28 +66,15 @@ func ReadAIVersionFromGit(root string) (string, error) {
 //   - MountStateSymlink        → refused (gh-agentic itself)
 //   - MountStateInconsistent   → refused (working tree is in an unsafe state)
 //
-// Production callers pass `clone = nil` — submodule operations rely on
-// the system `git` binary acting on the parent repo and need no
-// injectable clone. Tests may pass a stub `CloneFunc` to take a
-// shortcut path that bypasses real submodule operations: it removes
-// any existing `.ai/`, invokes the stub to populate `.ai/`, and stops.
-// This preserves the long-standing test paradigm in which a stub
-// CloneFunc fakes the framework checkout, without forcing every test
-// to scaffold a real git repo.
-func DownloadFramework(destRoot, version string, clone CloneFunc) error {
+// The `clone` parameter is retained on the signature for source
+// compatibility with existing callers, but is no longer consulted —
+// submodule operations rely on the system `git` binary acting on the
+// parent repo. Tests stub the install/swap/migrate primitives via the
+// package-level vars (InstallSubmodule, SwapSubmodule,
+// MigrateGitignoredMount) rather than supplying a CloneFunc.
+func DownloadFramework(destRoot, version string, _ CloneFunc) error {
 	if version == "" {
 		return fmt.Errorf("version is empty — cannot install framework")
-	}
-
-	if clone != nil {
-		aiDir := filepath.Join(destRoot, ".ai")
-		if err := os.RemoveAll(aiDir); err != nil {
-			return fmt.Errorf("removing existing .ai/: %w", err)
-		}
-		if err := clone(FrameworkRepoURL, version, aiDir); err != nil {
-			return fmt.Errorf("cloning framework: %w", err)
-		}
-		return nil
 	}
 
 	state, err := DetectMountState(destRoot)

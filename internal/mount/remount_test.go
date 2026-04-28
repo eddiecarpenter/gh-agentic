@@ -12,12 +12,12 @@ func TestRunRemount_Success(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	fetch := fakeClone(map[string]string{
+	withStubInstall(t, map[string]string{
 		"RULEBOOK.md":            "# Rules refreshed",
 		"skills/session-init.md": "# Session Init",
 	})
 
-	err := RunRemount(&buf, root, "v2.0.0", fetch)
+	err := RunRemount(&buf, root, "v2.0.0", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,26 +41,31 @@ func TestRunRemount_Success(t *testing.T) {
 	}
 }
 
-func TestRunRemount_CleansAndRefreshes(t *testing.T) {
+func TestRunRemount_RefreshesExistingSubmodule(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	// Create stale .ai/ content.
+	// Pre-existing submodule state: .gitmodules has the .ai entry plus
+	// a populated .ai/ with stale content. RunRemount must dispatch to
+	// SwapSubmodule (not Install), and the swap stub repopulates .ai/
+	// with the fresh files.
 	aiDir := filepath.Join(root, ".ai")
 	_ = os.MkdirAll(aiDir, 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "stale.txt"), []byte("stale"), 0o644)
 	_ = os.WriteFile(filepath.Join(aiDir, "RULEBOOK.md"), []byte("# Old rules"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
+		[]byte(`[submodule ".ai"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
 
-	fetch := fakeClone(map[string]string{
+	withStubSwap(t, map[string]string{
 		"RULEBOOK.md": "# Fresh rules",
 	})
 
-	err := RunRemount(&buf, root, "v2.0.0", fetch)
+	err := RunRemount(&buf, root, "v2.0.0", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Stale file should be gone.
+	// Stale file should be gone (swap stub wipes .ai/ before repopulating).
 	if _, err := os.Stat(filepath.Join(aiDir, "stale.txt")); err == nil {
 		t.Error("stale.txt should be removed")
 	}
@@ -76,7 +81,9 @@ func TestRunRemount_DownloadFailure(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	err := RunRemount(&buf, root, "v2.0.0", fakeCloneError("network"))
+	withStubInstallError(t, "network")
+
+	err := RunRemount(&buf, root, "v2.0.0", nil)
 	if err == nil {
 		t.Fatal("expected error on download failure")
 	}
@@ -89,11 +96,11 @@ func TestRunRemount_SilentNoPrompt(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	fetch := fakeClone(map[string]string{
+	withStubInstall(t, map[string]string{
 		"RULEBOOK.md": "# Rules",
 	})
 
-	err := RunRemount(&buf, root, "v2.0.0", fetch)
+	err := RunRemount(&buf, root, "v2.0.0", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

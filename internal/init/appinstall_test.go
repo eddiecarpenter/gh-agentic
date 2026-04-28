@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/mount/mounttest"
 )
 
 // TestRun_InvokesEnsureAppInstalledBeforeConfigure verifies the new step
@@ -17,6 +19,7 @@ import (
 func TestRun_InvokesEnsureAppInstalledBeforeConfigure(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
+	mounttest.StubInstall(t, map[string]string{"RULEBOOK.md": "# Rules"})
 	var buf bytes.Buffer
 
 	cfg := &InitConfig{
@@ -89,6 +92,7 @@ func TestRun_InvokesEnsureAppInstalledBeforeConfigure(t *testing.T) {
 func TestRun_NilEnsureAppInstalled_SkipsStep(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
+	mounttest.StubInstall(t, map[string]string{"RULEBOOK.md": "# Rules"})
 	var buf bytes.Buffer
 
 	cfg := &InitConfig{
@@ -118,6 +122,7 @@ func TestRun_NilEnsureAppInstalled_SkipsStep(t *testing.T) {
 func TestRun_EnsureAppInstalledError_FailsWizard(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
+	mounttest.StubInstall(t, map[string]string{"RULEBOOK.md": "# Rules"})
 	var buf bytes.Buffer
 
 	cfg := &InitConfig{

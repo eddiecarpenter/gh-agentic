@@ -23,12 +23,18 @@ import (
 func TestSwitchVersion_SetsFrameworkVersionVariable_SingleTopology(t *testing.T) {
 	root := t.TempDir()
 
-	// Seed a fake mounted .ai/ at v2.2.6 so RunSwitch has something to
-	// describe as "current version".
+	// Seed a fake mounted .ai/ at v2.2.6 as a tracked submodule, so
+	// RunSwitch's DownloadFramework dispatch sees MountStateSubmodule
+	// and routes to the swap path.
 	aiDir := filepath.Join(root, ".ai")
 	if err := os.MkdirAll(aiDir, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, ".gitmodules"),
+		[]byte(`[submodule ".ai"]`+"\n\turl = "+mount.FrameworkRepoURL+"\n"), 0o644); err != nil {
+		t.Fatalf("seed .gitmodules: %v", err)
+	}
+	withFakeSwap(t)
 
 	// Capture the variables the code writes.
 	writes := make(map[string]string)

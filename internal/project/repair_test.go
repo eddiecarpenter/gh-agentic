@@ -25,7 +25,14 @@ func TestRepair_NoIssues(t *testing.T) {
 func TestRepair_FrameworkNotMounted_FixesIt(t *testing.T) {
 	tmp := t.TempDir()
 
-	var cloneCalled bool
+	var installCalled bool
+	originalInstall := mount.InstallSubmodule
+	mount.InstallSubmodule = func(root, tag string) error {
+		installCalled = true
+		return nil
+	}
+	t.Cleanup(func() { mount.InstallSubmodule = originalInstall })
+
 	deps := testDeps("owner", "repo")
 	deps.Root = tmp
 	// Framework not mounted.
@@ -35,18 +42,17 @@ func TestRepair_FrameworkNotMounted_FixesIt(t *testing.T) {
 	deps.FetchReleases = func(repo string) ([]mount.Release, error) {
 		return []mount.Release{{TagName: "v2.0.10"}}, nil
 	}
-	deps.Clone = func(repoURL, tag, destDir string) error {
-		cloneCalled = true
-		return nil
-	}
+	// deps.Clone is no longer consulted by production; the install
+	// side-effect is stubbed via mount.InstallSubmodule above.
+	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
 
 	var buf bytes.Buffer
 	if err := Repair(&buf, deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !cloneCalled {
-		t.Error("expected Clone to be called during framework repair")
+	if !installCalled {
+		t.Error("expected mount.InstallSubmodule to be called during framework repair")
 	}
 
 	out := buf.String()

@@ -12,7 +12,7 @@ func TestRunFirstTime_AllFilesCreated(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	fetch := fakeClone(map[string]string{
+	withStubInstall(t, map[string]string{
 		"RULEBOOK.md":            "# Rules",
 		"skills/session-init.md": "# Session Init",
 		"standards/go.md":        "# Go",
@@ -20,7 +20,7 @@ func TestRunFirstTime_AllFilesCreated(t *testing.T) {
 		"concepts/philosophy.md": "# Philosophy",
 	})
 
-	err := RunFirstTime(&buf, root, "v2.0.0", fetch)
+	err := RunFirstTime(&buf, root, "v2.0.0", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,8 +56,8 @@ func TestRunFirstTime_AllFilesCreated(t *testing.T) {
 	if !strings.Contains(string(agents), "@.ai/RULEBOOK.md") {
 		t.Errorf("AGENTS.md should reference @.ai/RULEBOOK.md, got: %s", agents)
 	}
-	if !strings.Contains(string(agents), "gh agentic mount") {
-		t.Errorf("AGENTS.md should contain bootstrap rule, got: %s", agents)
+	if !strings.Contains(string(agents), "@.ai/RULEBOOK.md") {
+		t.Errorf("AGENTS.md should contain bootstrap import, got: %s", agents)
 	}
 
 	// Verify workflows.
@@ -99,11 +99,11 @@ func TestRunFirstTime_PreservesExistingCLAUDEMD(t *testing.T) {
 	// Create existing CLAUDE.md.
 	_ = os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# Custom CLAUDE.md\n"), 0o644)
 
-	fetch := fakeClone(map[string]string{
+	withStubInstall(t, map[string]string{
 		"RULEBOOK.md": "# Rules",
 	})
 
-	err := RunFirstTime(&buf, root, "v2.0.0", fetch)
+	err := RunFirstTime(&buf, root, "v2.0.0", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -122,11 +122,11 @@ func TestRunFirstTime_PreservesExistingAGENTSMD(t *testing.T) {
 	// Create existing AGENTS.md.
 	_ = os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# Custom AGENTS.md\n"), 0o644)
 
-	fetch := fakeClone(map[string]string{
+	withStubInstall(t, map[string]string{
 		"RULEBOOK.md": "# Rules",
 	})
 
-	err := RunFirstTime(&buf, root, "v2.0.0", fetch)
+	err := RunFirstTime(&buf, root, "v2.0.0", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +142,9 @@ func TestRunFirstTime_DownloadFailure(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	err := RunFirstTime(&buf, root, "v2.0.0", fakeCloneError("network down"))
+	withStubInstallError(t, "network down")
+
+	err := RunFirstTime(&buf, root, "v2.0.0", nil)
 	if err == nil {
 		t.Fatal("expected error on download failure")
 	}
@@ -155,11 +157,11 @@ func TestRunFirstTime_NoConfirmationPrompt(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	fetch := fakeClone(map[string]string{
+	withStubInstall(t, map[string]string{
 		"RULEBOOK.md": "# Rules",
 	})
 
-	err := RunFirstTime(&buf, root, "v2.0.0", fetch)
+	err := RunFirstTime(&buf, root, "v2.0.0", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -11,29 +11,25 @@ import (
 	"testing"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+	"github.com/eddiecarpenter/gh-agentic/internal/mount/mounttest"
 )
 
+// fakeCloneFunc returns a CloneFunc that is no longer consulted by
+// production (DownloadFramework dispatches to mount.InstallSubmodule
+// regardless), but is retained on Deps so existing call sites keep
+// compiling. Tests pair this with mounttest.StubInstall to fake the
+// post-install state of .ai/.
 func fakeCloneFunc() mount.CloneFunc {
-	return func(repoURL, tag, destDir string) error {
-		files := map[string]string{
-			"RULEBOOK.md":            "# Rules",
-			"skills/session-init.md": "# Session Init",
-			"standards/go.md":        "# Go",
-		}
-		if err := os.MkdirAll(destDir, 0o755); err != nil {
-			return err
-		}
-		for path, content := range files {
-			full := filepath.Join(destDir, path)
-			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-				return err
-			}
-			if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
+	return func(string, string, string) error { return nil }
+}
+
+// stubFiles is the canonical set of files the wizard tests expect to
+// see inside .ai/ after a successful install. mounttest.StubInstall
+// writes these into <root>/.ai/ when invoked.
+var stubFiles = map[string]string{
+	"RULEBOOK.md":            "# Rules",
+	"skills/session-init.md": "# Session Init",
+	"standards/go.md":        "# Go",
 }
 
 func fakeCollectConfig(cfg *InitConfig) func(w io.Writer, repo string) (*InitConfig, error) {
@@ -45,6 +41,7 @@ func fakeCollectConfig(cfg *InitConfig) func(w io.Writer, repo string) (*InitCon
 func TestRun_Success(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
+	mounttest.StubInstall(t, stubFiles)
 	var buf bytes.Buffer
 	var setCalls []string
 
@@ -141,10 +138,14 @@ func TestRun_BlockedWithoutForce(t *testing.T) {
 func TestRun_ProceedsWithForce(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
-	var buf bytes.Buffer
-
-	// Create existing .ai/ to simulate mounted framework.
+	// Pre-existing .ai/ as a tracked submodule simulates a mounted
+	// framework. The wizard's --force path will proceed past the
+	// "already initialised" guard and re-install via the swap path.
 	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
+		[]byte(`[submodule ".ai"]`+"\n\turl = "+mount.FrameworkRepoURL+"\n"), 0o644)
+	mounttest.StubSwap(t, stubFiles)
+	var buf bytes.Buffer
 
 	cfg := &InitConfig{
 		Version:      "v2.0.0",
@@ -168,6 +169,7 @@ func TestRun_ProceedsWithForce(t *testing.T) {
 func TestRun_NoRepoContext(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
+	mounttest.StubInstall(t, stubFiles)
 	var buf bytes.Buffer
 
 	cfg := &InitConfig{

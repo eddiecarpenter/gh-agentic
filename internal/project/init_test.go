@@ -51,7 +51,9 @@ func TestInitRepo_FederatedUserOwner_RefusesWithVerbatimError(t *testing.T) {
 // federated-only and does not accidentally block single-topology init on a
 // user-owned repo.
 func TestInitRepo_SingleUserOwner_DoesNotRefuse(t *testing.T) {
+	withFakeInstall(t)
 	deps := testDeps("eddie", "repo")
+	deps.Root = t.TempDir()
 	deps.GetRepoVariable = func(o, r, n string) (string, error) {
 		return "", errors.New("not set")
 	}

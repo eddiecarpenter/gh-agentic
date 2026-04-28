@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
 
 func TestCreate_BlockedWhenAlreadyAffiliated(t *testing.T) {
@@ -49,7 +51,14 @@ func TestCreate_SuccessfulFlow(t *testing.T) {
 	var setVarCalled bool
 	var createdProjectID string
 	var linkedProjectID string
-	var cloneCalled bool
+	var installCalled bool
+
+	originalInstall := mount.InstallSubmodule
+	mount.InstallSubmodule = func(root, tag string) error {
+		installCalled = true
+		return nil
+	}
+	t.Cleanup(func() { mount.InstallSubmodule = originalInstall })
 
 	deps := testDeps("owner", "repo")
 	deps.Root = tmp
@@ -79,10 +88,10 @@ func TestCreate_SuccessfulFlow(t *testing.T) {
 		}
 		return nil
 	}
-	deps.Clone = func(repoURL, tag, destDir string) error {
-		cloneCalled = true
-		return nil
-	}
+	// deps.Clone is no longer consulted by production — kept for source
+	// compatibility with the Deps struct; install side-effects are
+	// stubbed via mount.InstallSubmodule above.
+	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
 
 	var buf bytes.Buffer
 	err := Create(&buf, deps, CreateConfig{Title: "My Project", Version: "v2.0.10"})
@@ -99,8 +108,8 @@ func TestCreate_SuccessfulFlow(t *testing.T) {
 	if linkedProjectID != "PVT_new" {
 		t.Errorf("expected linked project ID PVT_new, got %s", linkedProjectID)
 	}
-	if !cloneCalled {
-		t.Error("expected Clone to be called")
+	if !installCalled {
+		t.Error("expected mount.InstallSubmodule to be called")
 	}
 
 	out := buf.String()
@@ -111,6 +120,7 @@ func TestCreate_SuccessfulFlow(t *testing.T) {
 
 func TestCreate_ScaffoldsProjectFromEmbeddedTemplate(t *testing.T) {
 	tmp := t.TempDir()
+	withFakeInstall(t)
 
 	var updateProjectCalled bool
 	var updateFieldCalled bool
@@ -256,6 +266,7 @@ func TestCreate_SingleTopology_UserOwner_Proceeds(t *testing.T) {
 	// is hard-blocked. Verify the guard does not fire and the project is
 	// created as before.
 	tmp := t.TempDir()
+	withFakeInstall(t)
 
 	var createProjectCalled bool
 	var topologyWritten string
@@ -303,6 +314,7 @@ func TestCreate_SingleTopology_UserOwner_Proceeds(t *testing.T) {
 func TestCreate_FederatedOrgOwner_Proceeds(t *testing.T) {
 	// Baseline: federated + org owner must still work.
 	tmp := t.TempDir()
+	withFakeInstall(t)
 
 	var topologyWritten string
 
