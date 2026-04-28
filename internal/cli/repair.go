@@ -265,11 +265,37 @@ func promptValue(p doctor.PendingPrompt, deps doctor.CheckDeps) (string, error) 
 		return promptRunnerLabel(deps)
 	}
 
-	var value string
 	title := p.Name
 	if p.Description != "" {
 		title = p.Name + " — " + p.Description
 	}
+
+	// When the variable has a sensible default, ask whether to accept it or
+	// supply a custom value, rather than presenting an open-ended input.
+	if p.Default != "" && p.Kind != "secret" {
+		const (
+			useDefault = "default"
+			useCustom  = "custom"
+		)
+		choice := useDefault
+		selectForm := huh.NewForm(huh.NewGroup(
+			huh.NewSelect[string]().
+				Title(title).
+				Options(
+					huh.NewOption(fmt.Sprintf("Use default (%q)", p.Default), useDefault),
+					huh.NewOption("Set a custom value", useCustom),
+				).
+				Value(&choice),
+		))
+		if err := selectForm.Run(); err != nil {
+			return "", err
+		}
+		if choice == useDefault {
+			return p.Default, nil
+		}
+	}
+
+	var value string
 	input := huh.NewInput().Title(title).Value(&value)
 	if p.Default != "" {
 		input = input.Placeholder(p.Default)
