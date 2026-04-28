@@ -270,6 +270,65 @@ func TestRemoveFromGitignore_NoOpWhenFileMissing(t *testing.T) {
 	}
 }
 
+func TestMigrateGitignoredMount_RemovesDirGitignoreEntryAndDelegatesToInstall(t *testing.T) {
+	// Exercises the migration sequence end-to-end with stubs: the legacy
+	// .ai/ directory is removed, the .ai/ line is stripped from
+	// .gitignore (preserving every other line), and InstallSubmodule is
+	// called with the requested tag. The git-side effects (`git add
+	// .gitignore`, the submodule add itself) are stubbed because they
+	// need a real repo; this test owns the higher-level orchestration.
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, ".ai", "stale.txt"), []byte("stale"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.ai/\nvendor/\n"), 0o644)
+
+	installCalled := false
+	var installedTag string
+	originalInstall := InstallSubmodule
+	InstallSubmodule = func(_, tag string) error {
+		installCalled = true
+		installedTag = tag
+		return nil
+	}
+	defer func() { InstallSubmodule = originalInstall }()
+
+	// Stub out the `git add .gitignore` runGit invocation by initialising
+	// a real (empty) git repo so the command succeeds. The test still
+	// asserts orchestration, not git's behaviour.
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatalf("seed .git: %v", err)
+	}
+	// Use a real `git init` to make the directory a valid repo so the
+	// `git add` step inside MigrateGitignoredMount succeeds.
+	_ = os.RemoveAll(filepath.Join(root, ".git"))
+	if err := runGit(root, "init", "--quiet"); err != nil {
+		t.Skipf("git not available for this test: %v", err)
+	}
+
+	if err := MigrateGitignoredMount(root, "v2.5.0"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".ai")); err == nil {
+		t.Error("expected legacy .ai/ to be removed")
+	}
+
+	gi, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if strings.Contains(string(gi), ".ai/") {
+		t.Errorf("expected .ai/ line removed from .gitignore, got %q", gi)
+	}
+	if !strings.Contains(string(gi), "node_modules/") || !strings.Contains(string(gi), "vendor/") {
+		t.Errorf("expected unrelated lines preserved, got %q", gi)
+	}
+
+	if !installCalled {
+		t.Fatal("expected InstallSubmodule to be called after migration prep")
+	}
+	if installedTag != "v2.5.0" {
+		t.Errorf("InstallSubmodule called with tag %q, want %q", installedTag, "v2.5.0")
+	}
+}
+
 func TestGitmodulesHasAI_True(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
