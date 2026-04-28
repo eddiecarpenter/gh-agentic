@@ -16,9 +16,12 @@ name: Agentic Pipeline
 # any repo this workflow runs against (and on `eddiecarpenter/gh-agentic`,
 # whose submodule is fetched during checkout). See `docs/github-app-setup.md`.
 #
-# Framework mount: `.ai/` and `.agentic-tools/` are tracked as git
-# submodules (since PR #620). Checkout steps use `submodules: recursive`
-# to populate them — no separate clone or `Mount AI framework` step.
+# Framework mount: `.ai/` is tracked as a git submodule (since PR #620)
+# pointing at eddiecarpenter/gh-agentic. Checkout steps use
+# `submodules: recursive` to populate it — no separate clone or
+# `Mount AI framework` step. Composite actions are reached via
+# `./.ai/.github/actions/...`, which resolves into the submodule on
+# domain repos and via the `.ai -> .` symlink in gh-agentic itself.
 #
 # `workflow_dispatch` inputs (pr_number, branch_name) reach this workflow
 # two ways: directly from a dispatch event on gh-agentic (via
@@ -130,13 +133,13 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.agentic-tools/.github/actions/install-ai-tools
+        uses: ./.ai/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
-        uses: ./.agentic-tools/.github/actions/setup-claude-auth
+        uses: ./.ai/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ steps.app-token.outputs.token }}
@@ -396,13 +399,13 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.agentic-tools/.github/actions/install-ai-tools
+        uses: ./.ai/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
-        uses: ./.agentic-tools/.github/actions/setup-claude-auth
+        uses: ./.ai/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ steps.app-token.outputs.token }}
@@ -582,13 +585,13 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.agentic-tools/.github/actions/install-ai-tools
+        uses: ./.ai/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
-        uses: ./.agentic-tools/.github/actions/setup-claude-auth
+        uses: ./.ai/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ steps.app-token.outputs.token }}
@@ -683,13 +686,13 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.agentic-tools/.github/actions/install-ai-tools
+        uses: ./.ai/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
-        uses: ./.agentic-tools/.github/actions/setup-claude-auth
+        uses: ./.ai/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ steps.app-token.outputs.token }}
