@@ -143,7 +143,7 @@ func TestRootCmd_TopLevelCommandsRegistered(t *testing.T) {
 		subs[c.Use] = true
 	}
 
-	for _, want := range []string{"init", "check", "repair", "mount", "upgrade [version]", "project", "info", "auth"} {
+	for _, want := range []string{"init", "check", "repair", "upgrade [version]", "project", "info", "auth"} {
 		if !subs[want] {
 			t.Errorf("top-level command %q not registered", want)
 		}

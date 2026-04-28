@@ -35,14 +35,9 @@ func TestRunFirstTime_AllFilesCreated(t *testing.T) {
 	// cannot assert on .ai/.git metadata here — the download step's
 	// success is evidence enough that the version flowed through.
 
-	// Verify .gitignore.
-	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
-	if err != nil {
-		t.Fatalf("reading .gitignore: %v", err)
-	}
-	if !strings.Contains(string(gitignore), ".ai/") {
-		t.Error(".gitignore should contain .ai/")
-	}
+	// .gitignore is no longer touched by first-time install — `.ai/` is
+	// now a tracked submodule (when run in production), so gitignoring it
+	// would actively break the install.
 
 	// Verify CLAUDE.md.
 	claude, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
@@ -151,8 +146,8 @@ func TestRunFirstTime_DownloadFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on download failure")
 	}
-	if !strings.Contains(err.Error(), "mounting framework") {
-		t.Errorf("error should mention framework mounting, got: %v", err)
+	if !strings.Contains(err.Error(), "installing framework") {
+		t.Errorf("error should mention framework installation, got: %v", err)
 	}
 }
 

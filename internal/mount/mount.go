@@ -55,30 +55,76 @@ func ReadAIVersionFromGit(root string) (string, error) {
 	return v, nil
 }
 
-// DownloadFramework clones the framework at the given version tag into
-// destRoot/.ai/ using a shallow git clone. Any existing .ai/ is removed first.
+// DownloadFramework installs or updates the framework mount at
+// destRoot/.ai/ as a tracked git submodule pointing at the framework
+// repo at the given version tag. The dispatch is idempotent over four
+// working-tree states (see DetectMountState):
+//
+//   - MountStateNone           → InstallSubmodule (fresh install)
+//   - MountStateSubmodule      → SwapSubmodule (version swap)
+//   - MountStateGitignoredMount → MigrateGitignoredMount (legacy → submodule)
+//   - MountStateSymlink        → refused (gh-agentic itself)
+//   - MountStateInconsistent   → refused (working tree is in an unsafe state)
+//
+// Production callers pass `clone = nil` — submodule operations rely on
+// the system `git` binary acting on the parent repo and need no
+// injectable clone. Tests may pass a stub `CloneFunc` to take a
+// shortcut path that bypasses real submodule operations: it removes
+// any existing `.ai/`, invokes the stub to populate `.ai/`, and stops.
+// This preserves the long-standing test paradigm in which a stub
+// CloneFunc fakes the framework checkout, without forcing every test
+// to scaffold a real git repo.
 func DownloadFramework(destRoot, version string, clone CloneFunc) error {
 	if version == "" {
-		return fmt.Errorf("version is empty — cannot download framework")
+		return fmt.Errorf("version is empty — cannot install framework")
 	}
 
-	aiDir := filepath.Join(destRoot, ".ai")
-
-	// Remove existing .ai/ for a clean mount.
-	if err := os.RemoveAll(aiDir); err != nil {
-		return fmt.Errorf("removing existing .ai/: %w", err)
+	if clone != nil {
+		aiDir := filepath.Join(destRoot, ".ai")
+		if err := os.RemoveAll(aiDir); err != nil {
+			return fmt.Errorf("removing existing .ai/: %w", err)
+		}
+		if err := clone(FrameworkRepoURL, version, aiDir); err != nil {
+			return fmt.Errorf("cloning framework: %w", err)
+		}
+		return nil
 	}
 
-	if err := clone(FrameworkRepoURL, version, aiDir); err != nil {
-		return fmt.Errorf("cloning framework: %w", err)
+	state, err := DetectMountState(destRoot)
+	if err != nil {
+		return fmt.Errorf("detecting mount state: %w", err)
 	}
 
-	return nil
+	switch state {
+	case MountStateSymlink:
+		return fmt.Errorf(".ai is a symlink (this is gh-agentic itself); refusing to overwrite the framework source")
+	case MountStateNone:
+		return InstallSubmodule(destRoot, version)
+	case MountStateSubmodule:
+		return SwapSubmodule(destRoot, version)
+	case MountStateGitignoredMount:
+		return MigrateGitignoredMount(destRoot, version)
+	case MountStateInconsistent:
+		return fmt.Errorf(".ai/ exists but is neither a symlink, a tracked submodule, nor a gitignored legacy mount — working tree is inconsistent. Resolve manually before running upgrade")
+	default:
+		return fmt.Errorf("unknown mount state: %d", state)
+	}
 }
 
-// EnsureGitignore ensures that ".ai/" is listed in .gitignore at root.
+// EnsureGitignore is retained for control-plane / control-plane-mirror
+// callers that still need to add a path to .gitignore. The .ai/ mount
+// no longer uses it — submodules are tracked, not gitignored.
 func EnsureGitignore(root string) error {
 	return ensureGitignoreEntry(root, ".ai/")
+}
+
+// RemoveAIFromGitignore strips a `.ai/` line from the parent repo's
+// .gitignore, if present. The doctor repair calls this to clean up the
+// legacy shallow-clone state during migration to the submodule mount.
+// Other lines in .gitignore are preserved verbatim. Idempotent: a
+// missing `.gitignore` or a missing `.ai/` line is a no-op.
+func RemoveAIFromGitignore(root string) error {
+	return removeFromGitignore(root, ".ai/")
 }
 
 // ensureGitignoreEntry appends entry to .gitignore if it is not already

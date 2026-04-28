@@ -194,34 +194,38 @@ func checkFramework(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-mounted", Status: Fail,
 			Message:     ".ai/ not mounted",
-			Remediation: "Run 'gh agentic mount'",
+			Remediation: "Run 'gh agentic upgrade <version>'",
 		})
 	}
 
-	// .ai-version present (from .git metadata).
+	// Framework version readable from the submodule's git metadata.
+	// Symlink-mode (gh-agentic itself) and submodule-mode both produce
+	// a real git repo at .ai/, so this single check covers both.
 	v, err := mount.ReadAIVersionFromGit(deps.Root)
 	if err == nil {
 		g.Results = append(g.Results, CheckResult{
-			Name: "ai-version", Status: Pass, Message: fmt.Sprintf(".ai-version present (%s)", v),
+			Name: "ai-version", Status: Pass, Message: fmt.Sprintf("framework version pinned (%s)", v),
 		})
 	} else {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-version", Status: Fail,
-			Message:     ".ai/ git metadata missing — framework may not be properly mounted",
-			Remediation: "Run 'gh agentic mount'",
+			Message:     ".ai/ git metadata missing — framework not installed or submodule uninitialised",
+			Remediation: "Run 'gh agentic upgrade <version>' or 'git submodule update --init .ai'",
 		})
 	}
 
-	// .ai/ in .gitignore.
+	// .ai/ should NOT be in .gitignore — the framework is now a tracked
+	// submodule. A `.ai/` line in .gitignore is a legacy shallow-clone
+	// remnant; the doctor's repair pass will strip it.
 	if gitignoreContainsAI(deps.Root) {
 		g.Results = append(g.Results, CheckResult{
-			Name: "gitignore", Status: Pass, Message: ".ai/ in .gitignore",
+			Name: "gitignore", Status: Fail,
+			Message:     ".ai/ listed in .gitignore — legacy shallow-clone state",
+			Remediation: "Remove the '.ai/' line from .gitignore (the doctor repair does this automatically)",
 		})
 	} else {
 		g.Results = append(g.Results, CheckResult{
-			Name: "gitignore", Status: Fail,
-			Message:     ".ai/ not in .gitignore",
-			Remediation: "Add '.ai/' to .gitignore",
+			Name: "gitignore", Status: Pass, Message: ".ai/ not in .gitignore",
 		})
 	}
 

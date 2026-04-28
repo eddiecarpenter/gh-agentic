@@ -40,8 +40,10 @@ func setupHealthyRepo(t *testing.T) string {
 	// The .ai-version flat file is gone (#585); .ai/.git metadata is the
 	// only local version source, installed by setupAIGitRepo above.
 
-	// .gitignore.
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".ai/\n"), 0o644)
+	// .gitignore — submodule mode does NOT list .ai/, since the submodule
+	// is tracked in the parent repo's index. A legacy `.ai/` line would
+	// trigger a "legacy shallow-clone state" warning from the doctor.
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n"), 0o644)
 
 	// Agent files.
 	_ = os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# CLAUDE.md\n@AGENTS.md"), 0o644)

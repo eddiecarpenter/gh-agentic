@@ -42,9 +42,8 @@ instruction files.
 %s auto-fixes what can be fixed and reports the rest with manual remediation
 steps.
 
-%s syncs the framework at .ai/ to the version governed by the control plane.
-
-%s changes the framework version for the whole federation (control plane only).
+%s installs or changes the framework version for this repo (also handles
+first-time install and migration from the legacy gitignored mount).
 
 %s manages ongoing project membership — create, join, switch, unlink.
 
@@ -57,7 +56,7 @@ pipeline sub-view that renders requirements and features together — the
 first-class way to answer "where are we?" at a glance.
 
 Run 'gh agentic <command> --help' on any command for detailed usage.`,
-			b("init"), b("check"), b("repair"), b("mount"), b("upgrade"), b("project"), b("info"), b("auth"), b("status")),
+			b("init"), b("check"), b("repair"), b("upgrade"), b("project"), b("info"), b("auth"), b("status")),
 		Version:       version,
 		SilenceErrors: true,
 	}
@@ -80,7 +79,6 @@ Run 'gh agentic <command> --help' on any command for detailed usage.`,
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newCheckCmd())
 	root.AddCommand(newRepairCmd())
-	root.AddCommand(newMountCmd())
 	root.AddCommand(newUpgradeCmd())
 	root.AddCommand(newProjectCmd())
 	root.AddCommand(newInfoCmd(version, date))
