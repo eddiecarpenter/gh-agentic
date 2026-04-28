@@ -78,14 +78,45 @@ func TestDetectMountState_GitignoredMount(t *testing.T) {
 	}
 }
 
-func TestDetectMountState_Inconsistent(t *testing.T) {
+func TestDetectMountState_EmptyAIClassifiedAsNone(t *testing.T) {
+	// An empty .ai/ directory (left over from a failed install attempt)
+	// is recoverable — DetectMountState classifies it as MountStateNone
+	// so the install path can run with its defensive cleanup.
 	root := t.TempDir()
-
-	// Create .ai/ as a regular directory but DON'T add it to .gitignore
-	// and DON'T add a submodule entry. This is the inconsistent state.
 	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
 		t.Fatalf("creating .ai: %v", err)
 	}
+
+	state, err := DetectMountState(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if state != MountStateNone {
+		t.Errorf("expected MountStateNone for empty .ai/, got %d", state)
+	}
+}
+
+func TestDetectMountState_AbortedCloneClassifiedAsNone(t *testing.T) {
+	// .ai/ with only a .git/ directory inside (the partial-clone state
+	// after `git submodule add` failed at checkout) is also recoverable.
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".ai", ".git"), 0o755)
+
+	state, err := DetectMountState(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if state != MountStateNone {
+		t.Errorf("expected MountStateNone for aborted-clone .ai/, got %d", state)
+	}
+}
+
+func TestDetectMountState_PopulatedAIClassifiedAsInconsistent(t *testing.T) {
+	// .ai/ with real content but no submodule entry and no gitignore
+	// entry is genuinely inconsistent — refuse rather than wipe.
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, ".ai", "user-file.md"), []byte("important"), 0o644)
 
 	state, err := DetectMountState(root)
 	if err != nil {
@@ -134,22 +165,10 @@ func TestDownloadFramework_RefusesSymlink(t *testing.T) {
 	}
 }
 
-func TestDownloadFramework_RefusesInconsistent(t *testing.T) {
-	root := t.TempDir()
-	// .ai/ exists but is neither a symlink, a tracked submodule, nor
-	// gitignored — refuse with a clear error.
-	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
-		t.Fatalf("creating .ai: %v", err)
-	}
-
-	err := DownloadFramework(root, "v2.0.0", nil)
-	if err == nil {
-		t.Fatal("expected refusal on inconsistent state")
-	}
-	if !strings.Contains(err.Error(), "inconsistent") {
-		t.Errorf("error should mention inconsistent state, got: %v", err)
-	}
-}
+// Inconsistent-state refusal is now exercised by
+// TestDownloadFramework_RefusesInconsistentExistingAI in mount_test.go,
+// which seeds .ai/ with user content. An empty .ai/ is recoverable and
+// no longer triggers a refusal — see TestDetectMountState_EmptyAIClassifiedAsNone.
 
 func TestDownloadFramework_DispatchesToInstallOnFreshState(t *testing.T) {
 	root := t.TempDir()
