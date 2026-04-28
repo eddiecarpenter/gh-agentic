@@ -78,23 +78,20 @@ func TestValidateTag_EmptyReleases(t *testing.T) {
 
 func TestDownloadFramework_Success(t *testing.T) {
 	root := t.TempDir()
-
-	clone := fakeClone(map[string]string{
+	withStubInstall(t, map[string]string{
 		"RULEBOOK.md":            "# Rules",
 		"skills/session-init.md": "# Session Init",
 		"recipes/dev.yaml":       "recipe: dev",
 		"standards/go.md":        "# Go Standards",
 		"concepts/philosophy.md": "# Philosophy",
-		"cmd/gh-agentic/main.go": "package main", // Also cloned — all files land in .ai/
-		"internal/cli/root.go":   "package cli",
 	})
 
-	err := DownloadFramework(root, "v2.0.0", clone)
-	if err != nil {
+	if err := DownloadFramework(root, "v2.0.0", nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify framework files exist in .ai/.
+	// Verify framework files exist in .ai/ (the stub mimics the
+	// post-install state of a real `git submodule add`).
 	expectedFiles := []string{
 		".ai/RULEBOOK.md",
 		".ai/skills/session-init.md",
@@ -109,13 +106,15 @@ func TestDownloadFramework_Success(t *testing.T) {
 		}
 	}
 
-	// Verify content.
-	data, err := os.ReadFile(filepath.Join(root, ".ai/RULEBOOK.md"))
+	// Verify the dispatch wrote a .gitmodules entry — the durable
+	// signal that this run actually went through the submodule path
+	// (not a direct file-copy).
+	gm, err := os.ReadFile(filepath.Join(root, ".gitmodules"))
 	if err != nil {
-		t.Fatalf("reading RULEBOOK.md: %v", err)
+		t.Fatalf("reading .gitmodules: %v", err)
 	}
-	if string(data) != "# Rules" {
-		t.Errorf("unexpected RULEBOOK.md content: %s", data)
+	if !strings.Contains(string(gm), `[submodule ".ai"]`) {
+		t.Errorf(".gitmodules missing .ai entry: %s", gm)
 	}
 }
 
@@ -130,42 +129,38 @@ func TestDownloadFramework_EmptyVersion(t *testing.T) {
 	}
 }
 
-func TestDownloadFramework_CloneError(t *testing.T) {
+func TestDownloadFramework_InstallError(t *testing.T) {
 	root := t.TempDir()
-	err := DownloadFramework(root, "v2.0.0", fakeCloneError("network error"))
+	withStubInstallError(t, "network error")
+
+	err := DownloadFramework(root, "v2.0.0", nil)
 	if err == nil {
-		t.Fatal("expected error on clone failure")
+		t.Fatal("expected error on install failure")
 	}
 	if !strings.Contains(err.Error(), "network error") {
 		t.Errorf("expected 'network error' in error, got: %v", err)
 	}
 }
 
-func TestDownloadFramework_CleansExistingAI(t *testing.T) {
+func TestDownloadFramework_RefusesInconsistentExistingAI(t *testing.T) {
+	// A pre-existing .ai/ that is neither a symlink, a submodule, nor a
+	// gitignored legacy mount is now treated as MountStateInconsistent —
+	// the dispatcher refuses rather than silently overwriting.
 	root := t.TempDir()
-
-	// Create existing .ai/ with a stale file.
 	aiDir := filepath.Join(root, ".ai")
 	_ = os.MkdirAll(aiDir, 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "stale.txt"), []byte("stale"), 0o644)
 
-	clone := fakeClone(map[string]string{
-		"RULEBOOK.md": "# Fresh Rules",
-	})
-
-	err := DownloadFramework(root, "v2.0.0", clone)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := DownloadFramework(root, "v2.0.0", nil)
+	if err == nil {
+		t.Fatal("expected refusal on inconsistent state")
 	}
-
-	// Stale file should be gone.
-	if _, err := os.Stat(filepath.Join(aiDir, "stale.txt")); err == nil {
-		t.Error("expected stale.txt to be removed")
+	if !strings.Contains(err.Error(), "inconsistent") {
+		t.Errorf("error should mention inconsistent state, got: %v", err)
 	}
-
-	// Fresh file should exist.
-	if _, err := os.Stat(filepath.Join(aiDir, "RULEBOOK.md")); os.IsNotExist(err) {
-		t.Error("expected RULEBOOK.md to exist")
+	// Stale file must remain — refusal must not modify the working tree.
+	if _, err := os.Stat(filepath.Join(aiDir, "stale.txt")); err != nil {
+		t.Error("expected stale.txt to remain after refusal")
 	}
 }
 
