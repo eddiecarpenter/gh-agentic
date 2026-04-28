@@ -587,6 +587,18 @@ func checkVariable(deps CheckDeps, name string) CheckResult {
 		return CheckResult{Name: name, Status: Pass, Message: name + " configured"}
 	}
 
+	// Variables with a known sensible default are not hard failures — the
+	// workflows fall back to the same default, so the pipeline is still
+	// runnable. Surface as a Warning so the human sees the suggestion but
+	// `check` exits 0. Repair still offers an interactive prompt.
+	if meta, ok := pendingDescriptions[name]; ok && meta.Default != "" {
+		return CheckResult{
+			Name: name, Status: Warning,
+			Message:     fmt.Sprintf("%s not set — using default %q", name, meta.Default),
+			Remediation: remediationSet("variable", name, deps),
+		}
+	}
+
 	return CheckResult{
 		Name: name, Status: Fail,
 		Message:     name + " not configured",

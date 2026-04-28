@@ -912,6 +912,29 @@ func TestFindShadowValues_DeterministicOrder(t *testing.T) {
 	}
 }
 
+// TestCheckVariable_MissingWithDefault_Warns covers the soft-default behaviour:
+// AGENT_PROVIDER and AGENT_MODEL have safe defaults (workflows fall back to
+// `claude-code`), so a missing value is reported as a Warning with the
+// default surfaced — not a hard failure.
+func TestCheckVariable_MissingWithDefault_Warns(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "single",
+		Run: func(name string, args ...string) (string, error) {
+			return "", nil // variable absent
+		},
+	}
+	res := checkVariable(deps, "AGENT_PROVIDER")
+	if res.Status != Warning {
+		t.Fatalf("status: got %d (%s), want Warning", res.Status, res.Message)
+	}
+	if !strings.Contains(res.Message, "claude-code") {
+		t.Errorf("message: got %q, want default 'claude-code' surfaced", res.Message)
+	}
+	if !strings.HasPrefix(res.Remediation, "gh variable set AGENT_PROVIDER") {
+		t.Errorf("remediation should still offer set hint, got %q", res.Remediation)
+	}
+}
+
 func TestCheckVariable_Federated_SharedAtNeither_FailWithOrgRemediation(t *testing.T) {
 	r := &ghRun{}
 	deps := CheckDeps{

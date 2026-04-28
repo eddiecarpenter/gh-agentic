@@ -261,7 +261,15 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 
 	for _, g := range report.Groups {
 		for _, r := range g.Results {
-			if r.Status != Fail {
+			// Warning results are normally informational and ignored by repair.
+			// Exception: missing variables that have a known default still
+			// expose a remediation hint — let the human accept the default or
+			// supply a custom value via the interactive prompt path.
+			if r.Status == Warning {
+				if _, ok := pendingKind(r); !ok {
+					continue
+				}
+			} else if r.Status != Fail {
 				continue
 			}
 
