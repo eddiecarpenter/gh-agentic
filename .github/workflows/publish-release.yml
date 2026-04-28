@@ -57,9 +57,16 @@ jobs:
       # step closes that loop. It is local to this repo (documented in
       # LOCALRULES.md "Release Version Sync") and does not belong in any
       # framework-shared workflow.
+      # Uses the workflow's GITHUB_TOKEN (not the App token): the
+      # `actions: write` permission declared on this job covers
+      # `gh variable set` against this repo, while the App installation
+      # currently lacks the "Variables" permission. This step does not
+      # need to trigger any downstream workflow, so the GITHUB_TOKEN
+      # event-cascading restriction (which applies to the GoReleaser
+      # step above) does not matter here.
       - name: Bump AGENTIC_FRAMEWORK_VERSION to released tag
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           gh variable set AGENTIC_FRAMEWORK_VERSION \
