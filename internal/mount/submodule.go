@@ -74,9 +74,36 @@ func DetectMountState(root string) (MountState, error) {
 		if gitignored {
 			return MountStateGitignoredMount, nil
 		}
+
+		// Empty .ai/ (or one containing only a stale .git/) is treated
+		// as MountStateNone so the caller can recover from a previous
+		// failed install. The fresh-install path defensively cleans
+		// `.ai/` and `.git/modules/.ai/` before adding the submodule.
+		if isEmptyOrAbortedClone(aiPath) {
+			return MountStateNone, nil
+		}
 	}
 
 	return MountStateInconsistent, nil
+}
+
+// isEmptyOrAbortedClone reports true when `.ai/` exists but contains no
+// user-meaningful content beyond a `.git` directory left over from a
+// previous failed `git submodule add` (the partial-clone state). Used
+// by DetectMountState to classify aborted installs as MountStateNone
+// so the install path can recover cleanly.
+func isEmptyOrAbortedClone(aiPath string) bool {
+	entries, err := os.ReadDir(aiPath)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name() == ".git" {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // gitmodulesHasAI returns true when `.gitmodules` at root contains a
@@ -119,28 +146,51 @@ func gitignoreContains(root, entry string) (bool, error) {
 var InstallSubmodule = installSubmoduleViaGit
 
 // installSubmoduleViaGit performs a fresh `git submodule add` of the
-// framework at version `tag` into `.ai/` of the parent repo at root.
-// The resulting `.gitmodules` and gitlink change are staged for commit;
-// this function does NOT create a commit.
+// framework at version `tag` into `.ai/` of the parent repo at root,
+// then checks out the tag inside the new submodule so the gitlink
+// pins to the tag's resolved commit. The resulting `.gitmodules` and
+// gitlink change are staged for commit; this function does NOT create
+// a commit.
 //
-// Pre-conditions: `.ai/` does not exist; `.gitmodules` has no `.ai`
-// entry. Caller is responsible for these guarantees (DetectMountState
-// returned MountStateNone).
+// Pre-conditions: `.ai/` does not exist as a tracked submodule;
+// `.gitmodules` has no `.ai` entry. Caller is responsible for these
+// guarantees (DetectMountState returned MountStateNone). A leftover
+// `.git/modules/.ai/` directory from a previous failed run is handled
+// defensively below — it is removed before `git submodule add` runs.
 func installSubmoduleViaGit(root, tag string) error {
 	if tag == "" {
 		return fmt.Errorf("tag is empty — cannot install submodule")
 	}
 
-	if err := runGit(root, "submodule", "add", "-b", tag, FrameworkRepoURL, ".ai"); err != nil {
+	// Clean up any orphan submodule git-dir from a previous run that
+	// failed mid-add. `git submodule add` refuses to proceed when
+	// `.git/modules/<path>/` already exists (with a "found locally"
+	// error), even though the parent's `.gitmodules` has no entry.
+	if gitDir, err := resolveGitDir(root); err == nil {
+		_ = os.RemoveAll(filepath.Join(gitDir, "modules", ".ai"))
+	}
+
+	// Clean up any orphan `.ai/` directory from a previous run that
+	// failed after the clone but before the gitmodules registration.
+	// DetectMountState classifies this case as MountStateNone (via
+	// isEmptyOrAbortedClone), but git submodule add still refuses to
+	// add into an existing path.
+	_ = os.RemoveAll(filepath.Join(root, ".ai"))
+
+	// Note on the missing -b flag: `git submodule add -b <ref>` treats
+	// <ref> as a branch name. Pinning to a tag therefore must NOT use
+	// -b; we clone from the default branch and then check out the tag
+	// inside the submodule. The gitlink the parent records is whatever
+	// HEAD points at after the checkout, which is exactly the tag's
+	// commit SHA.
+	if err := runGit(root, "submodule", "add", FrameworkRepoURL, ".ai"); err != nil {
 		return fmt.Errorf("git submodule add: %w", err)
 	}
 
-	// Pin the gitlink to the tag's resolved commit, not just the branch
-	// tip — `submodule add -b <tag>` records the branch ref but leaves
-	// the gitlink at whatever HEAD pointed to at clone time. For tags
-	// (which are detached refs), this usually coincides; explicitly
-	// checking out the tag inside `.ai/` makes the pinning explicit.
 	aiPath := filepath.Join(root, ".ai")
+	if err := runGit(aiPath, "fetch", "--tags", "--quiet"); err != nil {
+		return fmt.Errorf("fetching tags inside .ai: %w", err)
+	}
 	if err := runGit(aiPath, "checkout", "--quiet", tag); err != nil {
 		return fmt.Errorf("pinning .ai to %s: %w", tag, err)
 	}

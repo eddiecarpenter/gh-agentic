@@ -144,8 +144,10 @@ func TestDownloadFramework_InstallError(t *testing.T) {
 
 func TestDownloadFramework_RefusesInconsistentExistingAI(t *testing.T) {
 	// A pre-existing .ai/ that is neither a symlink, a submodule, nor a
-	// gitignored legacy mount is now treated as MountStateInconsistent —
-	// the dispatcher refuses rather than silently overwriting.
+	// gitignored legacy mount, AND that contains user-meaningful content
+	// (i.e. not just an aborted-clone .git/ directory) is treated as
+	// MountStateInconsistent — the dispatcher refuses rather than
+	// silently overwriting.
 	root := t.TempDir()
 	aiDir := filepath.Join(root, ".ai")
 	_ = os.MkdirAll(aiDir, 0o755)
