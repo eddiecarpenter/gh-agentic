@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write  # required for `gh variable set` to bump AGENTIC_FRAMEWORK_VERSION
 
     steps:
       - name: Mint GitHub App token
@@ -49,3 +50,19 @@ jobs:
           # generation. Workflows triggered by GITHUB_TOKEN cannot trigger
           # other workflows; tokens minted by GitHub Apps can.
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      # gh-agentic is its own framework source — the pipeline pins to
+      # AGENTIC_FRAMEWORK_VERSION, so a release that does not also bump
+      # the variable leaves CI running against the previous version. This
+      # step closes that loop. It is local to this repo (documented in
+      # LOCALRULES.md "Release Version Sync") and does not belong in any
+      # framework-shared workflow.
+      - name: Bump AGENTIC_FRAMEWORK_VERSION to released tag
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh variable set AGENTIC_FRAMEWORK_VERSION \
+            --repo "${{ github.repository }}" \
+            --body "${RELEASE_TAG}"
+          echo "AGENTIC_FRAMEWORK_VERSION pinned to ${RELEASE_TAG}"
