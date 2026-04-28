@@ -278,14 +278,14 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 				if setLabel != nil {
 					setLabel("Repairing: .gitignore...")
 				}
-				if err := mount.EnsureGitignore(deps.Root); err != nil {
+				if err := mount.RemoveAIFromGitignore(deps.Root); err != nil {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  Could not add .ai/ to .gitignore: %v",
+						fmt.Sprintf("  %s  Could not remove .ai/ from .gitignore: %v",
 							ui.StatusDanger.Render("✗"), err))
 					result.Unrepaired++
 				} else {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  .ai/ added to .gitignore",
+						fmt.Sprintf("  %s  .ai/ removed from .gitignore (legacy shallow-clone state)",
 							ui.StatusOK.Render("✓")))
 					result.Repaired++
 				}

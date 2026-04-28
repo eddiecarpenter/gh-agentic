@@ -24,15 +24,17 @@ func fakeRunMissingVarsAndSecret(name string, args ...string) (string, error) {
 
 // makeRepoNeedingPipelineRepairs builds a repo that:
 //   - has the framework mounted at v2.0.0,
-//   - has NO .gitignore entry for .ai/,
+//   - has a legacy `.ai/` line in .gitignore (must be stripped),
 //   - has workflow files pinned to a stale @v1.0.0 tag,
 //   - has no GH variables or secrets configured.
 func makeRepoNeedingPipelineRepairs(t *testing.T) string {
 	t.Helper()
 	root := setupHealthyRepo(t)
 
-	// Break .gitignore.
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("# nothing\n"), 0o644)
+	// Re-introduce the legacy `.ai/` gitignore entry so the repair has
+	// something to fix; setupHealthyRepo no longer produces this line by
+	// default in submodule mode.
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("# nothing\n.ai/\n"), 0o644)
 
 	// Break workflow tags (currently @v2.0.0 from setupHealthyRepo).
 	workflowsDir := filepath.Join(root, ".github", "workflows")
@@ -62,13 +64,14 @@ func TestRepairPipeline_FixesGitignoreAndWorkflowTags(t *testing.T) {
 
 	result := RepairPipeline(deps, nil)
 
-	// Verify .gitignore was repaired on disk.
+	// Verify .gitignore was repaired on disk — the legacy `.ai/` line
+	// is now stripped (submodule mount, not gitignored shallow clone).
 	gi, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if err != nil {
 		t.Fatalf("reading .gitignore: %v", err)
 	}
-	if !strings.Contains(string(gi), ".ai/") {
-		t.Errorf(".gitignore does not contain .ai/ after repair:\n%s", string(gi))
+	if strings.Contains(string(gi), ".ai/") {
+		t.Errorf(".gitignore still contains .ai/ after repair:\n%s", string(gi))
 	}
 
 	// Verify workflow tags were rewritten to the mounted version (v2.0.0).

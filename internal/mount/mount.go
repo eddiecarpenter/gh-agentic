@@ -111,9 +111,20 @@ func DownloadFramework(destRoot, version string, clone CloneFunc) error {
 	}
 }
 
-// EnsureGitignore ensures that ".ai/" is listed in .gitignore at root.
+// EnsureGitignore is retained for control-plane / control-plane-mirror
+// callers that still need to add a path to .gitignore. The .ai/ mount
+// no longer uses it — submodules are tracked, not gitignored.
 func EnsureGitignore(root string) error {
 	return ensureGitignoreEntry(root, ".ai/")
+}
+
+// RemoveAIFromGitignore strips a `.ai/` line from the parent repo's
+// .gitignore, if present. The doctor repair calls this to clean up the
+// legacy shallow-clone state during migration to the submodule mount.
+// Other lines in .gitignore are preserved verbatim. Idempotent: a
+// missing `.gitignore` or a missing `.ai/` line is a no-op.
+func RemoveAIFromGitignore(root string) error {
+	return removeFromGitignore(root, ".ai/")
 }
 
 // ensureGitignoreEntry appends entry to .gitignore if it is not already
