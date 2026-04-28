@@ -137,7 +137,8 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 // ConfigureRepo sets up GitHub secrets, variables, and collaborator access.
 //
 // Under federated topology the shared names (AGENT_USER, RUNNER_LABEL,
-// AGENT_PROVIDER, AGENT_MODEL, GOOSE_AGENT_PAT, CLAUDE_CREDENTIALS_JSON)
+// AGENT_PROVIDER, AGENT_MODEL, AGENTIC_APP_CLIENT_ID,
+// AGENTIC_APP_PRIVATE_KEY, PROJECT_PAT, CLAUDE_CREDENTIALS_JSON)
 // are routed to the organisation level via `scope.ScopeFor`. Per-repo
 // identity names (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY, and so on) stay at
 // `--repo`. Under single topology everything stays at `--repo` — the
@@ -198,11 +199,11 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 
 	// Set secrets.
 	if cfg.GooseAgentPAT != "" {
-		flag, target := scope.ScopeFor("GOOSE_AGENT_PAT", topology, owner, repo)
-		if _, err := run("gh", "secret", "set", "GOOSE_AGENT_PAT", "--body", cfg.GooseAgentPAT, flag, target); err != nil {
-			return fmt.Errorf("setting GOOSE_AGENT_PAT: %w", err)
+		flag, target := scope.ScopeFor("PROJECT_PAT", topology, owner, repo)
+		if _, err := run("gh", "secret", "set", "PROJECT_PAT", "--body", cfg.GooseAgentPAT, flag, target); err != nil {
+			return fmt.Errorf("setting PROJECT_PAT: %w", err)
 		}
-		fmt.Fprintf(w, "  ✓ GOOSE_AGENT_PAT saved as %s\n", describeScope(flag, "secret"))
+		fmt.Fprintf(w, "  ✓ PROJECT_PAT saved as %s\n", describeScope(flag, "secret"))
 	}
 
 	if cfg.ClaudeCreds != "" {

@@ -229,11 +229,13 @@ var pendingDescriptions = map[string]struct {
 	Description string
 	Default     string
 }{
-	"AGENT_USER":      {"GitHub username the agent commits as (e.g. goose-bot)", ""},
-	"RUNNER_LABEL":    {"GitHub Actions runner label", ""}, // resolved via select in cli layer
-	"AGENT_PROVIDER":  {"The LLM provider the agent will use", "claude-code"},
-	"AGENT_MODEL":     {"Agent model override", "default"},
-	"GOOSE_AGENT_PAT": {"Personal Access Token for the agent (stored as a secret)", ""},
+	"AGENT_USER":              {"GitHub username the agent commits as (e.g. goose-bot)", ""},
+	"RUNNER_LABEL":            {"GitHub Actions runner label", ""}, // resolved via select in cli layer
+	"AGENT_PROVIDER":          {"The LLM provider the agent will use", "claude-code"},
+	"AGENT_MODEL":             {"Agent model override", "default"},
+	"AGENTIC_APP_CLIENT_ID":   {"GitHub App client ID for the agentic identity", ""},
+	"AGENTIC_APP_PRIVATE_KEY": {"GitHub App private key (stored as a secret) used to mint installation tokens", ""},
+	"PROJECT_PAT":             {"Personal Access Token for Projects v2 mutations (stored as a secret)", ""},
 }
 
 // workflowRepairNames is the set of CheckResult names produced by checkWorkflows

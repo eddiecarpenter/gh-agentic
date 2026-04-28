@@ -142,12 +142,12 @@ func assertGHScope(t *testing.T, c *capturedGH, wantFlag, wantTarget string) {
 }
 
 func TestApplyPendingPrompt_Federated_SharedName_RoutesToOrg(t *testing.T) {
-	shared := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON"}
+	shared := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON"}
 	for _, name := range shared {
 		t.Run(name, func(t *testing.T) {
 			c := &capturedGH{}
 			kind := "variable"
-			if name == "GOOSE_AGENT_PAT" || name == "CLAUDE_CREDENTIALS_JSON" {
+			if name == "PROJECT_PAT" || name == "CLAUDE_CREDENTIALS_JSON" {
 				kind = "secret"
 			}
 			p := PendingPrompt{
@@ -185,14 +185,14 @@ func TestApplyPendingPrompt_Federated_IdentityName_StaysAtRepo(t *testing.T) {
 func TestApplyPendingPrompt_Single_AllNames_StayAtRepo(t *testing.T) {
 	all := []string{
 		"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL",
-		"GOOSE_AGENT_PAT", "CLAUDE_CREDENTIALS_JSON",
+		"PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON",
 		"AGENTIC_PROJECT_ID", "AGENTIC_TOPOLOGY", "AGENTIC_FRAMEWORK_VERSION",
 	}
 	for _, name := range all {
 		t.Run(name, func(t *testing.T) {
 			c := &capturedGH{}
 			kind := "variable"
-			if name == "GOOSE_AGENT_PAT" || name == "CLAUDE_CREDENTIALS_JSON" {
+			if name == "PROJECT_PAT" || name == "CLAUDE_CREDENTIALS_JSON" {
 				kind = "secret"
 			}
 			p := PendingPrompt{
@@ -282,7 +282,7 @@ func (c *recordedConfirm) run(title, body string) (bool, error) {
 func makeShadowItems() []ShadowValue {
 	return []ShadowValue{
 		{Name: "AGENT_USER", Kind: "variable", DeleteCommand: "gh variable delete --repo acme/cp AGENT_USER"},
-		{Name: "GOOSE_AGENT_PAT", Kind: "secret", DeleteCommand: "gh secret delete --repo acme/cp GOOSE_AGENT_PAT"},
+		{Name: "PROJECT_PAT", Kind: "secret", DeleteCommand: "gh secret delete --repo acme/cp PROJECT_PAT"},
 	}
 }
 
@@ -307,7 +307,7 @@ func TestRepairShadowValues_ConfirmYes_AllDeletesSucceed(t *testing.T) {
 	}
 	// Delete commands use the injected runner with the right scope and name.
 	wantFirst := []string{"variable", "delete", "AGENT_USER", "--repo", "acme/cp"}
-	wantSecond := []string{"secret", "delete", "GOOSE_AGENT_PAT", "--repo", "acme/cp"}
+	wantSecond := []string{"secret", "delete", "PROJECT_PAT", "--repo", "acme/cp"}
 	if !reflectDeepEqualStrings(run.calls[0], wantFirst) {
 		t.Errorf("call 0: got %v, want %v", run.calls[0], wantFirst)
 	}
@@ -451,7 +451,7 @@ func TestRepairPipeline_NoFailures(t *testing.T) {
 				return "configured", nil
 			}
 			if name == "gh" && len(args) > 1 && args[0] == "secret" && args[1] == "list" {
-				return "GOOSE_AGENT_PAT\tUpdated 2026-04-01", nil
+				return "PROJECT_PAT\tUpdated 2026-04-01", nil
 			}
 			return "", nil
 		},
