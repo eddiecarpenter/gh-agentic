@@ -11,8 +11,8 @@ name: Release Notes
 #
 # Authentication mirrors agentic-pipeline.yml: a GitHub App installation
 # token is minted at the start of the job. The framework is mounted via
-# git submodules (`.ai/` and `.agentic-tools/` in the parent repo) — no
-# bespoke `Mount AI framework` step.
+# the `.ai/` git submodule in the parent repo — no bespoke
+# `Mount AI framework` step.
 
 on:
   release:
@@ -71,12 +71,12 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.agentic-tools/.github/actions/install-ai-tools
+        uses: ./.ai/.github/actions/install-ai-tools
         with:
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Claude Code auth
-        uses: ./.agentic-tools/.github/actions/setup-claude-auth
+        uses: ./.ai/.github/actions/setup-claude-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ steps.app-token.outputs.token }}
