@@ -2,12 +2,222 @@ package project
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 )
+
+// --- SwitchProject ---
+
+func TestSwitchProject_RefusesUninitialised(t *testing.T) {
+	deps := testDeps("owner", "repo")
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		return "", errors.New("not set")
+	}
+
+	var buf bytes.Buffer
+	err := SwitchProject(&buf, deps, "PVT_new")
+	if err == nil {
+		t.Fatal("expected error when repo is not affiliated with a project")
+	}
+	if !strings.Contains(err.Error(), "not affiliated") {
+		t.Errorf("error should mention 'not affiliated', got: %v", err)
+	}
+}
+
+// --- PreflightSwitchVersion ---
+
+func TestPreflightSwitchVersion_RefusesUninitialised(t *testing.T) {
+	deps := testDeps("owner", "repo")
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		return "", errors.New("not set")
+	}
+
+	_, err := PreflightSwitchVersion(deps, "v2.0.0")
+	if err == nil {
+		t.Fatal("expected error when repo is not part of an agentic project")
+	}
+	if !strings.Contains(err.Error(), "not part of an agentic project") {
+		t.Errorf("error should mention 'not part of an agentic project', got: %v", err)
+	}
+}
+
+func TestPreflightSwitchVersion_RefusesFederatedDomain(t *testing.T) {
+	// On a federated domain repo, version switching is only allowed
+	// at the control plane. Verify the preflight refuses with a
+	// pointer to the right repo.
+	deps := testDeps("domainorg", "domain-repo")
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		if n == ProjectVarName {
+			return "PVT_x", nil
+		}
+		return "", nil
+	}
+	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
+		// Linked repo is the control plane, not the current repo.
+		return []LinkedRepo{{Name: "control-plane", NameWithOwner: "cporg/control-plane"}}, nil
+	}
+
+	_, err := PreflightSwitchVersion(deps, "v2.0.0")
+	if err == nil {
+		t.Fatal("expected error on federated domain repo")
+	}
+	if !strings.Contains(err.Error(), "control plane") {
+		t.Errorf("error should mention 'control plane', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cporg/control-plane") {
+		t.Errorf("error should name the control plane repo, got: %v", err)
+	}
+}
+
+func TestPreflightSwitchVersion_FetchReleasesError(t *testing.T) {
+	deps := testDeps("owner", "repo")
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		if n == ProjectVarName {
+			return "PVT_x", nil
+		}
+		return "", nil
+	}
+	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
+		return []LinkedRepo{{NameWithOwner: "owner/repo"}}, nil
+	}
+	deps.FetchReleases = func(repo string) ([]mount.Release, error) {
+		return nil, errors.New("network down")
+	}
+
+	_, err := PreflightSwitchVersion(deps, "v2.0.0")
+	if err == nil {
+		t.Fatal("expected error on FetchReleases failure")
+	}
+	if !strings.Contains(err.Error(), "fetching releases") {
+		t.Errorf("error should mention 'fetching releases', got: %v", err)
+	}
+}
+
+func TestPreflightSwitchVersion_InvalidTag(t *testing.T) {
+	deps := testDeps("owner", "repo")
+	deps.RepoFullName = "owner/repo"
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		if n == ProjectVarName {
+			return "PVT_x", nil
+		}
+		return "", nil
+	}
+	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
+		return []LinkedRepo{{NameWithOwner: "owner/repo"}}, nil
+	}
+	deps.FetchReleases = func(repo string) ([]mount.Release, error) {
+		return []mount.Release{{TagName: "v2.0.0"}}, nil
+	}
+
+	_, err := PreflightSwitchVersion(deps, "v9.9.9")
+	if err == nil {
+		t.Fatal("expected error for unknown tag")
+	}
+	if !strings.Contains(err.Error(), "v9.9.9") {
+		t.Errorf("error should name the requested tag, got: %v", err)
+	}
+}
+
+func TestPreflightSwitchVersion_HappyPathSingleTopology(t *testing.T) {
+	deps := testDeps("owner", "repo")
+	deps.RepoFullName = "owner/repo"
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		switch n {
+		case ProjectVarName:
+			return "PVT_x", nil
+		case TopologyVarName:
+			return "single", nil
+		}
+		return "", nil
+	}
+	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
+		return []LinkedRepo{{NameWithOwner: "owner/repo"}}, nil
+	}
+	deps.FetchReleases = func(repo string) ([]mount.Release, error) {
+		return []mount.Release{{TagName: "v2.5.6"}}, nil
+	}
+	deps.ReadAIVersion = func(root string) (string, error) {
+		return "v2.5.5", nil
+	}
+
+	pre, err := PreflightSwitchVersion(deps, "v2.5.6")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pre.CurrentVersion != "v2.5.5" {
+		t.Errorf("CurrentVersion = %q, want v2.5.5", pre.CurrentVersion)
+	}
+	if pre.IsFederatedCP {
+		t.Error("IsFederatedCP should be false for single topology")
+	}
+}
+
+// --- switchProjectListFederated ---
+
+func TestSwitchProjectListFederated_FiltersByTopology(t *testing.T) {
+	// Three projects: one is federated (CP repo has AGENTIC_TOPOLOGY=federated),
+	// one is single, one has no linked repos. Only the federated one
+	// should come back.
+	deps := testDeps("owner", "repo")
+	deps.DetectOwnerType = func(owner string) (string, error) { return "Organization", nil }
+	deps.FetchProjectsForOwner = func(o, t string) ([]ProjectInfo, error) {
+		return []ProjectInfo{
+			{ID: "PVT_fed", Title: "Federated"},
+			{ID: "PVT_single", Title: "Single"},
+			{ID: "PVT_empty", Title: "No links"},
+		}, nil
+	}
+	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
+		switch projectID {
+		case "PVT_fed":
+			return []LinkedRepo{{NameWithOwner: "fedorg/cp"}}, nil
+		case "PVT_single":
+			return []LinkedRepo{{NameWithOwner: "owner/repo"}}, nil
+		case "PVT_empty":
+			return []LinkedRepo{}, nil
+		}
+		return nil, errors.New("unknown project")
+	}
+	deps.GetRepoVariable = func(o, r, n string) (string, error) {
+		// Only fedorg/cp has AGENTIC_TOPOLOGY=federated.
+		if o == "fedorg" && r == "cp" && n == TopologyVarName {
+			return "federated", nil
+		}
+		return "", nil
+	}
+
+	got, err := switchProjectListFederated(deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 federated project, got %d: %+v", len(got), got)
+	}
+	if got[0].ID != "PVT_fed" {
+		t.Errorf("expected PVT_fed, got %q", got[0].ID)
+	}
+}
+
+func TestSwitchProjectListFederated_FetchProjectsError(t *testing.T) {
+	deps := testDeps("owner", "repo")
+	deps.DetectOwnerType = func(owner string) (string, error) { return "User", nil }
+	deps.FetchProjectsForOwner = func(o, t string) ([]ProjectInfo, error) {
+		return nil, errors.New("network error")
+	}
+
+	_, err := switchProjectListFederated(deps)
+	if err == nil {
+		t.Fatal("expected error when FetchProjectsForOwner fails")
+	}
+	if !strings.Contains(err.Error(), "fetching projects") {
+		t.Errorf("error should mention 'fetching projects', got: %v", err)
+	}
+}
 
 // TestSwitchVersion_SetsFrameworkVersionVariable_SingleTopology covers the
 // v2.3.0 regression where `gh agentic upgrade` on a single-topology repo
