@@ -26,15 +26,14 @@ func ValidateTag(version string, releases []Release) error {
 	return fmt.Errorf("version %s not found — latest available version is %s", version, latest)
 }
 
-// DefaultClone performs a shallow git clone of repoURL at the given tag into
-// destDir. The .git/ directory is retained so that the mounted version can be
-// read from git metadata and the clone is left in detached HEAD state (no branch
-// to push to).
+// DefaultClone is retained as a no-op for source compatibility with
+// the Clone field on the various Deps structs that wired it in.
+// Production no longer consults the value — DownloadFramework dispatches
+// via DetectMountState to InstallSubmodule / SwapSubmodule /
+// MigrateGitignoredMount, none of which call back into the Clone func.
+// The symbol will be removed in a follow-up that prunes the now-vestigial
+// Clone field from the Deps shape.
 func DefaultClone(repoURL, tag, destDir string) error {
-	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", tag, repoURL, destDir)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git clone failed: %w\n%s", err, strings.TrimSpace(string(out)))
-	}
 	return nil
 }
 
