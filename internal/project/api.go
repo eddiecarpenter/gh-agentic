@@ -96,34 +96,11 @@ type FetchProjectFieldsFunc func(projectID string) ([]ProjectField, error)
 // UpdateStatusFieldOptionsFunc replaces the options on a single-select field.
 type UpdateStatusFieldOptionsFunc func(fieldID string, options []StatusOption) error
 
-// --- Topology detection ---
-
-// DetectTopology compares the current repo against the project's linked repos.
-// If the current repo is the single linked repo → Single.
-// If the linked repo is a different repo → Federated.
-// If there are no linked repos → Unknown.
-func DetectTopology(currentOwnerRepo string, linked []LinkedRepo) Topology {
-	if len(linked) == 0 {
-		return TopologyUnknown
-	}
-	for _, r := range linked {
-		if strings.EqualFold(r.NameWithOwner, currentOwnerRepo) {
-			return TopologySingle
-		}
-	}
-	return TopologyFederated
-}
-
-// ControlPlaneRepo returns the control plane repo from the linked repos.
-// For Single topology this is the current repo; for Federated it is the linked repo.
-func ControlPlaneRepo(linked []LinkedRepo) (LinkedRepo, bool) {
-	if len(linked) == 0 {
-		return LinkedRepo{}, false
-	}
-	return linked[0], true
-}
-
 // --- Production implementations ---
+//
+// Pure topology-detection helpers (DetectTopology, ControlPlaneRepo)
+// were extracted to topology_detect.go so they remain coverable while
+// this file is excluded from coverage as network-bound.
 
 // graphqlLinkedReposResponse is the response shape for the linked repos query.
 type graphqlLinkedReposResponse struct {
