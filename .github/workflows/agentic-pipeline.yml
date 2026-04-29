@@ -937,10 +937,7 @@ jobs:
           OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
           gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
 
-      - name: Delete feature branch
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          gh api repos/${{ github.repository }}/git/refs/heads/${HEAD_REF} --method DELETE
-          echo "Deleted branch ${HEAD_REF}"
+      # Branch deletion is handled by GitHub's "Automatically delete head
+      # branches" repo setting, which fires on merge before this job runs.
+      # The previous explicit `gh api ... DELETE` step is gone — it raced
+      # the auto-delete and failed with 422 on every successful merge.
