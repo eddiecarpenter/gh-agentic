@@ -362,3 +362,62 @@ func TestResolveGitDir_NonRepo(t *testing.T) {
 		t.Error("expected error in non-git directory")
 	}
 }
+
+// TestReadAIVersionFromGit_TagPresent verifies the version reader
+// against a real installed submodule. Uses the same fixture pattern
+// as the install tests: create a fake framework with v0.0.1 and
+// v0.0.2 tags, install the submodule at v0.0.1, then read it back.
+func TestReadAIVersionFromGit_TagPresent(t *testing.T) {
+	fwURL := fixtureFramework(t)
+	withFrameworkRepoURL(t, fwURL)
+	root := consumerRepo(t)
+
+	if err := installSubmoduleViaGit(root, "v0.0.1"); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	v, err := ReadAIVersionFromGit(root)
+	if err != nil {
+		t.Fatalf("ReadAIVersionFromGit: %v", err)
+	}
+	if v != "v0.0.1" {
+		t.Errorf("got version %q, want v0.0.1", v)
+	}
+}
+
+// TestReadAIVersionFromGit_NoMount returns an error when there is no
+// .ai/ git checkout to read from.
+func TestReadAIVersionFromGit_NoMount(t *testing.T) {
+	root := t.TempDir()
+	if _, err := ReadAIVersionFromGit(root); err == nil {
+		t.Error("expected error when .ai/ is missing")
+	}
+}
+
+// TestRemoveAIFromGitignore_PublicWrapper verifies the exported
+// helper that the doctor's repair pass invokes. Logic is delegated to
+// removeFromGitignore (whose own tests live in submodule_test.go);
+// this is a thin assertion that the public API plumbs through correctly.
+func TestRemoveAIFromGitignore_PublicWrapper(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"),
+		[]byte("node_modules/\n.ai/\nvendor/\n"), 0o644); err != nil {
+		t.Fatalf("seed .gitignore: %v", err)
+	}
+	if err := RemoveAIFromGitignore(root); err != nil {
+		t.Fatalf("RemoveAIFromGitignore: %v", err)
+	}
+	gi, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if strings.Contains(string(gi), ".ai/") {
+		t.Errorf("expected .ai/ removed from .gitignore: %s", gi)
+	}
+}
+
+// TestDefaultClone_NoOp documents that DefaultClone is now a no-op
+// retained only for source compatibility with the Clone field on
+// Deps structs. Production no longer consults the value.
+func TestDefaultClone_NoOp(t *testing.T) {
+	if err := DefaultClone("https://example.com/repo.git", "v1.0.0", "/tmp/anywhere"); err != nil {
+		t.Errorf("DefaultClone should be a no-op, got error: %v", err)
+	}
+}
