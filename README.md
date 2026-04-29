@@ -6,7 +6,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/eddiecarpenter/gh-agentic)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> A GitHub CLI and delivery framework for **agentic software delivery**. Humans do the thinking; AI agents do the work.
+> A GitHub CLI and **agentic software delivery framework**. Humans do the thinking; AI agents do the work.
 
 > 📘 **For installation and a hands-on walkthrough → [GETTING_STARTED.md](GETTING_STARTED.md)**
 
