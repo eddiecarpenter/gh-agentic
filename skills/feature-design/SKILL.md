@@ -168,6 +168,48 @@ The step-skip rule does not require justification when the step is
 not applicable to the running mode. Steps without a mode tag run in
 both modes.
 
+**Calling primitives — non-negotiable.** Throughout this skill,
+expressions of the form
+
+```
+prompt-user(...)
+apply-label(...)
+post-issue-comment(...)
+trigger-implementation(...)
+set-issue-status(...)
+```
+
+are NOT documentation, NOT pseudocode, and NOT suggestions of what
+the agent should do equivalently inline. They are explicit
+instructions to invoke the named primitive **via the agent's Skill
+tool** (e.g., a `Skill` tool call with `skill: "prompt-user"` and
+the listed arguments).
+
+The agent MUST NOT substitute an equivalent inline call. Specifically:
+
+- For `prompt-user(...)`, the agent MUST invoke the prompt-user
+  skill. It MUST NOT call `AskUserQuestion` directly, ask
+  conversationally, or render the options as inline text and wait
+  for free-form reply. Inlining `AskUserQuestion` skips the
+  walk-away reminder, the `INTERACTION_REQUIRED` guard, and the
+  structured `cancelled` / `selected_option` return classification —
+  features the calling code in this skill depends on.
+- For `apply-label(...)`, `post-issue-comment(...)`,
+  `set-issue-status(...)`, `trigger-implementation(...)`, the agent
+  MUST invoke the corresponding skill. It MUST NOT shell out to
+  `gh issue edit` / `gh api` / etc. directly. The primitives wrap
+  the GraphQL plumbing, atomicity guarantees, and verification
+  steps that this skill's state-model relies on.
+
+If the agent is about to bypass a primitive — for any reason
+whatsoever, including "the inline call seems simpler" — it must
+stop, emit a step-skip justification per `step-skip-rule.md` naming
+which primitive it is replacing and the concrete cause, and proceed
+only if the justification is genuinely warranted. "I forgot the
+primitive existed" or "the syntax made it look like documentation"
+are NOT warranted reasons; they are bugs in the agent's reading of
+this skill.
+
 **State model & cancel semantics.** This skill follows the pattern
 in `skills/definitions/state-model-pattern.md`. The concrete tier
 table below is this skill's specifics; the universal cancel rules
