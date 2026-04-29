@@ -9,8 +9,13 @@ import (
 // FrameworkRepo is the default repository for framework clones.
 const FrameworkRepo = "eddiecarpenter/gh-agentic"
 
-// FrameworkRepoURL is the HTTPS clone URL for the framework repo.
-const FrameworkRepoURL = "https://github.com/" + FrameworkRepo + ".git"
+// FrameworkRepoURL is the clone URL for the framework repo. It is a
+// var (not a const) so integration tests can point it at a local
+// `file://` fixture repository for the duration of a test, exercising
+// the real `git submodule add` / `git submodule deinit` paths without
+// requiring network access. Tests must restore the original value on
+// cleanup. Production never modifies it.
+var FrameworkRepoURL = "https://github.com/" + FrameworkRepo + ".git"
 
 // CloneFunc clones a repository at a given tag into a destination directory.
 // It must perform a shallow clone (--depth 1) and strip the .git/ directory.
