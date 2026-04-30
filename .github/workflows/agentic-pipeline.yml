@@ -138,16 +138,11 @@ jobs:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
-      - name: Setup Provider Auth
-        run: |
-          if [ "${{ vars.AGENT_PROVIDER }}" = "mistral" ]; then
-            echo "MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY }}" >> $GITHUB_ENV
-          elif [ "${{ vars.AGENT_PROVIDER }}" = "claude" ]; then
-            echo "CLAUDE_CREDENTIALS_JSON=${{ secrets.CLAUDE_CREDENTIALS_JSON }}" >> $GITHUB_ENV
-          else
-            echo "Unsupported provider: ${{ vars.AGENT_PROVIDER }}"
-            exit 1
-          fi
+      - name: Setup Agent Auth
+        uses: ./.ai/.github/actions/setup-agent-auth
+        with:
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
       - name: Configure Goose
         run: |
@@ -410,16 +405,11 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
-      - name: Setup Provider Auth
-        run: |
-          if [ "${{ vars.AGENT_PROVIDER }}" = "mistral" ]; then
-            echo "MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY }}" >> $GITHUB_ENV
-          elif [ "${{ vars.AGENT_PROVIDER }}" = "claude" ]; then
-            echo "CLAUDE_CREDENTIALS_JSON=${{ secrets.CLAUDE_CREDENTIALS_JSON }}" >> $GITHUB_ENV
-          else
-            echo "Unsupported provider: ${{ vars.AGENT_PROVIDER }}"
-            exit 1
-          fi
+      - name: Setup Agent Auth
+        uses: ./.ai/.github/actions/setup-agent-auth
+        with:
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
       - name: Rebase feature branch onto main
         run: |
@@ -601,16 +591,11 @@ jobs:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
-      - name: Setup Provider Auth
-        run: |
-          if [ "${{ vars.AGENT_PROVIDER }}" = "mistral" ]; then
-            echo "MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY }}" >> $GITHUB_ENV
-          elif [ "${{ vars.AGENT_PROVIDER }}" = "claude" ]; then
-            echo "CLAUDE_CREDENTIALS_JSON=${{ secrets.CLAUDE_CREDENTIALS_JSON }}" >> $GITHUB_ENV
-          else
-            echo "Unsupported provider: ${{ vars.AGENT_PROVIDER }}"
-            exit 1
-          fi
+      - name: Setup Agent Auth
+        uses: ./.ai/.github/actions/setup-agent-auth
+        with:
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
       - name: Configure Goose
         run: |
@@ -707,16 +692,11 @@ jobs:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
-      - name: Setup Provider Auth
-        run: |
-          if [ "${{ vars.AGENT_PROVIDER }}" = "mistral" ]; then
-            echo "MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY }}" >> $GITHUB_ENV
-          elif [ "${{ vars.AGENT_PROVIDER }}" = "claude" ]; then
-            echo "CLAUDE_CREDENTIALS_JSON=${{ secrets.CLAUDE_CREDENTIALS_JSON }}" >> $GITHUB_ENV
-          else
-            echo "Unsupported provider: ${{ vars.AGENT_PROVIDER }}"
-            exit 1
-          fi
+      - name: Setup Agent Auth
+        uses: ./.ai/.github/actions/setup-agent-auth
+        with:
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
       - name: Configure Goose
         run: |

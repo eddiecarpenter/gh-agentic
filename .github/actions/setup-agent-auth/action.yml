@@ -1,0 +1,53 @@
+name: Setup Agent Auth
+description: >
+  Export the supported agent-provider secrets to $GITHUB_ENV so
+  downstream steps in the same job (Goose configuration, recipe
+  execution) can read whichever one the active provider needs as
+  a regular environment variable. Inputs that are empty are
+  skipped — the action does not validate which provider is active
+  or pre-check that its secret is non-empty. The downstream agent
+  fails loudly at runtime if its required credential is missing,
+  which is sufficient signal.
+
+  This action centralises the export logic so install-ai-tools
+  stays focused on installation and the workflow jobs do not
+  duplicate the same env-var assignment per call site. Adding a
+  new provider = one new input + one new export line — no case
+  branches, no per-provider conditional logic.
+
+  Note: this action does NOT decode credentials, run a session
+  validation, or rotate a secret on refresh. Those concerns are
+  Claude-specific runtime work and live in setup-claude-auth,
+  which is invoked separately by release.yml where the
+  release-notes skill actually executes Claude Code.
+
+inputs:
+  claude-credentials-json:
+    description: >
+      Base64-encoded Claude Code credentials (the
+      CLAUDE_CREDENTIALS_JSON secret). Pass empty when not
+      configured for this repo.
+    required: false
+    default: ''
+  mistral-api-key:
+    description: >
+      Mistral API key (the MISTRAL_API_KEY secret). Pass empty
+      when not configured for this repo.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Export agent credentials to env
+      shell: bash
+      env:
+        CLAUDE_CREDENTIALS_JSON: ${{ inputs.claude-credentials-json }}
+        MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
+      run: |
+        if [ -n "${CLAUDE_CREDENTIALS_JSON}" ]; then
+          echo "CLAUDE_CREDENTIALS_JSON=${CLAUDE_CREDENTIALS_JSON}" >> "${GITHUB_ENV}"
+        fi
+        if [ -n "${MISTRAL_API_KEY}" ]; then
+          echo "MISTRAL_API_KEY=${MISTRAL_API_KEY}" >> "${GITHUB_ENV}"
+        fi
