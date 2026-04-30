@@ -137,6 +137,8 @@ jobs:
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
+          agent-provider: ${{ vars.AGENT_PROVIDER }}
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
 
       - name: Setup Provider Auth
         run: |
@@ -600,6 +602,8 @@ jobs:
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
+          agent-provider: ${{ vars.AGENT_PROVIDER }}
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
 
       - name: Setup Provider Auth
         run: |
@@ -706,6 +710,8 @@ jobs:
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
+          agent-provider: ${{ vars.AGENT_PROVIDER }}
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
 
       - name: Setup Provider Auth
         run: |
