@@ -577,6 +577,18 @@ func checkVariable(deps CheckDeps, name string) CheckResult {
 	repoOut, repoErr := deps.Run("gh", "variable", "get", name, "--repo", deps.RepoFullName)
 	repoHit := repoErr == nil && strings.TrimSpace(repoOut) != ""
 
+	// Distinguish an auth/permission failure from a genuine missing variable.
+	// GitHub App tokens used in CI often lack the Actions:Read permission
+	// required to read variables, producing a 403. Treat that as "unable to
+	// check" rather than "not configured" so the check doesn't emit false
+	// positives when the variable is set but the token can't read it.
+	if !repoHit && repoErr != nil && isPermissionError(repoOut) {
+		return CheckResult{
+			Name: name, Status: Warning,
+			Message: name + " — unable to check (token lacks variable-read permission)",
+		}
+	}
+
 	// Org scope — only consulted for shared names under federated topology.
 	// Identity names stay repo-only even under federated.
 	orgHit := false
@@ -665,6 +677,19 @@ func checkSecret(deps CheckDeps, name string) CheckResult {
 // the repo (and the caller must not waste an API call on the org list).
 func shouldConsultOrg(name, topology string) bool {
 	return scope.IsSharedName(name) && scope.IsFederatedTopology(topology)
+}
+
+// isPermissionError returns true when gh CLI output indicates an auth/permission
+// failure (HTTP 403) rather than a genuine missing resource (HTTP 404). Used by
+// checkVariable to avoid false-positive "not configured" results when the token
+// lacks the Actions:Read permission required to read repo variables (common with
+// GitHub App installation tokens in CI).
+func isPermissionError(out string) bool {
+	lower := strings.ToLower(out)
+	return strings.Contains(lower, "403") ||
+		strings.Contains(lower, "resource not accessible") ||
+		strings.Contains(lower, "insufficient scopes") ||
+		strings.Contains(lower, "must have admin rights")
 }
 
 // containsVariableName returns true if the gh output from
