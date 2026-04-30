@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
@@ -67,6 +68,55 @@ func defaultResolveRepo() (repoInfo, error) {
 		RepoName:  currentRepo.Name,
 		OwnerType: ownerType,
 	}, nil
+}
+
+// renderCheckSections writes the Project and Pipeline sections of the check
+// report to w. It is extracted from RunE so the no-empty-heading structural
+// invariant can be tested directly without a full command execution.
+//
+// The parent "Pipeline" heading is rendered only when pipelineSkipped is true —
+// in that case it anchors the single ⚠ status line and is meaningful. In the
+// non-skipped path the sub-group headings emitted by doctor.RenderGroup are
+// self-labelling; a bare "Pipeline" heading with no status line beneath it
+// (before the first sub-group heading) caused autonomous sessions to misread it
+// as a pre-existing pipeline warning (Feature #715). Audit: every producer of
+// doctor.Group always appends at least one CheckResult before returning, so
+// RenderGroup never emits an empty heading; the no-empty-heading invariant test
+// in check_test.go pins this going forward.
+func renderCheckSections(w io.Writer, isFrameworkSource bool, projectReport *project.CheckReport, pipelineReport *doctor.Report, pipelineSkipped bool) {
+	if isFrameworkSource {
+		fmt.Fprintln(w, "  "+ui.StatusWarning.Render("⚠")+"  Framework source detected (.ai is a symlink)")
+		fmt.Fprintln(w, "  "+ui.Muted.Render("   Project-scope and content-layer checks are skipped — they do not apply"))
+		fmt.Fprintln(w, "  "+ui.Muted.Render("   when this repo IS the gh-agentic framework. Config-layer checks run below."))
+		fmt.Fprintln(w, "")
+	}
+
+	// Project section — omitted in framework-source mode since
+	// projectReport is nil there.
+	if projectReport != nil {
+		fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Project"))
+		fmt.Fprintln(w, "  "+ui.Divider(48))
+		for _, r := range projectReport.Results {
+			fmt.Fprintf(w, "  %s  %s\n", project.StatusIcon(r.Status), r.Message)
+			if r.Remediation != "" {
+				fmt.Fprintf(w, "       %s\n", ui.Muted.Render("→ "+r.Remediation))
+			}
+		}
+		fmt.Fprintln(w, "")
+	}
+
+	// Pipeline section. The parent heading appears only in the skipped branch
+	// where it precedes the explicit ⚠ status line. In the non-skipped branch
+	// the sub-group headings are already self-labelling.
+	if pipelineSkipped {
+		fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
+		fmt.Fprintln(w, "  "+ui.Divider(48))
+		fmt.Fprintf(w, "  %s  Skipped — framework mount is out of sync; run 'gh agentic mount' first\n", ui.StatusWarning.Render("⚠"))
+	} else if pipelineReport != nil {
+		for _, g := range pipelineReport.Groups {
+			doctor.RenderGroup(w, g)
+		}
+	}
 }
 
 // newCheckCmd constructs the top-level `gh agentic check` command.
@@ -189,37 +239,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("gh agentic — check"))
 			fmt.Fprintln(w, "")
 
-			if isFrameworkSource {
-				fmt.Fprintln(w, "  "+ui.StatusWarning.Render("⚠")+"  Framework source detected (.ai is a symlink)")
-				fmt.Fprintln(w, "  "+ui.Muted.Render("   Project-scope and content-layer checks are skipped — they do not apply"))
-				fmt.Fprintln(w, "  "+ui.Muted.Render("   when this repo IS the gh-agentic framework. Config-layer checks run below."))
-				fmt.Fprintln(w, "")
-			}
-
-			// Project section — omitted in framework-source mode since
-			// projectReport is nil there.
-			if projectReport != nil {
-				fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Project"))
-				fmt.Fprintln(w, "  "+ui.Divider(48))
-				for _, r := range projectReport.Results {
-					fmt.Fprintf(w, "  %s  %s\n", project.StatusIcon(r.Status), r.Message)
-					if r.Remediation != "" {
-						fmt.Fprintf(w, "       %s\n", ui.Muted.Render("→ "+r.Remediation))
-					}
-				}
-				fmt.Fprintln(w, "")
-			}
-
-			// Pipeline section.
-			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
-			fmt.Fprintln(w, "  "+ui.Divider(48))
-			if pipelineSkipped {
-				fmt.Fprintf(w, "  %s  Skipped — framework mount is out of sync; run 'gh agentic mount' first\n", ui.StatusWarning.Render("⚠"))
-			} else {
-				for _, g := range pipelineReport.Groups {
-					doctor.RenderGroup(w, g)
-				}
-			}
+			renderCheckSections(w, isFrameworkSource, projectReport, pipelineReport, pipelineSkipped)
 
 			// Combined summary.
 			pipelineFails := 0
