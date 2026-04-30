@@ -189,11 +189,12 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           # Look for at least one comment on the Feature issue authored
-          # by the agentic bot whose body starts with the canonical
-          # Design Plan header. The header pattern matches what
-          # capture-design-plan.md prescribes: "## Design Plan".
+          # by the agentic bot whose body begins with the canonical
+          # Design Plan marker. feature-design and dev-session both key
+          # off this marker (`<!-- design-plan:v1 -->`); the workflow
+          # verifies the same contract so the three signals agree.
           COMMENT_COUNT=$(gh api "repos/${REPO}/issues/${ISSUE}/comments" \
-            --jq '[.[] | select(.user.type == "Bot") | select(.body | startswith("## Design Plan"))] | length')
+            --jq '[.[] | select(.user.type == "Bot") | select(.body | startswith("<!-- design-plan:v1 -->"))] | length')
           if [ "${COMMENT_COUNT}" -lt 1 ]; then
             echo "::error::Design Plan comment was not published on issue #${ISSUE} by the feature-design recipe."
             echo ""
