@@ -143,6 +143,7 @@ jobs:
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Goose
         run: |
@@ -410,6 +411,7 @@ jobs:
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Rebase feature branch onto main
         run: |
@@ -596,6 +598,7 @@ jobs:
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Goose
         run: |
@@ -697,6 +700,7 @@ jobs:
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Goose
         run: |

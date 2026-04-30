@@ -41,13 +41,13 @@ The App is initially owned by `eddiecarpenter` (personal account). It can be tra
 
 `secrets: write` is included **as a pragmatic transitional measure**, not because it is the long-term right answer.
 
-**Today.** Claude Code rotates its session credentials at runtime, and `setup-claude-auth/action.yml` writes the rotated credentials back to `CLAUDE_CREDENTIALS_JSON` via `gh secret set`. This requires `secrets: write` on the token. Removing the in-band rotation path would force a human to manually `gh secret set CLAUDE_CREDENTIALS_JSON ...` whenever Claude rotated — operationally painful for a workaround the framework was always going to outgrow.
+**Today.** Claude Code rotates its session credentials at runtime, and `setup-agent-auth/action.yml` (in its Claude branch) writes the rotated credentials back to `CLAUDE_CREDENTIALS_JSON` via `gh secret set`. This requires `secrets: write` on the token. Removing the in-band rotation path would force a human to manually `gh secret set CLAUDE_CREDENTIALS_JSON ...` whenever Claude rotated — operationally painful for a workaround the framework was always going to outgrow.
 
-**Production target.** Switch from Claude Code (with rotating session credentials) to a static **Anthropic API key**. API keys don't rotate in-band — they're set once and replaced only on intentional rotation. At that point, the `gh secret set` round-trip disappears entirely, `setup-claude-auth/action.yml` is replaced or trimmed, and **`secrets: write` should be removed from the App manifest** as a cleanup step.
+**Production target.** Switch from Claude Code (with rotating session credentials) to a static **Anthropic API key**. API keys don't rotate in-band — they're set once and replaced only on intentional rotation. At that point, the `gh secret set` round-trip disappears entirely, the Claude-specific decode + validate + rotate steps in `setup-agent-auth/action.yml` are trimmed, and **`secrets: write` should be removed from the App manifest** as a cleanup step.
 
 **Security trade we are accepting transitionally.** A leaked App private key gains the ability to silently rewrite repo Actions secrets — no commit, no diff, no git-history audit trail. With `contents: write` only, credential exfiltration would require pushing a malicious workflow change (visible in `git log`), giving a chance for detection. With `secrets: write`, an attacker can swap `CLAUDE_CREDENTIALS_JSON` invisibly. This is acceptable while we are still in the Claude-Code-credentials phase because the credentials themselves are short-lived; it would not be acceptable indefinitely.
 
-**Action when migrating to Anthropic API key:** open a Feature to remove `secrets: write` from the manifest, delete the in-band rotation logic from `setup-claude-auth`, and re-narrow the App's blast radius.
+**Action when migrating to Anthropic API key:** open a Feature to remove `secrets: write` from the manifest, delete the Claude-specific rotation logic from `setup-agent-auth/action.yml`, and re-narrow the App's blast radius.
 
 ### Event subscriptions
 
@@ -136,7 +136,7 @@ gh secret set PROJECT_PAT --repo eddiecarpenter/gh-agentic --body "<your-pat>"
 
 ### Existing Claude credential secret
 
-`CLAUDE_CREDENTIALS_JSON` remains as before. The App holds `secrets: write` (see Permissions section), which preserves the in-band credential refresh flow performed by `setup-claude-auth/action.yml`.
+`CLAUDE_CREDENTIALS_JSON` remains as before. The App holds `secrets: write` (see Permissions section), which preserves the in-band credential refresh flow performed by `setup-agent-auth/action.yml` (in its Claude branch).
 
 ### Webhook fields
 

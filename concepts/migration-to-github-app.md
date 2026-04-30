@@ -32,9 +32,11 @@ together.
 
 ## What did **not** change
 
-- `CLAUDE_CREDENTIALS_JSON` remains a repo secret, populated by the same
-  `setup-claude-auth` flow. The App is granted `secrets: write` precisely
-  so the existing in-band credential refresh continues to work — see
+- `CLAUDE_CREDENTIALS_JSON` remains a repo secret, now consumed by the
+  `setup-agent-auth` action (which absorbed the Claude decode + validate
+  + rotate flow that used to live in the retired `setup-claude-auth`
+  action). The App is granted `secrets: write` precisely so the existing
+  in-band credential refresh continues to work — see
   [`docs/github-app-setup.md`](../docs/github-app-setup.md) §"`secrets: write`
   rationale" for the trade-off.
 - The pipeline workflows' overall shape, recipes, skills, and labels are

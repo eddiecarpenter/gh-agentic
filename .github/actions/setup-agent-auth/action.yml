@@ -1,38 +1,56 @@
 name: Setup Agent Auth
 description: >
-  Export the supported agent-provider secrets to $GITHUB_ENV so
-  downstream steps in the same job (Goose configuration, recipe
-  execution) can read whichever one the active provider needs as
-  a regular environment variable. Inputs that are empty are
-  skipped — the action does not validate which provider is active
-  or pre-check that its secret is non-empty. The downstream agent
-  fails loudly at runtime if its required credential is missing,
-  which is sufficient signal.
+  Make the active agent provider's credentials available to downstream
+  steps. The action absorbs the work that the (now-retired)
+  setup-claude-auth action used to do, and generalises it across
+  providers:
 
-  This action centralises the export logic so install-ai-tools
-  stays focused on installation and the workflow jobs do not
-  duplicate the same env-var assignment per call site. Adding a
-  new provider = one new input + one new export line — no case
-  branches, no per-provider conditional logic.
+    - For every supported provider input that is non-empty, export
+      the secret to $GITHUB_ENV so providers driven by env vars
+      (Goose's mistral / openai / generic providers) can read it.
 
-  Note: this action does NOT decode credentials, run a session
-  validation, or rotate a secret on refresh. Those concerns are
-  Claude-specific runtime work and live in setup-claude-auth,
-  which is invoked separately by release.yml where the
-  release-notes skill actually executes Claude Code.
+    - When claude-credentials-json is non-empty (the caller is using
+      Claude as the agent), additionally:
+        * decode the base64 secret into ~/.claude/.credentials.json
+          (Claude Code reads from disk, not env);
+        * validate the session by running `claude -p "hi"`;
+        * if Claude rotated the credentials at runtime (refresh on
+          long-running sessions), write the new value back to the
+          CLAUDE_CREDENTIALS_JSON secret so the next CI run starts
+          with fresh credentials.
+
+  The Claude rotation step requires gh-token to carry secrets:write.
+  The agentic GitHub App carries this transitionally — see
+  docs/github-app-setup.md "secrets: write rationale". When the
+  production switch to the Anthropic API key lands, the rotation
+  step and the secrets:write requirement both go away.
+
+  Adding a new provider that uses simple env-var auth = one new
+  input + one new export block. Adding a new provider with disk-
+  based auth (like Claude) = one new input + one new export block
+  + one new conditional setup block.
 
 inputs:
   claude-credentials-json:
     description: >
       Base64-encoded Claude Code credentials (the
-      CLAUDE_CREDENTIALS_JSON secret). Pass empty when not
-      configured for this repo.
+      CLAUDE_CREDENTIALS_JSON secret). When non-empty, the action
+      runs the Claude-specific decode + validate + rotate flow in
+      addition to exporting the secret to env.
     required: false
     default: ''
   mistral-api-key:
     description: >
-      Mistral API key (the MISTRAL_API_KEY secret). Pass empty
-      when not configured for this repo.
+      Mistral API key (the MISTRAL_API_KEY secret). When non-empty,
+      exported to env. No disk write or validation step — Mistral
+      reads its key from env at runtime.
+    required: false
+    default: ''
+  gh-token:
+    description: >
+      GitHub App installation token with secrets:write. Required
+      when claude-credentials-json is non-empty (used for the
+      Claude rotation step). Ignored otherwise.
     required: false
     default: ''
 
@@ -50,4 +68,60 @@ runs:
         fi
         if [ -n "${MISTRAL_API_KEY}" ]; then
           echo "MISTRAL_API_KEY=${MISTRAL_API_KEY}" >> "${GITHUB_ENV}"
+        fi
+
+    # Claude-specific: decode secret to ~/.claude/.credentials.json.
+    # The Claude Code CLI reads from disk, not env. Skipped silently
+    # when the caller is not using Claude (claude-credentials-json
+    # input is empty).
+    - name: Restore Claude Code credentials to disk
+      if: inputs.claude-credentials-json != ''
+      shell: bash
+      env:
+        CLAUDE_CREDENTIALS_JSON: ${{ inputs.claude-credentials-json }}
+      run: |
+        mkdir -p ~/.claude
+        echo "${CLAUDE_CREDENTIALS_JSON}" | base64 -d > ~/.claude/.credentials.json
+        chmod 0600 ~/.claude/.credentials.json
+
+    # Claude-specific: validate the session is live and rotate the
+    # secret back to GitHub if Claude refreshed it during validation.
+    # The hash diff is how we detect rotation — Claude writes the
+    # refreshed credentials to the same path, and a SHA mismatch
+    # triggers the secret update. gh-token is only consulted on the
+    # rotation branch; lack of secrets:write surfaces as a failure
+    # of `gh secret set` rather than a pre-flight check, since the
+    # rotation case is rare.
+    - name: Validate Claude Code credentials and rotate on refresh
+      if: inputs.claude-credentials-json != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+      run: |
+        if [ ! -s ~/.claude/.credentials.json ]; then
+          echo "::error::~/.claude/.credentials.json is empty or missing."
+          echo "Regenerate locally and run: gh secret set CLAUDE_CREDENTIALS_JSON ..."
+          exit 1
+        fi
+        CREDS_BEFORE=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
+        claude -p "hi" > /dev/null || {
+          echo "::error::Claude Code authentication failed — session may be revoked."
+          echo "Run the refresh-credentials skill locally to regenerate, then:"
+          echo "  gh secret set CLAUDE_CREDENTIALS_JSON --repo <owner>/<repo> < credentials.json"
+          exit 1
+        }
+        echo "Claude Code credentials valid."
+        CREDS_AFTER=$(sha256sum ~/.claude/.credentials.json | cut -d' ' -f1)
+        if [ "$CREDS_BEFORE" != "$CREDS_AFTER" ]; then
+          echo "Credentials rotated — updating CLAUDE_CREDENTIALS_JSON secret"
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::Claude refreshed credentials but gh-token is empty — cannot rotate the secret."
+            echo "Pass gh-token to this action when claude-credentials-json is set, with secrets:write."
+            exit 1
+          fi
+          gh secret set CLAUDE_CREDENTIALS_JSON \
+            --repo "${GITHUB_REPOSITORY}" \
+            --body "$(cat ~/.claude/.credentials.json | base64 | tr -d '\n')"
+        else
+          echo "Credentials unchanged — no rotation needed."
         fi

@@ -75,8 +75,8 @@ jobs:
         with:
           gh-token: ${{ steps.app-token.outputs.token }}
 
-      - name: Setup Claude Code auth
-        uses: ./.ai/.github/actions/setup-claude-auth
+      - name: Setup Agent Auth
+        uses: ./.ai/.github/actions/setup-agent-auth
         with:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           gh-token: ${{ steps.app-token.outputs.token }}
