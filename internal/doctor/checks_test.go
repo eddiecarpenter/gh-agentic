@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -950,6 +951,40 @@ func TestCheckVariable_Federated_SharedAtNeither_FailWithOrgRemediation(t *testi
 	wantHint := "gh variable set AGENT_USER --org acme"
 	if res.Remediation != wantHint {
 		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
+	}
+}
+
+// TestCheckVariable_PermissionError_Warns verifies that a 403 from gh CLI is
+// reported as "unable to check" rather than "not configured", preventing
+// false-positive failures when the token lacks Actions:Read (common with GitHub
+// App installation tokens in CI runners).
+func TestCheckVariable_PermissionError_Warns(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+	}{
+		{"HTTP 403", "HTTP 403: Resource not accessible by integration"},
+		{"insufficient scopes", "error: insufficient scopes"},
+		{"resource not accessible", "Resource not accessible"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := CheckDeps{
+				RepoFullName: "acme/repo", Owner: "acme", Topology: "single",
+				Run: func(name string, args ...string) (string, error) {
+					return tc.output, fmt.Errorf("gh: exit status 1")
+				},
+			}
+			res := checkVariable(deps, "AGENT_USER")
+			if res.Status != Warning {
+				t.Fatalf("status: got %d (%s), want Warning", res.Status, res.Message)
+			}
+			if !strings.Contains(res.Message, "unable to check") {
+				t.Errorf("message: got %q, want 'unable to check'", res.Message)
+			}
+			if res.Remediation != "" {
+				t.Errorf("remediation: want empty for auth error, got %q", res.Remediation)
+			}
+		})
 	}
 }
 
