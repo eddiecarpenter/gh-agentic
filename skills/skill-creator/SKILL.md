@@ -5,7 +5,6 @@ triggers: human-interactive
 loads:
   - skills/definitions/skill-spec.md
   - skills/definitions/skill-frontmatter-schema.md
-  - skills/definitions/definition-of-done.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/error-handling.md
   - skills/prompt-user/SKILL.md
@@ -24,11 +23,10 @@ achieves its goal.
 
 ## Output Artefacts
 
-- The new skill file at `skills/<name>/SKILL.md` — body matches the eight-
+- The new skill file at `skills/<name>/SKILL.md` — body matches the seven-
   section structure required by the spec (`## Goal`, `## Output
   Artefacts`, `## Definitions`, `## Dependencies`, `## Steps`,
-  `## Verification`, `## Error Handling` headings present; valid
-  YAML frontmatter).
+  `## Error Handling` headings present; valid YAML frontmatter).
 - The new skill's evaluation set at `skills/evals/<name>.json` —
   contains at least 2 test prompts.
 - Any new definitions referenced by the skill but not previously
@@ -43,10 +41,8 @@ achieves its goal.
   skill must conform to.
 - `skills/definitions/skill-frontmatter-schema.md` — the frontmatter
   schema the new skill must satisfy.
-- `skills/definitions/definition-of-done.md` — the DoD section
-  structure used in the new skill's Verification.
 - `skills/definitions/verification-procedure.md` — the change-pinning
-  rule the new skill's Verification section follows.
+  rule for writing verification checks in skills.
 - `skills/definitions/error-handling.md` — the severity taxonomy and
   propagation rules the new skill's Error Handling follows.
 
@@ -153,7 +149,6 @@ user. No display primitive needed.
    - Steps — imperative voice; one action per step; inline examples
      where useful; per-step detection blocks only when failure modes
      are non-obvious.
-   - Verification — change-pinning checks; mandatory.
    - Error Handling — mandatory; explicit "None — default applies"
      when no deviations from the default policy are needed.
 
@@ -312,17 +307,6 @@ user. No display primitive needed.
    the run folder in place and surfaces its path for diagnosis;
    step 9 is not reached on that branch.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/skill-creator/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/skill-creator/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `INTENT_AMBIGUOUS` detected during step 1 → propagate. The user

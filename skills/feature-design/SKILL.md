@@ -851,17 +851,6 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
     the host runtime's session-close API if available; otherwise
     halt. No further work in this session.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/feature-design/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/feature-design/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 **Slot-release rule.** Per `skills/definitions/concurrency-beacon.md`

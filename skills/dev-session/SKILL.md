@@ -585,17 +585,6 @@ discipline at task granularity:
     push (no-op since the agent pushed), `gh pr create` (no-op
     if a PR already exists), apply `in-review`, set project status.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/dev-session/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/dev-session/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 **Slot-release rule.** Per `skills/definitions/concurrency-beacon.md`

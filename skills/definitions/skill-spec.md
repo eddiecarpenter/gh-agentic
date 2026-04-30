@@ -75,10 +75,9 @@ Every active skill must have these sections, in this order:
 4. **Definitions** (schemas, templates, rules the skill consults)
 5. **Dependencies** (other skills the skill invokes)
 6. **Steps**
-7. **Verification**
-8. **Error Handling** (mandatory; may state "none" when default applies)
+7. **Error Handling** (mandatory; may state "none" when default applies)
 
-All eight sections are always present. The conceptual difference
+All seven sections are always present. The conceptual difference
 between Definitions and Dependencies is *how* the loaded content is
 used — passive reference vs active invocation — not whether it gets
 loaded.
@@ -383,114 +382,29 @@ The canonical rule, failure semantics, and examples live in
 `skills/definitions/verification-procedure.md`. Skills reference this
 definition rather than restate it.
 
-### Verification is mandatory
+### Mechanical checks (universal)
 
-Every active skill has a Verification section with at least one
-change-pinning check. Verification is how the agent self-confirms
-"done" — without it, the skill's Definition of Done is declaratory,
-not enforceable.
-
-Skills that produce only side effects (e.g., posting a comment with
-no repo change) still need verification — the check simply queries
-the side effect ("the comment exists on the issue with the expected
-header").
-
-### Verification covers every output artefact
-
-Every artefact named in the Output Artefacts section has a
-corresponding presence check in Verification. The Output Artefacts
-section is the source of truth for *what* the skill produces;
-Verification proves *that* each was produced.
-
-Without this discipline, a skill could declare an artefact in Output
-Artefacts but skip producing it during execution, and Verification
-wouldn't catch the omission. Explicit one-to-one coverage prevents
-the gap.
-
-### Verification has two layers: mechanical and ground-truth
-
-Verification is the *skill writer's* tool for self-checking the
-skill — it is not a quality grader for the skill's runtime output.
-Quality of artefacts produced when the skill runs is enforced by
-the skill's own internal verification gates (per-step) and by the
-surrounding pipeline gates, not by an external rubric over the
-skill text.
-
-The skill writer specifies two kinds of checks:
-
-| Layer | What it checks | How it runs |
-|---|---|---|
-| **Mechanical** | Structure, schema conformance, references resolve — deterministic | `skills/skill-creator/scripts/verify-skill-mechanical.py <skill-path>` |
-| **Ground-truth** | Specific behavioural assertions with a pinned answer key (e.g., "this description triggers on these phrasings, not those") | `skills/skill-creator/scripts/check-description-triggers.py <skill-path>` and similar narrow scripts |
-
-Both run as plain Python scripts. There is no orchestration layer,
-no recipe, no rubric grader. Checks pass deterministically (or
-near-deterministically — ground-truth uses an LLM call but the
-assertion is binary against a fixed answer key, which is stable
-across runs).
-
-The change-pinning rule applies to both layers: a check must fail
-when the change it covers is reverted. Vague rubrics that
-"sometimes pass" are not allowed.
-
-### Declaring checks in a skill's Verification section
-
-Use sub-sections to distinguish the two kinds. Each skill names
-the checks that apply to it; the runner is the appropriate Python
-script.
-
-```markdown
-## Verification
-
-Run the framework checks against this skill:
+Every skill is validated by `verify-skill-mechanical.py`. The checks
+are universal — they apply to every skill and are not restated in
+individual skill files. Run the script directly to validate a skill:
 
 ```bash
 python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/<name>/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/<name>/SKILL.md
 ```
 
-Pass criteria: both commands exit 0.
-
-### Mechanical checks
-
-Run by `verify-skill-mechanical.py`:
-
-- all_sections_present — every mandatory section heading exists.
-- frontmatter_required_fields(name, description, triggers, loads).
-- frontmatter_name_valid — kebab-case, matches filename.
-- description_within_length_limit — ≤ 1024 chars.
-- description_assertive — contains "Use when" + assertive clause.
-- description_third_person.
-- references_resolve — all paths in `loads:` exist.
-
-### Ground-truth checks
-
-Run by `check-description-triggers.py` (and any other narrow ground-
-truth scripts the skill writer adds):
-
-- description_triggers_appropriately — the description correctly
-  classifies the phrasings pinned in the script's GROUND_TRUTH dict
-  for this skill.
-```
-
-The mechanical checks above are universal — every skill gets them.
-A skill is exempt from the ground-truth check only if it has no
-behavioural property worth pinning (rare). Adding a new ground-
-truth check means appending an entry to the appropriate Python
-script's answer-key dict; no separate config files.
-
-### Verification serves dual purpose
-
-The Verification section serves two roles:
-
-1. **In execution** — the agent runs the mechanical checks before
-   declaring the skill done. Failure halts the skill (per the
-   Error Handling default).
-
-2. **In testing** — the test framework runs the skill on test
-   inputs, then runs the skill's own Verification commands as the
-   fidelity test. The same checks that prove "done" in production
-   prove "the test scenario succeeded" in testing.
+- `all_sections_present` — every mandatory section heading exists
+  (Goal, Output Artefacts, Definitions, Dependencies, Steps,
+  Error Handling).
+- `frontmatter_required_fields(name, description, triggers, loads)`.
+- `frontmatter_name_valid` — kebab-case, matches the file's
+  parent-directory name.
+- `description_within_length_limit` — ≤ 1024 chars.
+- `description_assertive` — contains "Use when" plus an assertive
+  clause directing when the skill should fire.
+- `description_third_person` — written about the skill, not in
+  first-person voice.
+- `references_resolve` — every `loads:` path resolves to an
+  existing file.
 
 This dual role is why mechanical checks must be change-pinning and
 semantic checks must catch intent drift — they are the contract for

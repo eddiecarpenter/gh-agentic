@@ -230,17 +230,6 @@ Step 5's dispatch targets:
    automated workflow invoked this session has its own next-action,
    so session-init's job is done.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/session-init/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/session-init/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `INDEX_INCOMPLETE` from step 2 (the skill index is missing core

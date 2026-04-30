@@ -1217,17 +1217,6 @@ prompt-user(
     the host runtime's session-close API if available; otherwise
     halt. No further work in this session.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/requirement-scoping/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/requirement-scoping/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `USER_CANCELLED` (raised at any cancel point — Requirement pick,

@@ -218,17 +218,6 @@ get`; it does not invoke any other skill.
      set: true }
    ```
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/set-issue-status/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/set-issue-status/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `PROJECT_ID_MISSING` from step 2 → severity `ERROR`; propagate.

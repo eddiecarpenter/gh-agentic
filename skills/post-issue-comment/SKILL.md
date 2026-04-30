@@ -97,17 +97,6 @@ invoke any other skill.
 
    Clean up the temp file: `rm -f "$BODY_FILE"`.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/post-issue-comment/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/post-issue-comment/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `COMMENT_BODY_EMPTY` from step 1 → severity `ERROR`; propagate.

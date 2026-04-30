@@ -409,17 +409,6 @@ exact mutation. Human-in-the-loop is the entire point — bulk
     invoke the host runtime's session-close API if available;
     otherwise halt.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/foreground-recovery/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/foreground-recovery/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `INVALID_TARGET` from step 3 (target issue number unparseable

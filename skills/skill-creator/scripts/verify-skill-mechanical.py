@@ -37,7 +37,6 @@ MANDATORY_SECTIONS = [
     "Definitions",
     "Dependencies",
     "Steps",
-    "Verification",
     "Error Handling",
 ]
 
