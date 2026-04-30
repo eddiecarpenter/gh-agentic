@@ -5,12 +5,8 @@ description: >
   setup-claude-auth action used to do, and generalises it across
   providers:
 
-    - For every supported provider input that is non-empty, export
-      the secret to $GITHUB_ENV so providers driven by env vars
-      (Goose's mistral / openai / generic providers) can read it.
-
-    - When claude-credentials-json is non-empty (the caller is using
-      Claude as the agent), additionally:
+    - For Claude (agent-provider == claude-code):
+        * export CLAUDE_CREDENTIALS_JSON to $GITHUB_ENV;
         * decode the base64 secret into ~/.claude/.credentials.json
           (Claude Code reads from disk, not env);
         * validate the session by running `claude -p "hi"`;
@@ -19,38 +15,41 @@ description: >
           CLAUDE_CREDENTIALS_JSON secret so the next CI run starts
           with fresh credentials.
 
+    - For Mistral (agent-provider == mistral):
+        * export MISTRAL_API_KEY to $GITHUB_ENV. Mistral reads its
+          key from env at runtime; no disk write or validation step.
+
+  Each provider is its own self-contained step gated on
+  agent-provider. Adding a new provider = one new step. Removing
+  a provider = removing one step. Provider-specific concerns
+  (where the credential lives, whether validation is possible,
+  whether rotation matters) stay isolated.
+
   The Claude rotation step requires gh-token to carry secrets:write.
   The agentic GitHub App carries this transitionally — see
   docs/github-app-setup.md "secrets: write rationale". When the
   production switch to the Anthropic API key lands, the rotation
   step and the secrets:write requirement both go away.
 
-  Adding a new provider that uses simple env-var auth = one new
-  input + one new export block. Adding a new provider with disk-
-  based auth (like Claude) = one new input + one new export block
-  + one new conditional setup block.
-
 inputs:
   agent-provider:
     description: >
       The active agent provider, matching vars.AGENT_PROVIDER on the
       calling workflow (e.g. claude-code, mistral, openai). Drives
-      the provider-specific setup steps below; non-matching providers
-      skip those steps cleanly.
+      which provider-specific setup step runs; non-matching steps
+      are skipped cleanly.
     required: true
   claude-credentials-json:
     description: >
       Base64-encoded Claude Code credentials (the
-      CLAUDE_CREDENTIALS_JSON secret). Exported to env when
-      non-empty; the Claude-specific decode + validate + rotate
-      flow runs only when agent-provider is claude-code.
+      CLAUDE_CREDENTIALS_JSON secret). Required when
+      agent-provider is claude-code.
     required: false
     default: ''
   mistral-api-key:
     description: >
-      Mistral API key (the MISTRAL_API_KEY secret). When non-empty,
-      exported to env. No disk write or validation step — Mistral
-      reads its key from env at runtime.
+      Mistral API key (the MISTRAL_API_KEY secret). Required when
+      agent-provider is mistral.
     required: false
     default: ''
   gh-token:
@@ -64,48 +63,34 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Export agent credentials to env
-      shell: bash
-      env:
-        CLAUDE_CREDENTIALS_JSON: ${{ inputs.claude-credentials-json }}
-        MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
-      run: |
-        if [ -n "${CLAUDE_CREDENTIALS_JSON}" ]; then
-          echo "CLAUDE_CREDENTIALS_JSON=${CLAUDE_CREDENTIALS_JSON}" >> "${GITHUB_ENV}"
-        fi
-        if [ -n "${MISTRAL_API_KEY}" ]; then
-          echo "MISTRAL_API_KEY=${MISTRAL_API_KEY}" >> "${GITHUB_ENV}"
-        fi
-
-    # Claude-specific: decode secret to ~/.claude/.credentials.json.
-    # The Claude Code CLI reads from disk, not env. Skipped silently
-    # when agent-provider is not claude-code.
-    - name: Restore Claude Code credentials to disk
+    # Claude: export + decode-to-disk + validate-session + rotate-on-refresh.
+    # The Claude Code CLI reads credentials from ~/.claude/.credentials.json,
+    # not from env, so the env export is a courtesy for downstream steps
+    # that may want to read the raw secret. The validation runs `claude -p
+    # "hi"` to prove the session is live; if that call refreshes the
+    # credentials on disk, the SHA diff triggers the rotate-back to GitHub.
+    - name: Setup Claude Code auth
       if: inputs.agent-provider == 'claude-code'
       shell: bash
       env:
         CLAUDE_CREDENTIALS_JSON: ${{ inputs.claude-credentials-json }}
+        GH_TOKEN: ${{ inputs.gh-token }}
       run: |
+        if [ -z "${CLAUDE_CREDENTIALS_JSON}" ]; then
+          echo "::error::CLAUDE_CREDENTIALS_JSON is empty but AGENT_PROVIDER=claude-code."
+          echo "Set the repo secret manually:"
+          echo "  gh secret set CLAUDE_CREDENTIALS_JSON --repo <owner>/<repo> < credentials.json"
+          echo "(See docs/github-app-setup.md)"
+          exit 1
+        fi
+        echo "CLAUDE_CREDENTIALS_JSON=${CLAUDE_CREDENTIALS_JSON}" >> "${GITHUB_ENV}"
+
         mkdir -p ~/.claude
         echo "${CLAUDE_CREDENTIALS_JSON}" | base64 -d > ~/.claude/.credentials.json
         chmod 0600 ~/.claude/.credentials.json
 
-    # Claude-specific: validate the session is live and rotate the
-    # secret back to GitHub if Claude refreshed it during validation.
-    # The hash diff is how we detect rotation — Claude writes the
-    # refreshed credentials to the same path, and a SHA mismatch
-    # triggers the secret update. gh-token is only consulted on the
-    # rotation branch; lack of secrets:write surfaces as a failure
-    # of `gh secret set` rather than a pre-flight check, since the
-    # rotation case is rare.
-    - name: Validate Claude Code credentials and rotate on refresh
-      if: inputs.agent-provider == 'claude-code'
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.gh-token }}
-      run: |
         if [ ! -s ~/.claude/.credentials.json ]; then
-          echo "::error::~/.claude/.credentials.json is empty or missing."
+          echo "::error::~/.claude/.credentials.json is empty or missing after decode."
           echo "Regenerate locally and run: gh secret set CLAUDE_CREDENTIALS_JSON ..."
           exit 1
         fi
@@ -131,3 +116,21 @@ runs:
         else
           echo "Credentials unchanged — no rotation needed."
         fi
+
+    # Mistral: just export the API key. Mistral reads it from env at
+    # runtime; no disk write, no validation step (the Mistral API
+    # rejects bad keys at first call, which is sufficient signal).
+    - name: Setup Mistral auth
+      if: inputs.agent-provider == 'mistral'
+      shell: bash
+      env:
+        MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
+      run: |
+        if [ -z "${MISTRAL_API_KEY}" ]; then
+          echo "::error::MISTRAL_API_KEY is empty but AGENT_PROVIDER=mistral."
+          echo "Set the repo secret manually:"
+          echo "  gh secret set MISTRAL_API_KEY --repo <owner>/<repo>"
+          exit 1
+        fi
+        echo "MISTRAL_API_KEY=${MISTRAL_API_KEY}" >> "${GITHUB_ENV}"
+        echo "Mistral API key exported."
