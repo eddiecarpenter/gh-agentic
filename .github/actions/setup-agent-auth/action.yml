@@ -31,12 +31,19 @@ description: >
   + one new conditional setup block.
 
 inputs:
+  agent-provider:
+    description: >
+      The active agent provider, matching vars.AGENT_PROVIDER on the
+      calling workflow (e.g. claude-code, mistral, openai). Drives
+      the provider-specific setup steps below; non-matching providers
+      skip those steps cleanly.
+    required: true
   claude-credentials-json:
     description: >
       Base64-encoded Claude Code credentials (the
-      CLAUDE_CREDENTIALS_JSON secret). When non-empty, the action
-      runs the Claude-specific decode + validate + rotate flow in
-      addition to exporting the secret to env.
+      CLAUDE_CREDENTIALS_JSON secret). Exported to env when
+      non-empty; the Claude-specific decode + validate + rotate
+      flow runs only when agent-provider is claude-code.
     required: false
     default: ''
   mistral-api-key:
@@ -49,8 +56,8 @@ inputs:
   gh-token:
     description: >
       GitHub App installation token with secrets:write. Required
-      when claude-credentials-json is non-empty (used for the
-      Claude rotation step). Ignored otherwise.
+      when agent-provider is claude-code (used for the Claude
+      rotation step). Ignored otherwise.
     required: false
     default: ''
 
@@ -72,10 +79,9 @@ runs:
 
     # Claude-specific: decode secret to ~/.claude/.credentials.json.
     # The Claude Code CLI reads from disk, not env. Skipped silently
-    # when the caller is not using Claude (claude-credentials-json
-    # input is empty).
+    # when agent-provider is not claude-code.
     - name: Restore Claude Code credentials to disk
-      if: inputs.claude-credentials-json != ''
+      if: inputs.agent-provider == 'claude-code'
       shell: bash
       env:
         CLAUDE_CREDENTIALS_JSON: ${{ inputs.claude-credentials-json }}
@@ -93,7 +99,7 @@ runs:
     # of `gh secret set` rather than a pre-flight check, since the
     # rotation case is rare.
     - name: Validate Claude Code credentials and rotate on refresh
-      if: inputs.claude-credentials-json != ''
+      if: inputs.agent-provider == 'claude-code'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.gh-token }}
@@ -116,7 +122,7 @@ runs:
           echo "Credentials rotated — updating CLAUDE_CREDENTIALS_JSON secret"
           if [ -z "${GH_TOKEN}" ]; then
             echo "::error::Claude refreshed credentials but gh-token is empty — cannot rotate the secret."
-            echo "Pass gh-token to this action when claude-credentials-json is set, with secrets:write."
+            echo "Pass gh-token to this action when agent-provider is claude-code, with secrets:write."
             exit 1
           fi
           gh secret set CLAUDE_CREDENTIALS_JSON \
