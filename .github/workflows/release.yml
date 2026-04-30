@@ -21,8 +21,16 @@ on:
     secrets:
       AGENTIC_APP_PRIVATE_KEY:
         required: true
+      # Provider-specific secrets are both optional at the workflow_call
+      # level — setup-agent-auth enforces that the active provider's
+      # secret (per vars.AGENT_PROVIDER) is non-empty at runtime. A
+      # project using Claude needs CLAUDE_CREDENTIALS_JSON; a project
+      # using Mistral needs MISTRAL_API_KEY; making both required here
+      # would force Mistral-only projects to set a stale Claude secret.
       CLAUDE_CREDENTIALS_JSON:
-        required: true
+        required: false
+      MISTRAL_API_KEY:
+        required: false
 
 jobs:
   release-notes:
@@ -75,10 +83,12 @@ jobs:
         with:
           gh-token: ${{ steps.app-token.outputs.token }}
 
-      - name: Setup Claude Code auth
-        uses: ./.ai/.github/actions/setup-claude-auth
+      - name: Setup Agent Auth
+        uses: ./.ai/.github/actions/setup-agent-auth
         with:
+          agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Goose
