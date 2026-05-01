@@ -567,17 +567,6 @@ conditional. Every other step is mandatory.
    Then emit the session exit block per the framework's
    `emits-exit-block: true` contract.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/requirements-session/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/requirements-session/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `USER_CANCELLED` (raised from any user-cancel choice — step 2

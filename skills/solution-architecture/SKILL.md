@@ -475,17 +475,6 @@ right; the human will extend over time.
     the host runtime's session-close API if available; otherwise
     halt.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/solution-architecture/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/solution-architecture/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `ON_MAIN_BRANCH` from step 2 (current branch is `main` /

@@ -80,26 +80,7 @@ not a framework skill and therefore not declared in `loads:`.
    Detection is by tool registry inspection, not by env var — there
    is no `CLAUDE_CODE_HEADLESS` flag.
 
-3. **Spawn the walk-away reminder.** A 30-second background task
-   that fires a desktop notification with sound if the human takes
-   longer than 30 seconds to respond — useful when they've walked
-   away from the screen.
-
-   ```
-   Bash(
-     command: "sleep 30 && osascript -e 'display notification \"Claude is waiting for your input\" with title \"Claude Code\" sound name \"Glass\"' >/dev/null 2>&1",
-     run_in_background: true,
-     description: "30s walk-away reminder for prompt-user"
-   )
-   → returns { task_id: <id> }
-   ```
-
-   Capture the returned `task_id`. The notification command is
-   macOS-specific (`osascript`); on Linux or Windows the spawn
-   succeeds, `osascript` silently no-ops, and the output redirect
-   absorbs any error.
-
-4. **Invoke `AskUserQuestion`.** Build the call from the caller's
+3. **Invoke `AskUserQuestion`.** Build the call from the caller's
    inputs:
 
    ```
@@ -125,22 +106,7 @@ not a framework skill and therefore not declared in `loads:`.
    The user can always supply free text via the "Other" affordance
    `AskUserQuestion` provides natively.
 
-5. **Cancel the reminder.** Once `AskUserQuestion` returns —
-   whether the human answered before or after the 30s reminder
-   fired — immediately:
-
-   ```
-   TaskStop(task_id: <id from step 3>)
-   ```
-
-   Unconditional on every return path. If the task already
-   completed naturally (the reminder did fire), `TaskStop` will
-   return `"No task found with ID: <id>"` — that is **not a real
-   failure**, just the runtime's signal that there is nothing left
-   to stop. Handled by the `TASK_STOP_FAILED` rule in Error
-   Handling: severity `INFO`, ignore.
-
-6. **Classify the reply and return.** From the `AskUserQuestion`
+4. **Classify the reply and return.** From the `AskUserQuestion`
    tool result:
 
    - User selected a labelled option → `answer = label`,
@@ -154,23 +120,12 @@ not a framework skill and therefore not declared in `loads:`.
    Return the structured value to the caller. The caller decides
    what to do with `cancelled: true` — this primitive does not.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/prompt-user/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/prompt-user/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `MULTI_QUESTION_REJECTED` from step 1 → severity `ERROR`;
   propagate. The caller is misusing the primitive and must loop
   per-question instead.
-- `USER_CANCELLED` from step 3a or 3b → severity `WARN`; surface as
+- `USER_CANCELLED` from step 4 → severity `WARN`; surface as
   a normal return value (`cancelled: true`). Not an error condition
   for this primitive — the caller decides whether cancellation is
   fatal to its own goal.
@@ -179,17 +134,8 @@ Pass criteria: both commands exit 0.
   `ERROR`; propagate. There is no human to reply; the skill cannot
   produce its declared artefact. The caller is responsible for
   handling this — automated callers should not invoke prompt-user.
-- `ASK_USER_QUESTION_FAILED` from step 4 (the tool was advertised
+- `ASK_USER_QUESTION_FAILED` from step 3 (the tool was advertised
   as available but its invocation errored at runtime) → severity
   `ERROR`; propagate. Same outcome as `INTERACTION_REQUIRED` from
   the caller's perspective.
-- `REMINDER_SPAWN_FAILED` (the background `Bash` call to set up the
-  walk-away reminder errored) → severity `INFO`; log and proceed
-  without a reminder. The prompt itself is the critical path; the
-  reminder is a courtesy. The skill must NOT halt because the
-  reminder couldn't start.
-- `TASK_STOP_FAILED` (the `TaskStop` call after the human replied
-  errored, e.g., task already completed) → severity `INFO`; ignore.
-  Worst case the notification fires after the user already
-  answered — annoying but not broken.
 - All other errors: propagate (default).

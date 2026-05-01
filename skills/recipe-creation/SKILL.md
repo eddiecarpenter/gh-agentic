@@ -445,17 +445,6 @@ up the change automatically since it loads the file.
     invoke the host runtime's session-close API if available;
     otherwise halt.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/recipe-creation/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/recipe-creation/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `INVALID_RECIPE_NAME` from step 3 (chosen name is not

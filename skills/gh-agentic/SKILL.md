@@ -413,34 +413,6 @@ Bypass via `--skip-app-install`.
 
 ---
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/gh-agentic/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/gh-agentic/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
-
-### Skill-specific extension
-
-This skill is the only one with a CI-enforced sync check between
-its body and the live CLI surface. Run alongside the framework
-checks:
-
-```bash
-go test ./internal/... -run TestGhAgenticToolSkillCoversCLI
-```
-
-Pass criteria: exit 0. The test asserts every cobra command path
-and flag is mentioned in this skill's Command Reference, and that
-removed commands/flags are not mentioned. If it fails, the CLI
-surface drifted; update this skill in the same PR as the CLI
-change.
-
 ## Error Handling
 
 - `CLI_NOT_INSTALLED` from step 4 (exit 127 / command not found) →

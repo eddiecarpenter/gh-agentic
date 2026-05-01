@@ -591,18 +591,6 @@ get a recorded reason in the doc.
     invoke the host runtime's session-close API if available;
     otherwise halt.
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/ux-design/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/ux-design/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
-
 ## Error Handling
 
 - `USER_CANCELLED` (any cancel point) → severity `WARN`. End cleanly.

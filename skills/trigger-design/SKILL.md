@@ -153,17 +153,6 @@ No file artefacts. No state outside the named Feature changes.
      triggered: true }
    ```
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/trigger-design/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/trigger-design/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `INVALID_TRIGGER_STATE` from steps 2–3 (issue not found, not a

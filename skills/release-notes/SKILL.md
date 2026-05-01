@@ -307,17 +307,6 @@ Hold as `<tag>` and `<repo>`.
     once the release is created.
     ```
 
-## Verification
-
-Per `skills/definitions/verification-procedure.md` "Section format".
-Skill-specific commands:
-
-```bash
-python3 skills/skill-creator/scripts/verify-skill-mechanical.py skills/release-notes/SKILL.md
-python3 skills/skill-creator/scripts/check-description-triggers.py skills/release-notes/SKILL.md
-```
-
-Pass criteria: both commands exit 0.
 ## Error Handling
 
 - `INVALID_TAG` from step 1 (the tag does not exist locally) →
