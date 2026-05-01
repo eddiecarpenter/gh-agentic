@@ -79,7 +79,7 @@ Run 'gh agentic <command> --help' on any command for detailed usage.`,
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newCheckCmd())
 	root.AddCommand(newRepairCmd())
-	root.AddCommand(newUpgradeCmd())
+	root.AddCommand(newUpgradeCmd(version))
 	root.AddCommand(newProjectCmd())
 	root.AddCommand(newInfoCmd(version, date))
 	root.AddCommand(newAuthCmd())
