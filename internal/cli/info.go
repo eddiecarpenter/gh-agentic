@@ -311,18 +311,18 @@ func printInfo(w io.Writer, data *infoData) {
 		value = value + "  " + ui.Muted.Render("(this repo)")
 		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework source:", value)
 	} else if data.localVersion != "" {
-		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework (local):", data.localVersion)
+		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework (local):", mount.TrimVPrefix(data.localVersion))
 	} else {
 		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework (local):", ui.Muted.Render("not mounted"))
 	}
 
 	if data.remoteVersion != "" {
-		fmt.Fprintf(w, "  %-*s %s%s\n", infoLabelWidth, "Framework (remote):", data.remoteVersion, data.syncStatus)
+		fmt.Fprintf(w, "  %-*s %s%s\n", infoLabelWidth, "Framework (remote):", mount.TrimVPrefix(data.remoteVersion), data.syncStatus)
 	} else {
 		fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Framework (remote):", ui.Muted.Render("not set"))
 	}
 
-	fmt.Fprintf(w, "  %-*s %s%s\n", infoLabelWidth, "Framework (latest):", data.latestVersion, data.latestStatus)
+	fmt.Fprintf(w, "  %-*s %s%s\n", infoLabelWidth, "Framework (latest):", mount.TrimVPrefix(data.latestVersion), data.latestStatus)
 
 	fmt.Fprintln(w, "")
 }

@@ -78,7 +78,7 @@ Use --list to browse available versions before choosing one.`,
 				fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Available framework versions"))
 				fmt.Fprintln(w, "  "+ui.Divider(48))
 				for _, r := range releases {
-					fmt.Fprintf(w, "  %s\n", r.TagName)
+					fmt.Fprintf(w, "  %s\n", mount.TrimVPrefix(r.TagName))
 				}
 				fmt.Fprintln(w, "")
 				return nil
@@ -91,7 +91,7 @@ Use --list to browse available versions before choosing one.`,
 			if len(args) > 0 {
 				target = ensureVPrefix(args[0])
 			} else {
-				fmt.Fprintf(w, "  No version specified — using CLI version %s.\n", target)
+				fmt.Fprintf(w, "  No version specified — using CLI version %s.\n", mount.TrimVPrefix(target))
 			}
 
 			deps, err := resolveProjectDeps()
