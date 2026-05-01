@@ -12,7 +12,9 @@ import (
 )
 
 // newUpgradeCmd constructs the top-level `gh agentic upgrade` command.
-func newUpgradeCmd() *cobra.Command {
+// cliVersion is the version of this binary, used as the default target when
+// no explicit version argument is supplied.
+func newUpgradeCmd(cliVersion string) *cobra.Command {
 	var yes, list bool
 
 	cmd := &cobra.Command{
@@ -20,23 +22,30 @@ func newUpgradeCmd() *cobra.Command {
 		Short: "Change the framework version for the whole agentic project",
 		Long: `Upgrade or downgrade the AI-Native Delivery Framework version.
 
+When no version is given, defaults to the version of this CLI binary — the
+CLI and framework are released together and are designed to run at the same
+version. Pass an explicit version to pin to a specific release (e.g. to
+downgrade or test a release candidate).
+
 Only valid on the control plane repo. On a federated setup, changing the version
 here broadcasts it to domain repos via AGENTIC_FRAMEWORK_VERSION — they pick it
 up on the next 'gh agentic mount' or 'gh agentic check'.
 
 Blocked on federated domain repos — version governance flows through the
-control plane only. "Upgrade" is used generically here: specifying an older
-version downgrades the federation.
+control plane only.
 
 Use --list to browse available versions before choosing one.`,
-		Example: `  # List available versions
-  gh agentic upgrade --list
+		Example: `  # Upgrade to the version matching this CLI (most common)
+  gh agentic upgrade
 
   # Upgrade to a specific version
   gh agentic upgrade v2.2.0
 
+  # List available versions
+  gh agentic upgrade --list
+
   # Skip confirmation (for scripts)
-  gh agentic upgrade v2.2.0 --yes`,
+  gh agentic upgrade --yes`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
@@ -74,8 +83,12 @@ Use --list to browse available versions before choosing one.`,
 				return nil
 			}
 
-			if len(args) == 0 {
-				return cmd.Help()
+			// Resolve target version: explicit arg wins; fall back to CLI version.
+			target := cliVersion
+			if len(args) > 0 {
+				target = args[0]
+			} else {
+				fmt.Fprintf(w, "  No version specified — using CLI version %s.\n", target)
 			}
 
 			deps, err := resolveProjectDeps()
@@ -94,13 +107,13 @@ Use --list to browse available versions before choosing one.`,
 			var preflightErr error
 			_ = ui.RunWithDynamicSpinner(w, "Detecting topology...", func(setLabel func(string)) error {
 				setLabel("Fetching framework releases...")
-				pre, preflightErr = project.PreflightSwitchVersion(deps, args[0])
+				pre, preflightErr = project.PreflightSwitchVersion(deps, target)
 				return nil
 			})
 			if preflightErr != nil {
 				return preflightErr
 			}
-			return project.SwitchVersion(w, deps, args[0], pre, confirm)
+			return project.SwitchVersion(w, deps, target, pre, confirm)
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip confirmation prompt")
