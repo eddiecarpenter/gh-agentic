@@ -188,7 +188,7 @@ func checkFramework(deps CheckDeps) Group {
 			version = v
 		}
 		g.Results = append(g.Results, CheckResult{
-			Name: "ai-mounted", Status: Pass, Message: fmt.Sprintf(".ai/ mounted (%s)", version),
+			Name: "ai-mounted", Status: Pass, Message: fmt.Sprintf(".ai/ mounted (%s)", mount.TrimVPrefix(version)),
 		})
 	} else {
 		g.Results = append(g.Results, CheckResult{
@@ -204,7 +204,7 @@ func checkFramework(deps CheckDeps) Group {
 	v, err := mount.ReadAIVersionFromGit(deps.Root)
 	if err == nil {
 		g.Results = append(g.Results, CheckResult{
-			Name: "ai-version", Status: Pass, Message: fmt.Sprintf("framework version pinned (%s)", v),
+			Name: "ai-version", Status: Pass, Message: fmt.Sprintf("framework version pinned (%s)", mount.TrimVPrefix(v)),
 		})
 	} else {
 		g.Results = append(g.Results, CheckResult{
@@ -339,12 +339,12 @@ func checkWorkflows(deps CheckDeps) Group {
 			})
 		case strings.Contains(string(data), "@"+version):
 			g.Results = append(g.Results, CheckResult{
-				Name: wf, Status: Pass, Message: fmt.Sprintf("%s → @%s", wf, version),
+				Name: wf, Status: Pass, Message: fmt.Sprintf("%s → @%s", wf, mount.TrimVPrefix(version)),
 			})
 		default:
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Fail,
-				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, version),
+				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, mount.TrimVPrefix(version)),
 				Remediation: "Run 'gh agentic mount'",
 			})
 		}

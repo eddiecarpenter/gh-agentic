@@ -330,7 +330,7 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 				default:
 					result.Lines = append(result.Lines,
 						fmt.Sprintf("  %s  Workflow version tags updated to %s (%d file(s))",
-							ui.StatusOK.Render("✓"), version, rewrites))
+							ui.StatusOK.Render("✓"), mount.TrimVPrefix(version), rewrites))
 					result.Repaired++
 				}
 
