@@ -29,12 +29,13 @@ git add go.mod cmd/ internal/
 After any change to Go source, imports, or dependencies — run in this order:
 
 ```bash
+gofmt -w ./...
 go mod tidy
 go build ./...
 go test ./...
 ```
 
-Never claim an implementation is complete without all three passing.
+Never claim an implementation is complete without all four passing.
 
 ---
 
