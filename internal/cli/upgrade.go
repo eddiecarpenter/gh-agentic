@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -84,9 +85,11 @@ Use --list to browse available versions before choosing one.`,
 			}
 
 			// Resolve target version: explicit arg wins; fall back to CLI version.
-			target := cliVersion
+			// Tags always carry a "v" prefix; GoReleaser strips it from the
+			// binary version string, so we normalise before the tag lookup.
+			target := ensureVPrefix(cliVersion)
 			if len(args) > 0 {
-				target = args[0]
+				target = ensureVPrefix(args[0])
 			} else {
 				fmt.Fprintf(w, "  No version specified — using CLI version %s.\n", target)
 			}
@@ -119,4 +122,14 @@ Use --list to browse available versions before choosing one.`,
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip confirmation prompt")
 	cmd.Flags().BoolVarP(&list, "list", "l", false, "list available framework versions")
 	return cmd
+}
+
+// ensureVPrefix normalises a version string to have a "v" prefix.
+// GoReleaser injects {{.Version}} (e.g. "2.6.2") into the binary, but git
+// tags and GitHub releases use the full tag name (e.g. "v2.6.2").
+func ensureVPrefix(v string) string {
+	if strings.HasPrefix(v, "v") {
+		return v
+	}
+	return "v" + v
 }
