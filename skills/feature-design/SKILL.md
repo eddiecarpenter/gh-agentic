@@ -63,11 +63,10 @@ Feature's label set on entry:
   - Linked as a sub-issue of the parent Feature
   - Body begins with a stable `## Task N of M` header
   - Ordering preserved by issue creation order
-- **A feature branch** in the active repo, named
+- **A feature branch** pushed to origin, named
   `feature/<feature-N>-<slug>`, branched off `main`.
 - **(Interactive only)** Files under `docs/design/feature-<N>/` on
-  the feature branch — committed, not pushed (the dev-session pushes
-  along with implementation work).
+  the feature branch — committed and pushed.
 
 A return value to the caller (in the headless case, the workflow):
 ```
@@ -526,17 +525,22 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
     `feature/<N>-<slug>`. Example: Feature #42 *"Backlog visibility
     for product managers"* → `feature/42-backlog-visibility-for-pro`.
 
-13. **Create the feature branch (T2).** From the local repo:
+13. **Create and push the feature branch (T2).** From the local repo:
 
     ```bash
     git fetch origin main
     git checkout -b "feature/<N>-<slug>" origin/main
+    git push -u origin "feature/<N>-<slug>"
     ```
 
+    The push is required — the dev-session runs in CI and checks out
+    the branch from `origin`. A branch that exists only locally is
+    invisible to the next pipeline stage.
+
     On failure (branch already exists locally, network failure,
-    detached HEAD, etc.) → raise `BRANCH_CREATION_FAILED` (`ERROR`).
-    The post-T1 cancel rule applies: rationale is posted; mark it
-    cancelled before exit.
+    detached HEAD, push rejected, etc.) → raise
+    `BRANCH_CREATION_FAILED` (`ERROR`). The post-T1 cancel rule
+    applies: rationale is posted; mark it cancelled before exit.
 
 14. **Commit design products. (interactive only)** For each entry
     in `<design-products>` (step 7):
@@ -545,16 +549,15 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
       the `Write` tool.
     - Stage with `git add`.
 
-    Then commit:
+    Then commit and push:
     ```bash
     git commit -m "design: notes and references for feature #<N>"
+    git push origin "feature/<N>-<slug>"
     ```
 
     On failure → raise `BRANCH_CREATION_FAILED` (`ERROR`); the
     branch exists but is not in a clean state. Surface the partial
     state and exit per T2 cancel rules.
-
-    Do NOT push. The dev-session pushes alongside its own commits.
 
 ---
 
