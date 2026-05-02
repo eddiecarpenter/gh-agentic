@@ -245,9 +245,7 @@ get a recorded reason in the doc.
    The output of this walk is the body of every canonical section in
    `docs/UX_DESIGN.md`.
 
-5. **(Brownfield path)** Run the six-step audit from
-   `DESIGN_NOTES.md` §4 (the design notes the framework was bootstrapped
-   from):
+5. **(Brownfield path)** Run the six-step audit:
 
    1. **Audit existing code.** Inventory the de-facto patterns
       across the codebase — buttons, forms, modals, toasts,
