@@ -88,7 +88,8 @@ Use --list to browse available versions before choosing one.`,
 			// Tags always carry a "v" prefix; GoReleaser strips it from the
 			// binary version string, so we normalise before the tag lookup.
 			target := ensureVPrefix(cliVersion)
-			if len(args) > 0 {
+			explicitVersion := len(args) > 0
+			if explicitVersion {
 				target = ensureVPrefix(args[0])
 			} else {
 				fmt.Fprintf(w, "  No version specified — using CLI version %s.\n", mount.TrimVPrefix(target))
@@ -99,8 +100,13 @@ Use --list to browse available versions before choosing one.`,
 				return err
 			}
 
+			// Confirm only when an explicit version was supplied — the user is
+			// making a deliberate pin choice (upgrade or downgrade) and should
+			// acknowledge the switch. When defaulting to the CLI version the
+			// intent is unambiguous, so skip the prompt unless --yes was given
+			// (which would be a no-op here anyway).
 			var confirm func(string) (bool, error)
-			if !yes {
+			if !yes && explicitVersion {
 				confirm = deps.Confirm
 			}
 
