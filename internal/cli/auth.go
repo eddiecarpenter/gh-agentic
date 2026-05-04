@@ -33,19 +33,21 @@ func newAuthCmd() *cobra.Command {
 	})
 }
 
-// controlPlaneAuthError prints the federated-CP block message and returns ErrSilent.
-func controlPlaneAuthError(w interface{ Write([]byte) (int, error) }) error {
-	fmt.Fprintf(w, "  %s  This repo is the federated control plane — auth commands are for repos that run Claude agents.\n", ui.StatusWarning.Render("⚠"))
-	fmt.Fprintf(w, "       A federated control plane does not run Claude agents and does not need credentials.\n")
-	return ErrSilent
+// warnIfFederatedControlPlane prints an advisory when the current repo is the
+// federated control plane. A pure CP typically does not run Claude agents, but
+// this is not universal — the warning informs rather than blocks.
+func warnIfFederatedControlPlane(w interface{ Write([]byte) (int, error) }) {
+	if isFederatedControlPlane() {
+		fmt.Fprintf(w, "  %s  This repo is the federated control plane — credentials are usually only needed on domain repos.\n", ui.StatusWarning.Render("⚠"))
+		fmt.Fprintf(w, "       Continuing anyway; skip this message by running on a domain repo instead.\n")
+	}
 }
 
 // isFederatedControlPlane returns true only if this repo is the control plane
-// of a federated setup — the one case where auth commands should be blocked
-// because the repo does not itself run Claude agents.
+// of a federated setup.
 //
 // Single-topology repos are also "control planes" structurally, but they do run
-// agents (the repo is CP + code combined), so they should not be blocked.
+// agents (the repo is CP + code combined), so they should not be flagged.
 //
 // Routes through project.Resolve so topology detection stays on the single
 // canonical code path — no direct AGENTIC_* reads here.
@@ -123,9 +125,7 @@ without re-logging in, use 'auth refresh' instead.`,
 		Example: `  gh agentic auth login`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
-			if isFederatedControlPlane() {
-				return controlPlaneAuthError(w)
-			}
+			warnIfFederatedControlPlane(w)
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {
 				return err
@@ -149,9 +149,7 @@ if your local credentials are missing or expired.`,
 		Example: `  gh agentic auth refresh`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
-			if isFederatedControlPlane() {
-				return controlPlaneAuthError(w)
-			}
+			warnIfFederatedControlPlane(w)
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {
 				return err
@@ -176,9 +174,7 @@ CLAUDE_CREDENTIALS_JSON repo secret is set, then report whether they are in sync
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 
-			if isFederatedControlPlane() {
-				return controlPlaneAuthError(w)
-			}
+			warnIfFederatedControlPlane(w)
 
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {
