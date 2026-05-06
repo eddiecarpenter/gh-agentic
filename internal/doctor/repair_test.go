@@ -12,12 +12,19 @@ import (
 
 // fakeRunMissingVarsAndSecret simulates `gh` returning empty values for all
 // variables and an empty secret list, so every variable/secret check fails.
+// It returns all required pipeline labels so the labels check passes — the
+// tests that use this fake are concerned with variable/secret repair, not
+// label repair, and the label-create calls would otherwise inflate the repair
+// count and break assertions.
 func fakeRunMissingVarsAndSecret(name string, args ...string) (string, error) {
 	if name == "gh" && len(args) > 1 && args[0] == "variable" && args[1] == "get" {
 		return "", nil
 	}
 	if name == "gh" && len(args) > 1 && args[0] == "secret" && args[1] == "list" {
 		return "", nil
+	}
+	if name == "gh" && len(args) > 1 && args[0] == "label" && args[1] == "list" {
+		return allLabelsListOutput(), nil
 	}
 	return "", nil
 }
@@ -434,6 +441,134 @@ func reflectDeepEqualStrings(a, b []string) bool {
 	return true
 }
 
+// --- label repair tests (issue #686) ---
+
+// TestRepairPipeline_CreatesLabels verifies that when the label check detects
+// missing pipeline labels, RepairPipeline creates each one via gh label create
+// and counts them as Repaired.
+func TestRepairPipeline_CreatesLabels(t *testing.T) {
+	root := setupHealthyRepo(t)
+	createCalls := 0
+	deps := CheckDeps{
+		Root:              root,
+		RepoFullName:      "owner/repo",
+		Owner:             "owner",
+		RepoName:          "repo",
+		OwnerType:         "User",
+		Topology:          "single",
+		ProjectID:         "PVT_configured",
+		FetchProjectTitle: func(id string) (string, error) { return "Healthy", nil },
+		Run: func(name string, args ...string) (string, error) {
+			if name == "gh" && len(args) > 1 {
+				switch {
+				case args[0] == "variable" && args[1] == "get":
+					return "configured", nil
+				case args[0] == "secret" && args[1] == "list":
+					return "PROJECT_PAT\tUpdated 2026-04-01", nil
+				case args[0] == "label" && args[1] == "list":
+					return "", nil // all labels missing
+				case args[0] == "label" && args[1] == "create":
+					createCalls++
+					return "", nil // creation succeeds
+				}
+			}
+			return "", nil
+		},
+		ReadCreds: func(run auth.RunCommandFunc) ([]byte, error) {
+			return []byte(`{"token":"abc"}`), nil
+		},
+	}
+	result := RepairPipeline(deps, nil)
+	if createCalls != len(requiredPipelineLabels) {
+		t.Errorf("expected %d gh label create calls, got %d",
+			len(requiredPipelineLabels), createCalls)
+	}
+	if result.Repaired < len(requiredPipelineLabels) {
+		t.Errorf("expected at least %d repairs, got %d (lines: %v)",
+			len(requiredPipelineLabels), result.Repaired, result.Lines)
+	}
+}
+
+// TestRepairPipeline_LabelCreateFails_CountsUnrepaired verifies that a gh
+// label create failure is surfaced as Unrepaired and does not abort the rest
+// of the repair run.
+func TestRepairPipeline_LabelCreateFails_CountsUnrepaired(t *testing.T) {
+	root := setupHealthyRepo(t)
+	deps := CheckDeps{
+		Root:              root,
+		RepoFullName:      "owner/repo",
+		Owner:             "owner",
+		RepoName:          "repo",
+		OwnerType:         "User",
+		Topology:          "single",
+		ProjectID:         "PVT_configured",
+		FetchProjectTitle: func(id string) (string, error) { return "Healthy", nil },
+		Run: func(name string, args ...string) (string, error) {
+			if name == "gh" && len(args) > 1 {
+				switch {
+				case args[0] == "variable" && args[1] == "get":
+					return "configured", nil
+				case args[0] == "secret" && args[1] == "list":
+					return "PROJECT_PAT\tUpdated 2026-04-01", nil
+				case args[0] == "label" && args[1] == "list":
+					return "", nil // all labels missing
+				case args[0] == "label" && args[1] == "create":
+					return "", fmt.Errorf("label already exists")
+				}
+			}
+			return "", nil
+		},
+		ReadCreds: func(run auth.RunCommandFunc) ([]byte, error) {
+			return []byte(`{"token":"abc"}`), nil
+		},
+	}
+	result := RepairPipeline(deps, nil)
+	if result.Unrepaired < len(requiredPipelineLabels) {
+		t.Errorf("expected at least %d unrepaired, got %d (lines: %v)",
+			len(requiredPipelineLabels), result.Unrepaired, result.Lines)
+	}
+	if result.Repaired != 0 {
+		t.Errorf("expected 0 repaired when all creates fail, got %d", result.Repaired)
+	}
+}
+
+// TestRunLabelCreate_KnownLabel_Succeeds verifies that runLabelCreate fires
+// the correct gh CLI arguments for a known label definition.
+func TestRunLabelCreate_KnownLabel_Succeeds(t *testing.T) {
+	lbl := requiredPipelineLabels[0]
+	remediation := fmt.Sprintf(
+		"gh label create %q --repo owner/repo --color %s --description %q",
+		lbl.Name, lbl.Color, lbl.Description,
+	)
+	var captured []string
+	run := func(name string, args ...string) (string, error) {
+		captured = append([]string{name}, args...)
+		return "", nil
+	}
+	if err := runLabelCreate(run, remediation); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(captured) == 0 {
+		t.Fatal("run function was not called")
+	}
+	joined := strings.Join(captured, " ")
+	for _, want := range []string{lbl.Name, "--repo", "--color", lbl.Color, "--description"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected %q in command %q", want, joined)
+		}
+	}
+}
+
+// TestRunLabelCreate_UnknownLabel_Errors verifies that runLabelCreate returns
+// an error when the remediation does not match any canonical label definition.
+func TestRunLabelCreate_UnknownLabel_Errors(t *testing.T) {
+	remediation := `gh label create "no-such-label" --repo owner/repo --color 000000 --description ""`
+	run := func(name string, args ...string) (string, error) { return "", nil }
+	if err := runLabelCreate(run, remediation); err == nil {
+		t.Fatal("expected error for unknown label, got nil")
+	}
+}
+
 func TestRepairPipeline_NoFailures(t *testing.T) {
 	root := setupHealthyRepo(t)
 
@@ -455,6 +590,9 @@ func TestRepairPipeline_NoFailures(t *testing.T) {
 			}
 			if name == "gh" && len(args) > 1 && args[0] == "secret" && args[1] == "list" {
 				return "PROJECT_PAT\tUpdated 2026-04-01", nil
+			}
+			if name == "gh" && len(args) > 1 && args[0] == "label" && args[1] == "list" {
+				return allLabelsListOutput(), nil
 			}
 			return "", nil
 		},

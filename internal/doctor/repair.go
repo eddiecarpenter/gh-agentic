@@ -25,6 +25,60 @@ func pendingKind(r CheckResult) (string, bool) {
 	return "", false
 }
 
+// isLabelCreateRemediation returns true when the CheckResult's Remediation
+// string is a `gh label create …` command — meaning it was produced by
+// checkLabels for a missing pipeline label. RepairPipeline uses this to
+// detect which Fail results it can auto-fix by running the command directly.
+func isLabelCreateRemediation(r CheckResult) bool {
+	return strings.HasPrefix(r.Remediation, "gh label create ")
+}
+
+// runLabelCreate executes a `gh label create` remediation command via the
+// injected run function. The command string is produced by checkLabels and
+// has the shape:
+//
+//	gh label create "<name>" --repo <owner/repo> --color <hex> --description "<desc>"
+//
+// Rather than re-parsing the shell-quoted command, we reconstruct the call
+// from requiredPipelineLabels by matching on the name embedded in the
+// remediation. This is safe because the remediation is machine-produced, not
+// user-supplied.
+func runLabelCreate(run auth.RunCommandFunc, remediation string) error {
+	// Find the matching label definition so we can use the structured fields
+	// directly instead of re-parsing the shell-quoted remediation string.
+	for _, lbl := range requiredPipelineLabels {
+		needle := fmt.Sprintf("gh label create %q", lbl.Name)
+		if strings.HasPrefix(remediation, needle) {
+			// Extract the repo from the remediation string. It appears
+			// immediately after "--repo " in the command.
+			repo := extractRepoFromLabelCreate(remediation)
+			if repo == "" {
+				return fmt.Errorf("cannot parse repo from label create remediation: %q", remediation)
+			}
+			_, err := run("gh", "label", "create", lbl.Name,
+				"--repo", repo,
+				"--color", lbl.Color,
+				"--description", lbl.Description,
+			)
+			return err
+		}
+	}
+	return fmt.Errorf("no matching label definition for remediation: %q", remediation)
+}
+
+// extractRepoFromLabelCreate parses the owner/repo slug from a label-create
+// remediation string. The check produces the command via fmt.Sprintf so the
+// slug always appears as the token immediately following "--repo".
+func extractRepoFromLabelCreate(cmd string) string {
+	fields := strings.Fields(cmd)
+	for i, f := range fields {
+		if f == "--repo" && i+1 < len(fields) {
+			return fields[i+1]
+		}
+	}
+	return ""
+}
+
 // ApplyPendingPrompt sets a single GitHub variable or secret using the
 // supplied run function. The CLI layer calls this after collecting values
 // from the user via huh. Empty values are treated as a skip.
@@ -229,11 +283,11 @@ var pendingDescriptions = map[string]struct {
 	Description string
 	Default     string
 }{
-	"AGENT_USER":    {"GitHub username the agent commits as (e.g. goose-bot)", ""},
-	"RUNNER_LABEL":  {"GitHub Actions runner label", ""}, // resolved via select in cli layer
+	"AGENT_USER":     {"GitHub username the agent commits as (e.g. goose-bot)", ""},
+	"RUNNER_LABEL":   {"GitHub Actions runner label", ""}, // resolved via select in cli layer
 	"AGENT_PROVIDER": {"The LLM provider the agent will use", "claude-code"},
-	"AGENT_MODEL":   {"Agent model override", "default"},
-	"PROJECT_PAT":   {"Personal Access Token for Projects v2 mutations (stored as a secret)", ""},
+	"AGENT_MODEL":    {"Agent model override", "default"},
+	"PROJECT_PAT":    {"Personal Access Token for Projects v2 mutations (stored as a secret)", ""},
 }
 
 // workflowRepairNames is the set of CheckResult names produced by checkWorkflows
@@ -285,6 +339,26 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 					result.Lines = append(result.Lines,
 						fmt.Sprintf("  %s  .agents/ removed from .gitignore (legacy shallow-clone state)",
 							ui.StatusOK.Render("✓")))
+					result.Repaired++
+				}
+
+			case isLabelCreateRemediation(r):
+				// Missing pipeline label — create it automatically via gh CLI.
+				// Label creation is non-interactive and idempotent (gh label create
+				// returns an error if the label already exists, which RepairPipeline
+				// treats as a benign no-op: the next check run will confirm Pass).
+				if setLabel != nil {
+					setLabel("Repairing: pipeline labels...")
+				}
+				if err := runLabelCreate(deps.Run, r.Remediation); err != nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Could not create label %s: %v",
+							ui.StatusDanger.Render("✗"), r.Name, err))
+					result.Unrepaired++
+				} else {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Label %s created",
+							ui.StatusOK.Render("✓"), r.Name))
 					result.Repaired++
 				}
 

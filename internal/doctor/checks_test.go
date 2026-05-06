@@ -12,6 +12,17 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 )
 
+// allLabelsListOutput returns fake `gh label list` output that contains every
+// required pipeline label. Use it in test run fakes so the pipeline-labels
+// check passes without injecting missing-label failures into unrelated tests.
+func allLabelsListOutput() string {
+	var sb strings.Builder
+	for _, lbl := range requiredPipelineLabels {
+		fmt.Fprintf(&sb, "%s\t%s\t#%s\n", lbl.Name, lbl.Description, lbl.Color)
+	}
+	return sb.String()
+}
+
 // setupAIGitRepo initialises aiDir as a git repo tagged at version,
 // simulating a real git clone --depth 1 --branch <version>.
 func setupAIGitRepo(t *testing.T, aiDir, version string) {
@@ -78,13 +89,16 @@ func TestRunAllChecks_HealthyRepo(t *testing.T) {
 		ProjectID:         "PVT_healthy",
 		FetchProjectTitle: func(id string) (string, error) { return "Healthy", nil },
 		Run: func(name string, args ...string) (string, error) {
-			// Fake variable/secret checks.
+			// Fake variable/secret/label checks.
 			if name == "gh" && len(args) > 0 {
 				if args[0] == "variable" && args[1] == "get" {
 					return "some-value", nil
 				}
 				if args[0] == "secret" && args[1] == "list" {
 					return "PROJECT_PAT\tUpdated 2026-04-01\nCLAUDE_CREDENTIALS_JSON\tUpdated 2026-04-01", nil
+				}
+				if args[0] == "label" && args[1] == "list" {
+					return allLabelsListOutput(), nil
 				}
 			}
 			return "", nil
@@ -107,7 +121,7 @@ func TestRunAllChecks_HealthyRepo(t *testing.T) {
 	for _, g := range report.Groups {
 		groupNames[g.Name] = true
 	}
-	for _, expected := range []string{"Repository", "Framework", "Agent files", "Workflows", "Variables & secrets"} {
+	for _, expected := range []string{"Repository", "Framework", "Agent files", "Workflows", "Variables & secrets", "Pipeline labels"} {
 		if !groupNames[expected] {
 			t.Errorf("expected group %q", expected)
 		}
@@ -510,6 +524,161 @@ type fakeHTTPError struct {
 }
 
 func (e *fakeHTTPError) Error() string { return e.msg }
+
+// --- checkLabels tests (issue #686) ---
+
+// TestCheckLabels_AllPresent verifies that when all required pipeline labels
+// are returned by gh label list, every CheckResult is Pass.
+func TestCheckLabels_AllPresent(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "owner/repo",
+		Run: func(name string, args ...string) (string, error) {
+			if name == "gh" && len(args) >= 2 && args[0] == "label" && args[1] == "list" {
+				return allLabelsListOutput(), nil
+			}
+			return "", nil
+		},
+	}
+	g := checkLabels(deps)
+	if len(g.Results) != len(requiredPipelineLabels) {
+		t.Fatalf("expected %d results, got %d: %+v", len(requiredPipelineLabels), len(g.Results), g.Results)
+	}
+	for _, r := range g.Results {
+		if r.Status != Pass {
+			t.Errorf("expected Pass for %q, got %v: %s", r.Name, r.Status, r.Message)
+		}
+	}
+}
+
+// TestCheckLabels_SomeMissing verifies that missing labels produce Fail results
+// with a gh label create remediation string.
+func TestCheckLabels_SomeMissing(t *testing.T) {
+	// Only include the first label in the fake output — the rest are missing.
+	partial := fmt.Sprintf("%s\t%s\t#%s\n",
+		requiredPipelineLabels[0].Name,
+		requiredPipelineLabels[0].Description,
+		requiredPipelineLabels[0].Color,
+	)
+	deps := CheckDeps{
+		RepoFullName: "owner/repo",
+		Run: func(name string, args ...string) (string, error) {
+			if name == "gh" && len(args) >= 2 && args[0] == "label" && args[1] == "list" {
+				return partial, nil
+			}
+			return "", nil
+		},
+	}
+	g := checkLabels(deps)
+	passes, fails := 0, 0
+	for _, r := range g.Results {
+		switch r.Status {
+		case Pass:
+			passes++
+		case Fail:
+			fails++
+			if !strings.HasPrefix(r.Remediation, "gh label create ") {
+				t.Errorf("expected 'gh label create' remediation for %q, got %q",
+					r.Name, r.Remediation)
+			}
+		}
+	}
+	if passes != 1 {
+		t.Errorf("expected exactly 1 Pass result, got %d", passes)
+	}
+	missing := len(requiredPipelineLabels) - 1
+	if fails != missing {
+		t.Errorf("expected %d Fail results for missing labels, got %d", missing, fails)
+	}
+}
+
+// TestCheckLabels_RunNil_Warns verifies that when deps.Run is nil the check
+// returns a single Warning rather than panicking.
+func TestCheckLabels_RunNil_Warns(t *testing.T) {
+	deps := CheckDeps{RepoFullName: "owner/repo"} // Run intentionally nil
+	g := checkLabels(deps)
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result for nil Run, got %d: %+v", len(g.Results), g.Results)
+	}
+	if g.Results[0].Status != Warning {
+		t.Errorf("expected Warning for nil Run, got %v: %s", g.Results[0].Status, g.Results[0].Message)
+	}
+}
+
+// TestCheckLabels_RunFails_Warns verifies that a gh invocation error produces
+// a Warning rather than a cascade of Fail results for every label.
+func TestCheckLabels_RunFails_Warns(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "owner/repo",
+		Run: func(name string, args ...string) (string, error) {
+			return "error: 403 Forbidden", fmt.Errorf("exit status 1")
+		},
+	}
+	g := checkLabels(deps)
+	if len(g.Results) != 1 || g.Results[0].Status != Warning {
+		t.Errorf("expected single Warning on run failure, got %+v", g.Results)
+	}
+}
+
+// TestCheckLabels_RunsForAllTopologies verifies the label check is wired into
+// every supported topology variant.
+func TestCheckLabels_RunsForAllTopologies(t *testing.T) {
+	topologies := []string{"single", "federated-cp", "federated-domain"}
+	for _, topo := range topologies {
+		t.Run(topo, func(t *testing.T) {
+			deps := CheckDeps{Topology: topo}
+			steps := checksForTopologyWithLabels(deps)
+			found := false
+			for _, s := range steps {
+				if s.label == "Checking pipeline labels..." {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("topology %q missing pipeline-labels check", topo)
+			}
+		})
+	}
+}
+
+// TestCheckLabels_FrameworkSource verifies that the framework-source path also
+// includes the pipeline-labels check (the gh-agentic repo itself needs labels).
+func TestCheckLabels_FrameworkSource(t *testing.T) {
+	deps := CheckDeps{FrameworkSource: true}
+	steps := checksForTopologyWithLabels(deps)
+	found := false
+	for _, s := range steps {
+		if s.label == "Checking pipeline labels..." {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("framework source should include pipeline-labels check")
+	}
+}
+
+// TestContainsLabelName covers the first-token matching semantics that
+// prevent false-positives when one label name is a prefix of another.
+func TestContainsLabelName(t *testing.T) {
+	out := "design-in-progress\tDesign active\t#d93f0b\nin-design\tIn Design\t#e4e669\n"
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"design-in-progress", true},
+		{"in-design", true},
+		{"design", false}, // prefix-only — must not match
+		{"", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := containsLabelName(out, tc.name); got != tc.want {
+				t.Errorf("containsLabelName(%q) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
+	}
+}
 
 // --- checkVariable / checkSecret scope-fallback tests (task #531) ---
 
