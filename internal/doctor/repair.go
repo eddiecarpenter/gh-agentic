@@ -280,12 +280,12 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 				}
 				if err := mount.RemoveAIFromGitignore(deps.Root); err != nil {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  Could not remove .ai/ from .gitignore: %v",
+						fmt.Sprintf("  %s  Could not remove .agents/ from .gitignore: %v",
 							ui.StatusDanger.Render("✗"), err))
 					result.Unrepaired++
 				} else {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  .ai/ removed from .gitignore (legacy shallow-clone state)",
+						fmt.Sprintf("  %s  .agents/ removed from .gitignore (legacy shallow-clone state)",
 							ui.StatusOK.Render("✓")))
 					result.Repaired++
 				}

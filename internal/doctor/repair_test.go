@@ -24,14 +24,14 @@ func fakeRunMissingVarsAndSecret(name string, args ...string) (string, error) {
 
 // makeRepoNeedingPipelineRepairs builds a repo that:
 //   - has the framework mounted at v2.0.0,
-//   - has a legacy `.ai/` line in .gitignore (must be stripped),
+//   - has a legacy `.agents/` line in .gitignore (must be stripped),
 //   - has workflow files pinned to a stale @v1.0.0 tag,
 //   - has no GH variables or secrets configured.
 func makeRepoNeedingPipelineRepairs(t *testing.T) string {
 	t.Helper()
 	root := setupHealthyRepo(t)
 
-	// Re-introduce the legacy `.ai/` gitignore entry so the repair has
+	// Re-introduce the legacy `.agents/` gitignore entry so the repair has
 	// something to fix; setupHealthyRepo no longer produces this line by
 	// default in submodule mode.
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("# nothing\n.ai/\n"), 0o644)
@@ -64,14 +64,14 @@ func TestRepairPipeline_FixesGitignoreAndWorkflowTags(t *testing.T) {
 
 	result := RepairPipeline(deps, nil)
 
-	// Verify .gitignore was repaired on disk — the legacy `.ai/` line
+	// Verify .gitignore was repaired on disk — the legacy `.agents/` line
 	// is now stripped (submodule mount, not gitignored shallow clone).
 	gi, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if err != nil {
 		t.Fatalf("reading .gitignore: %v", err)
 	}
-	if strings.Contains(string(gi), ".ai/") {
-		t.Errorf(".gitignore still contains .ai/ after repair:\n%s", string(gi))
+	if strings.Contains(string(gi), ".agents/") {
+		t.Errorf(".gitignore still contains .agents/ after repair:\n%s", string(gi))
 	}
 
 	// Verify workflow tags were rewritten to the mounted version (v2.0.0).
@@ -447,7 +447,7 @@ func TestRepairPipeline_NoFailures(t *testing.T) {
 		// ProjectID is supplied by the resolver in production; the
 		// doctor trusts it directly (task #583 removed the gh-CLI
 		// fallback read in checkProjectReachability).
-		ProjectID: "PVT_configured",
+		ProjectID:         "PVT_configured",
 		FetchProjectTitle: func(id string) (string, error) { return "Healthy", nil },
 		Run: func(name string, args ...string) (string, error) {
 			if name == "gh" && len(args) > 1 && args[0] == "variable" && args[1] == "get" {

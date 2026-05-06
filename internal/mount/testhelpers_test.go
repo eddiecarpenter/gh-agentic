@@ -9,17 +9,17 @@ import (
 // installSubmoduleStub returns a stub for the InstallSubmodule var that
 // fakes the on-disk side-effects of a real `git submodule add`:
 //
-//   - creates root/.ai/ with the supplied files
-//   - creates a `.git` marker inside .ai/ so callers (e.g. the doctor's
+//   - creates root/.agents/ with the supplied files
+//   - creates a `.git` marker inside .agents/ so callers (e.g. the doctor's
 //     ReadAIVersionFromGit) see a populated submodule
-//   - appends a [submodule ".ai"] entry to root/.gitmodules
+//   - appends a [submodule ".agents"] entry to root/.gitmodules
 //
 // This lets tests exercise the real DownloadFramework dispatch
 // (DetectMountState → InstallSubmodule) without requiring a network or
 // a real git repo with a remote.
 func installSubmoduleStub(files map[string]string) func(root, tag string) error {
 	return func(root, tag string) error {
-		aiDir := filepath.Join(root, ".ai")
+		aiDir := filepath.Join(root, ".agents")
 		if err := os.MkdirAll(aiDir, 0o755); err != nil {
 			return err
 		}
@@ -40,8 +40,8 @@ func installSubmoduleStub(files map[string]string) func(root, tag string) error 
 		// Append a .gitmodules entry so DetectMountState classifies
 		// future calls as MountStateSubmodule.
 		gm := filepath.Join(root, ".gitmodules")
-		entry := `[submodule ".ai"]
-	path = .ai
+		entry := `[submodule ".agents"]
+	path = .agents
 	url = ` + FrameworkRepoURL + "\n"
 		f, err := os.OpenFile(gm, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
@@ -54,15 +54,15 @@ func installSubmoduleStub(files map[string]string) func(root, tag string) error 
 }
 
 // swapSubmoduleStub returns a stub for SwapSubmodule that simulates
-// the deinit + re-add: it wipes .ai/, then runs an install stub. The
+// the deinit + re-add: it wipes .agents/, then runs an install stub. The
 // .gitmodules entry stays (no need to rewrite it for tests) and the
-// gitlink "moves" by virtue of .ai/ being repopulated with the new
+// gitlink "moves" by virtue of .agents/ being repopulated with the new
 // files.
 func swapSubmoduleStub(files map[string]string) func(root, tag string) error {
 	return func(root, tag string) error {
-		_ = os.RemoveAll(filepath.Join(root, ".ai"))
+		_ = os.RemoveAll(filepath.Join(root, ".agents"))
 		// Same shape as install but skip re-adding to .gitmodules.
-		aiDir := filepath.Join(root, ".ai")
+		aiDir := filepath.Join(root, ".agents")
 		if err := os.MkdirAll(aiDir, 0o755); err != nil {
 			return err
 		}

@@ -25,17 +25,17 @@ func TestRunFirstTime_AllFilesCreated(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify .ai/RULEBOOK.md exists.
-	if _, err := os.Stat(filepath.Join(root, ".ai", "RULEBOOK.md")); os.IsNotExist(err) {
-		t.Error(".ai/RULEBOOK.md should exist")
+	// Verify .agents/RULEBOOK.md exists.
+	if _, err := os.Stat(filepath.Join(root, ".agents", "RULEBOOK.md")); os.IsNotExist(err) {
+		t.Error(".agents/RULEBOOK.md should exist")
 	}
 
 	// The .ai-version flat file was removed in #585; firsttime no longer
 	// writes one. The clone is driven by the mocked CloneFunc, so we
-	// cannot assert on .ai/.git metadata here — the download step's
+	// cannot assert on .agents/.git metadata here — the download step's
 	// success is evidence enough that the version flowed through.
 
-	// .gitignore is no longer touched by first-time install — `.ai/` is
+	// .gitignore is no longer touched by first-time install — `.agents/` is
 	// now a tracked submodule (when run in production), so gitignoring it
 	// would actively break the install.
 
@@ -53,10 +53,10 @@ func TestRunFirstTime_AllFilesCreated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading AGENTS.md: %v", err)
 	}
-	if !strings.Contains(string(agents), "@.ai/RULEBOOK.md") {
-		t.Errorf("AGENTS.md should reference @.ai/RULEBOOK.md, got: %s", agents)
+	if !strings.Contains(string(agents), "@.agents/RULEBOOK.md") {
+		t.Errorf("AGENTS.md should reference @.agents/RULEBOOK.md, got: %s", agents)
 	}
-	if !strings.Contains(string(agents), "@.ai/RULEBOOK.md") {
+	if !strings.Contains(string(agents), "@.agents/RULEBOOK.md") {
 		t.Errorf("AGENTS.md should contain bootstrap import, got: %s", agents)
 	}
 

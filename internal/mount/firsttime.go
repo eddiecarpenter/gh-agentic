@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 )
 
-// RunFirstTime orchestrates the first-time mount flow when no .ai/
+// RunFirstTime orchestrates the first-time mount flow when no .agents/
 // directory exists yet. It:
-//  1. Installs the framework as a `.ai/` submodule
+//  1. Installs the framework as a `.agents/` submodule
 //  2. Generates CLAUDE.md
 //  3. Generates AGENTS.md with bootstrap rule
 //  4. Generates wrapper workflows in .github/workflows/
@@ -24,7 +24,7 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 	fmt.Fprintln(w, "Initialising AI-Native Delivery Framework...")
 
 	// Step 1: Install framework as a submodule.
-	fmt.Fprintf(w, "  ✓ Installing AI Framework (%s) at .ai/\n", version)
+	fmt.Fprintf(w, "  ✓ Installing AI Framework (%s) at .agents/\n", version)
 	if err := DownloadFramework(root, version, fetch); err != nil {
 		return fmt.Errorf("installing framework: %w", err)
 	}
@@ -54,7 +54,7 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "AI Framework successfully mounted at .ai/")
+	fmt.Fprintln(w, "AI Framework successfully mounted at .agents/")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Next steps:")
 	fmt.Fprintln(w, "  1. Review and commit the generated files")

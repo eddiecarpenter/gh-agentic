@@ -12,7 +12,7 @@ gh extension upgrade agentic
 
 `gh-agentic` is the **single source of truth** for both the CLI tooling and
 the AI-Native Delivery Framework files (`skills/`, `standards/`, `concepts/`,
-`recipes/`). Domain repos mount the framework at `.ai/` using `gh agentic mount`.
+`recipes/`). Domain repos mount the framework at `.agents/` using `gh agentic mount`.
 
 ## Why it exists
 
@@ -33,7 +33,7 @@ phases that genuinely require reasoning (requirements, design, development).
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
+| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.agents/` |
 | `gh agentic upgrade` | Change the framework version for the whole federation (control plane only) |
 | `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
@@ -49,7 +49,7 @@ phases that genuinely require reasoning (requirements, design, development).
   creates repos, scaffolds projects, configures GitHub, mounts the framework,
   and manages credentials. The same repository holds the framework files
   (`skills/`, `standards/`, `concepts/`, `recipes/`) that domain repos consume.
-- **Domain repos** — mount the framework via `.ai/` and run agent sessions.
+- **Domain repos** — mount the framework via `.agents/` and run agent sessions.
   Framework files are gitignored and populated by `gh agentic mount`.
 - **AI agent** — runs inside domain repos for Phases 1+. Invoked by the human
   or by GitHub Actions workflows, not by the extension itself.
@@ -83,7 +83,7 @@ The wizard detects the current repository and collects configuration:
 |---|---|
 | 1 | Detect current repo (owner, name, remote) |
 | 2 | Collect configuration via interactive form |
-| 3 | Mount framework at `.ai/` via tarball download |
+| 3 | Mount framework at `.agents/` via tarball download |
 | 4 | Generate agent entry files (`CLAUDE.md`, `AGENTS.md`, `LOCALRULES.md`) |
 | 5 | Configure GitHub repo variables and secrets |
 | 6 | Print summary — next steps for starting a session |

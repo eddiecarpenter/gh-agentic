@@ -1,7 +1,7 @@
 # LOCALRULES.md — Local Overrides
 
 This file contains project-specific rules and overrides that extend or
-supersede the global protocol defined in `.ai/RULEBOOK.md`.
+supersede the global protocol defined in `.agents/RULEBOOK.md`.
 
 This file is never overwritten by a template sync.
 
@@ -30,7 +30,7 @@ Template: eddiecarpenter/ai-native-delivery
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
+| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.agents/` |
 | `gh agentic upgrade` | Change the framework version (control plane only) |
 | `gh agentic project` | Manage project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
@@ -61,7 +61,7 @@ Do not reinvent what already exists in charging-domain. Adapt it.
 ## Notes
 
 - This repo was created manually (before the bootstrap tool existed) — bootstrap.sh was not used
-- `.ai/` was copied from `eddiecarpenter/ai-native-delivery` at initial setup
+- `.agents/` was copied from `eddiecarpenter/ai-native-delivery` at initial setup
 - GitHub Actions workflows were adapted from `NewOpenBSS/charging-domain` (known working)
 - **Self-hosted runner must be registered per repo for personal-space repos** — organisation
   runners are shared across all org repos, but personal repos each need their own registration.

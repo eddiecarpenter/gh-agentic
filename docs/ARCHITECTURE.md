@@ -12,7 +12,7 @@ The extension serves two roles:
    credentials, and run health checks.
 2. **Framework source** — the canonical source for the AI-Native Delivery Framework
    files (`skills/`, `standards/`, `concepts/`, `recipes/`). Domain repos mount
-   these files at `.ai/` via `gh agentic mount`.
+   these files at `.agents/` via `gh agentic mount`.
 
 ---
 
@@ -86,7 +86,7 @@ template files directly.
    The canonical resolver in `internal/project/` (`project.Resolve`) is the
    single code path that answers "what version should I mount?".
 
-2. **`.ai/` directory** — The mounted framework. This directory is **gitignored**
+2. **`.agents/` directory** — The mounted framework. This directory is **gitignored**
    and populated on demand by `gh agentic mount`. It is not committed. The
    cloned framework's own `.git` metadata records the exact tag — that is
    the local source of truth after the clone runs.
@@ -94,15 +94,15 @@ template files directly.
 3. **Fetch mechanism** — `gh agentic mount` downloads the framework via
    `git clone --depth 1 --branch <version>` against the `eddiecarpenter/gh-agentic`
    release at the pinned version. It extracts framework files (`skills/`,
-   `standards/`, `concepts/`, `recipes/`, `RULEBOOK.md`) into `.ai/`.
+   `standards/`, `concepts/`, `recipes/`, `RULEBOOK.md`) into `.agents/`.
 
 4. **Mount flows** — The mount command supports three flows, all driven by
    the resolver's answer to "what version is pinned?":
-   - **First-time** (no `.ai/` directory yet): downloads the framework,
+   - **First-time** (no `.agents/` directory yet): downloads the framework,
      generates `CLAUDE.md`, `AGENTS.md`, and wrapper workflows.
-   - **Remount** (`mount` with no args, `.ai/` already present at the pinned
+   - **Remount** (`mount` with no args, `.agents/` already present at the pinned
      version): re-downloads at the current pinned version. Used after a
-     fresh clone or to repair a corrupted `.ai/`.
+     fresh clone or to repair a corrupted `.agents/`.
    - **Version switch** (`mount <new-version>` or a pinned-version change
      on the CP): prompts for confirmation, remounts at the new version,
      updates wrapper-workflow tags.
@@ -117,13 +117,13 @@ template files directly.
 
 ```
 my-domain-repo/
-├── .ai/                 ← gitignored — mounted framework files
+├── .agents/                 ← gitignored — mounted framework files
 │   ├── RULEBOOK.md
 │   ├── skills/
 │   ├── standards/
 │   ├── concepts/
 │   └── recipes/
-├── CLAUDE.md            ← committed — references .ai/AGENTS.md
+├── CLAUDE.md            ← committed — references .agents/AGENTS.md
 ├── AGENTS.md            ← committed — references RULEBOOK + LOCALRULES
 ├── LOCALRULES.md        ← committed — project-specific overrides
 └── .github/workflows/
@@ -140,15 +140,15 @@ that resolve correctly in two contexts:
 - **At the gh-agentic root** — when working directly in this repository, paths
   like `skills/dev-session.md` resolve relative to the repo root where these
   directories live.
-- **When mounted as `.ai/` in domain repos** — the same paths resolve relative
-  to the `.ai/` mount point. References within framework files (e.g.
+- **When mounted as `.agents/` in domain repos** — the same paths resolve relative
+  to the `.agents/` mount point. References within framework files (e.g.
   `@RULEBOOK.md`, `standards/go.md`) work because they are relative to the
   directory containing the referencing file.
 
 This means framework files never use absolute paths or paths that assume a
 specific repo structure. A reference like `concepts/delivery-philosophy.md`
 works identically whether the file is at `/gh-agentic/concepts/` or at
-`/my-repo/.ai/concepts/`.
+`/my-repo/.agents/concepts/`.
 
 ---
 
@@ -183,7 +183,7 @@ available to CI runners without manual configuration.
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.ai/` |
+| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.agents/` |
 | `gh agentic upgrade` | Change the framework version for the whole federation (control plane only) |
 | `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |

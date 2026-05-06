@@ -286,7 +286,7 @@ func checkFrameworkMounted(deps Deps) CheckResult {
 		return CheckResult{
 			Name:        "framework",
 			Status:      CheckFail,
-			Message:     "framework not mounted at .ai/",
+			Message:     "framework not mounted at .agents/",
 			Remediation: "run 'gh agentic mount <version>'",
 		}
 	}
@@ -303,9 +303,9 @@ func checkFrameworkMounted(deps Deps) CheckResult {
 //   - single           → nothing required locally
 //   - federated-cp     → AGENTIC_FRAMEWORK_VERSION must be set locally
 //   - federated-domain → no local vars required; a local
-//                        AGENTIC_FRAMEWORK_VERSION is a misconfiguration
-//                        (domain repos read the value from the CP, not
-//                        their own repo)
+//     AGENTIC_FRAMEWORK_VERSION is a misconfiguration
+//     (domain repos read the value from the CP, not
+//     their own repo)
 func checkTopologyVars(deps Deps) CheckResult {
 	ctx, err := Resolve(deps)
 	if err != nil {

@@ -39,14 +39,14 @@ type graphqlProjectItemsResponse struct {
 					Name string `json:"name"`
 				} `json:"fieldValueByName"`
 				Content struct {
-					TypeName      string    `json:"__typename"`
-					Number        int       `json:"number"`
-					Title         string    `json:"title"`
-					Body          string    `json:"body"`
-					State         string    `json:"state"`
-					CreatedAt     time.Time `json:"createdAt"`
-					UpdatedAt     time.Time `json:"updatedAt"`
-					Repository    struct {
+					TypeName   string    `json:"__typename"`
+					Number     int       `json:"number"`
+					Title      string    `json:"title"`
+					Body       string    `json:"body"`
+					State      string    `json:"state"`
+					CreatedAt  time.Time `json:"createdAt"`
+					UpdatedAt  time.Time `json:"updatedAt"`
+					Repository struct {
 						NameWithOwner string `json:"nameWithOwner"`
 					} `json:"repository"`
 					Labels struct {
@@ -340,7 +340,7 @@ func DefaultFetchParentIssue(owner, repo string, number int) (*RequirementSummar
 type graphqlBranchResponse struct {
 	Repository struct {
 		Ref *struct {
-			Name                 string `json:"name"`
+			Name                   string `json:"name"`
 			AssociatedPullRequests struct {
 				Nodes []struct {
 					Merged bool   `json:"merged"`

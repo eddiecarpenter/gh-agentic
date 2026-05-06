@@ -35,7 +35,7 @@ The repo is its own control plane. All knowledge is local.
 
 ```
 repo/
-├── .ai/                              # framework mount, read-only
+├── .agents/                              # framework mount, read-only
 ├── docs/
 │   ├── BRIEF.md                      # why this exists
 │   ├── ARCHITECTURE.md               # how it works
@@ -54,7 +54,7 @@ system-level knowledge.
 **Domain repo:**
 ```
 domain-repo/
-├── .ai/                              # framework mount, read-only, gitignored
+├── .agents/                              # framework mount, read-only, gitignored
 ├── .cp/                              # control plane knowledge mount, read-only, gitignored
 │   ├── SYSTEM_BRIEF.md
 │   └── SYSTEM_ARCHITECTURE.md
@@ -68,7 +68,7 @@ domain-repo/
 **Control plane repo:**
 ```
 control-plane-repo/
-├── .ai/
+├── .agents/
 └── docs/
     ├── SYSTEM_BRIEF.md               # system orientation
     └── SYSTEM_ARCHITECTURE.md        # seams between repos
@@ -275,11 +275,11 @@ discipline.
 ## Loading mechanism
 
 Skills that shape design or code load knowledge at session start. The
-mechanism mirrors the `.ai/` mount used by the framework itself.
+mechanism mirrors the `.agents/` mount used by the framework itself.
 
 ### `.cp/` — the control plane knowledge mount
 
-| Property | `.ai/` | `.cp/` |
+| Property | `.agents/` | `.cp/` |
 |---|---|---|
 | Gitignored in domain repo | Yes | Yes |
 | Read-only in domain repo | Yes — never edit in place | Yes — never edit in place |
@@ -289,7 +289,7 @@ mechanism mirrors the `.ai/` mount used by the framework itself.
 | Writes go where | PRs to `gh-agentic` | PRs to the control plane repo |
 | Reflects | A chosen framework version | Currently-reviewed CP state |
 
-`.ai/` is pinned because framework upgrades are a decision. `.cp/` tracks CP
+`.agents/` is pinned because framework upgrades are a decision. `.cp/` tracks CP
 main because knowledge updates should propagate everywhere as soon as reviewed.
 
 ### Contents of `.cp/`

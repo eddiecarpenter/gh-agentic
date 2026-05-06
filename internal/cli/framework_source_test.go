@@ -8,7 +8,7 @@ import (
 )
 
 // TestRefuseIfFrameworkSource covers the helper every guarded command
-// calls at entry. When .ai is a symlink, the helper produces the
+// calls at entry. When .agents is a symlink, the helper produces the
 // canonical refusal error; otherwise it returns nil so the command
 // proceeds normally.
 func TestRefuseIfFrameworkSource(t *testing.T) {
@@ -21,7 +21,7 @@ func TestRefuseIfFrameworkSource(t *testing.T) {
 
 	t.Run("framework source — returns canonical refusal", func(t *testing.T) {
 		root := t.TempDir()
-		if err := os.Symlink(".", filepath.Join(root, ".ai")); err != nil {
+		if err := os.Symlink(".", filepath.Join(root, ".agents")); err != nil {
 			t.Skipf("platform does not support symlinks in tempdir: %v", err)
 		}
 		err := refuseIfFrameworkSource(nil, root, "mount")

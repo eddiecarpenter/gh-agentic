@@ -73,7 +73,7 @@ func TestHorizontalPipeline_MultiByteRuneRowsStayAligned(t *testing.T) {
 	// aligned table they match across every line.
 	boundaryGlyphs := map[rune]bool{
 		'┌': true, '┬': true, '┐': true, // top border
-		'│': true, // content rows
+		'│': true,                       // content rows
 		'└': true, '┴': true, '┘': true, // bottom border
 	}
 	want := runeBoundaryPositions(lines[0], boundaryGlyphs)

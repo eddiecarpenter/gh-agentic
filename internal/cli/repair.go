@@ -34,7 +34,7 @@ Auto-repairs:
   - Missing project board views  → recreates views from the template
   - Topology variables           → writes AGENTIC_FRAMEWORK_VERSION on the CP
                                    when missing; clears stray values on domains
-  - .ai/ missing from .gitignore → appends the entry
+  - .agents/ missing from .gitignore → appends the entry
   - Workflow version tag drift   → rewrites @vX.Y.Z to match the mounted framework
 
 Variables and secrets cannot be auto-repaired (they need human-supplied values).
@@ -51,7 +51,7 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 
 			// Framework-source mode (this repo IS gh-agentic): skip the
 			// project-scope auto-repairs entirely. Those touch mount
-			// state and `.ai/` content, which would harm the committed
+			// state and `.agents/` content, which would harm the committed
 			// symlink. The pipeline-scope repairs (missing variables,
 			// missing secrets, runner label) still run and remain
 			// useful.
@@ -72,7 +72,7 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 
 			// Phase 2: pipeline-side checks and auto-repairs.
 			// Skip when the framework mount is out of sync — the pipeline
-			// checks run against `.ai/` and only produce noise until the
+			// checks run against `.agents/` and only produce noise until the
 			// user runs `gh agentic mount`.
 			pipelineDeps, pdepsErr := buildPipelineCheckDeps(deps)
 			if pdepsErr == nil {
@@ -93,7 +93,7 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			fmt.Fprintln(w, "")
 
 			if isFrameworkSource {
-				fmt.Fprintln(w, "  "+ui.StatusWarning.Render("⚠")+"  Framework source detected (.ai is a symlink)")
+				fmt.Fprintln(w, "  "+ui.StatusWarning.Render("⚠")+"  Framework source detected (.agents is a symlink)")
 				fmt.Fprintln(w, "  "+ui.Muted.Render("   Content-layer repairs are skipped. Config-layer repairs (variables, secrets) run below."))
 				fmt.Fprintln(w, "")
 			} else {

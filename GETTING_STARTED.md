@@ -60,7 +60,7 @@ The interactive wizard:
 1. Detects the current repo and your GitHub identity.
 2. Asks for the framework version, stack, agent identity, runner label, agent provider/model.
 3. Either creates a new GitHub Project or joins an existing one (single-topology by default; federated topology is available for multi-repo projects).
-4. Mounts the framework at `.ai/` as a tracked git submodule pinned to the chosen version.
+4. Mounts the framework at `.agents/` as a tracked git submodule pinned to the chosen version.
 5. Generates `CLAUDE.md` and `AGENTS.md` (the agent entry files).
 6. Writes the reusable workflow callers under `.github/workflows/`.
 7. Configures GitHub repo secrets and variables: `AGENTIC_PROJECT_ID`, `AGENTIC_FRAMEWORK_VERSION`, `AGENTIC_APP_CLIENT_ID`, `AGENTIC_APP_PRIVATE_KEY`, `PROJECT_PAT`, `CLAUDE_CREDENTIALS_JSON`, etc.
@@ -75,14 +75,14 @@ A clean health check looks like:
 
 ```
 ✓ Project reachable
-✓ Framework: .ai/ mounted (vX.Y.Z), version pinned, .ai/ not in .gitignore
+✓ Framework: .agents/ mounted (vX.Y.Z), version pinned, .agents/ not in .gitignore
 ✓ Workflows: agentic-pipeline.yml @vX.Y.Z, release.yml @vX.Y.Z
 ✓ Variables & secrets: all configured
 ```
 
 If any check fails, run `gh agentic repair` — it auto-fixes what it can and prints remediation commands for the rest.
 
-Commit the staged changes (`.gitmodules`, `.ai` gitlink, `CLAUDE.md`, `AGENTS.md`, workflows) and push.
+Commit the staged changes (`.gitmodules`, `.agents` gitlink, `CLAUDE.md`, `AGENTS.md`, workflows) and push.
 
 ---
 
@@ -204,7 +204,7 @@ Add `--raw` to any `status` subcommand for an agent-oriented payload (TSV / fron
 
 Anywhere the agent can:
 
-- read framework files at `.ai/` (skills, recipes, standards, rulebook),
+- read framework files at `.agents/` (skills, recipes, standards, rulebook),
 - shell out to `gh` and `git`,
 - and follow a SKILL.md playbook,
 
@@ -212,8 +212,8 @@ Anywhere the agent can:
 
 | Step in this guide | Claude Code | Goose | Generic agent |
 |---|---|---|---|
-| Bootstrap architecture | `/solution-architecture` | `goose run --recipe .ai/recipes/solution-architecture.yaml` | Load `skills/solution-architecture/SKILL.md` and follow it |
-| Capture a requirement | `/requirements-session` | `goose run --recipe .ai/recipes/requirements-session.yaml` | Load `skills/requirements-session/SKILL.md` and follow it |
+| Bootstrap architecture | `/solution-architecture` | `goose run --recipe .agents/recipes/solution-architecture.yaml` | Load `skills/solution-architecture/SKILL.md` and follow it |
+| Capture a requirement | `/requirements-session` | `goose run --recipe .agents/recipes/requirements-session.yaml` | Load `skills/requirements-session/SKILL.md` and follow it |
 | Scope a requirement (calls `trigger-design` for selected Features) | `/requirement-scoping` | analogous recipe | analogous skill load |
 | Run interactive design | `/feature-design <N>` | analogous recipe | analogous skill load |
 | Un-park a `designed` Feature | `/trigger-implementation` | analogous recipe | analogous skill load |

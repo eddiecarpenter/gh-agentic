@@ -243,7 +243,10 @@ func rawLinkedFeaturesValue(features []projectstatus.FeatureSummary) string {
 
 // formatISODate returns the ISO-8601 date portion of t. Zero times render as
 // an empty string — UX prefers missing over "0001-01-01".
-func formatISODate(t interface{ IsZero() bool; Format(string) string }) string {
+func formatISODate(t interface {
+	IsZero() bool
+	Format(string) string
+}) string {
 	if t.IsZero() {
 		return ""
 	}

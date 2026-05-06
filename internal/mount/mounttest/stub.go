@@ -17,8 +17,8 @@ import (
 )
 
 // StubInstall replaces mount.InstallSubmodule for the duration of the
-// test with a stub that creates the supplied files inside <root>/.ai/
-// and writes a [submodule ".ai"] entry to <root>/.gitmodules. The
+// test with a stub that creates the supplied files inside <root>/.agents/
+// and writes a [submodule ".agents"] entry to <root>/.gitmodules. The
 // stub mirrors the on-disk state a real `git submodule add` would
 // produce, so subsequent calls to mount.DetectMountState classify the
 // directory as MountStateSubmodule.
@@ -30,7 +30,7 @@ func StubInstall(t *testing.T, files map[string]string) {
 }
 
 // StubSwap replaces mount.SwapSubmodule for the duration of the test
-// with a stub that wipes <root>/.ai/ then repopulates it with the
+// with a stub that wipes <root>/.agents/ then repopulates it with the
 // supplied files (no .gitmodules write — the parent test scenario is
 // expected to have already seeded the submodule entry).
 func StubSwap(t *testing.T, files map[string]string) {
@@ -57,7 +57,7 @@ func StubMigrate(t *testing.T, files map[string]string) {
 	t.Helper()
 	original := mount.MigrateGitignoredMount
 	mount.MigrateGitignoredMount = func(root, tag string) error {
-		_ = os.RemoveAll(filepath.Join(root, ".ai"))
+		_ = os.RemoveAll(filepath.Join(root, ".agents"))
 		stub := makeStub(files, true)
 		return stub(root, tag)
 	}
@@ -65,11 +65,11 @@ func StubMigrate(t *testing.T, files map[string]string) {
 }
 
 // makeStub returns a function that fakes a submodule operation by
-// creating the .ai/ directory, writing the supplied files, and
-// optionally appending a [submodule ".ai"] entry to .gitmodules.
+// creating the .agents/ directory, writing the supplied files, and
+// optionally appending a [submodule ".agents"] entry to .gitmodules.
 func makeStub(files map[string]string, writeGitmodules bool) func(root, tag string) error {
 	return func(root, tag string) error {
-		aiDir := filepath.Join(root, ".ai")
+		aiDir := filepath.Join(root, ".agents")
 		if err := os.RemoveAll(aiDir); err != nil {
 			return err
 		}
@@ -94,8 +94,8 @@ func makeStub(files map[string]string, writeGitmodules bool) func(root, tag stri
 			return nil
 		}
 		gm := filepath.Join(root, ".gitmodules")
-		entry := `[submodule ".ai"]
-	path = .ai
+		entry := `[submodule ".agents"]
+	path = .agents
 	url = ` + mount.FrameworkRepoURL + "\n"
 		f, err := os.OpenFile(gm, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {

@@ -76,7 +76,7 @@ type Context struct {
 	// a version, or a federated setup where the CP has not yet rolled
 	// one out).
 	FrameworkVersion string
-	// LocalAIVersion is the framework version the local .ai/ mount
+	// LocalAIVersion is the framework version the local .agents/ mount
 	// currently reports — read via Deps.ReadAIVersion. This is kept
 	// separately from FrameworkVersion so callers can detect drift; it
 	// disappears once #585 removes the file.
@@ -221,11 +221,11 @@ func Resolve(deps Deps) (*Context, error) {
 //  4. Linked-graph inspection (project owner matches, or unknown):
 //     - current repo not in the linked list → federated-domain
 //     - current repo in the linked list with siblings (>1):
-//       local AGENTIC_FRAMEWORK_VERSION set → federated-cp
-//       local AGENTIC_FRAMEWORK_VERSION absent → federated-domain
+//     local AGENTIC_FRAMEWORK_VERSION set → federated-cp
+//     local AGENTIC_FRAMEWORK_VERSION absent → federated-domain
 //     - current repo is the only linked repo:
-//       local AGENTIC_FRAMEWORK_VERSION set → federated-cp
-//       otherwise → single
+//     local AGENTIC_FRAMEWORK_VERSION set → federated-cp
+//     otherwise → single
 //
 // The projectOwner argument is the owner login returned by
 // FetchProjectOwner; empty means the owner could not be resolved (deleted

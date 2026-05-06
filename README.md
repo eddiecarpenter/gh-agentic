@@ -17,7 +17,7 @@
 `gh-agentic` is two things in one repository:
 
 1. **A GitHub CLI extension** (`gh agentic ...`) that bootstraps and manages the environment a repo needs to run agentic software delivery: creating projects, configuring secrets and variables, mounting the framework, verifying the setup, and managing Claude Code credentials.
-2. **The AI-Native Delivery Framework** itself: a library of skills, recipes, standards and reusable workflows that any repo can consume as a tracked git submodule at `.ai/`. The framework defines *how* requirements become features become tasks become commits become a pull request.
+2. **The AI-Native Delivery Framework** itself: a library of skills, recipes, standards and reusable workflows that any repo can consume as a tracked git submodule at `.agents/`. The framework defines *how* requirements become features become tasks become commits become a pull request.
 
 You run `gh agentic init` once in your repo, inherit the entire pipeline, and from then on move work through phases by applying GitHub labels to issues. Every artefact (Requirement, Feature, Task, Design Plan, PR) is durable on GitHub. Every phase is observable on the GitHub Project board. Every transition is auditable in label history.
 
@@ -72,11 +72,11 @@ The full ruleset is in [`RULEBOOK.md`](RULEBOOK.md). The per-phase playbooks liv
 
 ### The mount model
 
-The framework is delivered as a **standard git submodule** at `.ai/`, pinned to a version tag. The submodule pointer is committed; `git submodule status` is the single source of truth for the framework version your repo runs at.
+The framework is delivered as a **standard git submodule** at `.agents/`, pinned to a version tag. The submodule pointer is committed; `git submodule status` is the single source of truth for the framework version your repo runs at.
 
 ```
 your-repo/
-  .ai/                  → tracked submodule pointing at eddiecarpenter/gh-agentic@vX.Y.Z
+  .agents/                  → tracked submodule pointing at eddiecarpenter/gh-agentic@vX.Y.Z
     skills/             → playbooks
     recipes/            → Goose recipes
     standards/          → language/stack standards
@@ -87,7 +87,7 @@ your-repo/
     agentic-pipeline.yml → calls the reusable workflow from this repo
     release.yml          → calls the reusable release workflow
   CLAUDE.md             → @AGENTS.md import
-  AGENTS.md             → bootstrap rule (@.ai/RULEBOOK.md and @.ai/AGENTS.md)
+  AGENTS.md             → bootstrap rule (@.agents/RULEBOOK.md and @.agents/AGENTS.md)
 ```
 
 Every checkout step in the workflow uses `submodules: recursive`, so the submodule is automatically populated on the runner; no separate "mount" step required, and no copy of framework files committed into your repo.
@@ -98,7 +98,7 @@ The `gh-agentic` repo itself uses a `.ai -> .` symlink as a documented self-moun
 
 The interactive phases (Requirements, Scoping, interactive Design) run wherever the human is: Claude Code, Goose, or any other agentic workbench. The headless phases (`in-design`, `in-development`, `pr-review-session`) always run via Goose in GitHub Actions; that's hard-wired in the reusable workflows.
 
-`gh-agentic` is workbench-agnostic by design. Skills live in `.ai/skills/<name>/SKILL.md` and contain everything an agent needs to walk the phase: triggers, steps, error handling, exit blocks. The workbench just has to load the SKILL.md and follow it.
+`gh-agentic` is workbench-agnostic by design. Skills live in `.agents/skills/<name>/SKILL.md` and contain everything an agent needs to walk the phase: triggers, steps, error handling, exit blocks. The workbench just has to load the SKILL.md and follow it.
 
 ---
 
@@ -126,9 +126,9 @@ For an unrelated downstream repo running the same pipeline, see [`eddiecarpenter
 
 | Layer | Lives at | Responsibility |
 |---|---|---|
-| **Your repo** | the consumer's repo | Source code; `.ai/` submodule pinned to a framework version; lifecycle labels; agent entry files |
-| **Framework mount** (`.ai/`) | tracked submodule pointing at this repo | Skills, recipes, standards, RULEBOOK, reusable workflow callers, composite actions |
-| **Reusable workflows** | [`.github/workflows/agentic-pipeline.yml`](.github/workflows/agentic-pipeline.yml) | Triggered by label changes / PR review events; check out your repo with `submodules: recursive` to populate `.ai/`; run agent recipes |
+| **Your repo** | the consumer's repo | Source code; `.agents/` submodule pinned to a framework version; lifecycle labels; agent entry files |
+| **Framework mount** (`.agents/`) | tracked submodule pointing at this repo | Skills, recipes, standards, RULEBOOK, reusable workflow callers, composite actions |
+| **Reusable workflows** | [`.github/workflows/agentic-pipeline.yml`](.github/workflows/agentic-pipeline.yml) | Triggered by label changes / PR review events; check out your repo with `submodules: recursive` to populate `.agents/`; run agent recipes |
 | **CLI** (`gh agentic`) | this repo | Bootstrap, install, upgrade, check, repair, status, project membership |
 
 Detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

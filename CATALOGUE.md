@@ -46,7 +46,7 @@ Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by ha
 - **skill-creation** — Produces a correctly-classified, schema-conformant skill file from a human description (reactive mode) or surfaces a proactive suggestion when the agent observes the same substantive action repeated in the current session (proactive mode). Use when the human asks to create a skill that does X, or when the agent notices it has performed three or more substantively-similar actions at a natural pause between user turns.
   Triggers: human-interactive, on-demand
 
-- **update-project-template** — Extracts the live GitHub Project configuration (shortDescription, readme, status field options, and views) and writes it as the canonical .ai/project-template.json so board customisations flow to downstream environments via gh agentic sync. Use when the human asks to save the current project config as the template or to update the project template from the live project (template repo only).
+- **update-project-template** — Extracts the live GitHub Project configuration (shortDescription, readme, status field options, and views) and writes it as the canonical .agents/project-template.json so board customisations flow to downstream environments via gh agentic sync. Use when the human asks to save the current project config as the template or to update the project template from the live project (template repo only).
   Triggers: human-interactive
 
 ## Information skills

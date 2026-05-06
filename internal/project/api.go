@@ -27,7 +27,7 @@ const (
 // ProjectVarName is the repo-level variable that stores the GitHub ProjectV2 node ID.
 const ProjectVarName = "AGENTIC_PROJECT_ID"
 
-const TopologyVarName         = "AGENTIC_TOPOLOGY"
+const TopologyVarName = "AGENTIC_TOPOLOGY"
 const FrameworkVersionVarName = "AGENTIC_FRAMEWORK_VERSION"
 
 // LinkedRepo represents a repository linked to a GitHub ProjectV2.

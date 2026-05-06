@@ -54,8 +54,8 @@ var reservedSkillNames = map[string]bool{
 // skillsDirCandidates lists the relative paths (from repo root) where skills
 // can live. The first candidate that exists wins.
 var skillsDirCandidates = []string{
-	"skills",     // local skills (repo root skills/)
-	".ai/skills", // framework skills mounted via gh agentic mount
+	"skills",         // local skills (repo root skills/)
+	".agents/skills", // framework skills mounted via gh agentic mount
 }
 
 // catalogueName is the canonical CATALOGUE.md filename at the repo root.

@@ -115,8 +115,8 @@ func TestCLAUDEMDTemplate_Content(t *testing.T) {
 }
 
 func TestAGENTSMDTemplate_Content(t *testing.T) {
-	if !strings.Contains(agentsMDTemplate, "@.ai/RULEBOOK.md") {
-		t.Error("AGENTS.md template should reference @.ai/RULEBOOK.md")
+	if !strings.Contains(agentsMDTemplate, "@.agents/RULEBOOK.md") {
+		t.Error("AGENTS.md template should reference @.agents/RULEBOOK.md")
 	}
 	if !strings.Contains(agentsMDTemplate, "@LOCALRULES.md") {
 		t.Error("AGENTS.md template should reference @LOCALRULES.md")
@@ -150,9 +150,9 @@ func TestAGENTSMDTemplate_BootstrapRuleCommand(t *testing.T) {
 }
 
 func TestAGENTSMDTemplate_BootstrapRuleAIAbsence(t *testing.T) {
-	// Bootstrap rule activates when .ai/ is absent.
-	if !strings.Contains(agentsMDTemplate, ".ai/ directory does not exist") {
-		t.Error("AGENTS.md bootstrap rule should mention '.ai/ directory does not exist'")
+	// Bootstrap rule activates when .agents/ is absent.
+	if !strings.Contains(agentsMDTemplate, ".agents/ directory does not exist") {
+		t.Error("AGENTS.md bootstrap rule should mention '.agents/ directory does not exist'")
 	}
 }
 

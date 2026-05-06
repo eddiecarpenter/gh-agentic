@@ -171,7 +171,7 @@ func TestRenderCheckSections_FrameworkSourceMode(t *testing.T) {
 	pipelineReport := &doctor.Report{
 		Groups: []doctor.Group{
 			makePassGroup("Repository", "Git repository (owner/repo)"),
-			makePassGroup("Framework source", "skipped: framework source (.ai is a symlink)"),
+			makePassGroup("Framework source", "skipped: framework source (.agents is a symlink)"),
 			makePassGroup("Workflows", "agentic-pipeline.yml present"),
 			makePassGroup("Variables & secrets", "AGENT_USER configured"),
 			makePassGroup("Project reachability", "AGENTIC_PROJECT_ID not configured"),

@@ -221,7 +221,7 @@ func TestSwitchProjectListFederated_FetchProjectsError(t *testing.T) {
 
 // TestSwitchVersion_SetsFrameworkVersionVariable_SingleTopology covers the
 // v2.3.0 regression where `gh agentic upgrade` on a single-topology repo
-// updated the .ai/ mount and the workflow uses: refs but left
+// updated the .agents/ mount and the workflow uses: refs but left
 // AGENTIC_FRAMEWORK_VERSION at the old value. Drift between the variable
 // and the mounted tree is immediately visible to `check` and to the
 // pipeline's own resolve-version step, which reads the variable. The
@@ -233,15 +233,15 @@ func TestSwitchProjectListFederated_FetchProjectsError(t *testing.T) {
 func TestSwitchVersion_SetsFrameworkVersionVariable_SingleTopology(t *testing.T) {
 	root := t.TempDir()
 
-	// Seed a fake mounted .ai/ at v2.2.6 as a tracked submodule, so
+	// Seed a fake mounted .agents/ at v2.2.6 as a tracked submodule, so
 	// RunSwitch's DownloadFramework dispatch sees MountStateSubmodule
 	// and routes to the swap path.
-	aiDir := filepath.Join(root, ".ai")
+	aiDir := filepath.Join(root, ".agents")
 	if err := os.MkdirAll(aiDir, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".gitmodules"),
-		[]byte(`[submodule ".ai"]`+"\n\turl = "+mount.FrameworkRepoURL+"\n"), 0o644); err != nil {
+		[]byte(`[submodule ".agents"]`+"\n\turl = "+mount.FrameworkRepoURL+"\n"), 0o644); err != nil {
 		t.Fatalf("seed .gitmodules: %v", err)
 	}
 	withFakeSwap(t)
@@ -297,16 +297,16 @@ func TestSwitchVersion_SetsFrameworkVersionVariable_SingleTopology(t *testing.T)
 // TestSwitchVersion_SetsFrameworkVersionVariable_AlreadyAtTarget covers
 // the "already at version" path — variable must still be written if it
 // disagrees with the mounted version. This is the recovery case for a
-// repo whose .ai/ was mounted at the right version but whose variable
+// repo whose .agents/ was mounted at the right version but whose variable
 // was never set (e.g. manual mount).
 func TestSwitchVersion_SetsFrameworkVersionVariable_AlreadyAtTarget(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
 	writes := make(map[string]string)
-	// Variable is absent — the bug case: user's repo has `.ai/` at
+	// Variable is absent — the bug case: user's repo has `.agents/` at
 	// v2.3.0 but AGENTIC_FRAMEWORK_VERSION has never been set.
 	reads := map[string]string{}
 
@@ -347,7 +347,7 @@ func TestSwitchVersion_SetsFrameworkVersionVariable_AlreadyAtTarget(t *testing.T
 // something it hasn't.
 func TestSwitchVersion_SkipsVariableWrite_WhenAlreadyCorrect(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 

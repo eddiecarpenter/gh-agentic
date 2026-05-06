@@ -36,7 +36,7 @@ type checkDeps struct {
 // projectFrameworkOutOfSync returns true when the project-side
 // framework-version-sync check reports a Fail status. Pipeline-scope
 // checks (skill frontmatter, catalogue, workflow versions) operate on
-// `.ai/` and produce noise against a stale mount, so both `check` and
+// `.agents/` and produce noise against a stale mount, so both `check` and
 // `repair` short-circuit on this signal.
 func projectFrameworkOutOfSync(report *project.CheckReport) bool {
 	if report == nil {
@@ -85,7 +85,7 @@ func defaultResolveRepo() (repoInfo, error) {
 // in check_test.go pins this going forward.
 func renderCheckSections(w io.Writer, isFrameworkSource bool, projectReport *project.CheckReport, pipelineReport *doctor.Report, pipelineSkipped bool) {
 	if isFrameworkSource {
-		fmt.Fprintln(w, "  "+ui.StatusWarning.Render("⚠")+"  Framework source detected (.ai is a symlink)")
+		fmt.Fprintln(w, "  "+ui.StatusWarning.Render("⚠")+"  Framework source detected (.agents is a symlink)")
 		fmt.Fprintln(w, "  "+ui.Muted.Render("   Project-scope and content-layer checks are skipped — they do not apply"))
 		fmt.Fprintln(w, "  "+ui.Muted.Render("   when this repo IS the gh-agentic framework. Config-layer checks run below."))
 		fmt.Fprintln(w, "")
@@ -189,7 +189,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 					// Short-circuit: if the mounted framework is out of sync
 					// with the authoritative version, pipeline-side checks
 					// (skill frontmatter, catalogue, workflow versions) will
-					// generate noise against a stale `.ai/`. Stop here and
+					// generate noise against a stale `.agents/`. Stop here and
 					// direct the user to `gh agentic mount` first.
 					if projectFrameworkOutOfSync(projectReport) {
 						pipelineSkipped = true
@@ -269,4 +269,3 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 		},
 	}
 }
-

@@ -16,11 +16,11 @@ name: Agentic Pipeline
 # any repo this workflow runs against (and on `eddiecarpenter/gh-agentic`,
 # whose submodule is fetched during checkout). See `docs/github-app-setup.md`.
 #
-# Framework mount: `.ai/` is tracked as a git submodule (since PR #620)
+# Framework mount: `.agents/` is tracked as a git submodule (since PR #620)
 # pointing at eddiecarpenter/gh-agentic. Checkout steps use
 # `submodules: recursive` to populate it — no separate clone or
 # `Mount AI framework` step. Composite actions are reached via
-# `./.ai/.github/actions/...`, which resolves into the submodule on
+# `./.agents/.github/actions/...`, which resolves into the submodule on
 # domain repos and via the `.ai -> .` symlink in gh-agentic itself.
 #
 # `workflow_dispatch` inputs (pr_number, branch_name) reach this workflow
@@ -133,13 +133,13 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.ai/.github/actions/install-ai-tools
+        uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Agent Auth
-        uses: ./.ai/.github/actions/setup-agent-auth
+        uses: ./.agents/.github/actions/setup-agent-auth
         with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
@@ -157,10 +157,10 @@ jobs:
       - name: Run feature-design recipe
         run: |
           goose run \
-            --recipe .ai/.goose/recipes/feature-design.yaml \
+            --recipe .agents/.goose/recipes/feature-design.yaml \
             --params feature_number=${{ github.event.issue.number }}
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
@@ -402,14 +402,14 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.ai/.github/actions/install-ai-tools
+        uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           agent-provider: ${{ vars.AGENT_PROVIDER }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Agent Auth
-        uses: ./.ai/.github/actions/setup-agent-auth
+        uses: ./.agents/.github/actions/setup-agent-auth
         with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
@@ -442,7 +442,7 @@ jobs:
           for attempt in 1 2 3; do
             echo "--- Dev session attempt ${attempt} ---"
             goose run \
-              --recipe .ai/.goose/recipes/dev-session.yaml \
+              --recipe .agents/.goose/recipes/dev-session.yaml \
               --params feature_number=${{ github.event.issue.number }} && break
             EXIT_CODE=$?
             if [ $attempt -lt 3 ]; then
@@ -453,7 +453,7 @@ jobs:
             fi
           done
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
@@ -591,13 +591,13 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.ai/.github/actions/install-ai-tools
+        uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Agent Auth
-        uses: ./.ai/.github/actions/setup-agent-auth
+        uses: ./.agents/.github/actions/setup-agent-auth
         with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
@@ -616,7 +616,7 @@ jobs:
         env:
           PR_NUMBER: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
@@ -624,7 +624,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           goose run \
-            --recipe .ai/.goose/recipes/pr-review-session.yaml \
+            --recipe .agents/.goose/recipes/pr-review-session.yaml \
             --params pr_number=${PR_NUMBER}
 
       - name: Push fixes
@@ -694,13 +694,13 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.ai/.github/actions/install-ai-tools
+        uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Agent Auth
-        uses: ./.ai/.github/actions/setup-agent-auth
+        uses: ./.agents/.github/actions/setup-agent-auth
         with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
@@ -718,10 +718,10 @@ jobs:
       - name: Run issue session recipe
         run: |
           goose run \
-            --recipe .ai/.goose/recipes/issue-session.yaml \
+            --recipe .agents/.goose/recipes/issue-session.yaml \
             --params issue_number=${{ github.event.issue.number }}
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto

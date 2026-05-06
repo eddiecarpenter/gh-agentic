@@ -11,7 +11,7 @@ name: Release Notes
 #
 # Authentication mirrors agentic-pipeline.yml: a GitHub App installation
 # token is minted at the start of the job. The framework is mounted via
-# the `.ai/` git submodule in the parent repo — no bespoke
+# the `.agents/` git submodule in the parent repo — no bespoke
 # `Mount AI framework` step.
 
 on:
@@ -79,12 +79,12 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install tools
-        uses: ./.ai/.github/actions/install-ai-tools
+        uses: ./.agents/.github/actions/install-ai-tools
         with:
           gh-token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Agent Auth
-        uses: ./.ai/.github/actions/setup-agent-auth
+        uses: ./.agents/.github/actions/setup-agent-auth
         with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
@@ -102,10 +102,10 @@ jobs:
       - name: Run release recipe
         run: |
           goose run \
-            --recipe .ai/.goose/recipes/release-notes.yaml \
+            --recipe .agents/.goose/recipes/release-notes.yaml \
             --params tag=${{ github.event.release.tag_name }}
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.ai/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto

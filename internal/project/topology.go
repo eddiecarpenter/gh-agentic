@@ -86,4 +86,3 @@ func ResolveTopology(deps ResolveTopologyDeps) (string, error) {
 	}
 	return resolveTopologyWithLinked(fullDeps, deps.ProjectID, projectOwner, linked, nil)
 }
-

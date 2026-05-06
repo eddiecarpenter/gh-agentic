@@ -109,7 +109,7 @@ Creates a new GitHub Project and establishes this repo as the control plane.
 - Link this repo to the project
 - Set `AGENTIC_PROJECT_ID` as a repo-level variable
 - Set `AGENTIC_CONTROL_PLANE=true` as a repo-level variable
-- Mount the framework (`.ai/`)
+- Mount the framework (`.agents/`)
 - Scaffold project labels, runner, and project board columns
 - Configure branch protection on `main` where API permissions allow (strongly
   recommended — see `knowledge-plane.md`)
@@ -136,7 +136,7 @@ Project and marked as a domain (no `AGENTIC_CONTROL_PLANE` variable).
 - Link this repo to the GitHub Project
 - Set `AGENTIC_PROJECT_ID` as a repo-level variable
 - Ensure `AGENTIC_CONTROL_PLANE` is **not** set (this is a domain repo)
-- Mount the framework (`.ai/`)
+- Mount the framework (`.agents/`)
 - Mount the control plane knowledge into `.cp/` — sparse checkout of the CP
   repo's `docs/` at `main`. See `knowledge-plane.md` for the mount's contents
   and refresh cadence.

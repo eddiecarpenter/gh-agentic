@@ -265,4 +265,3 @@ func renderFeatureBranchOneLiner(b *projectstatus.BranchState) string {
 	}
 	return b.Name
 }
-

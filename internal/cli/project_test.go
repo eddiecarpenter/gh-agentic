@@ -55,7 +55,7 @@ func fakeProjectDeps(owner, repo string) project.Deps {
 			return []project.ProjectField{{ID: "field-id", Name: "Status", DataType: "SINGLE_SELECT"}}, nil
 		},
 		UpdateStatusFieldOptions: func(fieldID string, options []project.StatusOption) error { return nil },
-		FetchProjectNumber: func(projectID string) (int, error) { return 1, nil },
+		FetchProjectNumber:       func(projectID string) (int, error) { return 1, nil },
 		CreateProjectView: func(owner, ownerType string, projectNumber int, name, layout, filter string) error {
 			return nil
 		},

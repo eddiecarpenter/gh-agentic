@@ -18,14 +18,14 @@ import (
 // production (DownloadFramework dispatches to mount.InstallSubmodule
 // regardless), but is retained on Deps so existing call sites keep
 // compiling. Tests pair this with mounttest.StubInstall to fake the
-// post-install state of .ai/.
+// post-install state of .agents/.
 func fakeCloneFunc() mount.CloneFunc {
 	return func(string, string, string) error { return nil }
 }
 
 // stubFiles is the canonical set of files the wizard tests expect to
-// see inside .ai/ after a successful install. mounttest.StubInstall
-// writes these into <root>/.ai/ when invoked.
+// see inside .agents/ after a successful install. mounttest.StubInstall
+// writes these into <root>/.agents/ when invoked.
 var stubFiles = map[string]string{
 	"RULEBOOK.md":            "# Rules",
 	"skills/session-init.md": "# Session Init",
@@ -78,8 +78,8 @@ func TestRun_Success(t *testing.T) {
 	output := buf.String()
 
 	// Verify framework mounted.
-	if _, err := os.Stat(filepath.Join(root, ".ai", "RULEBOOK.md")); os.IsNotExist(err) {
-		t.Error(".ai/RULEBOOK.md should exist")
+	if _, err := os.Stat(filepath.Join(root, ".agents", "RULEBOOK.md")); os.IsNotExist(err) {
+		t.Error(".agents/RULEBOOK.md should exist")
 	}
 
 	// Verify variables and secrets were set.
@@ -112,8 +112,8 @@ func TestRun_BlockedWithoutForce(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
 	var buf bytes.Buffer
 
-	// Create existing .ai/ to simulate mounted framework.
-	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
+	// Create existing .agents/ to simulate mounted framework.
+	_ = os.MkdirAll(filepath.Join(root, ".agents"), 0o755)
 
 	deps := Deps{
 		Run:   func(name string, args ...string) (string, error) { return "", nil },
@@ -125,7 +125,7 @@ func TestRun_BlockedWithoutForce(t *testing.T) {
 
 	err := Run(&buf, root, false, deps)
 	if err == nil {
-		t.Fatal("expected error when .ai/ exists without --force")
+		t.Fatal("expected error when .agents/ exists without --force")
 	}
 	if !errors.Is(err, ErrAlreadyInitialised) {
 		t.Errorf("expected ErrAlreadyInitialised, got: %v", err)
@@ -138,12 +138,12 @@ func TestRun_BlockedWithoutForce(t *testing.T) {
 func TestRun_ProceedsWithForce(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755)
-	// Pre-existing .ai/ as a tracked submodule simulates a mounted
+	// Pre-existing .agents/ as a tracked submodule simulates a mounted
 	// framework. The wizard's --force path will proceed past the
 	// "already initialised" guard and re-install via the swap path.
-	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
+	_ = os.MkdirAll(filepath.Join(root, ".agents"), 0o755)
 	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
-		[]byte(`[submodule ".ai"]`+"\n\turl = "+mount.FrameworkRepoURL+"\n"), 0o644)
+		[]byte(`[submodule ".agents"]`+"\n\turl = "+mount.FrameworkRepoURL+"\n"), 0o644)
 	mounttest.StubSwap(t, stubFiles)
 	var buf bytes.Buffer
 
@@ -516,16 +516,16 @@ func TestParseRepoFromURL_HTTPS(t *testing.T) {
 func TestCheckAIVersionExists(t *testing.T) {
 	root := t.TempDir()
 	if CheckAIVersionExists(root) {
-		t.Error("should return false when .ai/ is not present")
+		t.Error("should return false when .agents/ is not present")
 	}
 
-	// Create a .ai/ directory to simulate a mounted framework — the
+	// Create a .agents/ directory to simulate a mounted framework — the
 	// .ai-version flat file was removed in #585, so the init wizard
 	// uses directory presence as the "already initialised" signal.
-	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
-		t.Fatalf("creating .ai/: %v", err)
+	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
+		t.Fatalf("creating .agents/: %v", err)
 	}
 	if !CheckAIVersionExists(root) {
-		t.Error("should return true when .ai/ directory is present")
+		t.Error("should return true when .agents/ directory is present")
 	}
 }

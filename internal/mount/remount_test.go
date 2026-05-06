@@ -23,8 +23,8 @@ func TestRunRemount_Success(t *testing.T) {
 	}
 
 	// Verify framework files exist.
-	if _, err := os.Stat(filepath.Join(root, ".ai", "RULEBOOK.md")); os.IsNotExist(err) {
-		t.Error(".ai/RULEBOOK.md should exist")
+	if _, err := os.Stat(filepath.Join(root, ".agents", "RULEBOOK.md")); os.IsNotExist(err) {
+		t.Error(".agents/RULEBOOK.md should exist")
 	}
 
 	// Verify output.
@@ -32,7 +32,7 @@ func TestRunRemount_Success(t *testing.T) {
 	if !strings.Contains(output, "Mounting AI Framework (v2.0.0)") {
 		t.Errorf("output should show version, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Framework mounted at .ai/") {
+	if !strings.Contains(output, "Framework mounted at .agents/") {
 		t.Errorf("output should show success, got:\n%s", output)
 	}
 	// No confirmation prompt.
@@ -46,15 +46,15 @@ func TestRunRemount_RefreshesExistingSubmodule(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Pre-existing submodule state: .gitmodules has the .ai entry plus
-	// a populated .ai/ with stale content. RunRemount must dispatch to
-	// SwapSubmodule (not Install), and the swap stub repopulates .ai/
+	// a populated .agents/ with stale content. RunRemount must dispatch to
+	// SwapSubmodule (not Install), and the swap stub repopulates .agents/
 	// with the fresh files.
-	aiDir := filepath.Join(root, ".ai")
+	aiDir := filepath.Join(root, ".agents")
 	_ = os.MkdirAll(aiDir, 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "stale.txt"), []byte("stale"), 0o644)
 	_ = os.WriteFile(filepath.Join(aiDir, "RULEBOOK.md"), []byte("# Old rules"), 0o644)
 	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
-		[]byte(`[submodule ".ai"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
+		[]byte(`[submodule ".agents"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
 
 	withStubSwap(t, map[string]string{
 		"RULEBOOK.md": "# Fresh rules",
@@ -65,7 +65,7 @@ func TestRunRemount_RefreshesExistingSubmodule(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Stale file should be gone (swap stub wipes .ai/ before repopulating).
+	// Stale file should be gone (swap stub wipes .agents/ before repopulating).
 	if _, err := os.Stat(filepath.Join(aiDir, "stale.txt")); err == nil {
 		t.Error("stale.txt should be removed")
 	}
