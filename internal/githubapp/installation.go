@@ -25,7 +25,7 @@ import (
 // value used by the canonical App listed on GitHub and is the default value
 // Checker instances are constructed with. Tests may override it via
 // NewChecker to exercise the "wrong app installed" path.
-const DefaultAppSlug = "gh-agentic-app"
+const DefaultAppSlug = "gh-agentic"
 
 // RESTClient is the minimal surface the installation checks need from a
 // GitHub REST client. It is satisfied by *api.RESTClient from

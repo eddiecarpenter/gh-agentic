@@ -48,7 +48,7 @@ func TestEnsureInstalled_AlreadyInstalled_ReturnsAlreadyInstalled(t *testing.T) 
 	checker := &fakeChecker{repoResults: []checkOutcome{{installed: true, id: 42}}}
 	flow := &Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return false },
 	}
 	var w bytes.Buffer
@@ -72,7 +72,7 @@ func TestEnsureInstalled_Headless_PrintsURLAndContinues(t *testing.T) {
 	checker := &fakeChecker{}
 	flow := &Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return true },
 	}
 	var w bytes.Buffer
@@ -85,7 +85,7 @@ func TestEnsureInstalled_Headless_PrintsURLAndContinues(t *testing.T) {
 		t.Fatalf("expected ResultHeadless, got %v", got)
 	}
 	out := w.String()
-	if !strings.Contains(out, "https://github.com/apps/gh-agentic-app/installations/new") {
+	if !strings.Contains(out, "https://github.com/apps/gh-agentic/installations/new") {
 		t.Errorf("expected install URL in output; got %q", out)
 	}
 	// Must not prompt in headless mode — Confirm absent means nothing was
@@ -99,7 +99,7 @@ func TestEnsureInstalled_Headless_NonTTYFallback(t *testing.T) {
 	confirmCalled := false
 	flow := &Flow{
 		Checker:       checker,
-		Slug:          "gh-agentic-app",
+		Slug:          "gh-agentic",
 		IsCI:          func() bool { return false },
 		IsInteractive: func(_ io.Writer) bool { return false },
 		Confirm: func(string, string) (bool, error) {
@@ -122,7 +122,7 @@ func TestEnsureInstalled_InteractiveDecline_PrintsURLAndContinues(t *testing.T) 
 	checker := &fakeChecker{}
 	flow := &Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return false },
 		Confirm: func(string, string) (bool, error) { return false, nil },
 	}
@@ -151,7 +151,7 @@ func TestEnsureInstalled_InteractiveAccept_OpenConfirmed(t *testing.T) {
 
 	flow := &Flow{
 		Checker:   checker,
-		Slug:      "gh-agentic-app",
+		Slug:      "gh-agentic",
 		IsCI:      func() bool { return false },
 		Confirm:   func(string, string) (bool, error) { return true, nil },
 		OpenURL:   func(u string) error { openedURL = u; return nil },
@@ -166,7 +166,7 @@ func TestEnsureInstalled_InteractiveAccept_OpenConfirmed(t *testing.T) {
 	if got != ResultInstalledInteractive {
 		t.Fatalf("expected ResultInstalledInteractive, got %v", got)
 	}
-	if openedURL == "" || !strings.Contains(openedURL, "apps/gh-agentic-app") {
+	if openedURL == "" || !strings.Contains(openedURL, "apps/gh-agentic") {
 		t.Errorf("expected browser-open with install URL; got %q", openedURL)
 	}
 	if !waitCalled {
@@ -186,7 +186,7 @@ func TestEnsureInstalled_InteractiveAccept_PendingWhenReCheckStillMissing(t *tes
 	}}
 	flow := &Flow{
 		Checker:   checker,
-		Slug:      "gh-agentic-app",
+		Slug:      "gh-agentic",
 		IsCI:      func() bool { return false },
 		Confirm:   func(string, string) (bool, error) { return true, nil },
 		OpenURL:   func(string) error { return nil },
@@ -216,7 +216,7 @@ func TestEnsureInstalled_InteractiveAccept_BrowserOpenError_ContinuesWithURL(t *
 	}}
 	flow := &Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return false },
 		Confirm: func(string, string) (bool, error) { return true, nil },
 		OpenURL: func(string) error { return errors.New("no display") },
@@ -234,7 +234,7 @@ func TestEnsureInstalled_InteractiveAccept_BrowserOpenError_ContinuesWithURL(t *
 
 func TestEnsureInstalled_OrgTarget_UsesOrgEndpoint(t *testing.T) {
 	checker := &fakeChecker{orgResults: []checkOutcome{{installed: true, id: 1}}}
-	flow := &Flow{Checker: checker, Slug: "gh-agentic-app", IsCI: func() bool { return false }}
+	flow := &Flow{Checker: checker, Slug: "gh-agentic", IsCI: func() bool { return false }}
 	var w bytes.Buffer
 
 	_, err := EnsureInstalled(context.Background(), &w, nil, flow, Target{Type: TargetOrg, Owner: "acme"})
@@ -252,7 +252,7 @@ func TestEnsureInstalled_OrgTarget_UsesOrgEndpoint(t *testing.T) {
 func TestEnsureInstalled_DetectionError_PropagatesWrapped(t *testing.T) {
 	sentinel := errors.New("boom")
 	checker := &fakeChecker{repoResults: []checkOutcome{{err: sentinel}}}
-	flow := &Flow{Checker: checker, Slug: "gh-agentic-app", IsCI: func() bool { return false }}
+	flow := &Flow{Checker: checker, Slug: "gh-agentic", IsCI: func() bool { return false }}
 	var w bytes.Buffer
 
 	_, err := EnsureInstalled(context.Background(), &w, nil, flow, Target{Type: TargetRepo, Owner: "o", Repo: "r"})
@@ -275,7 +275,7 @@ func TestEnsureInstalled_NilFlow_ReturnsError(t *testing.T) {
 }
 
 func TestEnsureInstalled_IncompleteTarget_ReturnsError(t *testing.T) {
-	flow := &Flow{Checker: &fakeChecker{}, Slug: "gh-agentic-app"}
+	flow := &Flow{Checker: &fakeChecker{}, Slug: "gh-agentic"}
 	tests := []Target{
 		{Type: TargetRepo, Owner: "", Repo: "r"},
 		{Type: TargetRepo, Owner: "o", Repo: ""},

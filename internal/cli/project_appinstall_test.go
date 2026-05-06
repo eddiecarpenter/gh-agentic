@@ -60,7 +60,7 @@ func TestRunAppInstallStep_Skipped_NoCalls(t *testing.T) {
 	checker := &fakeChecker{}
 	withProjectFlow(t, &githubapp.Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return true },
 	})
 
@@ -88,7 +88,7 @@ func TestRunAppInstallStep_OrgOwner_UsesOrgEndpoint(t *testing.T) {
 	checker := &fakeChecker{orgInstalled: true}
 	withProjectFlow(t, &githubapp.Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return true },
 	})
 
@@ -109,7 +109,7 @@ func TestRunAppInstallStep_UserOwner_UsesRepoEndpoint(t *testing.T) {
 	checker := &fakeChecker{repoInstalled: true}
 	withProjectFlow(t, &githubapp.Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return true },
 	})
 
@@ -135,7 +135,7 @@ func TestRunAppInstallStep_DetectOwnerTypeError_FallsBackToRepo(t *testing.T) {
 	checker := &fakeChecker{repoInstalled: true}
 	withProjectFlow(t, &githubapp.Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return true },
 	})
 
@@ -157,7 +157,7 @@ func TestRunAppInstallStep_HeadlessMissingApp_PrintsURLAndContinues(t *testing.T
 	checker := &fakeChecker{orgInstalled: false}
 	withProjectFlow(t, &githubapp.Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return true },
 	})
 
@@ -166,7 +166,7 @@ func TestRunAppInstallStep_HeadlessMissingApp_PrintsURLAndContinues(t *testing.T
 	if err := runAppInstallStep(context.Background(), &buf, deps, false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(buf.String(), "https://github.com/apps/gh-agentic-app/installations/new") {
+	if !strings.Contains(buf.String(), "https://github.com/apps/gh-agentic/installations/new") {
 		t.Errorf("expected install URL to be printed in headless mode; got %q", buf.String())
 	}
 }
@@ -175,7 +175,7 @@ func TestRunAppInstallStep_InteractiveDecline_PrintsURLAndContinues(t *testing.T
 	checker := &fakeChecker{}
 	withProjectFlow(t, &githubapp.Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return false },
 		Confirm: func(string, string) (bool, error) { return false, nil },
 	})
@@ -197,7 +197,7 @@ func TestRunAppInstallStep_InteractiveAccept_InvokesBrowser(t *testing.T) {
 	var openedURL string
 	withProjectFlow(t, &githubapp.Flow{
 		Checker: checker,
-		Slug:    "gh-agentic-app",
+		Slug:    "gh-agentic",
 		IsCI:    func() bool { return false },
 		Confirm: func(string, string) (bool, error) { return true, nil },
 		OpenURL: func(u string) error { openedURL = u; return nil },
@@ -211,7 +211,7 @@ func TestRunAppInstallStep_InteractiveAccept_InvokesBrowser(t *testing.T) {
 	if openedURL == "" {
 		t.Fatalf("expected OpenURL to be called in interactive-accept path")
 	}
-	if !strings.Contains(openedURL, "apps/gh-agentic-app") {
+	if !strings.Contains(openedURL, "apps/gh-agentic") {
 		t.Errorf("expected install URL in %q", openedURL)
 	}
 }

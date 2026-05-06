@@ -136,10 +136,14 @@ change membership, or --force to re-run setup from scratch.`,
 					}
 				}
 
-				return project.InitRepo(w, deps, project.InitRepoConfig{
+				if err := project.InitRepo(w, deps, project.InitRepoConfig{
 					Mode:    project.InitModeSingle,
 					InitCfg: initCfg,
-				})
+				}); err != nil {
+					return err
+				}
+				tryUploadClaudeCredentials(w, deps, initCfg.OwnerType)
+				return nil
 			}
 
 			// Federated path: list federated projects, user picks one.
@@ -192,17 +196,42 @@ change membership, or --force to re-run setup from scratch.`,
 				}
 			}
 
-			return project.InitRepo(w, deps, project.InitRepoConfig{
+			if err := project.InitRepo(w, deps, project.InitRepoConfig{
 				Mode:      project.InitModeFederated,
 				ProjectID: projectID,
 				InitCfg:   initCfg,
-			})
+			}); err != nil {
+				return err
+			}
+			tryUploadClaudeCredentials(w, deps, initCfg.OwnerType)
+			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing configuration")
 	cmd.Flags().BoolVar(&skipAppInstall, "skip-app-install", false, "skip the agentic GitHub App install-state check and install guidance")
 	return cmd
+}
+
+// tryUploadClaudeCredentials reads Claude credentials from the local machine
+// and uploads them as the CLAUDE_CREDENTIALS_JSON secret, using the same
+// mechanism as 'gh agentic auth refresh'. If credentials are not found locally
+// (e.g. the user has never logged in to Claude Code on this machine), a guidance
+// message is printed and init continues — the user can upload credentials later
+// with 'gh agentic auth refresh'.
+func tryUploadClaudeCredentials(w io.Writer, deps project.Deps, ownerType string) {
+	fmt.Fprintf(w, "\n")
+	authDeps := auth.Deps{
+		Run:             auth.DefaultRunCommand,
+		ReadCredentials: auth.ReadClaudeCredentialsDefault,
+		RepoFullName:    deps.RepoFullName,
+		Owner:           deps.Owner,
+		RepoName:        deps.RepoName,
+		OwnerType:       ownerType,
+	}
+	if err := auth.Refresh(w, authDeps); err != nil {
+		fmt.Fprintf(w, "  %s  Claude credentials not found locally — run 'gh agentic auth refresh' to upload them\n", ui.StatusWarning.Render("⚠"))
+	}
 }
 
 // buildAppInstaller returns the EnsureAppInstalled hook wired to the

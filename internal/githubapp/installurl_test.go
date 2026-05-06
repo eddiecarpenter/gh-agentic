@@ -7,21 +7,21 @@ import (
 )
 
 func TestInstallURL_RepoTarget_HasCanonicalPrefix(t *testing.T) {
-	got := InstallURL("gh-agentic-app", TargetRepo, "owner/repo")
-	if !strings.HasPrefix(got, "https://github.com/apps/gh-agentic-app/installations/new") {
+	got := InstallURL("gh-agentic", TargetRepo, "owner/repo")
+	if !strings.HasPrefix(got, "https://github.com/apps/gh-agentic/installations/new") {
 		t.Fatalf("expected canonical prefix in %q", got)
 	}
 }
 
 func TestInstallURL_OrgTarget_HasCanonicalPrefix(t *testing.T) {
-	got := InstallURL("gh-agentic-app", TargetOrg, "acme")
-	if !strings.HasPrefix(got, "https://github.com/apps/gh-agentic-app/installations/new") {
+	got := InstallURL("gh-agentic", TargetOrg, "acme")
+	if !strings.HasPrefix(got, "https://github.com/apps/gh-agentic/installations/new") {
 		t.Fatalf("expected canonical prefix in %q", got)
 	}
 }
 
 func TestInstallURL_EncodesTargetNameInState(t *testing.T) {
-	got := InstallURL("gh-agentic-app", TargetRepo, "owner/repo")
+	got := InstallURL("gh-agentic", TargetRepo, "owner/repo")
 	u, err := url.Parse(got)
 	if err != nil {
 		t.Fatalf("could not parse URL %q: %v", got, err)
@@ -33,7 +33,7 @@ func TestInstallURL_EncodesTargetNameInState(t *testing.T) {
 }
 
 func TestInstallURL_OrgStatePrefix(t *testing.T) {
-	got := InstallURL("gh-agentic-app", TargetOrg, "acme")
+	got := InstallURL("gh-agentic", TargetOrg, "acme")
 	u, err := url.Parse(got)
 	if err != nil {
 		t.Fatalf("could not parse URL %q: %v", got, err)
@@ -44,8 +44,8 @@ func TestInstallURL_OrgStatePrefix(t *testing.T) {
 }
 
 func TestInstallURL_EmptyTargetName_NoStateParam(t *testing.T) {
-	got := InstallURL("gh-agentic-app", TargetRepo, "")
-	if got != "https://github.com/apps/gh-agentic-app/installations/new" {
+	got := InstallURL("gh-agentic", TargetRepo, "")
+	if got != "https://github.com/apps/gh-agentic/installations/new" {
 		t.Fatalf("expected bare URL without query, got %q", got)
 	}
 }
