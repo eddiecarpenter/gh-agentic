@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/githubapp"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount/mounttest"
 )
@@ -240,21 +241,21 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 	}
 }
 
-func TestConfigureRepo_GrantsAccess(t *testing.T) {
+func TestConfigureRepo_NoCollaboratorGrant(t *testing.T) {
 	var buf bytes.Buffer
-	var accessGranted bool
+	var collaboratorCalled bool
 
 	cfg := &InitConfig{
 		RepoFullName: "owner/repo",
 		Owner:        "owner",
 		RepoName:     "repo",
-		AgentUser:    "goose-agent",
+		AgentUser:    githubapp.DefaultAppSlug + "[bot]",
 	}
 
 	run := func(name string, args ...string) (string, error) {
 		cmd := strings.Join(args, " ")
-		if strings.Contains(cmd, "collaborators/goose-agent") {
-			accessGranted = true
+		if strings.Contains(cmd, "collaborators") {
+			collaboratorCalled = true
 		}
 		return "", nil
 	}
@@ -264,8 +265,8 @@ func TestConfigureRepo_GrantsAccess(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !accessGranted {
-		t.Error("expected collaborator access to be granted")
+	if collaboratorCalled {
+		t.Error("collaborator grant should not be issued — permissions are handled by the GitHub App installation")
 	}
 }
 
