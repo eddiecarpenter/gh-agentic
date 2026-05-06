@@ -45,7 +45,7 @@ func TestRunRemount_RefreshesExistingSubmodule(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	// Pre-existing submodule state: .gitmodules has the .ai entry plus
+	// Pre-existing submodule state: .gitmodules has the .agents entry plus
 	// a populated .agents/ with stale content. RunRemount must dispatch to
 	// SwapSubmodule (not Install), and the swap stub repopulates .agents/
 	// with the fresh files.

@@ -304,7 +304,7 @@ func TestMigrateGitignoredMountViaGit_LegacyState(t *testing.T) {
 		t.Fatalf("seed legacy content: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"),
-		[]byte("node_modules/\n.ai/\nvendor/\n"), 0o644); err != nil {
+		[]byte("node_modules/\n.agents/\nvendor/\n"), 0o644); err != nil {
 		t.Fatalf("seed .gitignore: %v", err)
 	}
 
@@ -401,7 +401,7 @@ func TestReadAIVersionFromGit_NoMount(t *testing.T) {
 func TestRemoveAIFromGitignore_PublicWrapper(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"),
-		[]byte("node_modules/\n.ai/\nvendor/\n"), 0o644); err != nil {
+		[]byte("node_modules/\n.agents/\nvendor/\n"), 0o644); err != nil {
 		t.Fatalf("seed .gitignore: %v", err)
 	}
 	if err := RemoveAIFromGitignore(root); err != nil {

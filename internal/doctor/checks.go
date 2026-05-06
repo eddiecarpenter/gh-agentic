@@ -210,7 +210,7 @@ func checkFramework(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-version", Status: Fail,
 			Message:     ".agents/ git metadata missing — framework not installed or submodule uninitialised",
-			Remediation: "Run 'gh agentic upgrade <version>' or 'git submodule update --init .ai'",
+			Remediation: "Run 'gh agentic upgrade <version>' or 'git submodule update --init .agents'",
 		})
 	}
 

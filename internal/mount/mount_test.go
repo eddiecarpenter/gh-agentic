@@ -113,7 +113,7 @@ func TestDownloadFramework_Success(t *testing.T) {
 		t.Fatalf("reading .gitmodules: %v", err)
 	}
 	if !strings.Contains(string(gm), `[submodule ".agents"]`) {
-		t.Errorf(".gitmodules missing .ai entry: %s", gm)
+		t.Errorf(".gitmodules missing .agents entry: %s", gm)
 	}
 }
 
@@ -165,7 +165,7 @@ func TestDownloadFramework_RefusesInconsistentExistingAI(t *testing.T) {
 	}
 }
 
-// The .ai-version flat-file readers and writer were removed in #585 —
+// The .agents-version flat-file readers and writer were removed in #585 —
 // the mounted version lives in .agents/.git metadata, which ReadAIVersionFromGit
 // reads directly. No unit test is kept for the deleted helpers.
 
@@ -187,7 +187,7 @@ func TestEnsureGitignore_Creates(t *testing.T) {
 
 func TestEnsureGitignore_AlreadyPresent(t *testing.T) {
 	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.ai/\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.agents/\n"), 0o644)
 
 	err := EnsureGitignore(root)
 	if err != nil {
@@ -233,7 +233,7 @@ func TestEnsureGitignore_NoTrailingNewline(t *testing.T) {
 	if !strings.Contains(content, "node_modules/") {
 		t.Error("expected existing entries preserved")
 	}
-	if !strings.Contains(content, "\n.ai/") {
+	if !strings.Contains(content, "\n.agents/") {
 		t.Errorf("expected newline before .agents/ entry, got: %q", content)
 	}
 }

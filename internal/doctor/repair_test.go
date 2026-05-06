@@ -34,7 +34,7 @@ func makeRepoNeedingPipelineRepairs(t *testing.T) string {
 	// Re-introduce the legacy `.agents/` gitignore entry so the repair has
 	// something to fix; setupHealthyRepo no longer produces this line by
 	// default in submodule mode.
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("# nothing\n.ai/\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("# nothing\n.agents/\n"), 0o644)
 
 	// Break workflow tags (currently @v2.0.0 from setupHealthyRepo).
 	workflowsDir := filepath.Join(root, ".github", "workflows")
