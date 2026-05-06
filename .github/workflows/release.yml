@@ -9,18 +9,15 @@ name: Release Notes
 # concern (GoReleaser, npm publish, cargo publish, etc.). This workflow
 # only augments the release body after it already exists.
 #
-# Authentication mirrors agentic-pipeline.yml: a GitHub App installation
-# token is minted at the start of the job. The framework is mounted via
-# the `.agents/` git submodule in the parent repo — no bespoke
-# `Mount AI framework` step.
+# Authentication uses the built-in `github.token` provided by GitHub Actions.
+# The framework is mounted via the `.agents/` git submodule in the parent
+# repo — no bespoke `Mount AI framework` step.
 
 on:
   release:
     types: [published]
   workflow_call:
     secrets:
-      AGENTIC_APP_PRIVATE_KEY:
-        required: true
       # Provider-specific secrets are both optional at the workflow_call
       # level — setup-agent-auth enforces that the active provider's
       # secret (per vars.AGENT_PROVIDER) is non-empty at runtime. A
@@ -40,19 +37,12 @@ jobs:
       contents: write
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
-        with:
-          client-id: ${{ vars.AGENTIC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
-
       - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0  # full history required to find previous tag and commits
           submodules: recursive
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ github.token }}
 
       - name: Resolve framework version
         id: version
@@ -81,7 +71,7 @@ jobs:
       - name: Install tools
         uses: ./.agents/.github/actions/install-ai-tools
         with:
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Setup Agent Auth
         uses: ./.agents/.github/actions/setup-agent-auth
@@ -89,7 +79,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Configure Goose
         run: |
@@ -110,11 +100,11 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Verify release notes were updated
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BODY=$(curl --proto '=https' --tlsv1.2 -sf \
             -H "Authorization: token ${GH_TOKEN}" \

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/githubapp"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount/mounttest"
 )
@@ -50,7 +49,6 @@ func TestRun_Success(t *testing.T) {
 		Version:       "v2.0.0",
 		Topology:      "Single",
 		Stacks:        []string{"Go"},
-		AgentUser:     "goose-agent",
 		RunnerLabel:   "ubuntu-latest",
 		AgentProvider: "anthropic",
 		AgentModel:    "claude-sonnet-4-6",
@@ -84,9 +82,6 @@ func TestRun_Success(t *testing.T) {
 	}
 
 	// Verify variables and secrets were set.
-	if !strings.Contains(output, "AGENT_USER saved") {
-		t.Error("expected AGENT_USER to be configured")
-	}
 	if !strings.Contains(output, "PROJECT_PAT saved") {
 		t.Error("expected PROJECT_PAT to be configured")
 	}
@@ -198,7 +193,6 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 		RepoFullName:  "owner/repo",
 		Owner:         "owner",
 		RepoName:      "repo",
-		AgentUser:     "goose",
 		RunnerLabel:   "ubuntu-latest",
 		AgentProvider: "anthropic",
 		AgentModel:    "claude-sonnet-4-6",
@@ -220,9 +214,6 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 	// Verify variables were set.
 	found := map[string]bool{}
 	for _, cmd := range commands {
-		if strings.Contains(cmd, "AGENT_USER") {
-			found["AGENT_USER"] = true
-		}
 		if strings.Contains(cmd, "PROJECT_PAT") {
 			found["PROJECT_PAT"] = true
 		}
@@ -234,7 +225,7 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"AGENT_USER", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON", "AGENTIC_PROJECT_ID"} {
+	for _, expected := range []string{"PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON", "AGENTIC_PROJECT_ID"} {
 		if !found[expected] {
 			t.Errorf("expected %s to be configured", expected)
 		}
@@ -249,7 +240,6 @@ func TestConfigureRepo_NoCollaboratorGrant(t *testing.T) {
 		RepoFullName: "owner/repo",
 		Owner:        "owner",
 		RepoName:     "repo",
-		AgentUser:    githubapp.DefaultAppSlug + "[bot]",
 	}
 
 	run := func(name string, args ...string) (string, error) {
@@ -301,8 +291,8 @@ func TestConfigureRepo_Federated_EmitsNoteAndConfirmsBeforeWriting(t *testing.T)
 		t.Errorf("confirm called %d times, want 1", *called)
 	}
 	// Yes → writes proceed.
-	if _, ok := (*captured)["AGENT_USER"]; !ok {
-		t.Errorf("expected AGENT_USER write on Yes")
+	if _, ok := (*captured)["RUNNER_LABEL"]; !ok {
+		t.Errorf("expected RUNNER_LABEL write on Yes")
 	}
 }
 
@@ -343,8 +333,8 @@ func TestConfigureRepo_Single_NoNoteNoConfirm(t *testing.T) {
 	}
 
 	// Writes proceed as before.
-	if _, ok := (*captured)["AGENT_USER"]; !ok {
-		t.Errorf("expected AGENT_USER write under single")
+	if _, ok := (*captured)["RUNNER_LABEL"]; !ok {
+		t.Errorf("expected RUNNER_LABEL write under single")
 	}
 	// The federated note must NOT appear under single topology.
 	if strings.Contains(buf.String(), "will be visible to any other federated") {
@@ -359,7 +349,6 @@ func configureRepoTestConfig(topology, owner, repoName string) *InitConfig {
 	return &InitConfig{
 		Version:       "v2.0.10",
 		Topology:      topology,
-		AgentUser:     "agent-bot",
 		RunnerLabel:   "ubuntu-latest",
 		AgentProvider: "claude-code",
 		AgentModel:    "default",
@@ -417,7 +406,7 @@ func TestConfigureRepo_Federated_SharedNames_RouteToOrg(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	shared := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON"}
+	shared := []string{"RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON"}
 	for _, name := range shared {
 		args, ok := (*captured)[name]
 		if !ok {
@@ -463,7 +452,7 @@ func TestConfigureRepo_Single_AllNames_StayAtRepo(t *testing.T) {
 	}
 
 	all := []string{
-		"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL",
+		"RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL",
 		"PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON",
 		"AGENTIC_PROJECT_ID",
 	}
