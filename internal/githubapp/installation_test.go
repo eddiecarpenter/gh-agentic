@@ -115,6 +115,35 @@ func TestCheckRepoInstallation_NotFound_ReturnsNotInstalled(t *testing.T) {
 	}
 }
 
+func TestCheckRepoInstallation_Unauthorized_ReturnsNotInstalled(t *testing.T) {
+	// 401 means the endpoint requires App JWT auth; a regular user token is
+	// rejected. Treat as "cannot verify" — return not-installed with no error
+	// so the wizard can offer the install URL interactively.
+	f := &fakeClient{result: httpError(http.StatusUnauthorized)}
+	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+
+	installed, id, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
+	if err != nil {
+		t.Fatalf("expected no error on 401, got: %v", err)
+	}
+	if installed || id != 0 {
+		t.Fatalf("expected installed=false id=0 on 401, got installed=%v id=%d", installed, id)
+	}
+}
+
+func TestCheckRepoInstallation_Forbidden_ReturnsNotInstalled(t *testing.T) {
+	f := &fakeClient{result: httpError(http.StatusForbidden)}
+	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+
+	installed, id, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
+	if err != nil {
+		t.Fatalf("expected no error on 403, got: %v", err)
+	}
+	if installed || id != 0 {
+		t.Fatalf("expected installed=false id=0 on 403, got installed=%v id=%d", installed, id)
+	}
+}
+
 func TestCheckRepoInstallation_ServerError_ReturnsWrappedError(t *testing.T) {
 	f := &fakeClient{result: httpError(http.StatusInternalServerError)}
 	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
@@ -204,6 +233,32 @@ func TestCheckOrgInstallation_NotFound_ReturnsNotInstalled(t *testing.T) {
 	}
 	if installed {
 		t.Fatalf("expected installed=false on 404")
+	}
+}
+
+func TestCheckOrgInstallation_Unauthorized_ReturnsNotInstalled(t *testing.T) {
+	f := &fakeClient{result: httpError(http.StatusUnauthorized)}
+	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+
+	installed, id, err := c.CheckOrgInstallation(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("expected no error on 401, got: %v", err)
+	}
+	if installed || id != 0 {
+		t.Fatalf("expected installed=false id=0 on 401, got installed=%v id=%d", installed, id)
+	}
+}
+
+func TestCheckOrgInstallation_Forbidden_ReturnsNotInstalled(t *testing.T) {
+	f := &fakeClient{result: httpError(http.StatusForbidden)}
+	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+
+	installed, _, err := c.CheckOrgInstallation(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("expected no error on 403, got: %v", err)
+	}
+	if installed {
+		t.Fatalf("expected installed=false on 403")
 	}
 }
 

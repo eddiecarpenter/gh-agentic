@@ -109,8 +109,18 @@ func (c *Checker) check(ctx context.Context, endpoint string) (bool, int64, erro
 	var resp installationResponse
 	if err := c.Client.DoWithContext(ctx, http.MethodGet, endpoint, nil, &resp); err != nil {
 		var httpErr *api.HTTPError
-		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-			return false, 0, nil
+		if errors.As(err, &httpErr) {
+			switch httpErr.StatusCode {
+			case http.StatusNotFound:
+				// 404 — App is definitively not installed on this target.
+				return false, 0, nil
+			case http.StatusUnauthorized, http.StatusForbidden:
+				// 401/403 — the installation endpoint requires a GitHub App JWT;
+				// a regular user OAuth token is rejected here. Treat as
+				// "cannot verify" so the flow offers the install URL
+				// interactively rather than aborting the wizard.
+				return false, 0, nil
+			}
 		}
 		return false, 0, fmt.Errorf("checking installation at %s: %w", endpoint, err)
 	}
