@@ -326,7 +326,7 @@ Hold as `<self>`.
     gh pr create \
       --repo "<active-repo>" \
       --title "fix: <one-line description>" \
-      --body "Closes #<N>" \
+      --body "$(printf 'Closes #<N>\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)')" \
       --base main \
       --head "$BRANCH"
     ```

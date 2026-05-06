@@ -224,17 +224,6 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 		fmt.Fprintf(w, "  ✓ AGENTIC_PROJECT_ID saved as %s\n", describeScope(flag, "variable"))
 	}
 
-	// Grant agent user write access.
-	if cfg.AgentUser != "" {
-		if _, err := run("gh", "api", "--method", "PUT",
-			fmt.Sprintf("repos/%s/collaborators/%s", repo, cfg.AgentUser),
-			"-f", "permission=push"); err != nil {
-			fmt.Fprintf(w, "  ⚠ Could not grant %s write access (may need manual action)\n", cfg.AgentUser)
-		} else {
-			fmt.Fprintf(w, "  ✓ %s granted write access to %s\n", cfg.AgentUser, cfg.RepoName)
-		}
-	}
-
 	return nil
 }
 

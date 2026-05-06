@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
+	"github.com/eddiecarpenter/gh-agentic/internal/githubapp"
 )
 
 // fakeFormRun returns a FormRunFunc that sets bound values directly without
@@ -177,7 +178,7 @@ func TestCollectConfigInteractive_OrgSetsAgentUserScope(t *testing.T) {
 	}
 }
 
-func TestCollectConfigInteractive_UserSetsAgentUserScopeToRepo(t *testing.T) {
+func TestCollectConfigInteractive_SetsAppBotAsAgentUser(t *testing.T) {
 	var buf bytes.Buffer
 	callCount := 0
 
@@ -192,7 +193,6 @@ func TestCollectConfigInteractive_UserSetsAgentUserScopeToRepo(t *testing.T) {
 				cfg.Topology = "Single"
 			case 2:
 				cfg.Stacks = []string{"Go"}
-				cfg.AgentUser = "agent"
 			case 3:
 				// pipeline defaults
 			case 4:
@@ -210,8 +210,12 @@ func TestCollectConfigInteractive_UserSetsAgentUserScopeToRepo(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.AgentUserScope != AgentUserScopeRepo {
-		t.Errorf("expected AgentUserScope %q for user, got %q", AgentUserScopeRepo, result.AgentUserScope)
+	wantUser := githubapp.DefaultAppSlug + "[bot]"
+	if result.AgentUser != wantUser {
+		t.Errorf("AgentUser = %q, want %q", result.AgentUser, wantUser)
+	}
+	if result.AgentUserScope != AgentUserScopeOrg {
+		t.Errorf("AgentUserScope = %q, want %q", result.AgentUserScope, AgentUserScopeOrg)
 	}
 }
 

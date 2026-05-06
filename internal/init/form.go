@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
+	"github.com/eddiecarpenter/gh-agentic/internal/githubapp"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -95,10 +96,15 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 		return nil, err
 	}
 
-	// --- Phase 2: Stack and Agent configuration ---
+	// --- Phase 2: Stack selection ---
 	if err := collectStackAndAgent(cfg, deps.RunForm); err != nil {
 		return nil, err
 	}
+
+	// Agent identity comes from the GitHub App — no user prompt.
+	cfg.AgentUser = githubapp.DefaultAppSlug + "[bot]"
+	cfg.AgentUserScope = AgentUserScopeOrg
+	fmt.Fprintf(w, "  %s Agent user: %s (GitHub App)\n", ui.SymbolInfo, cfg.AgentUser)
 
 	// --- Phase 3: Pipeline configuration ---
 	if err := collectPipelineConfig(cfg, deps.RunForm); err != nil {
@@ -160,47 +166,19 @@ func collectVersionTopology(cfg *InitConfig, releases []mount.Release, runForm F
 	return nil
 }
 
-// collectStackAndAgent collects stacks, agent user, and agent user scope.
+// collectStackAndAgent collects the stack selection.
+// Agent identity is set automatically from the GitHub App — no user prompt needed.
 func collectStackAndAgent(cfg *InitConfig, runForm FormRunFunc) error {
-	var fields []huh.Field
-
-	fields = append(fields,
+	form := huh.NewForm(huh.NewGroup(
 		huh.NewMultiSelect[string]().
 			Title("Stack (select all that apply)").
 			Description("The primary technology stack(s) for this project").
 			Options(stackOptions()...).
 			Value(&cfg.Stacks).
 			Validate(validateStackSelection),
-	)
-
-	fields = append(fields,
-		huh.NewInput().
-			Title("Agent GitHub username").
-			Description("The GitHub account that will act as the AI agent").
-			Value(&cfg.AgentUser).
-			Validate(validateRequired("agent username")),
-	)
-
-	if cfg.OwnerType == auth.OwnerTypeOrg {
-		if cfg.AgentUserScope == "" {
-			cfg.AgentUserScope = AgentUserScopeOrg
-		}
-		fields = append(fields,
-			huh.NewSelect[string]().
-				Title("AGENT_USER variable scope").
-				Description("Where to store the AGENT_USER variable — org level shares it across repos").
-				Options(
-					huh.NewOption("Organisation level", AgentUserScopeOrg),
-					huh.NewOption("Repository level", AgentUserScopeRepo),
-				).
-				Value(&cfg.AgentUserScope),
-		)
-	} else {
-		cfg.AgentUserScope = AgentUserScopeRepo
-	}
-
-	if err := runForm(huh.NewForm(huh.NewGroup(fields...))); err != nil {
-		return fmt.Errorf("stack/agent form: %w", err)
+	))
+	if err := runForm(form); err != nil {
+		return fmt.Errorf("stack form: %w", err)
 	}
 	return nil
 }
