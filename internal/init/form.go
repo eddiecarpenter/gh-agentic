@@ -30,6 +30,11 @@ type FormDeps struct {
 	RunCommand      RunCommandFunc
 	DetectOwnerType DetectOwnerTypeFunc
 	FetchReleases   mount.FetchReleasesFunc
+	// Topology, when non-empty, pre-seeds cfg.Topology and suppresses the
+	// topology select in collectVersionTopology. The CLI captures topology
+	// first (single vs. federated routing decision) and passes it here so
+	// the form does not ask a second time.
+	Topology string
 }
 
 // DefaultFormDeps returns production dependencies for the interactive form.
@@ -80,6 +85,11 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 		cfg.OwnerType = auth.OwnerTypeUser
 	}
 	fmt.Fprintln(w)
+
+	// --- Pre-seed topology when the caller already captured it ---
+	if deps.Topology != "" {
+		cfg.Topology = deps.Topology
+	}
 
 	// --- Fetch available releases for version dropdown ---
 	var releases []mount.Release
@@ -147,19 +157,23 @@ func collectVersionTopology(cfg *InitConfig, releases []mount.Release, runForm F
 			Validate(validateVersion)
 	}
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			versionField,
-			huh.NewSelect[string]().
-				Title("Project topology").
-				Description("How your project repos are structured").
-				Options(
-					huh.NewOption("Single      — one repo, everything in one place", "Single"),
-					huh.NewOption("Federated   — separate control plane + domain repos", "Federated"),
-				).
-				Value(&cfg.Topology),
-		),
-	)
+	// Include the topology select only when the caller has not pre-seeded it.
+	// The CLI captures topology first (to route single vs. federated) and
+	// passes it through FormDeps.Topology so the user is not asked twice.
+	var fields []huh.Field
+	fields = append(fields, versionField)
+	if cfg.Topology == "" {
+		fields = append(fields, huh.NewSelect[string]().
+			Title("Project topology").
+			Description("How your project repos are structured").
+			Options(
+				huh.NewOption("Single      — one repo, everything in one place", "Single"),
+				huh.NewOption("Federated   — separate control plane + domain repos", "Federated"),
+			).
+			Value(&cfg.Topology))
+	}
+
+	form := huh.NewForm(huh.NewGroup(fields...))
 	if err := runForm(form); err != nil {
 		return fmt.Errorf("version/topology form: %w", err)
 	}
@@ -246,7 +260,11 @@ func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 	return nil
 }
 
-// collectCredentialsAndProject collects PAT, Claude credentials, and project ID.
+// collectCredentialsAndProject collects the PROJECT_PAT and Claude credentials.
+// The AGENTIC_PROJECT_ID is never prompted here — for single topology it is
+// created automatically by project.Create; for federated topology it is
+// selected from the project list by the CLI before CollectConfigInteractive
+// is called. Both paths set the variable through their own code paths.
 func collectCredentialsAndProject(cfg *InitConfig, runForm FormRunFunc) error {
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -260,10 +278,6 @@ func collectCredentialsAndProject(cfg *InitConfig, runForm FormRunFunc) error {
 				Description("Base64-encoded Claude credentials (leave empty to skip)").
 				Value(&cfg.ClaudeCreds).
 				EchoMode(huh.EchoModePassword),
-			huh.NewInput().
-				Title("GitHub Project ID").
-				Description("The GitHub Project number for pipeline tracking (e.g. PVT_123)").
-				Value(&cfg.ProjectID),
 		),
 	)
 	if err := runForm(form); err != nil {
