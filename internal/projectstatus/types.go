@@ -168,4 +168,3 @@ type BlockedInfo struct {
 	BlockingRef string `json:"blocking_ref"`
 	Reason      string `json:"reason"`
 }
-

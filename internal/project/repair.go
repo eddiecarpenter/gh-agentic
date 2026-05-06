@@ -12,10 +12,10 @@ import (
 
 // RepairResult holds the outcome of a repair run.
 type RepairResult struct {
-	Lines               []string // output lines to display
-	Repaired            int
-	Unrepaired          int
-	FrameworkOutOfSync  bool // true when framework-version-sync check failed
+	Lines              []string // output lines to display
+	Repaired           int
+	Unrepaired         int
+	FrameworkOutOfSync bool // true when framework-version-sync check failed
 }
 
 // RepairWithProgress runs all checks and repairs failures, calling setLabel
@@ -30,7 +30,7 @@ func RepairWithProgress(deps Deps, setLabel func(string)) RepairResult {
 
 	// Surface framework-out-of-sync so the CLI can short-circuit the
 	// pipeline phase — running skill / workflow checks against a stale
-	// `.ai/` produces noise and blocks the real remediation.
+	// `.agents/` produces noise and blocks the real remediation.
 	for _, r := range report.Results {
 		if r.Name == "framework-version-sync" && r.Status == CheckFail {
 			result.FrameworkOutOfSync = true
@@ -192,10 +192,10 @@ func repairViews(w io.Writer, deps Deps) error {
 //
 //   - single          → no topology-var writes required
 //   - federated-cp    → write AGENTIC_FRAMEWORK_VERSION to the latest
-//                       release when missing
+//     release when missing
 //   - federated-domain → no local writes; if the CP's
-//                       AGENTIC_FRAMEWORK_VERSION is missing, return a
-//                       hard-stop error pointing at the CP repo
+//     AGENTIC_FRAMEWORK_VERSION is missing, return a
+//     hard-stop error pointing at the CP repo
 func repairTopologyVars(w io.Writer, deps Deps) error {
 	ctx, err := Resolve(deps)
 	if err != nil {
@@ -256,7 +256,7 @@ func repairTopologyVars(w io.Writer, deps Deps) error {
 	return fmt.Errorf("unrecognised topology %q", ctx.Topology)
 }
 
-// repairFramework mounts the latest framework version into .ai/.
+// repairFramework mounts the latest framework version into .agents/.
 func repairFramework(w io.Writer, deps Deps) error {
 	releases, err := deps.FetchReleases(mount.FrameworkRepo)
 	if err != nil {

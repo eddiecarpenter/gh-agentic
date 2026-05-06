@@ -38,13 +38,13 @@ type infoData struct {
 	latestVersion string
 
 	// computed status
-	noRepo      bool
-	noProject   bool
-	syncStatus  string // inline suffix for remote row
+	noRepo       bool
+	noProject    bool
+	syncStatus   string // inline suffix for remote row
 	latestStatus string // inline suffix for latest row
 
 	// frameworkSource is true when this repo IS the gh-agentic framework
-	// source itself (.ai is a symlink). Changes how localVersion is
+	// source itself (.agents is a symlink). Changes how localVersion is
 	// labelled — a tag-versioned "mount" is not a meaningful concept
 	// on the source; the current checkout's git description is what
 	// matters, and the display should say so.
@@ -206,7 +206,7 @@ func fetchLatest(fetchReleases func(repo string) ([]mount.Release, error), local
 }
 
 // localFrameworkVersion reads the locally mounted framework version from
-// the .ai/ git metadata — the only local source of truth now that the
+// the .agents/ git metadata — the only local source of truth now that the
 // .ai-version flat file has been removed (#585).
 func localFrameworkVersion(root string) string {
 	if v, err := mount.ReadAIVersionFromGit(root); err == nil {

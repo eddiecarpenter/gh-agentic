@@ -14,18 +14,18 @@ import (
 // against the domain repo's workspace — which does not contain the
 // actions — and every domain pipeline failed at the "Install tools" step.
 //
-// The fix is to reference the actions via `./.ai/.github/actions/...`. The
-// `.ai/` mount is the single bridge to the framework: it is a git submodule
+// The fix is to reference the actions via `./.agents/.github/actions/...`. The
+// `.agents/` mount is the single bridge to the framework: it is a git submodule
 // pointing at eddiecarpenter/gh-agentic in domain repos, and a `.ai -> .`
 // symlink in gh-agentic itself. `submodules: recursive` on the primary
 // checkout step populates it.
 //
 // If this test fails, the reusable workflow either:
 //   - re-introduced a `./.github/actions/...` path (must use
-//     `./.ai/.github/actions/...` instead),
+//     `./.agents/.github/actions/...` instead),
 //   - re-introduced a reference to the legacy `.agentic-tools/` bridge, or
 //   - dropped `submodules: recursive` on the primary checkout, leaving
-//     `.ai/` unpopulated when consumed from a domain repo.
+//     `.agents/` unpopulated when consumed from a domain repo.
 func TestReusableWorkflowHasNoCallerRelativeActionPaths(t *testing.T) {
 	path := reusableWorkflowPath(t)
 	data, err := os.ReadFile(path)
@@ -45,7 +45,7 @@ func TestReusableWorkflowHasNoCallerRelativeActionPaths(t *testing.T) {
 			t.Errorf(
 				"%s line %d references ./.github/actions/... in a uses: step — these paths resolve "+
 					"in the caller's workspace and will fail in every domain repo. Use "+
-					"./.ai/.github/actions/... instead — the .ai/ submodule (or symlink in "+
+					"./.agents/.github/actions/... instead — the .agents/ submodule (or symlink in "+
 					"gh-agentic itself) is the bridge to the framework's composite actions.\n  line: %s",
 				filepath.Base(path), i+1, trimmed,
 			)
@@ -53,25 +53,25 @@ func TestReusableWorkflowHasNoCallerRelativeActionPaths(t *testing.T) {
 	}
 
 	// The legacy `.agentic-tools/` bridge has been removed in favour of
-	// `.ai/`. Any reference to it — in `uses:` paths, comments, or
+	// `.agents/`. Any reference to it — in `uses:` paths, comments, or
 	// elsewhere — is a regression.
 	if strings.Contains(content, ".agentic-tools") {
 		t.Errorf(
-			"%s references the legacy .agentic-tools/ bridge — this was replaced by .ai/. "+
-				"Use ./.ai/.github/actions/... for composite actions.",
+			"%s references the legacy .agentic-tools/ bridge — this was replaced by .agents/. "+
+				"Use ./.agents/.github/actions/... for composite actions.",
 			filepath.Base(path),
 		)
 	}
 
-	// `.ai/` must be populated by `submodules: recursive` on the primary
-	// checkout before any `./.ai/.github/actions/...` consumer runs.
+	// `.agents/` must be populated by `submodules: recursive` on the primary
+	// checkout before any `./.agents/.github/actions/...` consumer runs.
 	hasSubmoduleCheckout := strings.Contains(content, "submodules: recursive")
-	hasNestedConsumer := strings.Contains(content, "./.ai/.github/actions/")
+	hasNestedConsumer := strings.Contains(content, "./.agents/.github/actions/")
 
 	if hasNestedConsumer && !hasSubmoduleCheckout {
 		t.Errorf(
-			"%s references ./.ai/.github/actions/... actions but the primary checkout does not "+
-				"use `submodules: recursive`. Without it, the .ai/ submodule is empty in domain "+
+			"%s references ./.agents/.github/actions/... actions but the primary checkout does not "+
+				"use `submodules: recursive`. Without it, the .agents/ submodule is empty in domain "+
 				"repos and every consuming step fails at startup.",
 			filepath.Base(path),
 		)

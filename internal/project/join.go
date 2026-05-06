@@ -67,7 +67,7 @@ func joinWork(w io.Writer, deps Deps, projectID string) error {
 	fmt.Fprintf(w, "  %s  %s set\n", ui.StatusOK.Render("✓"), ProjectVarName)
 
 	// Mount framework if not already present.
-	aiDir := filepath.Join(deps.Root, ".ai")
+	aiDir := filepath.Join(deps.Root, ".agents")
 	if _, err := os.Stat(aiDir); os.IsNotExist(err) {
 		releases, err := deps.FetchReleases(mount.FrameworkRepo)
 		if err != nil {

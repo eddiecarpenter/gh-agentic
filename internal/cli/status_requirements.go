@@ -327,4 +327,3 @@ func requirementsTotalsLine(n, blocked int) string {
 	}
 	return fmt.Sprintf("%d open %s", n, noun)
 }
-

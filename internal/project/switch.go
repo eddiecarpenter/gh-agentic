@@ -69,7 +69,7 @@ func PreflightSwitchVersion(deps Deps, version string) (SwitchVersionPreflight, 
 // AGENTIC_FRAMEWORK_VERSION is the authoritative version the pipeline
 // and `check`/`info` read. `create` (init) and `repair` both write it
 // unconditionally — `SwitchVersion` does the same so upgrade leaves no
-// drift between the mounted `.ai/` tree, the workflow file versions, and
+// drift between the mounted `.agents/` tree, the workflow file versions, and
 // the repo variable. Single topology uses the variable locally; a
 // federated control plane broadcasts it to domain repos. Either way it
 // must be written.

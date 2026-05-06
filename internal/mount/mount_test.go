@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
 )
 
 // fakeClone returns a CloneFunc that creates the given files in destDir,
@@ -90,14 +89,14 @@ func TestDownloadFramework_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify framework files exist in .ai/ (the stub mimics the
+	// Verify framework files exist in .agents/ (the stub mimics the
 	// post-install state of a real `git submodule add`).
 	expectedFiles := []string{
-		".ai/RULEBOOK.md",
-		".ai/skills/session-init.md",
-		".ai/recipes/dev.yaml",
-		".ai/standards/go.md",
-		".ai/concepts/philosophy.md",
+		".agents/RULEBOOK.md",
+		".agents/skills/session-init.md",
+		".agents/recipes/dev.yaml",
+		".agents/standards/go.md",
+		".agents/concepts/philosophy.md",
 	}
 	for _, f := range expectedFiles {
 		path := filepath.Join(root, f)
@@ -113,8 +112,8 @@ func TestDownloadFramework_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading .gitmodules: %v", err)
 	}
-	if !strings.Contains(string(gm), `[submodule ".ai"]`) {
-		t.Errorf(".gitmodules missing .ai entry: %s", gm)
+	if !strings.Contains(string(gm), `[submodule ".agents"]`) {
+		t.Errorf(".gitmodules missing .agents entry: %s", gm)
 	}
 }
 
@@ -143,13 +142,13 @@ func TestDownloadFramework_InstallError(t *testing.T) {
 }
 
 func TestDownloadFramework_RefusesInconsistentExistingAI(t *testing.T) {
-	// A pre-existing .ai/ that is neither a symlink, a submodule, nor a
+	// A pre-existing .agents/ that is neither a symlink, a submodule, nor a
 	// gitignored legacy mount, AND that contains user-meaningful content
 	// (i.e. not just an aborted-clone .git/ directory) is treated as
 	// MountStateInconsistent — the dispatcher refuses rather than
 	// silently overwriting.
 	root := t.TempDir()
-	aiDir := filepath.Join(root, ".ai")
+	aiDir := filepath.Join(root, ".agents")
 	_ = os.MkdirAll(aiDir, 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "stale.txt"), []byte("stale"), 0o644)
 
@@ -166,8 +165,8 @@ func TestDownloadFramework_RefusesInconsistentExistingAI(t *testing.T) {
 	}
 }
 
-// The .ai-version flat-file readers and writer were removed in #585 —
-// the mounted version lives in .ai/.git metadata, which ReadAIVersionFromGit
+// The .agents-version flat-file readers and writer were removed in #585 —
+// the mounted version lives in .agents/.git metadata, which ReadAIVersionFromGit
 // reads directly. No unit test is kept for the deleted helpers.
 
 func TestEnsureGitignore_Creates(t *testing.T) {
@@ -181,14 +180,14 @@ func TestEnsureGitignore_Creates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading .gitignore: %v", err)
 	}
-	if !strings.Contains(string(data), ".ai/") {
-		t.Errorf("expected .ai/ in .gitignore, got: %s", data)
+	if !strings.Contains(string(data), ".agents/") {
+		t.Errorf("expected .agents/ in .gitignore, got: %s", data)
 	}
 }
 
 func TestEnsureGitignore_AlreadyPresent(t *testing.T) {
 	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.ai/\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.agents/\n"), 0o644)
 
 	err := EnsureGitignore(root)
 	if err != nil {
@@ -196,9 +195,9 @@ func TestEnsureGitignore_AlreadyPresent(t *testing.T) {
 	}
 
 	data, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	count := strings.Count(string(data), ".ai/")
+	count := strings.Count(string(data), ".agents/")
 	if count != 1 {
-		t.Errorf("expected exactly 1 .ai/ entry, got %d in: %s", count, data)
+		t.Errorf("expected exactly 1 .agents/ entry, got %d in: %s", count, data)
 	}
 }
 
@@ -215,8 +214,8 @@ func TestEnsureGitignore_Appends(t *testing.T) {
 	if !strings.Contains(string(data), "node_modules/") {
 		t.Error("expected existing entries to be preserved")
 	}
-	if !strings.Contains(string(data), ".ai/") {
-		t.Errorf("expected .ai/ to be appended, got: %s", data)
+	if !strings.Contains(string(data), ".agents/") {
+		t.Errorf("expected .agents/ to be appended, got: %s", data)
 	}
 }
 
@@ -234,7 +233,7 @@ func TestEnsureGitignore_NoTrailingNewline(t *testing.T) {
 	if !strings.Contains(content, "node_modules/") {
 		t.Error("expected existing entries preserved")
 	}
-	if !strings.Contains(content, "\n.ai/") {
-		t.Errorf("expected newline before .ai/ entry, got: %q", content)
+	if !strings.Contains(content, "\n.agents/") {
+		t.Errorf("expected newline before .agents/ entry, got: %q", content)
 	}
 }

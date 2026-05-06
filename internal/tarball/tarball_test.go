@@ -160,11 +160,11 @@ func TestReadTemplateConfig(t *testing.T) {
 
 func TestExtractFromTemplate_Success(t *testing.T) {
 	tarData := buildTarGz(t, map[string]string{
-		"repo-v1.0.0/base/skills/session-init.md":  "# Session Init",
-		"repo-v1.0.0/base/skills/dev-session.md":   "# Dev Session",
-		"repo-v1.0.0/.goose/recipes/dev.yaml":      "name: dev",
-		"repo-v1.0.0/.github/workflows/build.yml":  "on: push",
-		"repo-v1.0.0/README.md":                    "# Repo",
+		"repo-v1.0.0/base/skills/session-init.md": "# Session Init",
+		"repo-v1.0.0/base/skills/dev-session.md":  "# Dev Session",
+		"repo-v1.0.0/.goose/recipes/dev.yaml":     "name: dev",
+		"repo-v1.0.0/.github/workflows/build.yml": "on: push",
+		"repo-v1.0.0/README.md":                   "# Repo",
 	})
 
 	dest := t.TempDir()

@@ -28,14 +28,14 @@ type CheckRepoSecretFunc func(owner, repo, secretName string) (bool, error)
 
 // Deps holds injectable dependencies for auth operations.
 type Deps struct {
-	Run              RunCommandFunc
-	ReadCredentials  ReadCredentialsFunc
-	ClaudeRefresh    ClaudeRefreshFunc
-	CheckRepoSecret  CheckRepoSecretFunc
-	RepoFullName     string
-	Owner            string
-	RepoName         string
-	OwnerType        string
+	Run             RunCommandFunc
+	ReadCredentials ReadCredentialsFunc
+	ClaudeRefresh   ClaudeRefreshFunc
+	CheckRepoSecret CheckRepoSecretFunc
+	RepoFullName    string
+	Owner           string
+	RepoName        string
+	OwnerType       string
 }
 
 // Login forces a Claude Code login, reads the refreshed credentials, and

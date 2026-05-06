@@ -20,8 +20,8 @@ func TestDetectMountState_None(t *testing.T) {
 
 func TestDetectMountState_Symlink(t *testing.T) {
 	root := t.TempDir()
-	// Create .ai as a symlink to .
-	if err := os.Symlink(".", filepath.Join(root, ".ai")); err != nil {
+	// Create .agents as a symlink to .
+	if err := os.Symlink(".", filepath.Join(root, ".agents")); err != nil {
 		t.Fatalf("creating symlink: %v", err)
 	}
 
@@ -37,15 +37,15 @@ func TestDetectMountState_Symlink(t *testing.T) {
 func TestDetectMountState_Submodule(t *testing.T) {
 	root := t.TempDir()
 
-	// Create .gitmodules with a .ai entry.
-	gitmodules := `[submodule ".ai"]
-	path = .ai
+	// Create .gitmodules with a .agents entry.
+	gitmodules := `[submodule ".agents"]
+	path = .agents
 	url = https://github.com/eddiecarpenter/gh-agentic.git
 `
 	if err := os.WriteFile(filepath.Join(root, ".gitmodules"), []byte(gitmodules), 0o644); err != nil {
 		t.Fatalf("writing .gitmodules: %v", err)
 	}
-	// .ai may or may not exist — submodules can be uninitialised. We test
+	// .agents may or may not exist — submodules can be uninitialised. We test
 	// the detector is keying off the .gitmodules entry, not the directory.
 
 	state, err := DetectMountState(root)
@@ -60,12 +60,12 @@ func TestDetectMountState_Submodule(t *testing.T) {
 func TestDetectMountState_GitignoredMount(t *testing.T) {
 	root := t.TempDir()
 
-	// Create .ai/ as a regular directory (not a symlink).
-	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
-		t.Fatalf("creating .ai: %v", err)
+	// Create .agents/ as a regular directory (not a symlink).
+	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
+		t.Fatalf("creating .agents: %v", err)
 	}
-	// Add .ai/ to .gitignore.
-	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.ai/\nvendor/\n"), 0o644); err != nil {
+	// Add .agents/ to .gitignore.
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.agents/\nvendor/\n"), 0o644); err != nil {
 		t.Fatalf("writing .gitignore: %v", err)
 	}
 
@@ -79,12 +79,12 @@ func TestDetectMountState_GitignoredMount(t *testing.T) {
 }
 
 func TestDetectMountState_EmptyAIClassifiedAsNone(t *testing.T) {
-	// An empty .ai/ directory (left over from a failed install attempt)
+	// An empty .agents/ directory (left over from a failed install attempt)
 	// is recoverable — DetectMountState classifies it as MountStateNone
 	// so the install path can run with its defensive cleanup.
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
-		t.Fatalf("creating .ai: %v", err)
+	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
+		t.Fatalf("creating .agents: %v", err)
 	}
 
 	state, err := DetectMountState(root)
@@ -92,31 +92,31 @@ func TestDetectMountState_EmptyAIClassifiedAsNone(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if state != MountStateNone {
-		t.Errorf("expected MountStateNone for empty .ai/, got %d", state)
+		t.Errorf("expected MountStateNone for empty .agents/, got %d", state)
 	}
 }
 
 func TestDetectMountState_AbortedCloneClassifiedAsNone(t *testing.T) {
-	// .ai/ with only a .git/ directory inside (the partial-clone state
+	// .agents/ with only a .git/ directory inside (the partial-clone state
 	// after `git submodule add` failed at checkout) is also recoverable.
 	root := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(root, ".ai", ".git"), 0o755)
+	_ = os.MkdirAll(filepath.Join(root, ".agents", ".git"), 0o755)
 
 	state, err := DetectMountState(root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if state != MountStateNone {
-		t.Errorf("expected MountStateNone for aborted-clone .ai/, got %d", state)
+		t.Errorf("expected MountStateNone for aborted-clone .agents/, got %d", state)
 	}
 }
 
 func TestDetectMountState_PopulatedAIClassifiedAsInconsistent(t *testing.T) {
-	// .ai/ with real content but no submodule entry and no gitignore
+	// .agents/ with real content but no submodule entry and no gitignore
 	// entry is genuinely inconsistent — refuse rather than wipe.
 	root := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
-	_ = os.WriteFile(filepath.Join(root, ".ai", "user-file.md"), []byte("important"), 0o644)
+	_ = os.MkdirAll(filepath.Join(root, ".agents"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, ".agents", "user-file.md"), []byte("important"), 0o644)
 
 	state, err := DetectMountState(root)
 	if err != nil {
@@ -133,13 +133,13 @@ func TestDetectMountState_SubmoduleTakesPrecedenceOverGitignore(t *testing.T) {
 	// gitlink is the durable record.
 	root := t.TempDir()
 
-	gitmodules := `[submodule ".ai"]
-	path = .ai
+	gitmodules := `[submodule ".agents"]
+	path = .agents
 	url = https://github.com/eddiecarpenter/gh-agentic.git
 `
 	_ = os.WriteFile(filepath.Join(root, ".gitmodules"), []byte(gitmodules), 0o644)
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".ai/\n"), 0o644)
-	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".agents/\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(root, ".agents"), 0o755)
 
 	state, err := DetectMountState(root)
 	if err != nil {
@@ -152,7 +152,7 @@ func TestDetectMountState_SubmoduleTakesPrecedenceOverGitignore(t *testing.T) {
 
 func TestDownloadFramework_RefusesSymlink(t *testing.T) {
 	root := t.TempDir()
-	if err := os.Symlink(".", filepath.Join(root, ".ai")); err != nil {
+	if err := os.Symlink(".", filepath.Join(root, ".agents")); err != nil {
 		t.Fatalf("creating symlink: %v", err)
 	}
 
@@ -167,7 +167,7 @@ func TestDownloadFramework_RefusesSymlink(t *testing.T) {
 
 // Inconsistent-state refusal is now exercised by
 // TestDownloadFramework_RefusesInconsistentExistingAI in mount_test.go,
-// which seeds .ai/ with user content. An empty .ai/ is recoverable and
+// which seeds .agents/ with user content. An empty .agents/ is recoverable and
 // no longer triggers a refusal — see TestDetectMountState_EmptyAIClassifiedAsNone.
 
 func TestDownloadFramework_DispatchesToInstallOnFreshState(t *testing.T) {
@@ -198,7 +198,7 @@ func TestDownloadFramework_DispatchesToInstallOnFreshState(t *testing.T) {
 func TestDownloadFramework_DispatchesToSwapOnSubmoduleState(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
-		[]byte(`[submodule ".ai"]`+"\n\turl = https://github.com/eddiecarpenter/gh-agentic.git\n"),
+		[]byte(`[submodule ".agents"]`+"\n\turl = https://github.com/eddiecarpenter/gh-agentic.git\n"),
 		0o644)
 
 	called := false
@@ -216,8 +216,8 @@ func TestDownloadFramework_DispatchesToSwapOnSubmoduleState(t *testing.T) {
 
 func TestDownloadFramework_DispatchesToMigrateOnGitignoredState(t *testing.T) {
 	root := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".ai/\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(root, ".agents"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".agents/\n"), 0o644)
 
 	called := false
 	original := MigrateGitignoredMount
@@ -234,10 +234,10 @@ func TestDownloadFramework_DispatchesToMigrateOnGitignoredState(t *testing.T) {
 
 func TestRemoveFromGitignore_RemovesMatchingLine(t *testing.T) {
 	root := t.TempDir()
-	gitignore := "node_modules/\n.ai/\nvendor/\n"
+	gitignore := "node_modules/\n.agents/\nvendor/\n"
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(gitignore), 0o644)
 
-	if err := removeFromGitignore(root, ".ai/"); err != nil {
+	if err := removeFromGitignore(root, ".agents/"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -253,10 +253,10 @@ func TestRemoveFromGitignore_RemovesMatchingLine(t *testing.T) {
 
 func TestRemoveFromGitignore_PreservesUnrelatedLines(t *testing.T) {
 	root := t.TempDir()
-	gitignore := "# comment\nnode_modules/\n  .ai/  \nvendor/\n.env\n"
+	gitignore := "# comment\nnode_modules/\n  .agents/  \nvendor/\n.env\n"
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(gitignore), 0o644)
 
-	if err := removeFromGitignore(root, ".ai/"); err != nil {
+	if err := removeFromGitignore(root, ".agents/"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -272,7 +272,7 @@ func TestRemoveFromGitignore_NoOpWhenEntryAbsent(t *testing.T) {
 	gitignore := "node_modules/\nvendor/\n"
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(gitignore), 0o644)
 
-	if err := removeFromGitignore(root, ".ai/"); err != nil {
+	if err := removeFromGitignore(root, ".agents/"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -284,22 +284,22 @@ func TestRemoveFromGitignore_NoOpWhenEntryAbsent(t *testing.T) {
 
 func TestRemoveFromGitignore_NoOpWhenFileMissing(t *testing.T) {
 	root := t.TempDir()
-	if err := removeFromGitignore(root, ".ai/"); err != nil {
+	if err := removeFromGitignore(root, ".agents/"); err != nil {
 		t.Errorf("unexpected error when .gitignore is missing: %v", err)
 	}
 }
 
 func TestMigrateGitignoredMount_RemovesDirGitignoreEntryAndDelegatesToInstall(t *testing.T) {
 	// Exercises the migration sequence end-to-end with stubs: the legacy
-	// .ai/ directory is removed, the .ai/ line is stripped from
+	// .agents/ directory is removed, the .agents/ line is stripped from
 	// .gitignore (preserving every other line), and InstallSubmodule is
 	// called with the requested tag. The git-side effects (`git add
 	// .gitignore`, the submodule add itself) are stubbed because they
 	// need a real repo; this test owns the higher-level orchestration.
 	root := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(root, ".ai"), 0o755)
-	_ = os.WriteFile(filepath.Join(root, ".ai", "stale.txt"), []byte("stale"), 0o644)
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.ai/\nvendor/\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(root, ".agents"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, ".agents", "stale.txt"), []byte("stale"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n.agents/\nvendor/\n"), 0o644)
 
 	installCalled := false
 	var installedTag string
@@ -328,13 +328,13 @@ func TestMigrateGitignoredMount_RemovesDirGitignoreEntryAndDelegatesToInstall(t 
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(root, ".ai")); err == nil {
-		t.Error("expected legacy .ai/ to be removed")
+	if _, err := os.Stat(filepath.Join(root, ".agents")); err == nil {
+		t.Error("expected legacy .agents/ to be removed")
 	}
 
 	gi, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	if strings.Contains(string(gi), ".ai/") {
-		t.Errorf("expected .ai/ line removed from .gitignore, got %q", gi)
+	if strings.Contains(string(gi), ".agents/") {
+		t.Errorf("expected .agents/ line removed from .gitignore, got %q", gi)
 	}
 	if !strings.Contains(string(gi), "node_modules/") || !strings.Contains(string(gi), "vendor/") {
 		t.Errorf("expected unrelated lines preserved, got %q", gi)
@@ -351,14 +351,14 @@ func TestMigrateGitignoredMount_RemovesDirGitignoreEntryAndDelegatesToInstall(t 
 func TestGitmodulesHasAI_True(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
-		[]byte(`[submodule ".ai"]`+"\n\tpath = .ai\n"), 0o644)
+		[]byte(`[submodule ".agents"]`+"\n\tpath = .agents\n"), 0o644)
 
 	got, err := gitmodulesHasAI(root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !got {
-		t.Error("expected true when .gitmodules has .ai entry")
+		t.Error("expected true when .gitmodules has .agents entry")
 	}
 }
 

@@ -119,8 +119,8 @@ func mustGit(t *testing.T, dir string, args ...string) {
 // TestInstallSubmoduleViaGit_FreshInstall exercises the full real-git
 // install path: `submodule add` against a file:// remote, fetch tags,
 // checkout the requested tag, stage the gitlink. Verifies the post
-// state matches the production contract: .gitmodules has the .ai
-// entry, the gitlink is staged, and `.ai` contents reflect the tag.
+// state matches the production contract: .gitmodules has the .agents
+// entry, the gitlink is staged, and `.agents` contents reflect the tag.
 func TestInstallSubmoduleViaGit_FreshInstall(t *testing.T) {
 	fwURL := fixtureFramework(t)
 	withFrameworkRepoURL(t, fwURL)
@@ -130,25 +130,25 @@ func TestInstallSubmoduleViaGit_FreshInstall(t *testing.T) {
 		t.Fatalf("installSubmoduleViaGit: %v", err)
 	}
 
-	// .gitmodules must contain the .ai entry pointing at the fixture.
+	// .gitmodules must contain the .agents entry pointing at the fixture.
 	gm, err := os.ReadFile(filepath.Join(root, ".gitmodules"))
 	if err != nil {
 		t.Fatalf("read .gitmodules: %v", err)
 	}
-	if !strings.Contains(string(gm), `[submodule ".ai"]`) {
+	if !strings.Contains(string(gm), `[submodule ".agents"]`) {
 		t.Errorf(".gitmodules missing [submodule \".ai\"] entry: %s", gm)
 	}
 	if !strings.Contains(string(gm), fwURL) {
 		t.Errorf(".gitmodules missing fixture URL: %s", gm)
 	}
 
-	// .ai/ must be populated with v0.0.1 content.
-	rb, err := os.ReadFile(filepath.Join(root, ".ai", "RULEBOOK.md"))
+	// .agents/ must be populated with v0.0.1 content.
+	rb, err := os.ReadFile(filepath.Join(root, ".agents", "RULEBOOK.md"))
 	if err != nil {
-		t.Fatalf("read .ai/RULEBOOK.md: %v", err)
+		t.Fatalf("read .agents/RULEBOOK.md: %v", err)
 	}
 	if !strings.Contains(string(rb), "v0.0.1") {
-		t.Errorf(".ai/RULEBOOK.md content does not match v0.0.1: %q", rb)
+		t.Errorf(".agents/RULEBOOK.md content does not match v0.0.1: %q", rb)
 	}
 
 	// The gitlink must be staged for commit.
@@ -160,28 +160,28 @@ func TestInstallSubmoduleViaGit_FreshInstall(t *testing.T) {
 	if !strings.Contains(staged, ".gitmodules") {
 		t.Errorf("expected .gitmodules to be staged: %s", staged)
 	}
-	if !strings.Contains(staged, ".ai") {
-		t.Errorf("expected .ai gitlink to be staged: %s", staged)
+	if !strings.Contains(staged, ".agents") {
+		t.Errorf("expected .agents gitlink to be staged: %s", staged)
 	}
 }
 
 // TestInstallSubmoduleViaGit_RecoversFromOrphanModuleDir verifies the
-// defensive cleanup that fixed v2.5.5's "A git directory for '.ai'
-// is found locally" error: when `.git/modules/.ai/` is left over from
+// defensive cleanup that fixed v2.5.5's "A git directory for '.agents'
+// is found locally" error: when `.git/modules/.agents/` is left over from
 // a previous failed run, install should still succeed.
 func TestInstallSubmoduleViaGit_RecoversFromOrphanModuleDir(t *testing.T) {
 	fwURL := fixtureFramework(t)
 	withFrameworkRepoURL(t, fwURL)
 	root := consumerRepo(t)
 
-	// Seed a stale .git/modules/.ai/ directory (simulating an aborted
+	// Seed a stale .git/modules/.agents/ directory (simulating an aborted
 	// previous install). The defensive cleanup in installSubmoduleViaGit
 	// must remove it before `git submodule add` runs.
 	gitDir, err := resolveGitDir(root)
 	if err != nil {
 		t.Fatalf("resolveGitDir: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(gitDir, "modules", ".ai", "leftover"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(gitDir, "modules", ".agents", "leftover"), 0o755); err != nil {
 		t.Fatalf("seed orphan: %v", err)
 	}
 
@@ -190,38 +190,38 @@ func TestInstallSubmoduleViaGit_RecoversFromOrphanModuleDir(t *testing.T) {
 	}
 
 	// The orphan leftover/ subdir must be gone.
-	if _, err := os.Stat(filepath.Join(gitDir, "modules", ".ai", "leftover")); err == nil {
+	if _, err := os.Stat(filepath.Join(gitDir, "modules", ".agents", "leftover")); err == nil {
 		t.Error("expected orphan leftover/ to be cleaned up")
 	}
 }
 
 // TestInstallSubmoduleViaGit_RecoversFromOrphanAIDir verifies the
-// defensive cleanup of a leftover `.ai/` directory in the working
+// defensive cleanup of a leftover `.agents/` directory in the working
 // tree (clone succeeded but checkout failed in a previous run).
 func TestInstallSubmoduleViaGit_RecoversFromOrphanAIDir(t *testing.T) {
 	fwURL := fixtureFramework(t)
 	withFrameworkRepoURL(t, fwURL)
 	root := consumerRepo(t)
 
-	// Seed a stale .ai/ directory.
-	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
-		t.Fatalf("seed orphan .ai/: %v", err)
+	// Seed a stale .agents/ directory.
+	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
+		t.Fatalf("seed orphan .agents/: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".ai", "stale.txt"), []byte("stale"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agents", "stale.txt"), []byte("stale"), 0o644); err != nil {
 		t.Fatalf("seed stale.txt: %v", err)
 	}
 
 	if err := installSubmoduleViaGit(root, "v0.0.1"); err != nil {
-		t.Fatalf("installSubmoduleViaGit with orphan .ai/: %v", err)
+		t.Fatalf("installSubmoduleViaGit with orphan .agents/: %v", err)
 	}
 
 	// stale.txt must be gone (defensive RemoveAll wipes the dir).
-	if _, err := os.Stat(filepath.Join(root, ".ai", "stale.txt")); err == nil {
+	if _, err := os.Stat(filepath.Join(root, ".agents", "stale.txt")); err == nil {
 		t.Error("expected stale.txt to be cleaned up")
 	}
 	// The new content must be in place.
-	if _, err := os.Stat(filepath.Join(root, ".ai", "RULEBOOK.md")); err != nil {
-		t.Errorf(".ai/RULEBOOK.md should exist after install: %v", err)
+	if _, err := os.Stat(filepath.Join(root, ".agents", "RULEBOOK.md")); err != nil {
+		t.Errorf(".agents/RULEBOOK.md should exist after install: %v", err)
 	}
 }
 
@@ -257,21 +257,21 @@ func TestSwapSubmoduleViaGit_VersionSwap(t *testing.T) {
 		t.Fatalf("swap to v0.0.2: %v", err)
 	}
 
-	rb, err := os.ReadFile(filepath.Join(root, ".ai", "RULEBOOK.md"))
+	rb, err := os.ReadFile(filepath.Join(root, ".agents", "RULEBOOK.md"))
 	if err != nil {
-		t.Fatalf("read .ai/RULEBOOK.md after swap: %v", err)
+		t.Fatalf("read .agents/RULEBOOK.md after swap: %v", err)
 	}
 	if !strings.Contains(string(rb), "v0.0.2") {
 		t.Errorf("post-swap content should be v0.0.2, got: %q", rb)
 	}
 
-	// .git/modules/.ai must exist (the new install) but should be
+	// .git/modules/.agents must exist (the new install) but should be
 	// the freshly-rebuilt one, not the old one. Existence is the
 	// observable: a successful swap means submodule add succeeded
 	// despite the previous module dir.
 	gitDir, _ := resolveGitDir(root)
-	if _, err := os.Stat(filepath.Join(gitDir, "modules", ".ai")); err != nil {
-		t.Errorf(".git/modules/.ai/ should exist after swap: %v", err)
+	if _, err := os.Stat(filepath.Join(gitDir, "modules", ".agents")); err != nil {
+		t.Errorf(".git/modules/.agents/ should exist after swap: %v", err)
 	}
 }
 
@@ -288,23 +288,23 @@ func TestSwapSubmoduleViaGit_EmptyTagRefuses(t *testing.T) {
 }
 
 // TestMigrateGitignoredMountViaGit_LegacyState exercises the full
-// migration path: a pre-existing gitignored .ai/ + .ai/ entry in
+// migration path: a pre-existing gitignored .agents/ + .agents/ entry in
 // .gitignore is converted to a tracked submodule.
 func TestMigrateGitignoredMountViaGit_LegacyState(t *testing.T) {
 	fwURL := fixtureFramework(t)
 	withFrameworkRepoURL(t, fwURL)
 	root := consumerRepo(t)
 
-	// Seed the legacy state: .ai/ directory with content + .gitignore
+	// Seed the legacy state: .agents/ directory with content + .gitignore
 	// entry.
-	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
-		t.Fatalf("seed legacy .ai/: %v", err)
+	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
+		t.Fatalf("seed legacy .agents/: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".ai", "old.txt"), []byte("legacy"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agents", "old.txt"), []byte("legacy"), 0o644); err != nil {
 		t.Fatalf("seed legacy content: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"),
-		[]byte("node_modules/\n.ai/\nvendor/\n"), 0o644); err != nil {
+		[]byte("node_modules/\n.agents/\nvendor/\n"), 0o644); err != nil {
 		t.Fatalf("seed .gitignore: %v", err)
 	}
 
@@ -312,31 +312,31 @@ func TestMigrateGitignoredMountViaGit_LegacyState(t *testing.T) {
 		t.Fatalf("migrateGitignoredMountViaGit: %v", err)
 	}
 
-	// .ai/ should now contain v0.0.1 framework content (legacy old.txt gone).
-	if _, err := os.Stat(filepath.Join(root, ".ai", "old.txt")); err == nil {
-		t.Error("legacy .ai/old.txt should have been removed")
+	// .agents/ should now contain v0.0.1 framework content (legacy old.txt gone).
+	if _, err := os.Stat(filepath.Join(root, ".agents", "old.txt")); err == nil {
+		t.Error("legacy .agents/old.txt should have been removed")
 	}
-	if _, err := os.Stat(filepath.Join(root, ".ai", "RULEBOOK.md")); err != nil {
-		t.Errorf(".ai/RULEBOOK.md should exist after migration: %v", err)
+	if _, err := os.Stat(filepath.Join(root, ".agents", "RULEBOOK.md")); err != nil {
+		t.Errorf(".agents/RULEBOOK.md should exist after migration: %v", err)
 	}
 
-	// .gitignore should no longer contain .ai/, but should preserve
+	// .gitignore should no longer contain .agents/, but should preserve
 	// other entries.
 	gi, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	if strings.Contains(string(gi), ".ai/") {
-		t.Errorf(".ai/ should be removed from .gitignore: %s", gi)
+	if strings.Contains(string(gi), ".agents/") {
+		t.Errorf(".agents/ should be removed from .gitignore: %s", gi)
 	}
 	if !strings.Contains(string(gi), "node_modules/") || !strings.Contains(string(gi), "vendor/") {
 		t.Errorf("unrelated .gitignore lines should be preserved: %s", gi)
 	}
 
-	// .gitmodules should exist with the .ai entry.
+	// .gitmodules should exist with the .agents entry.
 	gm, err := os.ReadFile(filepath.Join(root, ".gitmodules"))
 	if err != nil {
 		t.Fatalf("read .gitmodules: %v", err)
 	}
-	if !strings.Contains(string(gm), `[submodule ".ai"]`) {
-		t.Errorf(".gitmodules missing .ai entry: %s", gm)
+	if !strings.Contains(string(gm), `[submodule ".agents"]`) {
+		t.Errorf(".gitmodules missing .agents entry: %s", gm)
 	}
 }
 
@@ -386,11 +386,11 @@ func TestReadAIVersionFromGit_TagPresent(t *testing.T) {
 }
 
 // TestReadAIVersionFromGit_NoMount returns an error when there is no
-// .ai/ git checkout to read from.
+// .agents/ git checkout to read from.
 func TestReadAIVersionFromGit_NoMount(t *testing.T) {
 	root := t.TempDir()
 	if _, err := ReadAIVersionFromGit(root); err == nil {
-		t.Error("expected error when .ai/ is missing")
+		t.Error("expected error when .agents/ is missing")
 	}
 }
 
@@ -401,15 +401,15 @@ func TestReadAIVersionFromGit_NoMount(t *testing.T) {
 func TestRemoveAIFromGitignore_PublicWrapper(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"),
-		[]byte("node_modules/\n.ai/\nvendor/\n"), 0o644); err != nil {
+		[]byte("node_modules/\n.agents/\nvendor/\n"), 0o644); err != nil {
 		t.Fatalf("seed .gitignore: %v", err)
 	}
 	if err := RemoveAIFromGitignore(root); err != nil {
 		t.Fatalf("RemoveAIFromGitignore: %v", err)
 	}
 	gi, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	if strings.Contains(string(gi), ".ai/") {
-		t.Errorf("expected .ai/ removed from .gitignore: %s", gi)
+	if strings.Contains(string(gi), ".agents/") {
+		t.Errorf("expected .agents/ removed from .gitignore: %s", gi)
 	}
 }
 

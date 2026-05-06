@@ -9,11 +9,11 @@ import (
 	"testing"
 )
 
-// ── ReadTemplateConfig — primary .ai/config.yml path ─────────────────────────
+// ── ReadTemplateConfig — primary .agents/config.yml path ─────────────────────────
 
 func TestReadTemplateConfig_AIConfigYML_Valid_ReturnsValues(t *testing.T) {
 	root := t.TempDir()
-	aiDir := filepath.Join(root, ".ai")
+	aiDir := filepath.Join(root, ".agents")
 	if err := os.MkdirAll(aiDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestReadTemplateConfig_AIConfigYML_Valid_ReturnsValues(t *testing.T) {
 
 func TestReadTemplateConfig_AIConfigYML_EmptyFields_FallsBackToLegacy(t *testing.T) {
 	root := t.TempDir()
-	aiDir := filepath.Join(root, ".ai")
+	aiDir := filepath.Join(root, ".agents")
 	if err := os.MkdirAll(aiDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestReadTemplateConfig_AIConfigYML_EmptyFields_FallsBackToLegacy(t *testing
 
 func TestReadTemplateConfig_AIConfigYML_InvalidYAML_FallsBackToLegacy(t *testing.T) {
 	root := t.TempDir()
-	aiDir := filepath.Join(root, ".ai")
+	aiDir := filepath.Join(root, ".agents")
 	if err := os.MkdirAll(aiDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

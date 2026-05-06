@@ -297,11 +297,11 @@ func TestCheckSkillFrontmatter_NoSkillsDir(t *testing.T) {
 }
 
 func TestCheckSkillFrontmatter_FederatedMount(t *testing.T) {
-	// Domain repo where skills live under .ai/skills — the check should find them there.
+	// Domain repo where skills live under .agents/skills — the check should find them there.
 	root := t.TempDir()
-	aiSkills := filepath.Join(root, ".ai", "skills")
+	aiSkills := filepath.Join(root, ".agents", "skills")
 	if err := os.MkdirAll(aiSkills, 0o755); err != nil {
-		t.Fatalf("mkdir .ai/skills: %v", err)
+		t.Fatalf("mkdir .agents/skills: %v", err)
 	}
 	body := validFrontmatter("framework-skill", "Reference", false)
 	if err := os.WriteFile(filepath.Join(aiSkills, "framework-skill.md"), []byte(body), 0o644); err != nil {
@@ -312,7 +312,7 @@ func TestCheckSkillFrontmatter_FederatedMount(t *testing.T) {
 
 	r := findResult(g, "framework-skill.md frontmatter valid")
 	if r == nil {
-		t.Fatal("expected the .ai/skills/ skill to be discovered")
+		t.Fatal("expected the .agents/skills/ skill to be discovered")
 	}
 	if r.Status != Pass {
 		t.Errorf("expected Pass, got status %d", r.Status)

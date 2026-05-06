@@ -80,16 +80,16 @@ type Deps struct {
 }
 
 // Run executes the init wizard.
-// It requires a git repository with no existing .ai/ directory (unless --force).
+// It requires a git repository with no existing .agents/ directory (unless --force).
 func Run(w io.Writer, root string, force bool, deps Deps) error {
 	// Must be inside a git repository.
 	if _, err := os.Stat(filepath.Join(root, ".git")); os.IsNotExist(err) {
 		return fmt.Errorf("not a git repository — run 'git init' and add a remote before running init")
 	}
 
-	// Block if .ai/ already exists (framework already mounted).
-	if _, err := os.Stat(filepath.Join(root, ".ai")); err == nil && !force {
-		fmt.Fprintf(w, "  %s  Framework already mounted at .ai/\n", ui.StatusWarning.Render("⚠"))
+	// Block if .agents/ already exists (framework already mounted).
+	if _, err := os.Stat(filepath.Join(root, ".agents")); err == nil && !force {
+		fmt.Fprintf(w, "  %s  Framework already mounted at .agents/\n", ui.StatusWarning.Render("⚠"))
 		fmt.Fprintf(w, "       → Run 'gh agentic mount <version>' to upgrade, or 'gh agentic init --force' to reinitialise\n\n")
 		return ErrAlreadyInitialised
 	}
@@ -308,11 +308,11 @@ func parseRepoFromURL(url string) string {
 }
 
 // CheckAIVersionExists returns true if a framework mount is present at
-// root — i.e. the .ai/ directory exists. The legacy flat .ai-version file
-// was removed in #585; the presence of a mounted .ai/ is now the
+// root — i.e. the .agents/ directory exists. The legacy flat .ai-version file
+// was removed in #585; the presence of a mounted .agents/ is now the
 // equivalent "already initialised?" signal.
 func CheckAIVersionExists(root string) bool {
-	info, err := os.Stat(filepath.Join(root, ".ai"))
+	info, err := os.Stat(filepath.Join(root, ".agents"))
 	if err != nil {
 		return false
 	}

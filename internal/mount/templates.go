@@ -9,15 +9,15 @@ const claudeMDTemplate = `# CLAUDE.md
 `
 
 // agentsMDTemplate is the standard AGENTS.md content for domain repos.
-// It references the mounted .ai/ framework and includes the bootstrap rule.
+// It references the mounted .agents/ framework and includes the bootstrap rule.
 const agentsMDTemplate = `# AGENTS.md
 
-@.ai/RULEBOOK.md
+@.agents/RULEBOOK.md
 @LOCALRULES.md
 
 ## Bootstrap Rule
 
-If the .ai/ directory does not exist, stop immediately.
+If the .agents/ directory does not exist, stop immediately.
 
 - **Interactive context:** Instruct the user to run:
   ` + "`" + `gh agentic mount` + "`" + `

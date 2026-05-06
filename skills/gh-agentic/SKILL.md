@@ -187,7 +187,7 @@ Flags: none.
 
 ### `gh agentic mount`
 
-Sync the framework at `.ai/` to the correct version. Single topology
+Sync the framework at `.agents/` to the correct version. Single topology
 reads `.ai-version`; federated domain reads
 `AGENTIC_FRAMEWORK_VERSION` from the control plane.
 

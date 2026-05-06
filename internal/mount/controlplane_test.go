@@ -113,7 +113,7 @@ func TestEnsureCPGitignore_Idempotent(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".gitignore")
 
-	if err := os.WriteFile(path, []byte(".ai/\n.cp/\nother\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(".agents/\n.cp/\nother\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -139,7 +139,7 @@ func TestEnsureCPGitignore_CoexistsWithAIEntry(t *testing.T) {
 
 	data, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
 	s := string(data)
-	if !strings.Contains(s, ".ai/") || !strings.Contains(s, ".cp/") {
+	if !strings.Contains(s, ".agents/") || !strings.Contains(s, ".cp/") {
 		t.Errorf(".gitignore should contain both entries, got: %s", s)
 	}
 }

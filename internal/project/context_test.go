@@ -343,11 +343,11 @@ func TestResolve_LegacyWrappers_ReturnConsistentResults(t *testing.T) {
 
 func TestContext_RoleHelpers(t *testing.T) {
 	cases := []struct {
-		topology  string
-		wantRole  string
-		isCP      bool
-		isDomain  bool
-		isSingle  bool
+		topology string
+		wantRole string
+		isCP     bool
+		isDomain bool
+		isSingle bool
 	}{
 		{TopologyStringSingle, RoleStandalone, false, false, true},
 		{TopologyStringFederatedCP, RoleCP, true, false, false},

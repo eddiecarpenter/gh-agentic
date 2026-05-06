@@ -12,8 +12,8 @@ func TestNewFakeRepo_CreatesStandardFiles(t *testing.T) {
 	repo := NewFakeRepo(t)
 
 	expectedFiles := []string{
-		".ai/config.yml",
-		".ai/RULEBOOK.md",
+		".agents/config.yml",
+		".agents/RULEBOOK.md",
 		"CLAUDE.md",
 		"AGENTS.md",
 		"LOCALRULES.md",
@@ -60,15 +60,15 @@ func TestNewFakeRepo_HasAtLeastOneCommit(t *testing.T) {
 func TestNewFakeRepo_ConfigYMLContent(t *testing.T) {
 	repo := NewFakeRepo(t)
 
-	content, err := os.ReadFile(filepath.Join(repo.Root, ".ai", "config.yml"))
+	content, err := os.ReadFile(filepath.Join(repo.Root, ".agents", "config.yml"))
 	if err != nil {
-		t.Fatalf("read .ai/config.yml: %v", err)
+		t.Fatalf("read .agents/config.yml: %v", err)
 	}
 	if !strings.Contains(string(content), "eddiecarpenter/ai-native-delivery") {
-		t.Fatalf("unexpected .ai/config.yml content: %q", string(content))
+		t.Fatalf("unexpected .agents/config.yml content: %q", string(content))
 	}
 	if !strings.Contains(string(content), "v1.0.0") {
-		t.Fatalf(".ai/config.yml missing version: %q", string(content))
+		t.Fatalf(".agents/config.yml missing version: %q", string(content))
 	}
 }
 

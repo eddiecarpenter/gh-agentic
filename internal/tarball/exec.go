@@ -11,8 +11,8 @@ type realCommand struct {
 }
 
 func (c *realCommand) StdoutPipe() (io.ReadCloser, error) { return c.cmd.StdoutPipe() }
-func (c *realCommand) Start() error                        { return c.cmd.Start() }
-func (c *realCommand) Wait() error                         { return c.cmd.Wait() }
+func (c *realCommand) Start() error                       { return c.cmd.Start() }
+func (c *realCommand) Wait() error                        { return c.cmd.Wait() }
 
 // newRealCommand creates a real exec.Cmd wrapped in the command interface.
 func newRealCommand(name string, args ...string) command {

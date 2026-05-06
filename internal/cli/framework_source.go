@@ -13,7 +13,7 @@ import (
 // source (mount, upgrade, init, project *) invoke this at the start of
 // their RunE and propagate the error to halt before any side effect.
 //
-// Detection is a single lstat of .ai — cheap. See
+// Detection is a single lstat of .agents — cheap. See
 // internal/project/source.go for the signal.
 //
 // The error message is the canonical refusal shape shared by every
@@ -34,7 +34,7 @@ func refuseIfFrameworkSource(cmd *cobra.Command, root, commandName string) error
 		cmd.SilenceUsage = true
 	}
 	return fmt.Errorf(
-		"command refused: .ai is a symlink — this repo is the gh-agentic framework source, not a consumer\n"+
+		"command refused: .agents is a symlink — this repo is the gh-agentic framework source, not a consumer\n"+
 			"`gh agentic %s` does not apply here.\n"+
 			"supported commands on the framework source: status, info, auth, check, repair",
 		commandName,

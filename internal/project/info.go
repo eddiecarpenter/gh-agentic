@@ -7,13 +7,13 @@ import (
 
 // ProjectState holds the resolved state of a repo's project affiliation.
 type ProjectState struct {
-	ProjectID      string
-	ProjectName    string // human-readable title; empty if project was deleted
-	ProjectDeleted bool   // true if the ID is set but the project no longer exists
-	Topology       Topology
-	ControlPlane   LinkedRepo
-	LinkedRepos    []LinkedRepo
-	AIVersion      string
+	ProjectID                    string
+	ProjectName                  string // human-readable title; empty if project was deleted
+	ProjectDeleted               bool   // true if the ID is set but the project no longer exists
+	Topology                     Topology
+	ControlPlane                 LinkedRepo
+	LinkedRepos                  []LinkedRepo
+	AIVersion                    string
 	ControlPlaneFrameworkVersion string // AGENTIC_FRAMEWORK_VERSION from the control plane repo
 	VersionInSync                bool   // true if local and control plane versions match
 }

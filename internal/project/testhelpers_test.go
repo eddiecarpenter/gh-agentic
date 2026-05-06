@@ -7,7 +7,7 @@ import (
 )
 
 // fakeFrameworkFiles is the canonical set of files the project tests
-// expect to see inside .ai/ after a successful install. Used by the
+// expect to see inside .agents/ after a successful install. Used by the
 // mounttest stubs below.
 var fakeFrameworkFiles = map[string]string{
 	"RULEBOOK.md":            "# Rules",

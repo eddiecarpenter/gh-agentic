@@ -27,8 +27,8 @@ func testDeps(owner, repo string) Deps {
 				return "PVT_test123", nil
 			case TopologyVarName:
 				return "single", nil
-			// AGENTIC_FRAMEWORK_VERSION intentionally not set — single topology
-			// repos don't broadcast a version; local .ai-version is authoritative.
+				// AGENTIC_FRAMEWORK_VERSION intentionally not set — single topology
+				// repos don't broadcast a version; local .ai-version is authoritative.
 			}
 			return "", errors.New("not found")
 		},
@@ -53,7 +53,7 @@ func testDeps(owner, repo string) Deps {
 			return []ProjectField{{ID: "field-id", Name: "Status", DataType: "SINGLE_SELECT"}}, nil
 		},
 		UpdateStatusFieldOptions: func(fieldID string, options []StatusOption) error { return nil },
-		FetchProjectNumber: func(projectID string) (int, error) { return 1, nil },
+		FetchProjectNumber:       func(projectID string) (int, error) { return 1, nil },
 		CreateProjectView: func(owner, ownerType string, projectNumber int, name, layout, filter string) error {
 			return nil
 		},

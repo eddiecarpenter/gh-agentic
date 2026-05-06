@@ -62,13 +62,13 @@ type command interface {
 var newCommand = newRealCommand
 
 // ReadTemplateConfig reads the template repo and version. Primary source is
-// .ai/config.yml; falls back to TEMPLATE_SOURCE and TEMPLATE_VERSION for
+// .agents/config.yml; falls back to TEMPLATE_SOURCE and TEMPLATE_VERSION for
 // repos not yet migrated to v1.5.0+.
 //
-// TODO(deprecated): remove TEMPLATE_SOURCE/TEMPLATE_VERSION fallback in next major version — .ai/config.yml is the source of truth.
+// TODO(deprecated): remove TEMPLATE_SOURCE/TEMPLATE_VERSION fallback in next major version — .agents/config.yml is the source of truth.
 func ReadTemplateConfig(root string) (repo, version string, err error) {
-	// Primary: read from .ai/config.yml.
-	if data, readErr := os.ReadFile(filepath.Join(root, ".ai", "config.yml")); readErr == nil {
+	// Primary: read from .agents/config.yml.
+	if data, readErr := os.ReadFile(filepath.Join(root, ".agents", "config.yml")); readErr == nil {
 		var cfg struct {
 			Template string `yaml:"template"`
 			Version  string `yaml:"version"`

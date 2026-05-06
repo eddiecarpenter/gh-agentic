@@ -39,7 +39,7 @@ type CreateConfig struct {
 //  5. Create the GitHub ProjectV2.
 //  6. Link the repo to the project.
 //  7. Set AGENTIC_PROJECT_ID repo variable.
-//  8. Clone the framework into .ai/.
+//  8. Clone the framework into .agents/.
 func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 	// Default topology for control-plane creation is federated — matches the
 	// historical behaviour of this function and the CLI `project create`
@@ -126,7 +126,7 @@ func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 	}
 	fmt.Fprintf(w, "  %s  %s set to %s\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName, cfg.Version)
 
-	// Step 8: Clone framework into .ai/.
+	// Step 8: Clone framework into .agents/.
 	fmt.Fprintf(w, "  Mounting framework %s...\n", cfg.Version)
 	if err := mount.DownloadFramework(deps.Root, cfg.Version, deps.Clone); err != nil {
 		return fmt.Errorf("mounting framework: %w", err)

@@ -9,7 +9,7 @@ import (
 )
 
 // FakeRepo is a minimal agentic repo in a temp directory, suitable for
-// integration tests. It includes standard agentic files (.ai/config.yml,
+// integration tests. It includes standard agentic files (.agents/config.yml,
 // CLAUDE.md, etc.) and is initialised as a git repository with at least one commit.
 type FakeRepo struct {
 	// Root is the absolute path to the temp directory.
@@ -36,14 +36,14 @@ func NewFakeRepo(t *testing.T) *FakeRepo {
 
 	// Write standard agentic repo files.
 	files := map[string]string{
-		".ai/config.yml":  "template: eddiecarpenter/ai-native-delivery\nversion: v1.0.0\n",
-		".ai/RULEBOOK.md": "# RULEBOOK.md\n",
-		"CLAUDE.md":       "# CLAUDE.md\n",
-		"AGENTS.md":       "@.ai/RULEBOOK.md\n@LOCALRULES.md\n",
-		"LOCALRULES.md":   "# LOCALRULES.md\n",
-		"REPOS.md":        "# REPOS.md\n",
-		"README.md":       "# README\n",
-		"skills/.gitkeep": "",
+		".agents/config.yml":  "template: eddiecarpenter/ai-native-delivery\nversion: v1.0.0\n",
+		".agents/RULEBOOK.md": "# RULEBOOK.md\n",
+		"CLAUDE.md":           "# CLAUDE.md\n",
+		"AGENTS.md":           "@.agents/RULEBOOK.md\n@LOCALRULES.md\n",
+		"LOCALRULES.md":       "# LOCALRULES.md\n",
+		"REPOS.md":            "# REPOS.md\n",
+		"README.md":           "# README\n",
+		"skills/.gitkeep":     "",
 	}
 
 	for path, content := range files {

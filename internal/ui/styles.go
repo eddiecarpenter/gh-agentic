@@ -54,20 +54,20 @@ const (
 var (
 	// SectionHeading renders a bold heading in Primary blue.
 	SectionHeading = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color(ColorPrimary))
+			Bold(true).
+			Foreground(lipgloss.Color(ColorPrimary))
 
 	// StatusOK renders the ✔ symbol in Success green.
 	StatusOK = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorSuccess))
+			Foreground(lipgloss.Color(ColorSuccess))
 
 	// StatusWarning renders the ⚠ symbol in Warning amber.
 	StatusWarning = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorWarning))
+			Foreground(lipgloss.Color(ColorWarning))
 
 	// StatusDanger renders the ✖ symbol in Danger red.
 	StatusDanger = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorDanger))
+			Foreground(lipgloss.Color(ColorDanger))
 
 	// Muted renders secondary text in Muted grey.
 	Muted = lipgloss.NewStyle().

@@ -88,12 +88,12 @@ func TestFetchBlocker_BothAbsentReturnsNil(t *testing.T) {
 func TestFetchBlocker_MalformedConventionIgnored(t *testing.T) {
 	// Prose-like content that mentions "blocked" should never be parsed.
 	cases := []string{
-		"this issue was blocked by an earlier PR",           // casual prose
-		"Note: we think it's blocked-by the network team",   // almost matching
-		"Blocked-by",                                        // no value
-		"Blocked-by:",                                       // blank value
-		"Blocked-by: #",                                     // no number
-		"Blocked-by: #abc",                                  // non-numeric number
+		"this issue was blocked by an earlier PR",         // casual prose
+		"Note: we think it's blocked-by the network team", // almost matching
+		"Blocked-by",       // no value
+		"Blocked-by:",      // blank value
+		"Blocked-by: #",    // no number
+		"Blocked-by: #abc", // non-numeric number
 	}
 	for _, body := range cases {
 		got, err := FetchBlocker(Deps{}, "o", "r", 1, body)

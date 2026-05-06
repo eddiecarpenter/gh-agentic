@@ -131,9 +131,9 @@ func initFederated(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 	fmt.Fprintf(w, "  %s  %s set\n", ui.StatusOK.Render("✓"), ProjectVarName)
 
 	// Mount the framework at the control plane version. The mounted version
-	// is tracked via .ai/.git metadata — no flat .ai-version file is
+	// is tracked via .agents/.git metadata — no flat .ai-version file is
 	// written (removed by feature #571 / task #585).
-	aiDir := filepath.Join(deps.Root, ".ai")
+	aiDir := filepath.Join(deps.Root, ".agents")
 	if _, err := os.Stat(aiDir); os.IsNotExist(err) {
 		fmt.Fprintf(w, "  Mounting framework %s...\n", cpVersion)
 		if err := mount.DownloadFramework(deps.Root, cpVersion, deps.Clone); err != nil {

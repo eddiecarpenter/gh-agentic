@@ -32,23 +32,23 @@ func setupHealthyRepo(t *testing.T) string {
 	root := t.TempDir()
 
 	// Framework files.
-	aiDir := filepath.Join(root, ".ai")
+	aiDir := filepath.Join(root, ".agents")
 	_ = os.MkdirAll(filepath.Join(aiDir, "skills"), 0o755)
 	_ = os.MkdirAll(filepath.Join(aiDir, "standards"), 0o755)
 	_ = os.WriteFile(filepath.Join(aiDir, "RULEBOOK.md"), []byte("# Rules"), 0o644)
 	setupAIGitRepo(t, aiDir, "v2.0.0")
 
-	// The .ai-version flat file is gone (#585); .ai/.git metadata is the
+	// The .ai-version flat file is gone (#585); .agents/.git metadata is the
 	// only local version source, installed by setupAIGitRepo above.
 
-	// .gitignore — submodule mode does NOT list .ai/, since the submodule
-	// is tracked in the parent repo's index. A legacy `.ai/` line would
+	// .gitignore — submodule mode does NOT list .agents/, since the submodule
+	// is tracked in the parent repo's index. A legacy `.agents/` line would
 	// trigger a "legacy shallow-clone state" warning from the doctor.
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n"), 0o644)
 
 	// Agent files.
 	_ = os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# CLAUDE.md\n@AGENTS.md"), 0o644)
-	_ = os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# AGENTS.md\n@.ai/RULEBOOK.md"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# AGENTS.md\n@.agents/RULEBOOK.md"), 0o644)
 	_ = os.WriteFile(filepath.Join(root, "LOCALRULES.md"), []byte("# Local Rules"), 0o644)
 	_ = os.WriteFile(filepath.Join(root, "README.md"), []byte("# Readme"), 0o644)
 	_ = os.MkdirAll(filepath.Join(root, "skills"), 0o755)
@@ -116,7 +116,7 @@ func TestRunAllChecks_HealthyRepo(t *testing.T) {
 
 func TestRunAllChecks_MissingFramework(t *testing.T) {
 	root := t.TempDir()
-	// Empty repo — no .ai/, no .ai-version.
+	// Empty repo — no .agents/, no .ai-version.
 
 	deps := CheckDeps{
 		Root:         root,
@@ -169,8 +169,8 @@ func TestCheckFramework_NotMounted(t *testing.T) {
 
 func TestCheckWorkflows_VersionMismatch(t *testing.T) {
 	root := t.TempDir()
-	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.0.0")
-	// Version is stored in .ai/.git (installed by setupAIGitRepo); no
+	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.0.0")
+	// Version is stored in .agents/.git (installed by setupAIGitRepo); no
 	// flat .ai-version file (#585).
 
 	workflowsDir := filepath.Join(root, ".github", "workflows")
@@ -198,8 +198,8 @@ func TestCheckWorkflows_VersionMismatch(t *testing.T) {
 
 func TestCheckWorkflows_VersionMatch(t *testing.T) {
 	root := t.TempDir()
-	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.0.0")
-	// Version is stored in .ai/.git (installed by setupAIGitRepo); no
+	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.0.0")
+	// Version is stored in .agents/.git (installed by setupAIGitRepo); no
 	// flat .ai-version file (#585).
 
 	workflowsDir := filepath.Join(root, ".github", "workflows")
@@ -226,8 +226,8 @@ func TestCheckWorkflows_VersionMatch(t *testing.T) {
 // need a framework version tag and must pass.
 func TestCheckWorkflows_InlinedNoFrameworkRefs(t *testing.T) {
 	root := t.TempDir()
-	setupAIGitRepo(t, filepath.Join(root, ".ai"), "v2.1.0")
-	// Version stored in .ai/.git; no flat file (#585).
+	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.1.0")
+	// Version stored in .agents/.git; no flat file (#585).
 
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	_ = os.MkdirAll(workflowsDir, 0o755)

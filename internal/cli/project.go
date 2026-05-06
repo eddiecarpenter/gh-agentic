@@ -509,7 +509,7 @@ func newProjectUnlinkCmd() *cobra.Command {
 		Use:   "unlink",
 		Short: "Remove this repo from its project",
 		Long: `Remove this repo from the project. The GitHub Project board is not deleted
-and the framework mount at .ai/ is left in place.
+and the framework mount at .agents/ is left in place.
 
 Blocked if this repo is the control plane and docs/ has content — migrate to
 a new control plane first.

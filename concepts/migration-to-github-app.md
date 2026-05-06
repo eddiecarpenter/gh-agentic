@@ -139,13 +139,13 @@ version that contains the workflow changes:
 gh agentic mount <new-version>
 ```
 
-This overwrites `.ai/` in the domain repo with the new framework, including
+This overwrites `.agents/` in the domain repo with the new framework, including
 the workflow files that mint App installation tokens instead of reading
-`GOOSE_AGENT_PAT`. Commit the refreshed `.ai/` per the domain repo's normal
+`GOOSE_AGENT_PAT`. Commit the refreshed `.agents/` per the domain repo's normal
 sync procedure.
 
-**Success criterion:** `git log -1 .ai/` shows the mount commit and
-`grep -r 'AGENTIC_APP_ID' .ai/` returns at least one match (typically in
+**Success criterion:** `git log -1 .agents/` shows the mount commit and
+`grep -r 'AGENTIC_APP_ID' .agents/` returns at least one match (typically in
 the pipeline workflow template).
 
 ### 4. Verify the pipeline runs end-to-end
@@ -310,7 +310,7 @@ issues, or PRs are produced. The failure is loud, not silent — which is
 the intended behaviour.
 
 Recovery: complete steps 1–3 (install the App, set the credentials, re-run
-`gh agentic mount` if needed to realign `.ai/` with the installed App) and
+`gh agentic mount` if needed to realign `.agents/` with the installed App) and
 re-trigger the failed workflow. No data is lost; the pipeline resumes
 from the failed run.
 

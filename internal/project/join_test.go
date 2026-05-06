@@ -38,9 +38,9 @@ func TestJoin_Clear_SetsVariable(t *testing.T) {
 		t.Errorf("expected AGENTIC_PROJECT_ID set to PVT_target, got %q", setVar)
 	}
 
-	// .ai/ should now exist via the install stub.
-	if _, err := os.Stat(filepath.Join(tmp, ".ai", "RULEBOOK.md")); err != nil {
-		t.Errorf("expected .ai/RULEBOOK.md to exist after install: %v", err)
+	// .agents/ should now exist via the install stub.
+	if _, err := os.Stat(filepath.Join(tmp, ".agents", "RULEBOOK.md")); err != nil {
+		t.Errorf("expected .agents/RULEBOOK.md to exist after install: %v", err)
 	}
 }
 
@@ -148,8 +148,8 @@ func TestJoin_Blocked(t *testing.T) {
 
 func TestJoin_FrameworkAlreadyMounted(t *testing.T) {
 	tmp := t.TempDir()
-	// Create .ai/ to simulate already mounted.
-	aiDir := tmp + "/.ai"
+	// Create .agents/ to simulate already mounted.
+	aiDir := tmp + "/.agents"
 	if err := os.MkdirAll(aiDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestJoin_FrameworkAlreadyMounted(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cloneCalled {
-		t.Error("expected Clone NOT to be called when .ai/ already exists")
+		t.Error("expected Clone NOT to be called when .agents/ already exists")
 	}
 }
 

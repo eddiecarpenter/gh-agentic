@@ -8,38 +8,37 @@ import (
 	"strings"
 )
 
-
-// MountState describes the working-tree state of `.ai/` in a domain repo
+// MountState describes the working-tree state of `.agents/` in a domain repo
 // at the time `gh agentic upgrade` is invoked. It is the input to the
 // idempotent install/swap dispatch in DownloadFramework.
 type MountState int
 
 const (
-	// MountStateNone means `.ai/` does not exist and `.gitmodules` has no
+	// MountStateNone means `.agents/` does not exist and `.gitmodules` has no
 	// entry for it — the fresh-install case.
 	MountStateNone MountState = iota
-	// MountStateSymlink means `.ai` is a symlink (i.e. this is gh-agentic
+	// MountStateSymlink means `.agents` is a symlink (i.e. this is gh-agentic
 	// itself, where `.ai -> .`). Upgrade refuses this case to preserve the
 	// symlink — see refuseIfFrameworkSource at the CLI layer.
 	MountStateSymlink
-	// MountStateSubmodule means `.ai/` is already a tracked git submodule
+	// MountStateSubmodule means `.agents/` is already a tracked git submodule
 	// recorded in `.gitmodules`. Upgrade swaps it to the new version.
 	MountStateSubmodule
-	// MountStateGitignoredMount means `.ai/` exists as a directory and is
+	// MountStateGitignoredMount means `.agents/` exists as a directory and is
 	// listed in `.gitignore` (the legacy shallow-clone state). Upgrade
 	// auto-migrates it to a submodule.
 	MountStateGitignoredMount
 	// MountStateInconsistent means the working tree is in a state the
-	// dispatcher can't safely auto-recover from (e.g. `.ai/` exists but is
+	// dispatcher can't safely auto-recover from (e.g. `.agents/` exists but is
 	// neither a submodule nor gitignored). Upgrade surfaces an error.
 	MountStateInconsistent
 )
 
 // DetectMountState inspects the working tree at root and classifies the
-// state of `.ai/`. The classification drives DownloadFramework's dispatch
+// state of `.agents/`. The classification drives DownloadFramework's dispatch
 // to InstallSubmodule / SwapSubmodule / MigrateGitignoredMount.
 func DetectMountState(root string) (MountState, error) {
-	aiPath := filepath.Join(root, ".ai")
+	aiPath := filepath.Join(root, ".agents")
 
 	info, err := os.Lstat(aiPath)
 	aiExists := err == nil
@@ -63,11 +62,11 @@ func DetectMountState(root string) (MountState, error) {
 		return MountStateNone, nil
 	}
 
-	// `.ai` exists, is not a symlink, and there is no submodule entry.
-	// If it's a directory and `.ai/` is listed in `.gitignore`, this is
+	// `.agents` exists, is not a symlink, and there is no submodule entry.
+	// If it's a directory and `.agents/` is listed in `.gitignore`, this is
 	// the legacy shallow-clone state — eligible for auto-migration.
 	if aiIsDir {
-		gitignored, err := gitignoreContains(root, ".ai/")
+		gitignored, err := gitignoreContains(root, ".agents/")
 		if err != nil {
 			return 0, fmt.Errorf("reading .gitignore: %w", err)
 		}
@@ -75,10 +74,10 @@ func DetectMountState(root string) (MountState, error) {
 			return MountStateGitignoredMount, nil
 		}
 
-		// Empty .ai/ (or one containing only a stale .git/) is treated
+		// Empty .agents/ (or one containing only a stale .git/) is treated
 		// as MountStateNone so the caller can recover from a previous
 		// failed install. The fresh-install path defensively cleans
-		// `.ai/` and `.git/modules/.ai/` before adding the submodule.
+		// `.agents/` and `.git/modules/.agents/` before adding the submodule.
 		if isEmptyOrAbortedClone(aiPath) {
 			return MountStateNone, nil
 		}
@@ -87,7 +86,7 @@ func DetectMountState(root string) (MountState, error) {
 	return MountStateInconsistent, nil
 }
 
-// isEmptyOrAbortedClone reports true when `.ai/` exists but contains no
+// isEmptyOrAbortedClone reports true when `.agents/` exists but contains no
 // user-meaningful content beyond a `.git` directory left over from a
 // previous failed `git submodule add` (the partial-clone state). Used
 // by DetectMountState to classify aborted installs as MountStateNone
@@ -107,7 +106,7 @@ func isEmptyOrAbortedClone(aiPath string) bool {
 }
 
 // gitmodulesHasAI returns true when `.gitmodules` at root contains a
-// `[submodule ".ai"]` entry. Returns false (no error) when `.gitmodules`
+// `[submodule ".agents"]` entry. Returns false (no error) when `.gitmodules`
 // is missing or unreadable in the no-such-file sense.
 func gitmodulesHasAI(root string) (bool, error) {
 	data, err := os.ReadFile(filepath.Join(root, ".gitmodules"))
@@ -117,7 +116,7 @@ func gitmodulesHasAI(root string) (bool, error) {
 		}
 		return false, err
 	}
-	return strings.Contains(string(data), `[submodule ".ai"]`), nil
+	return strings.Contains(string(data), `[submodule ".agents"]`), nil
 }
 
 // gitignoreContains returns true when `.gitignore` at root contains a
@@ -146,16 +145,16 @@ func gitignoreContains(root, entry string) (bool, error) {
 var InstallSubmodule = installSubmoduleViaGit
 
 // installSubmoduleViaGit performs a fresh `git submodule add` of the
-// framework at version `tag` into `.ai/` of the parent repo at root,
+// framework at version `tag` into `.agents/` of the parent repo at root,
 // then checks out the tag inside the new submodule so the gitlink
 // pins to the tag's resolved commit. The resulting `.gitmodules` and
 // gitlink change are staged for commit; this function does NOT create
 // a commit.
 //
-// Pre-conditions: `.ai/` does not exist as a tracked submodule;
-// `.gitmodules` has no `.ai` entry. Caller is responsible for these
+// Pre-conditions: `.agents/` does not exist as a tracked submodule;
+// `.gitmodules` has no `.agents` entry. Caller is responsible for these
 // guarantees (DetectMountState returned MountStateNone). A leftover
-// `.git/modules/.ai/` directory from a previous failed run is handled
+// `.git/modules/.agents/` directory from a previous failed run is handled
 // defensively below — it is removed before `git submodule add` runs.
 func installSubmoduleViaGit(root, tag string) error {
 	if tag == "" {
@@ -167,15 +166,15 @@ func installSubmoduleViaGit(root, tag string) error {
 	// `.git/modules/<path>/` already exists (with a "found locally"
 	// error), even though the parent's `.gitmodules` has no entry.
 	if gitDir, err := resolveGitDir(root); err == nil {
-		_ = os.RemoveAll(filepath.Join(gitDir, "modules", ".ai"))
+		_ = os.RemoveAll(filepath.Join(gitDir, "modules", ".agents"))
 	}
 
-	// Clean up any orphan `.ai/` directory from a previous run that
+	// Clean up any orphan `.agents/` directory from a previous run that
 	// failed after the clone but before the gitmodules registration.
 	// DetectMountState classifies this case as MountStateNone (via
 	// isEmptyOrAbortedClone), but git submodule add still refuses to
 	// add into an existing path.
-	_ = os.RemoveAll(filepath.Join(root, ".ai"))
+	_ = os.RemoveAll(filepath.Join(root, ".agents"))
 
 	// Note on the missing -b flag: `git submodule add -b <ref>` treats
 	// <ref> as a branch name. Pinning to a tag therefore must NOT use
@@ -183,11 +182,11 @@ func installSubmoduleViaGit(root, tag string) error {
 	// inside the submodule. The gitlink the parent records is whatever
 	// HEAD points at after the checkout, which is exactly the tag's
 	// commit SHA.
-	if err := runGit(root, "submodule", "add", FrameworkRepoURL, ".ai"); err != nil {
+	if err := runGit(root, "submodule", "add", FrameworkRepoURL, ".agents"); err != nil {
 		return fmt.Errorf("git submodule add: %w", err)
 	}
 
-	aiPath := filepath.Join(root, ".ai")
+	aiPath := filepath.Join(root, ".agents")
 	if err := runGit(aiPath, "fetch", "--tags", "--quiet"); err != nil {
 		return fmt.Errorf("fetching tags inside .ai: %w", err)
 	}
@@ -197,7 +196,7 @@ func installSubmoduleViaGit(root, tag string) error {
 
 	// Stage the submodule pointer change so the gitlink update is part
 	// of the human's next commit.
-	if err := runGit(root, "add", ".ai"); err != nil {
+	if err := runGit(root, "add", ".agents"); err != nil {
 		return fmt.Errorf("staging .ai gitlink: %w", err)
 	}
 
@@ -209,13 +208,13 @@ func installSubmoduleViaGit(root, tag string) error {
 // rebind it to a stub.
 var SwapSubmodule = swapSubmoduleViaGit
 
-// swapSubmoduleViaGit transitions `.ai/` from a submodule pinned at the
+// swapSubmoduleViaGit transitions `.agents/` from a submodule pinned at the
 // current version to a submodule pinned at `tag`. The dance is
 // deinit → rm → remove `.git/modules/.ai` → add at new tag → pin to
 // the tag's resolved commit SHA. The resulting `.gitmodules` and
 // gitlink change are staged for commit.
 //
-// Pre-conditions: `.gitmodules` has a `.ai` entry pointing at the
+// Pre-conditions: `.gitmodules` has a `.agents` entry pointing at the
 // framework. Caller is responsible (DetectMountState returned
 // MountStateSubmodule).
 func swapSubmoduleViaGit(root, tag string) error {
@@ -224,11 +223,11 @@ func swapSubmoduleViaGit(root, tag string) error {
 	}
 
 	// `submodule deinit -f` is idempotent; tolerate "already deinited".
-	_ = runGit(root, "submodule", "deinit", "-f", ".ai")
+	_ = runGit(root, "submodule", "deinit", "-f", ".agents")
 
 	// `git rm` removes the gitlink and clears the submodule's
 	// `.gitmodules` entry. The directory itself is also removed.
-	if err := runGit(root, "rm", "-f", ".ai"); err != nil {
+	if err := runGit(root, "rm", "-f", ".agents"); err != nil {
 		return fmt.Errorf("git rm .ai: %w", err)
 	}
 
@@ -238,7 +237,7 @@ func swapSubmoduleViaGit(root, tag string) error {
 	if err != nil {
 		return fmt.Errorf("resolving .git dir: %w", err)
 	}
-	moduleDir := filepath.Join(gitDir, "modules", ".ai")
+	moduleDir := filepath.Join(gitDir, "modules", ".agents")
 	if err := os.RemoveAll(moduleDir); err != nil {
 		return fmt.Errorf("removing %s: %w", moduleDir, err)
 	}
@@ -252,23 +251,23 @@ func swapSubmoduleViaGit(root, tag string) error {
 // migrateGitignoredMountViaGit; tests may rebind it to a stub.
 var MigrateGitignoredMount = migrateGitignoredMountViaGit
 
-// migrateGitignoredMountViaGit converts a legacy shallow-clone `.ai/`
+// migrateGitignoredMountViaGit converts a legacy shallow-clone `.agents/`
 // (a directory listed in `.gitignore`) into a tracked submodule at the
-// given tag. It removes the gitignored directory, removes the `.ai/`
+// given tag. It removes the gitignored directory, removes the `.agents/`
 // line from `.gitignore`, then installs the submodule. The resulting
-// changes (`.gitignore`, `.gitmodules`, `.ai` gitlink) are staged for
+// changes (`.gitignore`, `.gitmodules`, `.agents` gitlink) are staged for
 // commit.
 //
-// Pre-conditions: `.ai/` exists as a directory; `.gitignore` lists
-// `.ai/`; `.gitmodules` does not have a `.ai` entry. Caller is
+// Pre-conditions: `.agents/` exists as a directory; `.gitignore` lists
+// `.agents/`; `.gitmodules` does not have a `.agents` entry. Caller is
 // responsible (DetectMountState returned MountStateGitignoredMount).
 func migrateGitignoredMountViaGit(root, tag string) error {
-	aiPath := filepath.Join(root, ".ai")
+	aiPath := filepath.Join(root, ".agents")
 	if err := os.RemoveAll(aiPath); err != nil {
 		return fmt.Errorf("removing legacy %s: %w", aiPath, err)
 	}
 
-	if err := removeFromGitignore(root, ".ai/"); err != nil {
+	if err := removeFromGitignore(root, ".agents/"); err != nil {
 		return fmt.Errorf("updating .gitignore: %w", err)
 	}
 
@@ -326,4 +325,3 @@ func resolveGitDir(root string) (string, error) {
 	}
 	return gitDir, nil
 }
-

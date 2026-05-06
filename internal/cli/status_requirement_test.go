@@ -169,9 +169,9 @@ func TestRunStatusRequirement_UnblockedOmitsLine(t *testing.T) {
 // plain `N` equally, and rejects non-numeric input.
 func TestParseIssueNumberArg_TolerantOfHash(t *testing.T) {
 	cases := []struct {
-		in   string
-		out  int
-		ok   bool
+		in  string
+		out int
+		ok  bool
 	}{
 		{in: "42", out: 42, ok: true},
 		{in: "#42", out: 42, ok: true},

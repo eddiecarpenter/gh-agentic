@@ -13,7 +13,7 @@ func TestRunSwitch_ConfirmAndUpdate(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Set up existing state. The flat .ai-version file was removed in
-	// #585 — the switch flow tracks version via .ai/.git metadata, so
+	// #585 — the switch flow tracks version via .agents/.git metadata, so
 	// the test only needs the workflow files to verify the rewrite.
 	_ = os.MkdirAll(filepath.Join(root, ".github", "workflows"), 0o755)
 	_ = os.WriteFile(filepath.Join(root, ".github", "workflows", "agentic-pipeline.yml"),
@@ -24,7 +24,7 @@ func TestRunSwitch_ConfirmAndUpdate(t *testing.T) {
 	// Pre-existing submodule state — the switch path must hit
 	// SwapSubmodule, not Install.
 	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
-		[]byte(`[submodule ".ai"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
+		[]byte(`[submodule ".agents"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
 
 	withStubSwap(t, map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
@@ -40,7 +40,7 @@ func TestRunSwitch_ConfirmAndUpdate(t *testing.T) {
 	}
 
 	// Verify framework updated.
-	data, _ := os.ReadFile(filepath.Join(root, ".ai", "RULEBOOK.md"))
+	data, _ := os.ReadFile(filepath.Join(root, ".agents", "RULEBOOK.md"))
 	if !strings.Contains(string(data), "v2.0.0") {
 		t.Errorf("RULEBOOK.md should contain v2.0.0 content, got: %s", data)
 	}
@@ -86,10 +86,10 @@ func TestRunSwitch_Declined(t *testing.T) {
 		t.Fatalf("expected nil error when declined, got: %v", err)
 	}
 
-	// Nothing should have been downloaded. Absence of .ai/ proves the
+	// Nothing should have been downloaded. Absence of .agents/ proves the
 	// switch path did not run after decline.
-	if _, err := os.Stat(filepath.Join(root, ".ai")); err == nil {
-		t.Error(".ai/ should not be created when the switch is declined")
+	if _, err := os.Stat(filepath.Join(root, ".agents")); err == nil {
+		t.Error(".agents/ should not be created when the switch is declined")
 	}
 }
 
@@ -103,7 +103,7 @@ func TestRunSwitch_NilConfirm(t *testing.T) {
 
 	// Pre-existing submodule state for the swap dispatch.
 	_ = os.WriteFile(filepath.Join(root, ".gitmodules"),
-		[]byte(`[submodule ".ai"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
+		[]byte(`[submodule ".agents"]`+"\n\turl = "+FrameworkRepoURL+"\n"), 0o644)
 	withStubSwap(t, map[string]string{
 		"RULEBOOK.md": "# Rules v2.0.0",
 	})
@@ -115,7 +115,7 @@ func TestRunSwitch_NilConfirm(t *testing.T) {
 	}
 
 	// Verify the framework was remounted by checking the RULEBOOK content.
-	data, _ := os.ReadFile(filepath.Join(root, ".ai", "RULEBOOK.md"))
+	data, _ := os.ReadFile(filepath.Join(root, ".agents", "RULEBOOK.md"))
 	if !strings.Contains(string(data), "v2.0.0") {
 		t.Errorf("expected v2.0.0 in RULEBOOK, got: %s", data)
 	}

@@ -38,24 +38,24 @@ func DefaultClone(repoURL, tag, destDir string) error {
 }
 
 // ReadAIVersionFromGit reads the mounted framework version from the .git
-// metadata inside .ai/. This is the authoritative source of truth — it reflects
+// metadata inside .agents/. This is the authoritative source of truth — it reflects
 // exactly what was cloned, not what .ai-version says.
 func ReadAIVersionFromGit(root string) (string, error) {
-	aiDir := filepath.Join(root, ".ai")
+	aiDir := filepath.Join(root, ".agents")
 	cmd := exec.Command("git", "-C", aiDir, "describe", "--tags", "--exact-match")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("reading version from .ai/.git: %w", err)
+		return "", fmt.Errorf("reading version from .agents/.git: %w", err)
 	}
 	v := strings.TrimSpace(string(out))
 	if v == "" {
-		return "", fmt.Errorf(".ai/.git has no version tag")
+		return "", fmt.Errorf(".agents/.git has no version tag")
 	}
 	return v, nil
 }
 
 // DownloadFramework installs or updates the framework mount at
-// destRoot/.ai/ as a tracked git submodule pointing at the framework
+// destRoot/.agents/ as a tracked git submodule pointing at the framework
 // repo at the given version tag. The dispatch is idempotent over five
 // working-tree states (see DetectMountState):
 //
@@ -83,7 +83,7 @@ func DownloadFramework(destRoot, version string, _ CloneFunc) error {
 
 	switch state {
 	case MountStateSymlink:
-		return fmt.Errorf(".ai is a symlink (this is gh-agentic itself); refusing to overwrite the framework source")
+		return fmt.Errorf(".agents is a symlink (this is gh-agentic itself); refusing to overwrite the framework source")
 	case MountStateNone:
 		return InstallSubmodule(destRoot, version)
 	case MountStateSubmodule:
@@ -91,26 +91,26 @@ func DownloadFramework(destRoot, version string, _ CloneFunc) error {
 	case MountStateGitignoredMount:
 		return MigrateGitignoredMount(destRoot, version)
 	case MountStateInconsistent:
-		return fmt.Errorf(".ai/ exists but is neither a symlink, a tracked submodule, nor a gitignored legacy mount — working tree is inconsistent. Resolve manually before running upgrade")
+		return fmt.Errorf(".agents/ exists but is neither a symlink, a tracked submodule, nor a gitignored legacy mount — working tree is inconsistent. Resolve manually before running upgrade")
 	default:
 		return fmt.Errorf("unknown mount state: %d", state)
 	}
 }
 
 // EnsureGitignore is retained for control-plane / control-plane-mirror
-// callers that still need to add a path to .gitignore. The .ai/ mount
+// callers that still need to add a path to .gitignore. The .agents/ mount
 // no longer uses it — submodules are tracked, not gitignored.
 func EnsureGitignore(root string) error {
-	return ensureGitignoreEntry(root, ".ai/")
+	return ensureGitignoreEntry(root, ".agents/")
 }
 
-// RemoveAIFromGitignore strips a `.ai/` line from the parent repo's
+// RemoveAIFromGitignore strips a `.agents/` line from the parent repo's
 // .gitignore, if present. The doctor repair calls this to clean up the
 // legacy shallow-clone state during migration to the submodule mount.
 // Other lines in .gitignore are preserved verbatim. Idempotent: a
-// missing `.gitignore` or a missing `.ai/` line is a no-op.
+// missing `.gitignore` or a missing `.agents/` line is a no-op.
 func RemoveAIFromGitignore(root string) error {
-	return removeFromGitignore(root, ".ai/")
+	return removeFromGitignore(root, ".agents/")
 }
 
 // ensureGitignoreEntry appends entry to .gitignore if it is not already

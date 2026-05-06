@@ -30,7 +30,7 @@ type CheckDeps struct {
 	FetchProjectTitle project.FetchProjectTitleFunc
 	// FrameworkSource signals that this repo IS the gh-agentic framework
 	// source itself (detected by .ai being a symlink). When true, content-
-	// layer checks that inspect a mounted .ai/ tree are replaced with a
+	// layer checks that inspect a mounted .agents/ tree are replaced with a
 	// synthetic "skipped — framework source" group so the report is
 	// honest about what was and was not examined, and configuration-layer
 	// checks (variables, secrets, workflows, project reachability) run as
@@ -47,7 +47,7 @@ type checkGroupStep struct {
 // checksForTopologyWithLabels returns the ordered list of labelled check steps.
 func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 	// On the gh-agentic framework source itself, mount-layer checks do
-	// not apply (.ai is a symlink → ., not a tarball clone). Replace
+	// not apply (.agents is a symlink → ., not a tarball clone). Replace
 	// them with a synthetic "skipped" group and preserve everything
 	// else. See feature #619 §E.
 	if deps.FrameworkSource {
@@ -164,7 +164,7 @@ func checkRepository(deps CheckDeps) Group {
 // the consumer-repo flow and the user can see exactly what was not
 // inspected and why.
 func checkFrameworkSourceSkipped(deps CheckDeps) Group {
-	reason := "framework source (.ai is a symlink) — content-layer checks do not apply"
+	reason := "framework source (.agents is a symlink) — content-layer checks do not apply"
 	return Group{
 		Name: "Framework source",
 		Results: []CheckResult{
@@ -179,8 +179,8 @@ func checkFrameworkSourceSkipped(deps CheckDeps) Group {
 func checkFramework(deps CheckDeps) Group {
 	g := Group{Name: "Framework"}
 
-	// .ai/ mounted.
-	aiDir := filepath.Join(deps.Root, ".ai")
+	// .agents/ mounted.
+	aiDir := filepath.Join(deps.Root, ".agents")
 	if dirExists(aiDir) && fileExists(filepath.Join(aiDir, "RULEBOOK.md")) {
 		v, err := mount.ReadAIVersionFromGit(deps.Root)
 		version := "unknown"
@@ -188,19 +188,19 @@ func checkFramework(deps CheckDeps) Group {
 			version = v
 		}
 		g.Results = append(g.Results, CheckResult{
-			Name: "ai-mounted", Status: Pass, Message: fmt.Sprintf(".ai/ mounted (%s)", mount.TrimVPrefix(version)),
+			Name: "ai-mounted", Status: Pass, Message: fmt.Sprintf(".agents/ mounted (%s)", mount.TrimVPrefix(version)),
 		})
 	} else {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-mounted", Status: Fail,
-			Message:     ".ai/ not mounted",
+			Message:     ".agents/ not mounted",
 			Remediation: "Run 'gh agentic upgrade <version>'",
 		})
 	}
 
 	// Framework version readable from the submodule's git metadata.
 	// Symlink-mode (gh-agentic itself) and submodule-mode both produce
-	// a real git repo at .ai/, so this single check covers both.
+	// a real git repo at .agents/, so this single check covers both.
 	v, err := mount.ReadAIVersionFromGit(deps.Root)
 	if err == nil {
 		g.Results = append(g.Results, CheckResult{
@@ -209,30 +209,30 @@ func checkFramework(deps CheckDeps) Group {
 	} else {
 		g.Results = append(g.Results, CheckResult{
 			Name: "ai-version", Status: Fail,
-			Message:     ".ai/ git metadata missing — framework not installed or submodule uninitialised",
-			Remediation: "Run 'gh agentic upgrade <version>' or 'git submodule update --init .ai'",
+			Message:     ".agents/ git metadata missing — framework not installed or submodule uninitialised",
+			Remediation: "Run 'gh agentic upgrade <version>' or 'git submodule update --init .agents'",
 		})
 	}
 
-	// .ai/ should NOT be in .gitignore — the framework is now a tracked
-	// submodule. A `.ai/` line in .gitignore is a legacy shallow-clone
+	// .agents/ should NOT be in .gitignore — the framework is now a tracked
+	// submodule. A `.agents/` line in .gitignore is a legacy shallow-clone
 	// remnant; the doctor's repair pass will strip it.
 	if gitignoreContainsAI(deps.Root) {
 		g.Results = append(g.Results, CheckResult{
 			Name: "gitignore", Status: Fail,
-			Message:     ".ai/ listed in .gitignore — legacy shallow-clone state",
-			Remediation: "Remove the '.ai/' line from .gitignore (the doctor repair does this automatically)",
+			Message:     ".agents/ listed in .gitignore — legacy shallow-clone state",
+			Remediation: "Remove the '.agents/' line from .gitignore (the doctor repair does this automatically)",
 		})
 	} else {
 		g.Results = append(g.Results, CheckResult{
-			Name: "gitignore", Status: Pass, Message: ".ai/ not in .gitignore",
+			Name: "gitignore", Status: Pass, Message: ".agents/ not in .gitignore",
 		})
 	}
 
 	// Check key framework directories.
 	for _, dir := range []string{"skills", "standards"} {
 		path := filepath.Join(aiDir, dir)
-		name := ".ai/" + dir + "/"
+		name := ".agents/" + dir + "/"
 		if dirExists(path) {
 			g.Results = append(g.Results, CheckResult{
 				Name: name, Status: Pass, Message: name + " complete",
@@ -485,9 +485,9 @@ func checkTopologyStopgap(deps CheckDeps) CheckResult {
 	}
 	if inferred != "" && val == inferred {
 		return CheckResult{
-			Name:    "AGENTIC_TOPOLOGY",
-			Status:  Warning,
-			Message: "AGENTIC_TOPOLOGY=" + val + " is redundant — the resolver infers the same value; safe to delete",
+			Name:        "AGENTIC_TOPOLOGY",
+			Status:      Warning,
+			Message:     "AGENTIC_TOPOLOGY=" + val + " is redundant — the resolver infers the same value; safe to delete",
 			Remediation: "gh variable delete AGENTIC_TOPOLOGY --repo " + deps.RepoFullName,
 		}
 	}
@@ -885,14 +885,14 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// gitignoreContainsAI checks if .gitignore contains a .ai/ entry.
+// gitignoreContainsAI checks if .gitignore contains a .agents/ entry.
 func gitignoreContainsAI(root string) bool {
 	data, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if err != nil {
 		return false
 	}
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == ".ai/" {
+		if strings.TrimSpace(line) == ".agents/" {
 			return true
 		}
 	}

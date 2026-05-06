@@ -197,7 +197,7 @@ Opt-out is recorded the same way: `Reuse: opt-out — <reason>`.
 The framework files in this directory (RULEBOOK.md, `skills/`, `standards/`, `concepts/`,
 `recipes/`) are managed exclusively by the `eddiecarpenter/gh-agentic` repo.
 
-In domain repos, this framework is mounted as `.ai/` via `gh agentic mount <version>`.
+In domain repos, this framework is mounted as `.agents/` via `gh agentic mount <version>`.
 **Never modify any framework file directly in a domain repo** — they are read-only.
 The mount is gitignored and will be overwritten on the next `gh agentic mount`.
 
@@ -230,13 +230,13 @@ Always ask a human before:
 | Path | Editable | Purpose |
 |---|---|---|
 | `recipes/*.yaml` | ❌ Never (managed by framework — must be thin shells) | Goose recipes — Goose-specific config plus a one-line pointer at the corresponding `skills/<name>/SKILL.md`. Recipes MUST NOT contain numbered steps, inline gh / git commands, decision logic, or any other playbook content; that all belongs in the SKILL.md. Use `/recipe-creation` to author or update recipes — it enforces this. |
-| `skills/<name>/SKILL.md` (inside `.ai/`) | ❌ Never | Framework playbooks — read-only in domain repos |
+| `skills/<name>/SKILL.md` (inside `.agents/`) | ❌ Never | Framework playbooks — read-only in domain repos |
 | `skills/<name>/SKILL.md` (at repo root) | ✅ Yes (local, project-specific) | Local playbooks — override framework skills of the same name |
 
-**Framework skills** (`skills/` inside the mounted `.ai/`) are managed by `gh-agentic`.
+**Framework skills** (`skills/` inside the mounted `.agents/`) are managed by `gh-agentic`.
 Never modify them in a domain repo — they will be overwritten on the next mount update.
 
-**Local skills** (`skills/` at the domain repo root, outside `.ai/`) are project-specific
+**Local skills** (`skills/` at the domain repo root, outside `.agents/`) are project-specific
 playbooks that can be freely created and edited. A local skill with the same `name` field
 as a framework skill takes precedence.
 

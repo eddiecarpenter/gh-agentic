@@ -306,4 +306,3 @@ func TestWaitEnterFromReader_ConsumesLine(t *testing.T) {
 		t.Fatalf("nil reader must be tolerated, got %v", err)
 	}
 }
-
