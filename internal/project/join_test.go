@@ -149,7 +149,7 @@ func TestJoin_Blocked(t *testing.T) {
 func TestJoin_FrameworkAlreadyMounted(t *testing.T) {
 	tmp := t.TempDir()
 	// Create .agents/ to simulate already mounted.
-	aiDir := tmp + "/.ai"
+	aiDir := tmp + "/.agents"
 	if err := os.MkdirAll(aiDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
