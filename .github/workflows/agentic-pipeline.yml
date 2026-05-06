@@ -706,7 +706,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH=$(git branch --show-current)
-          if [[ "${BRANCH}" == fix/issue-* ]]; then
+          if [[ "${BRANCH}" == issue/* ]]; then
             git push origin ${BRANCH}
           else
             echo "No fix branch — question answered or issue skipped"
@@ -715,10 +715,13 @@ jobs:
       - name: Open PR
         if: success()
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Must use PROJECT_PAT (not github.token) so the pull_request event
+          # fires and triggers pr-review-session; github.token events cannot
+          # trigger other workflow runs (GitHub platform restriction).
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
         run: |
           BRANCH=$(git branch --show-current)
-          if [[ "${BRANCH}" == fix/issue-* ]]; then
+          if [[ "${BRANCH}" == issue/* ]]; then
             ISSUE_TITLE=$(gh issue view ${{ github.event.issue.number }} \
               --repo ${{ github.repository }} --json title --jq '.title')
             BODY=$(printf "Fixes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${{ github.event.issue.number }}")
