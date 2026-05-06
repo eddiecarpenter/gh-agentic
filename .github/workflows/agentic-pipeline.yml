@@ -229,12 +229,14 @@ jobs:
           echo "✓ Pushed ${BRANCH} to origin."
 
       # The recipe attempts the in-design → in-development swap itself, but
-      # the agent's token can be denied that transition. Retry with the
-      # workflow's token — idempotent.
+      # the agent's token can be denied that transition. Retry here —
+      # idempotent. Must use PROJECT_PAT (not github.token) so the label
+      # event triggers the dev-session workflow; github.token events cannot
+      # trigger other workflow runs (GitHub platform restriction).
       - name: Swap in-design → in-development
         if: success() && steps.push.outputs.name != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           LABELS=$(gh issue view "${ISSUE}" --json labels --jq '[.labels[].name] | join(",")')
@@ -468,13 +470,14 @@ jobs:
             --base main \
             --head ${BRANCH}
 
-      # Label transition uses github.token (must succeed —
-      # downstream workflows trigger on the in-review label).
+      # Must use PROJECT_PAT (not github.token) so the label event triggers
+      # the pr-review-session workflow; github.token events cannot trigger
+      # other workflow runs (GitHub platform restriction).
       - name: Apply in-review label
         id: relabel
         if: success()
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
         run: |
           COMMITS=$(git rev-list --count origin/main..HEAD)
           if [ "${COMMITS}" -eq 0 ]; then
@@ -753,10 +756,12 @@ jobs:
 
       # Label transition + issue close use github.token. Must succeed —
       # downstream auto-close-parent and branch-delete steps depend on it.
+      # Uses PROJECT_PAT (not github.token) — github.token events cannot
+      # trigger other workflow runs (GitHub platform restriction).
       - name: Apply done label and close feature issue
         id: doneclose
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
