@@ -13,7 +13,7 @@ import (
 // source (mount, upgrade, init, project *) invoke this at the start of
 // their RunE and propagate the error to halt before any side effect.
 //
-// Detection is a single lstat of .ai — cheap. See
+// Detection is a single lstat of .agents — cheap. See
 // internal/project/source.go for the signal.
 //
 // The error message is the canonical refusal shape shared by every
