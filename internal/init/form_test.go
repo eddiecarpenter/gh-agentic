@@ -26,6 +26,15 @@ func fakeFormRun(callCount *int, setValues func(callIndex int)) FormRunFunc {
 	}
 }
 
+// fakeReadFile returns a ReadFileFunc that serves a canned PEM regardless of
+// path. Tests use this to avoid real filesystem access in the App credentials
+// phase.
+func fakeReadFile() ReadFileFunc {
+	return func(_ string) ([]byte, error) {
+		return []byte("-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n"), nil
+	}
+}
+
 func TestCollectConfigInteractive_Success(t *testing.T) {
 	var buf bytes.Buffer
 	callCount := 0
@@ -50,6 +59,8 @@ func TestCollectConfigInteractive_Success(t *testing.T) {
 				cfg.AgentModel = "default"
 			case 3: // Phase 4: credentials (PAT only — Claude creds are auto-read from local machine)
 				cfg.GooseAgentPAT = "ghp_test123"
+			case 4: // Phase 5: GitHub App credentials
+				cfg.AppClientID = "Iv1.test123"
 			}
 			return nil
 		},
@@ -62,6 +73,7 @@ func TestCollectConfigInteractive_Success(t *testing.T) {
 		DetectOwnerType: func(owner string) (string, error) {
 			return auth.OwnerTypeUser, nil
 		},
+		ReadFile: fakeReadFile(),
 	}
 
 	result, err := CollectConfigInteractive(&buf, "", deps)
@@ -83,6 +95,10 @@ func TestCollectConfigInteractive_Success(t *testing.T) {
 	}
 	if result.OwnerType != auth.OwnerTypeUser {
 		t.Errorf("expected OwnerType %q, got %q", auth.OwnerTypeUser, result.OwnerType)
+	}
+	// AppPrivateKey is set by readFile (code path, not form binding) — verify it.
+	if !strings.Contains(result.AppPrivateKey, "BEGIN RSA PRIVATE KEY") {
+		t.Errorf("expected AppPrivateKey to contain PEM content, got %q", result.AppPrivateKey)
 	}
 
 	output := buf.String()
@@ -112,12 +128,15 @@ func TestCollectConfigInteractive_WithExplicitRepo(t *testing.T) {
 				// defaults
 			case 3:
 				// empty creds
+			case 4:
+				cfg.AppClientID = "Iv1.test"
 			}
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
 			return auth.OwnerTypeOrg, nil
 		},
+		ReadFile: fakeReadFile(),
 	}
 
 	result, err := CollectConfigInteractive(&buf, "acme/my-repo", deps)
@@ -158,12 +177,15 @@ func TestCollectConfigInteractive_OrgSetsAgentUserScope(t *testing.T) {
 				// pipeline defaults
 			case 3:
 				// empty creds
+			case 4:
+				cfg.AppClientID = "Iv1.test"
 			}
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
 			return auth.OwnerTypeOrg, nil
 		},
+		ReadFile: fakeReadFile(),
 	}
 
 	result, err := CollectConfigInteractive(&buf, "acme/repo", deps)
@@ -195,12 +217,15 @@ func TestCollectConfigInteractive_SetsAppBotAsAgentUser(t *testing.T) {
 				// pipeline defaults
 			case 4:
 				// creds
+			case 5:
+				cfg.AppClientID = "Iv1.test"
 			}
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
 			return auth.OwnerTypeUser, nil
 		},
+		ReadFile: fakeReadFile(),
 	}
 
 	result, err := CollectConfigInteractive(&buf, "alice/repo", deps)
@@ -237,12 +262,15 @@ func TestCollectConfigInteractive_NoRepoContext(t *testing.T) {
 				// pipeline defaults
 			case 4:
 				// creds
+			case 5:
+				cfg.AppClientID = "Iv1.test"
 			}
 			return nil
 		},
 		RunCommand: func(name string, args ...string) (string, error) {
 			return "", fmt.Errorf("no remote")
 		},
+		ReadFile: fakeReadFile(),
 	}
 
 	result, err := CollectConfigInteractive(&buf, "", deps)
@@ -296,12 +324,15 @@ func TestCollectConfigInteractive_PipelineDefaults(t *testing.T) {
 				// Don't set — verify defaults are pre-filled
 			case 4:
 				// creds
+			case 5:
+				cfg.AppClientID = "Iv1.test"
 			}
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
 			return auth.OwnerTypeUser, nil
 		},
+		ReadFile: fakeReadFile(),
 	}
 
 	result, err := CollectConfigInteractive(&buf, "owner/repo", deps)
@@ -317,6 +348,118 @@ func TestCollectConfigInteractive_PipelineDefaults(t *testing.T) {
 	}
 	if result.AgentModel != DefaultAgentModel {
 		t.Errorf("expected default model %q, got %q", DefaultAgentModel, result.AgentModel)
+	}
+}
+
+func TestCollectConfigInteractive_AppCredentials(t *testing.T) {
+	// Verifies that Phase 5 populates AppPrivateKey via the ReadFile code
+	// path. AppClientID is form-bound (set by huh at runtime) so it stays
+	// empty under the fake RunForm — that binding is not re-tested here.
+	var buf bytes.Buffer
+	callCount := 0
+	cfg := &InitConfig{}
+
+	fakePEM := "-----BEGIN RSA PRIVATE KEY-----\nMIItest\n-----END RSA PRIVATE KEY-----\n"
+
+	deps := FormDeps{
+		RunForm: func(f *huh.Form) error {
+			callCount++
+			switch callCount {
+			case 1:
+				cfg.Version = "v2.0.0"
+				cfg.Topology = "Single"
+			case 2:
+				cfg.Stacks = []string{"Go"}
+			case 3:
+				// pipeline defaults
+			case 4:
+				// creds
+			case 5:
+				// App credentials — form binding not triggered by fake RunForm
+			}
+			return nil
+		},
+		DetectOwnerType: func(owner string) (string, error) { return auth.OwnerTypeUser, nil },
+		ReadFile: func(_ string) ([]byte, error) {
+			return []byte(fakePEM), nil
+		},
+	}
+
+	result, err := CollectConfigInteractive(&buf, "owner/repo", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// AppPrivateKey is populated by the readFile code path — verifiable.
+	if result.AppPrivateKey != fakePEM {
+		t.Errorf("AppPrivateKey = %q, want fake PEM", result.AppPrivateKey)
+	}
+}
+
+func TestCollectAppCredentials_Direct(t *testing.T) {
+	// Unit test for collectAppCredentials: verifies AppClientID is captured
+	// from form binding and AppPrivateKey is read from the injected ReadFile.
+	// We simulate huh form binding by directly setting cfg.AppClientID in
+	// the RunForm callback (mimicking what huh would do when Value() binding
+	// fires on f.Run()).
+	var buf bytes.Buffer
+	fakePEM := "-----BEGIN RSA PRIVATE KEY-----\nMIItest\n-----END RSA PRIVATE KEY-----\n"
+
+	cfg := &InitConfig{}
+	runForm := func(f *huh.Form) error {
+		// Simulate huh binding the form-bound AppClientID field.
+		cfg.AppClientID = "Iv23liABCDEF"
+		return nil
+	}
+	readFile := func(_ string) ([]byte, error) { return []byte(fakePEM), nil }
+
+	if err := collectAppCredentials(cfg, &buf, runForm, readFile); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AppClientID != "Iv23liABCDEF" {
+		t.Errorf("AppClientID = %q, want 'Iv23liABCDEF'", cfg.AppClientID)
+	}
+	if cfg.AppPrivateKey != fakePEM {
+		t.Errorf("AppPrivateKey = %q, want fake PEM", cfg.AppPrivateKey)
+	}
+}
+
+func TestCollectConfigInteractive_AppCredentials_ReadFileError(t *testing.T) {
+	// When ReadFile fails (e.g. bad path), CollectConfigInteractive must
+	// return an error.
+	var buf bytes.Buffer
+	callCount := 0
+	cfg := &InitConfig{}
+
+	deps := FormDeps{
+		RunForm: func(f *huh.Form) error {
+			callCount++
+			switch callCount {
+			case 1:
+				cfg.Version = "v2.0.0"
+				cfg.Topology = "Single"
+			case 2:
+				cfg.Stacks = []string{"Go"}
+			case 3:
+				// pipeline defaults
+			case 4:
+				// creds
+			case 5:
+				cfg.AppClientID = "Iv1.test"
+			}
+			return nil
+		},
+		DetectOwnerType: func(owner string) (string, error) { return auth.OwnerTypeUser, nil },
+		ReadFile: func(path string) ([]byte, error) {
+			return nil, fmt.Errorf("no such file: %s", path)
+		},
+	}
+
+	_, err := CollectConfigInteractive(&buf, "owner/repo", deps)
+	if err == nil {
+		t.Fatal("expected error when ReadFile fails")
+	}
+	if !strings.Contains(err.Error(), "reading private key") {
+		t.Errorf("expected 'reading private key' in error, got: %v", err)
 	}
 }
 
@@ -463,12 +606,15 @@ func TestCollectConfigInteractive_OwnerTypeDetectionFailure(t *testing.T) {
 				// defaults
 			case 4:
 				// creds
+			case 5:
+				cfg.AppClientID = "Iv1.test"
 			}
 			return nil
 		},
 		DetectOwnerType: func(owner string) (string, error) {
 			return "", fmt.Errorf("API error")
 		},
+		ReadFile: fakeReadFile(),
 	}
 
 	result, err := CollectConfigInteractive(&buf, "owner/repo", deps)

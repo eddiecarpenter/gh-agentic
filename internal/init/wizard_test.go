@@ -60,6 +60,8 @@ func TestRun_Success(t *testing.T) {
 		RepoFullName:  "owner/repo",
 		Owner:         "owner",
 		RepoName:      "repo",
+		AppClientID:   "Iv1.testclientid",
+		AppPrivateKey: "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n",
 	}
 
 	deps := Deps{
@@ -205,6 +207,8 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 		GooseAgentPAT: "ghp_test",
 		ClaudeCreds:   "creds",
 		ProjectID:     "PVT_123",
+		AppClientID:   "Iv1.testclientid",
+		AppPrivateKey: "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n",
 	}
 
 	run := func(name string, args ...string) (string, error) {
@@ -234,7 +238,19 @@ func TestConfigureRepo_SetsVariables(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"AGENT_USER", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON", "AGENTIC_PROJECT_ID"} {
+	for _, cmd := range commands {
+		if strings.Contains(cmd, "AGENTIC_APP_CLIENT_ID") {
+			found["AGENTIC_APP_CLIENT_ID"] = true
+		}
+		if strings.Contains(cmd, "AGENTIC_APP_PRIVATE_KEY") {
+			found["AGENTIC_APP_PRIVATE_KEY"] = true
+		}
+	}
+
+	for _, expected := range []string{
+		"AGENT_USER", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON", "AGENTIC_PROJECT_ID",
+		"AGENTIC_APP_CLIENT_ID", "AGENTIC_APP_PRIVATE_KEY",
+	} {
 		if !found[expected] {
 			t.Errorf("expected %s to be configured", expected)
 		}

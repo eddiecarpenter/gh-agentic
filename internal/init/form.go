@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -24,12 +25,19 @@ var DefaultFormRun FormRunFunc = func(f *huh.Form) error { return f.Run() }
 // DetectOwnerTypeFunc detects whether a GitHub owner is a personal account or an organisation.
 type DetectOwnerTypeFunc func(owner string) (string, error)
 
+// ReadFileFunc reads the contents of a file at the given path. Injected via
+// FormDeps so tests can supply a fake without touching the filesystem.
+type ReadFileFunc func(path string) ([]byte, error)
+
 // FormDeps holds injectable dependencies for the interactive form.
 type FormDeps struct {
 	RunForm         FormRunFunc
 	RunCommand      RunCommandFunc
 	DetectOwnerType DetectOwnerTypeFunc
 	FetchReleases   mount.FetchReleasesFunc
+	// ReadFile reads a file from disk. Defaults to os.ReadFile when nil.
+	// Injected by tests to avoid real filesystem access.
+	ReadFile ReadFileFunc
 	// Topology, when non-empty, pre-seeds cfg.Topology and suppresses the
 	// topology select in collectVersionTopology. The CLI captures topology
 	// first (single vs. federated routing decision) and passes it here so
@@ -123,6 +131,15 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 
 	// --- Phase 4: Credentials and Project ---
 	if err := collectCredentialsAndProject(cfg, deps.RunForm); err != nil {
+		return nil, err
+	}
+
+	// --- Phase 5: GitHub App credentials ---
+	readFile := deps.ReadFile
+	if readFile == nil {
+		readFile = func(path string) ([]byte, error) { return os.ReadFile(path) }
+	}
+	if err := collectAppCredentials(cfg, w, deps.RunForm, readFile); err != nil {
 		return nil, err
 	}
 
@@ -284,6 +301,43 @@ func collectCredentialsAndProject(cfg *InitConfig, runForm FormRunFunc) error {
 	if err := runForm(form); err != nil {
 		return fmt.Errorf("credentials form: %w", err)
 	}
+	return nil
+}
+
+// collectAppCredentials collects the GitHub App Client ID and the path to the
+// App's private key PEM file. The Client ID is stored as AGENTIC_APP_CLIENT_ID
+// (a non-sensitive variable); the PEM content is stored as AGENTIC_APP_PRIVATE_KEY
+// (a secret). Both are required by the agentic pipeline workflows to mint
+// short-lived installation tokens via actions/create-github-app-token.
+//
+// The Client ID (e.g. "Iv23li8K3O...") is found on the App settings page at
+// github.com/settings/apps/gh-agentic → "About → Client ID". The private key
+// PEM is downloaded from the same page → "Private keys → Generate a private key".
+func collectAppCredentials(cfg *InitConfig, w io.Writer, runForm FormRunFunc, readFile ReadFileFunc) error {
+	var pemPath string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("GitHub App Client ID").
+				Description("Found at github.com/settings/apps/gh-agentic — 'About → Client ID' (e.g. Iv23li8K3O...)").
+				Value(&cfg.AppClientID).
+				Validate(validateRequired("App Client ID")),
+			huh.NewInput().
+				Title("Private key PEM file path").
+				Description("Path to the .pem file downloaded from the App settings page → 'Private keys'").
+				Value(&pemPath).
+				Validate(validateRequired("private key path")),
+		),
+	)
+	if err := runForm(form); err != nil {
+		return fmt.Errorf("App credentials form: %w", err)
+	}
+	data, err := readFile(pemPath)
+	if err != nil {
+		return fmt.Errorf("reading private key from %q: %w", pemPath, err)
+	}
+	cfg.AppPrivateKey = string(data)
+	fmt.Fprintf(w, "  %s Private key loaded from %s\n", ui.SymbolInfo, pemPath)
 	return nil
 }
 

@@ -39,6 +39,14 @@ type InitConfig struct {
 	Owner          string
 	RepoName       string
 	OwnerType      string
+	// AppClientID is the GitHub App client ID, set as AGENTIC_APP_CLIENT_ID.
+	// Collected during init and required by the pipeline to authenticate as
+	// the GitHub App.
+	AppClientID string
+	// AppPrivateKey is the PEM content of the GitHub App's private key, set
+	// as the AGENTIC_APP_PRIVATE_KEY secret. The wizard reads this from the
+	// .pem file path the user supplies.
+	AppPrivateKey string
 	// Confirm optionally gates the federated-visibility confirmation in
 	// ConfigureRepo. When set and topology is any federated variant,
 	// ConfigureRepo emits the org-visibility note and calls Confirm before
@@ -180,10 +188,11 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 
 	// Set variables.
 	variables := map[string]string{
-		"AGENT_USER":     cfg.AgentUser,
-		"RUNNER_LABEL":   cfg.RunnerLabel,
-		"AGENT_PROVIDER": cfg.AgentProvider,
-		"AGENT_MODEL":    cfg.AgentModel,
+		"AGENT_USER":            cfg.AgentUser,
+		"RUNNER_LABEL":          cfg.RunnerLabel,
+		"AGENT_PROVIDER":        cfg.AgentProvider,
+		"AGENT_MODEL":           cfg.AgentModel,
+		"AGENTIC_APP_CLIENT_ID": cfg.AppClientID,
 	}
 
 	for name, value := range variables {
@@ -198,6 +207,14 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	}
 
 	// Set secrets.
+	if cfg.AppPrivateKey != "" {
+		flag, target := scope.ScopeFor("AGENTIC_APP_PRIVATE_KEY", topology, owner, repo)
+		if _, err := run("gh", "secret", "set", "AGENTIC_APP_PRIVATE_KEY", "--body", cfg.AppPrivateKey, flag, target); err != nil {
+			return fmt.Errorf("setting AGENTIC_APP_PRIVATE_KEY: %w", err)
+		}
+		fmt.Fprintf(w, "  ✓ AGENTIC_APP_PRIVATE_KEY saved as %s\n", describeScope(flag, "secret"))
+	}
+
 	if cfg.GooseAgentPAT != "" {
 		flag, target := scope.ScopeFor("PROJECT_PAT", topology, owner, repo)
 		if _, err := run("gh", "secret", "set", "PROJECT_PAT", "--body", cfg.GooseAgentPAT, flag, target); err != nil {
