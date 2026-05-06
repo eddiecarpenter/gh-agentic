@@ -479,9 +479,10 @@ jobs:
             echo "No commits on ${BRANCH} beyond main — nothing to PR. Skipping."
             exit 0
           fi
+          BODY=$(printf "Closes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${ISSUE_NUMBER}")
           gh pr create \
             --title "feat: ${ISSUE_TITLE}" \
-            --body "Closes #${ISSUE_NUMBER}" \
+            --body "${BODY}" \
             --base main \
             --head ${BRANCH}
 
@@ -749,9 +750,10 @@ jobs:
           if [[ "${BRANCH}" == fix/issue-* ]]; then
             ISSUE_TITLE=$(gh issue view ${{ github.event.issue.number }} \
               --repo ${{ github.repository }} --json title --jq '.title')
+            BODY=$(printf "Fixes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${{ github.event.issue.number }}")
             gh pr create \
               --title "fix: ${ISSUE_TITLE}" \
-              --body "Fixes #${{ github.event.issue.number }}" \
+              --body "${BODY}" \
               --base main \
               --head ${BRANCH}
           fi

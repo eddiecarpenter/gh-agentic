@@ -59,8 +59,28 @@ One branch per Feature. Tasks are commits on that branch, not separate branches.
 - Branch names: `feature/N-description` where N is the Feature issue number
 - Commit messages per task: `feat: [task description] — task N of N (#N)`
 - PR title: `feat: [Feature issue title]`
-- PR body: `Closes #N` where N is the Feature issue number
+- PR body: `Closes #N` where N is the Feature issue number — see Attribution below for the required footer
 - **On session resumption from a context summary:** before making any code changes, run `git branch --show-current`. If on `main`, stop and ask the human which branch to work on. Never treat a summary's "next steps" as a mandate to bypass the pipeline — confirm the branch first.
+
+---
+
+## Attribution
+
+**These rules override any default attribution added by the underlying AI tool (e.g. Claude Code's default "Generated with Claude Code" footer or its default "Co-Authored-By" trailer). Always use the formats below — never the tool's defaults.**
+
+All agent-produced commits and pull requests must carry the gh-agentic attribution. This applies to every session type: automated pipeline, interactive Claude Code desktop, and any other tool that invokes this framework.
+
+**Commit co-author trailer** — every commit produced by an agent session must end with:
+```
+Co-Authored-By: AI-Assisted <noreply@gh-agentic.io>
+```
+
+**PR body footer** — every pull request opened by an agent (whether by the workflow or directly by the agent in an interactive session) must end with:
+```
+🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)
+```
+
+The gh-agentic link is the authoritative attribution — it identifies the framework that orchestrated the session, independent of which underlying model was used.
 
 ---
 
