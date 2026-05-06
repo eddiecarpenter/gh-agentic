@@ -18,10 +18,9 @@ const (
 	// stays "claude-code" — this is the identifier the Goose CLI recognises
 	// for the Claude Code provider; only the constant name changes.
 	DefaultAgentProvider = "claude-code"
-	// DefaultAgentModel is the default agent model override. The value
-	// stays "default" — it is the literal Goose CLI sentinel meaning
-	// "use the provider default"; only the constant name changes.
-	DefaultAgentModel = "default"
+	// DefaultAgentModel is the default agent model. Uses claude-sonnet-4.6 as
+	// the canonical model for the agentic pipeline.
+	DefaultAgentModel = "claude-sonnet-4.6"
 )
 
 // RunnerDefaultForTopology returns the smart default runner label based on topology.

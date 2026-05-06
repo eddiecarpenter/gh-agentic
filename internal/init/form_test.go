@@ -48,10 +48,8 @@ func TestCollectConfigInteractive_Success(t *testing.T) {
 				cfg.RunnerLabel = "ubuntu-latest"
 				cfg.AgentProvider = "claude-code"
 				cfg.AgentModel = "default"
-			case 3: // Phase 4: credentials + project
+			case 3: // Phase 4: credentials (PAT only — Claude creds are auto-read from local machine)
 				cfg.GooseAgentPAT = "ghp_test123"
-				cfg.ClaudeCreds = "base64creds"
-				cfg.ProjectID = "PVT_123"
 			}
 			return nil
 		},

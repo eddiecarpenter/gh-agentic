@@ -58,9 +58,9 @@ func TestCheckRepoInstallation_MatchingApp_ReturnsInstalled(t *testing.T) {
 	f := &fakeClient{result: jsonResult(map[string]interface{}{
 		"id":       int64(12345),
 		"app_id":   int64(999),
-		"app_slug": "gh-agentic-app",
+		"app_slug": "gh-agentic",
 	})}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, id, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
 	if err != nil {
@@ -85,7 +85,7 @@ func TestCheckRepoInstallation_WrongApp_ReturnsNotInstalled(t *testing.T) {
 		"id":       int64(42),
 		"app_slug": "some-other-app",
 	})}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, id, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
 	if err != nil {
@@ -101,7 +101,7 @@ func TestCheckRepoInstallation_WrongApp_ReturnsNotInstalled(t *testing.T) {
 
 func TestCheckRepoInstallation_NotFound_ReturnsNotInstalled(t *testing.T) {
 	f := &fakeClient{result: httpError(http.StatusNotFound)}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, id, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
 	if err != nil {
@@ -120,7 +120,7 @@ func TestCheckRepoInstallation_Unauthorized_ReturnsNotInstalled(t *testing.T) {
 	// rejected. Treat as "cannot verify" — return not-installed with no error
 	// so the wizard can offer the install URL interactively.
 	f := &fakeClient{result: httpError(http.StatusUnauthorized)}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, id, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
 	if err != nil {
@@ -133,7 +133,7 @@ func TestCheckRepoInstallation_Unauthorized_ReturnsNotInstalled(t *testing.T) {
 
 func TestCheckRepoInstallation_Forbidden_ReturnsNotInstalled(t *testing.T) {
 	f := &fakeClient{result: httpError(http.StatusForbidden)}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, id, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
 	if err != nil {
@@ -146,7 +146,7 @@ func TestCheckRepoInstallation_Forbidden_ReturnsNotInstalled(t *testing.T) {
 
 func TestCheckRepoInstallation_ServerError_ReturnsWrappedError(t *testing.T) {
 	f := &fakeClient{result: httpError(http.StatusInternalServerError)}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, id, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
 	if err == nil {
@@ -170,7 +170,7 @@ func TestCheckRepoInstallation_ServerError_ReturnsWrappedError(t *testing.T) {
 func TestCheckRepoInstallation_NetworkError_Bubbles(t *testing.T) {
 	sentinel := errors.New("boom: no route to host")
 	f := &fakeClient{result: func(string, string, interface{}) error { return sentinel }}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	_, _, err := c.CheckRepoInstallation(context.Background(), "owner", "repo")
 	if err == nil {
@@ -182,7 +182,7 @@ func TestCheckRepoInstallation_NetworkError_Bubbles(t *testing.T) {
 }
 
 func TestCheckRepoInstallation_EmptyOwnerOrRepo_Error(t *testing.T) {
-	c := &Checker{Client: &fakeClient{}, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: &fakeClient{}, AppSlug: "gh-agentic"}
 	if _, _, err := c.CheckRepoInstallation(context.Background(), "", "repo"); err == nil {
 		t.Fatalf("expected error for empty owner")
 	}
@@ -194,9 +194,9 @@ func TestCheckRepoInstallation_EmptyOwnerOrRepo_Error(t *testing.T) {
 func TestCheckOrgInstallation_MatchingApp_ReturnsInstalled(t *testing.T) {
 	f := &fakeClient{result: jsonResult(map[string]interface{}{
 		"id":       int64(777),
-		"app_slug": "gh-agentic-app",
+		"app_slug": "gh-agentic",
 	})}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, id, err := c.CheckOrgInstallation(context.Background(), "acme")
 	if err != nil {
@@ -212,7 +212,7 @@ func TestCheckOrgInstallation_MatchingApp_ReturnsInstalled(t *testing.T) {
 
 func TestCheckOrgInstallation_WrongApp_ReturnsNotInstalled(t *testing.T) {
 	f := &fakeClient{result: jsonResult(map[string]interface{}{"id": int64(5), "app_slug": "other"})}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, _, err := c.CheckOrgInstallation(context.Background(), "acme")
 	if err != nil {
@@ -225,7 +225,7 @@ func TestCheckOrgInstallation_WrongApp_ReturnsNotInstalled(t *testing.T) {
 
 func TestCheckOrgInstallation_NotFound_ReturnsNotInstalled(t *testing.T) {
 	f := &fakeClient{result: httpError(http.StatusNotFound)}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, _, err := c.CheckOrgInstallation(context.Background(), "acme")
 	if err != nil {
@@ -238,7 +238,7 @@ func TestCheckOrgInstallation_NotFound_ReturnsNotInstalled(t *testing.T) {
 
 func TestCheckOrgInstallation_Unauthorized_ReturnsNotInstalled(t *testing.T) {
 	f := &fakeClient{result: httpError(http.StatusUnauthorized)}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, id, err := c.CheckOrgInstallation(context.Background(), "acme")
 	if err != nil {
@@ -251,7 +251,7 @@ func TestCheckOrgInstallation_Unauthorized_ReturnsNotInstalled(t *testing.T) {
 
 func TestCheckOrgInstallation_Forbidden_ReturnsNotInstalled(t *testing.T) {
 	f := &fakeClient{result: httpError(http.StatusForbidden)}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	installed, _, err := c.CheckOrgInstallation(context.Background(), "acme")
 	if err != nil {
@@ -264,7 +264,7 @@ func TestCheckOrgInstallation_Forbidden_ReturnsNotInstalled(t *testing.T) {
 
 func TestCheckOrgInstallation_ServerError_ReturnsWrappedError(t *testing.T) {
 	f := &fakeClient{result: httpError(http.StatusBadGateway)}
-	c := &Checker{Client: f, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: f, AppSlug: "gh-agentic"}
 
 	_, _, err := c.CheckOrgInstallation(context.Background(), "acme")
 	if err == nil {
@@ -276,7 +276,7 @@ func TestCheckOrgInstallation_ServerError_ReturnsWrappedError(t *testing.T) {
 }
 
 func TestCheckOrgInstallation_EmptyOrg_Error(t *testing.T) {
-	c := &Checker{Client: &fakeClient{}, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: &fakeClient{}, AppSlug: "gh-agentic"}
 	if _, _, err := c.CheckOrgInstallation(context.Background(), ""); err == nil {
 		t.Fatalf("expected error for empty org")
 	}
@@ -299,7 +299,7 @@ func TestCheck_EmptyAppSlug_AcceptsAnyInstalledApp(t *testing.T) {
 }
 
 func TestCheck_NilClient_ReturnsError(t *testing.T) {
-	c := &Checker{Client: nil, AppSlug: "gh-agentic-app"}
+	c := &Checker{Client: nil, AppSlug: "gh-agentic"}
 	if _, _, err := c.CheckRepoInstallation(context.Background(), "o", "r"); err == nil {
 		t.Fatalf("expected error when Client is nil")
 	}
