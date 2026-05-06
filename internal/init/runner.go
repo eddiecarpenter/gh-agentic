@@ -9,11 +9,6 @@ const (
 	// RunnerOther is the sentinel value for the "other — enter a custom label" option.
 	RunnerOther = "__other__"
 
-	// AgentUserScopeOrg indicates the AGENT_USER variable is set at org level.
-	AgentUserScopeOrg = "org"
-	// AgentUserScopeRepo indicates the AGENT_USER variable is set at repo level.
-	AgentUserScopeRepo = "repo"
-
 	// DefaultAgentProvider is the default agent LLM provider. The value
 	// stays "claude-code" — this is the identifier the Goose CLI recognises
 	// for the Claude Code provider; only the constant name changes.

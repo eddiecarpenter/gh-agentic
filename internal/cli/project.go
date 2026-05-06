@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -11,7 +9,6 @@ import (
 	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/spf13/cobra"
 
-	"github.com/eddiecarpenter/gh-agentic/internal/githubapp"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
@@ -243,7 +240,7 @@ func resolveProjectID(deps project.Deps, arg string) (string, error) {
 
 // newProjectJoinCmd constructs the `gh agentic project join` subcommand.
 func newProjectJoinCmd() *cobra.Command {
-	var list, interactive, skipAppInstall bool
+	var list, interactive bool
 
 	cmd := &cobra.Command{
 		Use:   "join [project-name]",
@@ -363,15 +360,6 @@ project name is matched case-insensitively; quote names that contain spaces.`,
 				return fmt.Errorf("project name is required")
 			}
 
-			// Run the agentic GitHub App install-guidance step before
-			// the variable is written. Preferring the org-level
-			// endpoint for organisation owners lets a single install
-			// cover every domain repo under the same org; personal-
-			// account owners fall back to the repo-level endpoint.
-			if err := runAppInstallStep(cmd.Context(), cmd.OutOrStdout(), deps, skipAppInstall); err != nil {
-				return fmt.Errorf("App install check: %w", err)
-			}
-
 			if len(args) == 1 {
 				return project.Join(cmd.OutOrStdout(), deps, projectID)
 			}
@@ -381,86 +369,8 @@ project name is matched case-insensitively; quote names that contain spaces.`,
 
 	cmd.Flags().BoolVarP(&list, "list", "l", false, "list available projects and exit")
 	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "select project interactively")
-	cmd.Flags().BoolVar(&skipAppInstall, "skip-app-install", false, "skip the agentic GitHub App install-state check and install guidance")
 
 	return cmd
-}
-
-// runAppInstallStep runs the agentic-App install flow as a shared step
-// for project subcommands. It is a no-op when skip=true or when the
-// install-flow helper cannot be constructed.
-//
-// Target selection: organisation owners route to the org-level endpoint
-// (one install covers every repo in the org); user owners route to the
-// repo-level endpoint. DetectOwnerType failures fall back to the repo
-// path — a conservative choice that avoids asking the user to install
-// org-wide when we are not sure.
-func runAppInstallStep(ctx context.Context, w io.Writer, deps project.Deps, skip bool) error {
-	if skip {
-		return nil
-	}
-	flow := projectAppInstallFlow
-	if flow == nil {
-		// Tests can replace projectAppInstallFlow or leave it nil to
-		// disable the step; production code sets it via init-time
-		// wiring below.
-		return nil
-	}
-	target := resolveJoinTarget(deps)
-	if target.Owner == "" {
-		return nil
-	}
-	_, err := githubapp.EnsureInstalled(ctxOrBackground(ctx), w, os.Stdin, flow, target)
-	return err
-}
-
-// projectAppInstallFlow is the package-level production Flow used by the
-// project subcommands. It is lazily constructed on first use so tests
-// that never call the join path do not pay the REST client cost; tests
-// that exercise the path override the variable directly.
-var projectAppInstallFlow *githubapp.Flow = defaultProjectAppInstallFlow()
-
-// defaultProjectAppInstallFlow constructs the production Flow. A failure
-// to create the REST checker returns nil — runAppInstallStep treats nil
-// as a skip so join still works even if authentication is broken (the
-// warning will surface elsewhere).
-func defaultProjectAppInstallFlow() *githubapp.Flow {
-	checker, err := githubapp.NewChecker(githubapp.DefaultAppSlug)
-	if err != nil {
-		return nil
-	}
-	return &githubapp.Flow{
-		Checker:       checker,
-		Slug:          githubapp.DefaultAppSlug,
-		OpenURL:       ui.OpenURL,
-		Confirm:       huhConfirmWithTitle,
-		IsCI:          ui.IsCI,
-		IsInteractive: ui.IsInteractive,
-		WaitEnter:     githubapp.WaitEnterFromReader,
-	}
-}
-
-// resolveJoinTarget chooses between a repo-level and org-level install
-// target based on the current repo's owner type. DetectOwnerType
-// failures fall through to the repo-level target — the more conservative
-// choice.
-func resolveJoinTarget(deps project.Deps) githubapp.Target {
-	if deps.DetectOwnerType != nil {
-		if ownerType, err := deps.DetectOwnerType(deps.Owner); err == nil && ownerType == "Organization" {
-			return githubapp.Target{Type: githubapp.TargetOrg, Owner: deps.Owner}
-		}
-	}
-	return githubapp.Target{Type: githubapp.TargetRepo, Owner: deps.Owner, Repo: deps.RepoName}
-}
-
-// ctxOrBackground returns ctx when non-nil, otherwise context.Background().
-// cobra's Context() can be nil when the command is invoked outside the
-// normal Execute() path (e.g. in tests), so we guard against that.
-func ctxOrBackground(ctx context.Context) context.Context {
-	if ctx != nil {
-		return ctx
-	}
-	return context.Background()
 }
 
 // printAvailableProjects fetches and prints the projects available to the owner.

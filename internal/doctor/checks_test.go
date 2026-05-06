@@ -84,7 +84,7 @@ func TestRunAllChecks_HealthyRepo(t *testing.T) {
 					return "some-value", nil
 				}
 				if args[0] == "secret" && args[1] == "list" {
-					return "AGENTIC_APP_PRIVATE_KEY\tUpdated 2026-04-01\nPROJECT_PAT\tUpdated 2026-04-01\nCLAUDE_CREDENTIALS_JSON\tUpdated 2026-04-01", nil
+					return "PROJECT_PAT\tUpdated 2026-04-01\nCLAUDE_CREDENTIALS_JSON\tUpdated 2026-04-01", nil
 				}
 			}
 			return "", nil

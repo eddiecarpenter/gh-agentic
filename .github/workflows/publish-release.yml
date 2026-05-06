@@ -23,13 +23,6 @@ jobs:
       actions: write  # required for `gh variable set` to bump AGENTIC_FRAMEWORK_VERSION
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
-        with:
-          client-id: ${{ vars.AGENTIC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
-
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -45,11 +38,7 @@ jobs:
         with:
           args: release --clean
         env:
-          # Must use the App installation token (not GITHUB_TOKEN) so the
-          # published release event propagates to release.yml for AI note
-          # generation. Workflows triggered by GITHUB_TOKEN cannot trigger
-          # other workflows; tokens minted by GitHub Apps can.
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       # gh-agentic is its own framework source — the pipeline pins to
       # AGENTIC_FRAMEWORK_VERSION, so a release that does not also bump
@@ -59,7 +48,7 @@ jobs:
       # framework-shared workflow.
       - name: Bump AGENTIC_FRAMEWORK_VERSION to released tag
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           gh variable set AGENTIC_FRAMEWORK_VERSION \

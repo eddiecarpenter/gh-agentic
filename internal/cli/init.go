@@ -1,18 +1,15 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 	ghAPI "github.com/cli/go-gh/v2/pkg/api"
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/githubapp"
 	initpkg "github.com/eddiecarpenter/gh-agentic/internal/init"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
@@ -38,7 +35,6 @@ func defaultDetectOwnerType(owner string) (string, error) {
 // newInitCmd constructs the top-level `gh agentic init` subcommand.
 func newInitCmd() *cobra.Command {
 	var force bool
-	var skipAppInstall bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -129,13 +125,6 @@ change membership, or --force to re-run setup from scratch.`,
 					return fmt.Errorf("configuration: %w", err)
 				}
 
-				// Run the App-install guidance step before identity writes.
-				if installer := buildAppInstaller(cmd, skipAppInstall); installer != nil {
-					if err := installer(w, initCfg); err != nil {
-						return fmt.Errorf("App install check: %w", err)
-					}
-				}
-
 				if err := project.InitRepo(w, deps, project.InitRepoConfig{
 					Mode:    project.InitModeSingle,
 					InitCfg: initCfg,
@@ -189,13 +178,6 @@ change membership, or --force to re-run setup from scratch.`,
 			// initpkg.ConfigureRepo. Tests inject their own ConfirmFunc.
 			initCfg.Confirm = initpkg.HuhConfirm
 
-			// Run the App-install guidance step before identity writes.
-			if installer := buildAppInstaller(cmd, skipAppInstall); installer != nil {
-				if err := installer(w, initCfg); err != nil {
-					return fmt.Errorf("App install check: %w", err)
-				}
-			}
-
 			if err := project.InitRepo(w, deps, project.InitRepoConfig{
 				Mode:      project.InitModeFederated,
 				ProjectID: projectID,
@@ -209,7 +191,6 @@ change membership, or --force to re-run setup from scratch.`,
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing configuration")
-	cmd.Flags().BoolVar(&skipAppInstall, "skip-app-install", false, "skip the agentic GitHub App install-state check and install guidance")
 	return cmd
 }
 
@@ -234,73 +215,3 @@ func tryUploadClaudeCredentials(w io.Writer, deps project.Deps, ownerType string
 	}
 }
 
-// buildAppInstaller returns the EnsureAppInstalled hook wired to the
-// production githubapp.EnsureInstalled flow, or nil when the caller asks
-// for the step to be skipped. A nil return matches the existing no-op
-// path inside initpkg.Run so the two callers agree on semantics.
-//
-// The hook derives the target from the InitConfig's topology — a Single
-// topology install runs against the repo-level endpoint; a Federated
-// topology install runs against the org-level endpoint because every
-// domain repo under the same org benefits from a single install.
-func buildAppInstaller(cmd *cobra.Command, skip bool) initpkg.EnsureAppInstalledFunc {
-	if skip {
-		return nil
-	}
-	checker, err := githubapp.NewChecker(githubapp.DefaultAppSlug)
-	if err != nil {
-		// Surface a warning but do not break init — the App flow is a
-		// convenience, not a hard requirement.
-		fmt.Fprintf(cmd.OutOrStdout(), "  %s  Could not initialise App install checker: %v — skipping App install guidance\n", ui.StatusWarning.Render("⚠"), err)
-		return nil
-	}
-	flow := &githubapp.Flow{
-		Checker:       checker,
-		Slug:          githubapp.DefaultAppSlug,
-		OpenURL:       ui.OpenURL,
-		Confirm:       huhConfirmWithTitle,
-		IsCI:          ui.IsCI,
-		IsInteractive: ui.IsInteractive,
-		WaitEnter:     githubapp.WaitEnterFromReader,
-	}
-	return func(w io.Writer, cfg *initpkg.InitConfig) error {
-		target := targetFromConfig(cfg)
-		if target.Owner == "" {
-			return nil
-		}
-		_, err := githubapp.EnsureInstalled(context.Background(), w, os.Stdin, flow, target)
-		return err
-	}
-}
-
-// targetFromConfig chooses the install-flow target based on the collected
-// wizard configuration. Federated topology prefers the org-level endpoint
-// so the App covers every domain repo under the same org; single topology
-// uses the repo-level endpoint (the only repo that matters is the current
-// one).
-func targetFromConfig(cfg *initpkg.InitConfig) githubapp.Target {
-	if cfg == nil {
-		return githubapp.Target{}
-	}
-	if strings.EqualFold(cfg.Topology, "federated") {
-		return githubapp.Target{Type: githubapp.TargetOrg, Owner: cfg.Owner}
-	}
-	return githubapp.Target{Type: githubapp.TargetRepo, Owner: cfg.Owner, Repo: cfg.RepoName}
-}
-
-// huhConfirmWithTitle is the production Confirm for the App install
-// prompt. It delegates to huh's confirm form — tests inject their own
-// Confirm via the Flow struct and never hit this.
-func huhConfirmWithTitle(title, description string) (bool, error) {
-	var confirmed bool
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().
-			Title(title).
-			Description(description).
-			Value(&confirmed),
-	))
-	if err := form.Run(); err != nil {
-		return false, err
-	}
-	return confirmed, nil
-}

@@ -24,21 +24,19 @@ var ErrAlreadyInitialised = errors.New("already initialised")
 
 // InitConfig holds the collected configuration from the wizard.
 type InitConfig struct {
-	Version        string
-	Topology       string
-	Stacks         []string
-	AgentUser      string
-	AgentUserScope string
-	RunnerLabel    string
-	AgentProvider  string
-	AgentModel     string
-	GooseAgentPAT  string
-	ClaudeCreds    string
-	ProjectID      string
-	RepoFullName   string
-	Owner          string
-	RepoName       string
-	OwnerType      string
+	Version       string
+	Topology      string
+	Stacks        []string
+	RunnerLabel   string
+	AgentProvider string
+	AgentModel    string
+	GooseAgentPAT string
+	ClaudeCreds   string
+	ProjectID     string
+	RepoFullName  string
+	Owner         string
+	RepoName      string
+	OwnerType     string
 	// Confirm optionally gates the federated-visibility confirmation in
 	// ConfigureRepo. When set and topology is any federated variant,
 	// ConfigureRepo emits the org-visibility note and calls Confirm before
@@ -59,24 +57,12 @@ type ConfirmFunc func(title, message string) (bool, error)
 // RunCommandFunc is a function type for running shell commands.
 type RunCommandFunc = auth.RunCommandFunc
 
-// EnsureAppInstalledFunc runs the agentic-GitHub-App install-state check
-// after the framework has been mounted and before ConfigureRepo writes
-// secrets/variables. Production wiring invokes
-// githubapp.EnsureInstalled; tests inject a no-op or a recording fake.
-// It never fails the wizard on a user-decline or headless path — the
-// helper is expected to handle those internally and return nil.
-type EnsureAppInstalledFunc func(w io.Writer, cfg *InitConfig) error
-
 // Deps holds injectable dependencies for the init wizard.
 type Deps struct {
 	Run   RunCommandFunc
 	Clone mount.CloneFunc
 	// CollectConfig gathers configuration interactively (or from test injection).
 	CollectConfig func(w io.Writer, repoFullName string) (*InitConfig, error)
-	// EnsureAppInstalled, when non-nil, runs the agentic-App install
-	// guidance step between mount and ConfigureRepo. When nil the step
-	// is skipped silently — matches the --skip-app-install flag.
-	EnsureAppInstalled EnsureAppInstalledFunc
 }
 
 // Run executes the init wizard.
@@ -108,17 +94,6 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 		return fmt.Errorf("mount: %w", err)
 	}
 
-	// Detect / guide the agentic GitHub App install before secrets are
-	// written — the App must be installed before the pipeline can
-	// receive webhooks, so it belongs at the same boundary as the
-	// identity writes. A nil hook (or the --skip-app-install flag on
-	// the caller) short-circuits to a no-op.
-	if deps.EnsureAppInstalled != nil {
-		if err := deps.EnsureAppInstalled(w, cfg); err != nil {
-			return fmt.Errorf("App install check: %w", err)
-		}
-	}
-
 	// Configure secrets and variables.
 	if err := ConfigureRepo(w, cfg, deps.Run); err != nil {
 		return fmt.Errorf("configuration: %w", err)
@@ -136,13 +111,12 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 
 // ConfigureRepo sets up GitHub secrets, variables, and collaborator access.
 //
-// Under federated topology the shared names (AGENT_USER, RUNNER_LABEL,
-// AGENT_PROVIDER, AGENT_MODEL, AGENTIC_APP_CLIENT_ID,
-// AGENTIC_APP_PRIVATE_KEY, PROJECT_PAT, CLAUDE_CREDENTIALS_JSON)
-// are routed to the organisation level via `scope.ScopeFor`. Per-repo
-// identity names (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY, and so on) stay at
-// `--repo`. Under single topology everything stays at `--repo` — the
-// routing is identical to the pre-scope behaviour.
+// Under federated topology the shared names (RUNNER_LABEL, AGENT_PROVIDER,
+// AGENT_MODEL, PROJECT_PAT, CLAUDE_CREDENTIALS_JSON) are routed to the
+// organisation level via `scope.ScopeFor`. Per-repo identity names
+// (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY, and so on) stay at `--repo`.
+// Under single topology everything stays at `--repo` — the routing is
+// identical to the pre-scope behaviour.
 func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	repo := cfg.RepoFullName
 	if repo == "" {
@@ -180,7 +154,6 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 
 	// Set variables.
 	variables := map[string]string{
-		"AGENT_USER":     cfg.AgentUser,
 		"RUNNER_LABEL":   cfg.RunnerLabel,
 		"AGENT_PROVIDER": cfg.AgentProvider,
 		"AGENT_MODEL":    cfg.AgentModel,

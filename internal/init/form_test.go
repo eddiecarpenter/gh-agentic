@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/githubapp"
 )
 
 // fakeFormRun returns a FormRunFunc that sets bound values directly without
@@ -41,9 +40,8 @@ func TestCollectConfigInteractive_Success(t *testing.T) {
 			case 0: // Phase 1: version + topology
 				cfg.Version = "v2.0.0"
 				cfg.Topology = "Single"
-			case 1: // Phase 2: stacks + agent
+			case 1: // Phase 2: stacks
 				cfg.Stacks = []string{"Go"}
-				cfg.AgentUser = "goose-agent"
 			case 2: // Phase 3: pipeline config
 				cfg.RunnerLabel = "ubuntu-latest"
 				cfg.AgentProvider = "claude-code"
@@ -107,7 +105,6 @@ func TestCollectConfigInteractive_WithExplicitRepo(t *testing.T) {
 				cfg.Topology = "Single"
 			case 1:
 				cfg.Stacks = []string{"Go"}
-				cfg.AgentUser = "agent"
 			case 2:
 				// defaults
 			case 3:
@@ -136,87 +133,6 @@ func TestCollectConfigInteractive_WithExplicitRepo(t *testing.T) {
 	}
 }
 
-func TestCollectConfigInteractive_OrgSetsAgentUserScope(t *testing.T) {
-	var buf bytes.Buffer
-	callCount := 0
-
-	cfg := &InitConfig{}
-
-	deps := FormDeps{
-		RunForm: func(f *huh.Form) error {
-			idx := callCount
-			callCount++
-			switch idx {
-			case 0:
-				cfg.Version = "v2.0.0"
-				cfg.Topology = "Federated"
-			case 1:
-				cfg.Stacks = []string{"Go"}
-				cfg.AgentUser = "agent"
-				cfg.AgentUserScope = AgentUserScopeOrg
-			case 2:
-				// pipeline defaults
-			case 3:
-				// empty creds
-			}
-			return nil
-		},
-		DetectOwnerType: func(owner string) (string, error) {
-			return auth.OwnerTypeOrg, nil
-		},
-	}
-
-	result, err := CollectConfigInteractive(&buf, "acme/repo", deps)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result.AgentUserScope != AgentUserScopeOrg {
-		t.Errorf("expected AgentUserScope %q for org, got %q", AgentUserScopeOrg, result.AgentUserScope)
-	}
-}
-
-func TestCollectConfigInteractive_SetsAppBotAsAgentUser(t *testing.T) {
-	var buf bytes.Buffer
-	callCount := 0
-
-	cfg := &InitConfig{}
-
-	deps := FormDeps{
-		RunForm: func(f *huh.Form) error {
-			callCount++
-			switch callCount {
-			case 1:
-				cfg.Version = "v2.0.0"
-				cfg.Topology = "Single"
-			case 2:
-				cfg.Stacks = []string{"Go"}
-			case 3:
-				// pipeline defaults
-			case 4:
-				// creds
-			}
-			return nil
-		},
-		DetectOwnerType: func(owner string) (string, error) {
-			return auth.OwnerTypeUser, nil
-		},
-	}
-
-	result, err := CollectConfigInteractive(&buf, "alice/repo", deps)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	wantUser := githubapp.DefaultAppSlug + "[bot]"
-	if result.AgentUser != wantUser {
-		t.Errorf("AgentUser = %q, want %q", result.AgentUser, wantUser)
-	}
-	if result.AgentUserScope != AgentUserScopeOrg {
-		t.Errorf("AgentUserScope = %q, want %q", result.AgentUserScope, AgentUserScopeOrg)
-	}
-}
-
 func TestCollectConfigInteractive_NoRepoContext(t *testing.T) {
 	var buf bytes.Buffer
 	callCount := 0
@@ -232,7 +148,6 @@ func TestCollectConfigInteractive_NoRepoContext(t *testing.T) {
 				cfg.Topology = "Single"
 			case 2:
 				cfg.Stacks = []string{"Go"}
-				cfg.AgentUser = "agent"
 			case 3:
 				// pipeline defaults
 			case 4:
@@ -291,7 +206,6 @@ func TestCollectConfigInteractive_PipelineDefaults(t *testing.T) {
 				cfg.Topology = "Single"
 			case 2:
 				cfg.Stacks = []string{"Go"}
-				cfg.AgentUser = "agent"
 			case 3:
 				// Don't set — verify defaults are pre-filled
 			case 4:
@@ -458,7 +372,6 @@ func TestCollectConfigInteractive_OwnerTypeDetectionFailure(t *testing.T) {
 				cfg.Topology = "Single"
 			case 2:
 				cfg.Stacks = []string{"Go"}
-				cfg.AgentUser = "agent"
 			case 3:
 				// defaults
 			case 4:

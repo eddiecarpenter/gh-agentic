@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/githubapp"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -110,11 +109,6 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 	if err := collectStackAndAgent(cfg, deps.RunForm); err != nil {
 		return nil, err
 	}
-
-	// Agent identity comes from the GitHub App — no user prompt.
-	cfg.AgentUser = githubapp.DefaultAppSlug + "[bot]"
-	cfg.AgentUserScope = AgentUserScopeOrg
-	fmt.Fprintf(w, "  %s Agent user: %s (GitHub App)\n", ui.SymbolInfo, cfg.AgentUser)
 
 	// --- Phase 3: Pipeline configuration ---
 	if err := collectPipelineConfig(cfg, deps.RunForm); err != nil {

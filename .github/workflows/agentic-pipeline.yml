@@ -11,10 +11,8 @@ name: Agentic Pipeline
 #      forward the event context (and any workflow_dispatch inputs) via
 #      `workflow_call`.
 #
-# Authentication: every job mints a short-lived GitHub App installation
-# token via `actions/create-github-app-token`. The App must be installed on
-# any repo this workflow runs against (and on `eddiecarpenter/gh-agentic`,
-# whose submodule is fetched during checkout). See `docs/github-app-setup.md`.
+# Authentication: every job uses the built-in `github.token` provided by
+# GitHub Actions. No external GitHub App installation token is required.
 #
 # Framework mount: `.agents/` is tracked as a git submodule (since PR #620)
 # pointing at eddiecarpenter/gh-agentic. Checkout steps use
@@ -66,8 +64,6 @@ on:
         type: string
         default: ''
     secrets:
-      AGENTIC_APP_PRIVATE_KEY:
-        required: true
       CLAUDE_CREDENTIALS_JSON:
         required: true
       PROJECT_PAT:
@@ -75,11 +71,11 @@ on:
         description: |
           Personal Access Token for user-owned Project v2 mutations only.
           GitHub Apps cannot mutate user-owned Projects v2 (platform
-          limitation — see docs/github-app-setup.md). When unset, project
-          status updates are skipped with a warning; the rest of the
-          pipeline proceeds. When set but invalid/expired, the project
-          step fails non-blockingly (continue-on-error) so the PAT
-          refresh is visible in CI without halting work.
+          limitation). When unset, project status updates are skipped with
+          a warning; the rest of the pipeline proceeds. When set but
+          invalid/expired, the project step fails non-blockingly
+          (continue-on-error) so the PAT refresh is visible in CI without
+          halting work.
 
 jobs:
 
@@ -100,20 +96,13 @@ jobs:
       issues: write
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
-        with:
-          client-id: ${{ vars.AGENTIC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
-
       - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
           fetch-depth: 0
           submodules: recursive
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ github.token }}
 
       - name: Resolve framework version
         id: version
@@ -136,7 +125,7 @@ jobs:
         uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Setup Agent Auth
         uses: ./.agents/.github/actions/setup-agent-auth
@@ -144,7 +133,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Configure Goose
         run: |
@@ -165,7 +154,7 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
 
       # Structural enforcement of the Design Plan publication contract
       # introduced by #652 (under #632). The skill (feature-design.md)
@@ -184,7 +173,7 @@ jobs:
       - name: Verify Design Plan comment was published
         if: success()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
         run: |
@@ -219,7 +208,7 @@ jobs:
         id: push
         if: success()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           BRANCH=$(git branch --list "feature/${ISSUE}-*" --format='%(refname:short)' | head -1)
@@ -245,7 +234,7 @@ jobs:
       - name: Swap in-design → in-development
         if: success() && steps.push.outputs.name != ''
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           LABELS=$(gh issue view "${ISSUE}" --json labels --jq '[.labels[].name] | join(",")')
@@ -350,17 +339,10 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
-        with:
-          client-id: ${{ vars.AGENTIC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
-
       - name: Resolve feature branch
         id: branch
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
         run: |
@@ -382,7 +364,7 @@ jobs:
           ref: ${{ steps.branch.outputs.name }}
           fetch-depth: 0
           submodules: recursive
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ github.token }}
 
       - name: Resolve framework version
         id: version
@@ -406,7 +388,7 @@ jobs:
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           agent-provider: ${{ vars.AGENT_PROVIDER }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Setup Agent Auth
         uses: ./.agents/.github/actions/setup-agent-auth
@@ -414,7 +396,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Rebase feature branch onto main
         run: |
@@ -458,18 +440,18 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Push branch
         if: success()
         run: git push origin ${{ steps.branch.outputs.name }}
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Open PR
         if: success()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
@@ -486,13 +468,13 @@ jobs:
             --base main \
             --head ${BRANCH}
 
-      # Label transition uses the App token (works fine, must succeed —
+      # Label transition uses github.token (must succeed —
       # downstream workflows trigger on the in-review label).
       - name: Apply in-review label
         id: relabel
         if: success()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           COMMITS=$(git rev-list --count origin/main..HEAD)
           if [ "${COMMITS}" -eq 0 ]; then
@@ -559,20 +541,13 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
-        with:
-          client-id: ${{ vars.AGENTIC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
-
       - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
           fetch-depth: 0
           submodules: recursive
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ github.token }}
 
       - name: Resolve framework version
         id: version
@@ -595,7 +570,7 @@ jobs:
         uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Setup Agent Auth
         uses: ./.agents/.github/actions/setup-agent-auth
@@ -603,7 +578,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Configure Goose
         run: |
@@ -622,7 +597,7 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           goose run \
             --recipe .agents/.goose/recipes/pr-review-session.yaml \
@@ -631,7 +606,7 @@ jobs:
       - name: Push fixes
         if: success()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
         run: |
           LOCAL=$(git rev-parse HEAD)
@@ -662,20 +637,13 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
-        with:
-          client-id: ${{ vars.AGENTIC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
-
       - name: Checkout domain repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
           fetch-depth: 0
           submodules: recursive
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ github.token }}
 
       - name: Resolve framework version
         id: version
@@ -698,7 +666,7 @@ jobs:
         uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Setup Agent Auth
         uses: ./.agents/.github/actions/setup-agent-auth
@@ -706,7 +674,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ steps.app-token.outputs.token }}
+          gh-token: ${{ github.token }}
 
       - name: Configure Goose
         run: |
@@ -727,12 +695,12 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Push fix branch
         if: success()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH=$(git branch --show-current)
           if [[ "${BRANCH}" == fix/issue-* ]]; then
@@ -744,7 +712,7 @@ jobs:
       - name: Open PR
         if: success()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH=$(git branch --show-current)
           if [[ "${BRANCH}" == fix/issue-* ]]; then
@@ -774,13 +742,6 @@ jobs:
       issues: write
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3  # v3.1.1
-        with:
-          client-id: ${{ vars.AGENTIC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AGENTIC_APP_PRIVATE_KEY }}
-
       - name: Extract feature issue number
         id: feature
         env:
@@ -790,12 +751,12 @@ jobs:
           ISSUE_NUMBER=$(echo "${BRANCH}" | sed 's|feature/\([0-9]*\)-.*|\1|')
           echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
 
-      # Label transition + issue close use the App token. Must succeed —
+      # Label transition + issue close use github.token. Must succeed —
       # downstream auto-close-parent and branch-delete steps depend on it.
       - name: Apply done label and close feature issue
         id: doneclose
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
@@ -857,7 +818,7 @@ jobs:
       - name: Parse parent requirement
         id: parent
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
@@ -879,13 +840,13 @@ jobs:
           echo "requirement_number=${PARENT}" >> $GITHUB_OUTPUT
           echo "agentic_repo=${AGENTIC_REPO}" >> $GITHUB_OUTPUT
 
-      # Label transition + parent close use the App token. Project status
+      # Label transition + parent close use github.token. Project status
       # update for the parent requirement is split into the next step
       # (uses PROJECT_PAT, non-blocking).
       - name: Auto-close parent requirement if all sub-issues complete
         id: autoclose
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           PARENT="${{ steps.parent.outputs.requirement_number }}"
           AGENTIC_REPO="${{ steps.parent.outputs.agentic_repo }}"
