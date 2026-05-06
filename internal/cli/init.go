@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -97,11 +96,6 @@ change membership, or --force to re-run setup from scratch.`,
 				}
 			}
 
-			root, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("resolving working directory: %w", err)
-			}
-
 			// Step 1: Ask single or federated.
 			var topology string
 			topoForm := huh.NewForm(huh.NewGroup(
@@ -119,34 +113,36 @@ change membership, or --force to re-run setup from scratch.`,
 			}
 
 			if topology == "single" {
-				// Single path: full wizard via the init package.
-				initDeps := initpkg.Deps{
-					Run:   auth.DefaultRunCommand,
-					Clone: mount.DefaultClone,
-					CollectConfig: func(w io.Writer, repo string) (*initpkg.InitConfig, error) {
-						return initpkg.CollectConfigInteractive(w, repo, initpkg.FormDeps{
-							RunForm:         initpkg.DefaultFormRun,
-							RunCommand:      auth.DefaultRunCommand,
-							DetectOwnerType: defaultDetectOwnerType,
-							FetchReleases:   mount.DefaultFetchReleases,
-						})
-					},
-					EnsureAppInstalled: buildAppInstaller(cmd, skipAppInstall),
+				// Single path: collect config (topology already known, project
+				// created automatically by project.InitRepo — no project ID
+				// prompt), then delegate to project.InitRepo(InitModeSingle)
+				// which calls project.Create to build the board and mount the
+				// framework.
+				initCfg, err := initpkg.CollectConfigInteractive(w, deps.RepoFullName, initpkg.FormDeps{
+					RunForm:         initpkg.DefaultFormRun,
+					RunCommand:      auth.DefaultRunCommand,
+					DetectOwnerType: defaultDetectOwnerType,
+					FetchReleases:   mount.DefaultFetchReleases,
+					Topology:        "single",
+				})
+				if err != nil {
+					return fmt.Errorf("configuration: %w", err)
 				}
-				if err := initpkg.Run(w, root, force, initDeps); err != nil {
-					if errors.Is(err, initpkg.ErrAlreadyInitialised) {
-						return ErrSilent
+
+				// Run the App-install guidance step before identity writes.
+				if installer := buildAppInstaller(cmd, skipAppInstall); installer != nil {
+					if err := installer(w, initCfg); err != nil {
+						return fmt.Errorf("App install check: %w", err)
 					}
-					return err
 				}
-				// Single-topology init no longer writes AGENTIC_TOPOLOGY
-				// automatically (task #585). The resolver infers topology
-				// from the project-linked-repo graph; the variable remains
-				// an optional explicit override only.
-				return nil
+
+				return project.InitRepo(w, deps, project.InitRepoConfig{
+					Mode:    project.InitModeSingle,
+					InitCfg: initCfg,
+				})
 			}
 
-			// Federated path: list federated projects, user picks.
+			// Federated path: list federated projects, user picks one.
 			fmt.Fprintf(w, "\n  Fetching federated projects for %s...\n\n", deps.Owner)
 			projects, err := project.ListFederatedProjects(deps)
 			if err != nil {
@@ -172,12 +168,14 @@ change membership, or --force to re-run setup from scratch.`,
 				return fmt.Errorf("project selection: %w", err)
 			}
 
-			// Collect configuration.
+			// Collect configuration — topology is federated (already captured),
+			// project ID comes from the list picker above (not a form field).
 			initCfg, err := initpkg.CollectConfigInteractive(w, deps.RepoFullName, initpkg.FormDeps{
 				RunForm:         initpkg.DefaultFormRun,
 				RunCommand:      auth.DefaultRunCommand,
 				DetectOwnerType: defaultDetectOwnerType,
 				FetchReleases:   mount.DefaultFetchReleases,
+				Topology:        "federated",
 			})
 			if err != nil {
 				return fmt.Errorf("configuration: %w", err)
@@ -187,10 +185,7 @@ change membership, or --force to re-run setup from scratch.`,
 			// initpkg.ConfigureRepo. Tests inject their own ConfirmFunc.
 			initCfg.Confirm = initpkg.HuhConfirm
 
-			// Federated path: run the App-install guidance step before
-			// handing off to project.InitRepo, so the pipeline-facing
-			// guarantee (App installed before identity writes) holds
-			// symmetrically with the single path.
+			// Run the App-install guidance step before identity writes.
 			if installer := buildAppInstaller(cmd, skipAppInstall); installer != nil {
 				if err := installer(w, initCfg); err != nil {
 					return fmt.Errorf("App install check: %w", err)
