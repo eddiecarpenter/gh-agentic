@@ -712,8 +712,9 @@ jobs:
           BRANCH=$(git branch --show-current)
           if [[ "${BRANCH}" == issue/* ]]; then
             git push origin ${BRANCH}
+            echo "Pushed ${BRANCH}"
           else
-            echo "No fix branch — question answered or issue skipped"
+            echo "No fix branch checked out locally — agent may have pushed directly or found nothing to fix"
           fi
 
       - name: Open PR
@@ -723,18 +724,33 @@ jobs:
           # fires and triggers pr-review-session; github.token events cannot
           # trigger other workflow runs (GitHub platform restriction).
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          BRANCH=$(git branch --show-current)
-          if [[ "${BRANCH}" == issue/* ]]; then
-            ISSUE_TITLE=$(gh issue view ${{ github.event.issue.number }} \
-              --repo ${{ github.repository }} --json title --jq '.title')
-            BODY=$(printf "Fixes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${{ github.event.issue.number }}")
-            gh pr create \
-              --title "fix: ${ISSUE_TITLE}" \
-              --body "${BODY}" \
-              --base main \
-              --head ${BRANCH}
+          # Detect the issue branch from the remote by convention (issue/N-*)
+          # rather than relying on git branch --show-current, which may be
+          # 'main' if the agent pushed the branch directly without switching
+          # the local checkout (e.g. on a re-run where the branch already existed).
+          BRANCH=$(git ls-remote --heads origin "refs/heads/issue/${ISSUE_NUMBER}-*" \
+            | head -1 | sed 's|.*refs/heads/||')
+          if [ -z "${BRANCH}" ]; then
+            echo "No issue branch found on remote for issue #${ISSUE_NUMBER} — skipping PR creation"
+            exit 0
           fi
+          # Skip if a PR already exists for this branch
+          EXISTING=$(gh pr list --repo ${{ github.repository }} --head "${BRANCH}" --json number --jq '.[0].number')
+          if [ -n "${EXISTING}" ]; then
+            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping"
+            exit 0
+          fi
+          ISSUE_TITLE=$(gh issue view "${ISSUE_NUMBER}" \
+            --repo ${{ github.repository }} --json title --jq '.title')
+          BODY=$(printf "Fixes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${ISSUE_NUMBER}")
+          gh pr create \
+            --title "fix: ${ISSUE_TITLE}" \
+            --body "${BODY}" \
+            --base main \
+            --head "${BRANCH}"
+          echo "✓ PR opened for ${BRANCH}"
 
   # ---------------------------------------------------------------------------
   # Stage 5 — Feature Complete
