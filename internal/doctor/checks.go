@@ -44,6 +44,57 @@ type checkGroupStep struct {
 	fn    func(CheckDeps) Group
 }
 
+// LabelDef describes a required pipeline label — its canonical name, a
+// six-digit hex colour (no leading #), and a short description. The list
+// drives both the check (does the label exist?) and the repair (create it
+// if it is missing).
+type LabelDef struct {
+	Name        string
+	Color       string
+	Description string
+}
+
+// requiredPipelineLabels is the authoritative set of lifecycle labels that
+// every agentic repo must have. It covers all labels referenced by the
+// framework skills that are NOT already created by GitHub's defaults or by
+// `gh agentic init`.
+//
+// Source: skills/requirement-scoping/SKILL.md, skills/feature-design/SKILL.md,
+// skills/trigger-design/SKILL.md, skills/trigger-implementation/SKILL.md,
+// and the project-template.json README — see issue #686.
+var requiredPipelineLabels = []LabelDef{
+	{
+		Name:        "ready-to-implement",
+		Color:       "0075ca",
+		Description: "Scoped and queued — waiting for Feature Design",
+	},
+	{
+		Name:        "designed",
+		Color:       "0075ca",
+		Description: "Design complete — parked awaiting trigger to implementation",
+	},
+	{
+		Name:        "interactive-design",
+		Color:       "e4e669",
+		Description: "Triggers interactive Feature Design session",
+	},
+	{
+		Name:        "needs-interactive-design",
+		Color:       "e4e669",
+		Description: "Feature requires interactive design before automation",
+	},
+	{
+		Name:        "design-in-progress",
+		Color:       "d93f0b",
+		Description: "Feature Design session active — concurrency beacon",
+	},
+	{
+		Name:        "development-in-progress",
+		Color:       "d93f0b",
+		Description: "Dev Session active — concurrency beacon",
+	},
+}
+
 // checksForTopologyWithLabels returns the ordered list of labelled check steps.
 func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 	// On the gh-agentic framework source itself, mount-layer checks do
@@ -56,6 +107,7 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 			{"Skipping content-layer checks...", checkFrameworkSourceSkipped},
 			{"Checking workflows...", checkWorkflows},
 			{"Checking variables and secrets...", checkVariablesAndSecrets},
+			{"Checking pipeline labels...", checkLabels},
 			{"Checking project reachability...", checkProjectReachability},
 		}
 		return base
@@ -78,6 +130,10 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 	if scope.IsFederatedTopology(deps.Topology) {
 		base = append(base, checkGroupStep{"Checking for shadow values...", checkShadowVars})
 	}
+	// Pipeline labels must exist on every repo — skills apply them via gh CLI
+	// regardless of topology. Runs before project reachability so the label
+	// remediation is visible alongside other pipeline-infrastructure checks.
+	base = append(base, checkGroupStep{"Checking pipeline labels...", checkLabels})
 	// Project reachability applies to every topology — all of them consume the
 	// GitHub Project board via `gh agentic status`. Added last so it lands at
 	// the bottom of the report, near the "what the agent actually needs" view.
@@ -868,6 +924,82 @@ func checkShadowVars(deps CheckDeps) Group {
 		})
 	}
 	return g
+}
+
+// checkLabels verifies that every label in requiredPipelineLabels exists in
+// the repo. It uses `gh label list` via deps.Run so the check is purely
+// network-driven (no local file state) and works identically across all
+// topology variants.
+//
+// For each missing label, a Fail result is emitted whose Remediation is the
+// exact `gh label create` command, so RepairPipeline can execute it
+// automatically without user interaction.
+func checkLabels(deps CheckDeps) Group {
+	g := Group{Name: "Pipeline labels"}
+
+	if deps.Run == nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "pipeline-labels",
+			Status:  Warning,
+			Message: "pipeline labels — unable to check (no run func)",
+		})
+		return g
+	}
+	if deps.RepoFullName == "" {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "pipeline-labels",
+			Status:  Warning,
+			Message: "pipeline labels — unable to check (repo not resolved)",
+		})
+		return g
+	}
+
+	out, err := deps.Run("gh", "label", "list", "--repo", deps.RepoFullName, "--limit", "200")
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "pipeline-labels",
+			Status:  Warning,
+			Message: fmt.Sprintf("pipeline labels — unable to list: %v", err),
+		})
+		return g
+	}
+
+	for _, lbl := range requiredPipelineLabels {
+		if containsLabelName(out, lbl.Name) {
+			g.Results = append(g.Results, CheckResult{
+				Name:    "label:" + lbl.Name,
+				Status:  Pass,
+				Message: fmt.Sprintf("label %q present", lbl.Name),
+			})
+		} else {
+			g.Results = append(g.Results, CheckResult{
+				Name:    "label:" + lbl.Name,
+				Status:  Fail,
+				Message: fmt.Sprintf("label %q missing", lbl.Name),
+				Remediation: fmt.Sprintf(
+					"gh label create %q --repo %s --color %s --description %q",
+					lbl.Name, deps.RepoFullName, lbl.Color, lbl.Description,
+				),
+			})
+		}
+	}
+
+	return g
+}
+
+// containsLabelName returns true if the gh label list output contains a row
+// whose first whitespace-delimited token matches name. The gh label list
+// output has the label name as the first column, possibly followed by
+// description and colour columns. Using the first-token match avoids
+// false-positives when one label name is a prefix of another.
+func containsLabelName(out, name string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == name {
+			return true
+		}
+	}
+	return false
 }
 
 // fileExists returns true if the path exists and is a regular file.
