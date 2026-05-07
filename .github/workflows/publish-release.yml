@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write  # required for `gh variable set` to bump AGENTIC_FRAMEWORK_VERSION
 
     steps:
       - name: Checkout
@@ -48,7 +47,11 @@ jobs:
       # framework-shared workflow.
       - name: Bump AGENTIC_FRAMEWORK_VERSION to released tag
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Must use PIPELINE_PAT (not github.token) — fine-grained PAT with
+          # Variables: write is required to update repo variables. The built-in
+          # github.token does not have permission to write Actions variables on
+          # personal repos regardless of the workflow's `permissions` block.
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           gh variable set AGENTIC_FRAMEWORK_VERSION \
