@@ -432,7 +432,7 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 	}
 
 	// Check secrets.
-	secrets := []string{"PROJECT_PAT"}
+	secrets := []string{"PROJECT_PAT", "PIPELINE_PAT"}
 	for _, s := range secrets {
 		result := checkSecret(deps, s)
 		g.Results = append(g.Results, result)
@@ -837,6 +837,7 @@ func FindShadowValues(deps CheckDeps) []ShadowValue {
 		"AGENT_PROVIDER",
 		"AGENT_MODEL",
 		"PROJECT_PAT",
+		"PIPELINE_PAT",
 		"CLAUDE_CREDENTIALS_JSON",
 	}
 

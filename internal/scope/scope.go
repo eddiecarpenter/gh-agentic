@@ -34,6 +34,7 @@ var sharedNames = map[string]struct{}{
 	"AGENT_PROVIDER":          {},
 	"AGENT_MODEL":             {},
 	"PROJECT_PAT":             {},
+	"PIPELINE_PAT":            {},
 	"CLAUDE_CREDENTIALS_JSON": {},
 }
 

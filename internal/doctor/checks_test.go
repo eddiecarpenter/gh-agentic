@@ -95,7 +95,7 @@ func TestRunAllChecks_HealthyRepo(t *testing.T) {
 					return "some-value", nil
 				}
 				if args[0] == "secret" && args[1] == "list" {
-					return "PROJECT_PAT\tUpdated 2026-04-01\nCLAUDE_CREDENTIALS_JSON\tUpdated 2026-04-01", nil
+					return "PROJECT_PAT\tUpdated 2026-04-01\nPIPELINE_PAT\tUpdated 2026-04-01\nCLAUDE_CREDENTIALS_JSON\tUpdated 2026-04-01", nil
 				}
 				if args[0] == "label" && args[1] == "list" {
 					return allLabelsListOutput(), nil

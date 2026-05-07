@@ -31,6 +31,7 @@ type InitConfig struct {
 	AgentProvider string
 	AgentModel    string
 	GooseAgentPAT string
+	PipelinePAT   string
 	ClaudeCreds   string
 	ProjectID     string
 	RepoFullName  string
@@ -112,7 +113,7 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 // ConfigureRepo sets up GitHub secrets, variables, and collaborator access.
 //
 // Under federated topology the shared names (RUNNER_LABEL, AGENT_PROVIDER,
-// AGENT_MODEL, PROJECT_PAT, CLAUDE_CREDENTIALS_JSON) are routed to the
+// AGENT_MODEL, PROJECT_PAT, PIPELINE_PAT, CLAUDE_CREDENTIALS_JSON) are routed to the
 // organisation level via `scope.ScopeFor`. Per-repo identity names
 // (AGENTIC_PROJECT_ID, AGENTIC_TOPOLOGY, and so on) stay at `--repo`.
 // Under single topology everything stays at `--repo` — the routing is
@@ -177,6 +178,14 @@ func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 			return fmt.Errorf("setting PROJECT_PAT: %w", err)
 		}
 		fmt.Fprintf(w, "  ✓ PROJECT_PAT saved as %s\n", describeScope(flag, "secret"))
+	}
+
+	if cfg.PipelinePAT != "" {
+		flag, target := scope.ScopeFor("PIPELINE_PAT", topology, owner, repo)
+		if _, err := run("gh", "secret", "set", "PIPELINE_PAT", "--body", cfg.PipelinePAT, flag, target); err != nil {
+			return fmt.Errorf("setting PIPELINE_PAT: %w", err)
+		}
+		fmt.Fprintf(w, "  ✓ PIPELINE_PAT saved as %s\n", describeScope(flag, "secret"))
 	}
 
 	if cfg.ClaudeCreds != "" {

@@ -254,7 +254,7 @@ func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 	return nil
 }
 
-// collectCredentialsAndProject collects the PROJECT_PAT.
+// collectCredentialsAndProject collects the PROJECT_PAT and PIPELINE_PAT.
 // Claude credentials are no longer prompted here — they are read automatically
 // from the local machine (~/.claude/.credentials.json or macOS Keychain) after
 // init completes, using the same mechanism as 'gh agentic auth refresh'. If
@@ -272,6 +272,11 @@ func collectCredentialsAndProject(cfg *InitConfig, runForm FormRunFunc) error {
 				Title("PROJECT_PAT").
 				Description("Personal Access Token for Projects v2 mutations (scopes: repo, project, read:org)").
 				Value(&cfg.GooseAgentPAT).
+				EchoMode(huh.EchoModePassword),
+			huh.NewInput().
+				Title("PIPELINE_PAT").
+				Description("Fine-grained PAT for pipeline trigger operations (permissions: Issues: write, Pull requests: write, Secrets: write)").
+				Value(&cfg.PipelinePAT).
 				EchoMode(huh.EchoModePassword),
 		),
 	)
