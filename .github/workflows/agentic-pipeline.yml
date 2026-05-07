@@ -66,16 +66,20 @@ on:
     secrets:
       CLAUDE_CREDENTIALS_JSON:
         required: true
+      PIPELINE_PAT:
+        required: true
+        description: |
+          Fine-grained PAT with Issues: write, Pull requests: write, and
+          Secrets: write. Used for trigger-label application (so the label
+          event fires the next workflow), PR creation, and credential
+          rotation. github.token cannot be used for these because events
+          fired by github.token do not trigger other workflow runs.
       PROJECT_PAT:
         required: false
         description: |
           Personal Access Token for user-owned Project v2 mutations only.
-          GitHub Apps cannot mutate user-owned Projects v2 (platform
-          limitation). When unset, project status updates are skipped with
-          a warning; the rest of the pipeline proceeds. When set but
-          invalid/expired, the project step fails non-blockingly
-          (continue-on-error) so the PAT refresh is visible in CI without
-          halting work.
+          When unset, project status updates are skipped with a warning;
+          the rest of the pipeline proceeds.
 
 jobs:
 
@@ -133,7 +137,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ github.token }}
+          gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
         run: |
@@ -230,13 +234,13 @@ jobs:
 
       # The recipe attempts the in-design → in-development swap itself, but
       # the agent's token can be denied that transition. Retry here —
-      # idempotent. Must use PROJECT_PAT (not github.token) so the label
+      # idempotent. Must use PIPELINE_PAT (not github.token) so the label
       # event triggers the dev-session workflow; github.token events cannot
       # trigger other workflow runs (GitHub platform restriction).
       - name: Swap in-design → in-development
         if: success() && steps.push.outputs.name != ''
         env:
-          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           LABELS=$(gh issue view "${ISSUE}" --json labels --jq '[.labels[].name] | join(",")')
@@ -398,7 +402,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ github.token }}
+          gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Rebase feature branch onto main
         run: |
@@ -470,14 +474,14 @@ jobs:
             --base main \
             --head ${BRANCH}
 
-      # Must use PROJECT_PAT (not github.token) so the label event triggers
+      # Must use PIPELINE_PAT (not github.token) so the label event triggers
       # the pr-review-session workflow; github.token events cannot trigger
       # other workflow runs (GitHub platform restriction).
       - name: Apply in-review label
         id: relabel
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
         run: |
           COMMITS=$(git rev-list --count origin/main..HEAD)
           if [ "${COMMITS}" -eq 0 ]; then
@@ -581,7 +585,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ github.token }}
+          gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
         run: |
@@ -677,7 +681,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ github.token }}
+          gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
         run: |
@@ -715,10 +719,10 @@ jobs:
       - name: Open PR
         if: success()
         env:
-          # Must use PROJECT_PAT (not github.token) so the pull_request event
+          # Must use PIPELINE_PAT (not github.token) so the pull_request event
           # fires and triggers pr-review-session; github.token events cannot
           # trigger other workflow runs (GitHub platform restriction).
-          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
         run: |
           BRANCH=$(git branch --show-current)
           if [[ "${BRANCH}" == issue/* ]]; then
@@ -759,12 +763,12 @@ jobs:
 
       # Label transition + issue close use github.token. Must succeed —
       # downstream auto-close-parent and branch-delete steps depend on it.
-      # Uses PROJECT_PAT (not github.token) — github.token events cannot
+      # Uses PIPELINE_PAT (not github.token) — github.token events cannot
       # trigger other workflow runs (GitHub platform restriction).
       - name: Apply done label and close feature issue
         id: doneclose
         env:
-          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
