@@ -133,7 +133,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ github.token }}
+          gh-token: ${{ secrets.PROJECT_PAT }}
 
       - name: Configure Goose
         run: |
@@ -398,7 +398,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ github.token }}
+          gh-token: ${{ secrets.PROJECT_PAT }}
 
       - name: Rebase feature branch onto main
         run: |
@@ -581,7 +581,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ github.token }}
+          gh-token: ${{ secrets.PROJECT_PAT }}
 
       - name: Configure Goose
         run: |
@@ -677,7 +677,7 @@ jobs:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ github.token }}
+          gh-token: ${{ secrets.PROJECT_PAT }}
 
       - name: Configure Goose
         run: |
