@@ -116,7 +116,7 @@ func CollectConfigInteractive(w io.Writer, repoFullName string, deps FormDeps) (
 	}
 
 	// --- Phase 4: Credentials and Project ---
-	if err := collectCredentialsAndProject(cfg, deps.RunForm); err != nil {
+	if err := collectCredentialsAndProject(cfg, deps.RunForm, deps.RunCommand); err != nil {
 		return nil, err
 	}
 
@@ -265,7 +265,51 @@ func collectPipelineConfig(cfg *InitConfig, runForm FormRunFunc) error {
 // created automatically by project.Create; for federated topology it is
 // selected from the project list by the CLI before CollectConfigInteractive
 // is called. Both paths set the variable through their own code paths.
-func collectCredentialsAndProject(cfg *InitConfig, runForm FormRunFunc) error {
+//
+// When run is non-nil and the user is authenticated with gh, this function
+// offers "Use my current gh token" as a zero-setup path that stores the
+// existing credential as both PROJECT_PAT and PIPELINE_PAT. This avoids
+// requiring the user to manually create PATs with the correct permissions.
+// A manual-entry fallback is always available.
+func collectCredentialsAndProject(cfg *InitConfig, runForm FormRunFunc, run RunCommandFunc) error {
+	// Detect whether the user has an active gh token we can reuse.
+	ghToken := detectGhToken(run)
+
+	if ghToken != "" {
+		// Offer the zero-setup path first.
+		const (
+			optGhToken = "gh-token"
+			optManual  = "manual"
+		)
+		var choice string
+		choiceForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Pipeline credentials (PROJECT_PAT and PIPELINE_PAT)").
+					Options(
+						huh.NewOption(
+							"Use my current gh token — zero extra setup\n    Stores your gh credential as repo secrets (broad access).\n    Suitable for personal repos; use dedicated PATs for team/org repos.",
+							optGhToken,
+						),
+						huh.NewOption(
+							"Enter PATs manually\n    Paste a PROJECT_PAT and PIPELINE_PAT you have already created.",
+							optManual,
+						),
+					).
+					Value(&choice),
+			),
+		)
+		if err := runForm(choiceForm); err != nil {
+			return fmt.Errorf("credentials choice form: %w", err)
+		}
+		if choice == optGhToken {
+			cfg.GooseAgentPAT = ghToken
+			cfg.PipelinePAT = ghToken
+			return nil
+		}
+	}
+
+	// Manual entry path.
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -284,6 +328,21 @@ func collectCredentialsAndProject(cfg *InitConfig, runForm FormRunFunc) error {
 		return fmt.Errorf("credentials form: %w", err)
 	}
 	return nil
+}
+
+// detectGhToken returns the active gh CLI token if one is available, or an
+// empty string when gh is not installed, the user is not authenticated, or
+// run is nil. The token is suitable for use as PROJECT_PAT and PIPELINE_PAT
+// on personal repos where broad credential scope is acceptable.
+func detectGhToken(run RunCommandFunc) string {
+	if run == nil {
+		return ""
+	}
+	out, err := run("gh", "auth", "token")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }
 
 // --- Validation functions ---

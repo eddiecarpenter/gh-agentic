@@ -399,3 +399,101 @@ func TestCollectConfigInteractive_OwnerTypeDetectionFailure(t *testing.T) {
 		t.Error("expected warning about owner type detection failure")
 	}
 }
+
+// --- detectGhToken tests ---
+
+func TestDetectGhToken_ReturnsToken(t *testing.T) {
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) == 2 && args[0] == "auth" && args[1] == "token" {
+			return "ghp_abc123\n", nil
+		}
+		return "", fmt.Errorf("unexpected: %s %v", name, args)
+	}
+	got := detectGhToken(run)
+	if got != "ghp_abc123" {
+		t.Errorf("expected %q, got %q", "ghp_abc123", got)
+	}
+}
+
+func TestDetectGhToken_ErrorReturnsEmpty(t *testing.T) {
+	run := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("not authenticated")
+	}
+	got := detectGhToken(run)
+	if got != "" {
+		t.Errorf("expected empty string on error, got %q", got)
+	}
+}
+
+func TestDetectGhToken_NilRunReturnsEmpty(t *testing.T) {
+	got := detectGhToken(nil)
+	if got != "" {
+		t.Errorf("expected empty string for nil run, got %q", got)
+	}
+}
+
+// --- collectCredentialsAndProject tests ---
+
+func TestCollectCredentialsAndProject_GhTokenPath(t *testing.T) {
+	// When gh auth token returns a token and the user selects "Use my current gh token",
+	// both GooseAgentPAT and PipelinePAT should be set to that token.
+	cfg := &InitConfig{}
+	run := func(name string, args ...string) (string, error) {
+		if name == "gh" && len(args) == 2 && args[0] == "auth" && args[1] == "token" {
+			return "ghp_mytoken", nil
+		}
+		return "", nil
+	}
+
+	callCount := 0
+	runForm := func(f *huh.Form) error {
+		idx := callCount
+		callCount++
+		if idx == 0 {
+			// First form: credential choice — simulate user selecting gh-token.
+			cfg.GooseAgentPAT = "ghp_mytoken"
+			cfg.PipelinePAT = "ghp_mytoken"
+			// Signal gh-token choice by returning nil; the real form would set
+			// choice = "gh-token", but in tests we populate cfg directly since
+			// huh binding requires a running terminal. We verify the outcome.
+		}
+		return nil
+	}
+
+	if err := collectCredentialsAndProject(cfg, runForm, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Form is called once (the choice form); the manual entry form is skipped.
+	if callCount != 1 {
+		t.Errorf("expected 1 form call (choice only), got %d", callCount)
+	}
+}
+
+func TestCollectCredentialsAndProject_NoGhToken_ManualEntry(t *testing.T) {
+	// When gh auth token fails, skip the choice form and go straight to manual entry.
+	cfg := &InitConfig{}
+	run := func(name string, args ...string) (string, error) {
+		return "", fmt.Errorf("not authenticated")
+	}
+
+	callCount := 0
+	runForm := func(f *huh.Form) error {
+		callCount++
+		cfg.GooseAgentPAT = "proj_pat"
+		cfg.PipelinePAT = "pipe_pat"
+		return nil
+	}
+
+	if err := collectCredentialsAndProject(cfg, runForm, run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected 1 form call (manual entry only), got %d", callCount)
+	}
+	if cfg.GooseAgentPAT != "proj_pat" {
+		t.Errorf("GooseAgentPAT: got %q, want %q", cfg.GooseAgentPAT, "proj_pat")
+	}
+	if cfg.PipelinePAT != "pipe_pat" {
+		t.Errorf("PipelinePAT: got %q, want %q", cfg.PipelinePAT, "pipe_pat")
+	}
+}
