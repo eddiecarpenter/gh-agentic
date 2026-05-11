@@ -416,11 +416,7 @@ jobs:
             git rebase --abort
             exit 1
           }
-          git config --global --unset-all http.https://github.com/.extraheader || true
-          git remote set-url origin "https://x-access-token:${PIPELINE_PAT}@github.com/${{ github.repository }}.git"
           git push origin HEAD:${{ steps.branch.outputs.name }} --force-with-lease
-        env:
-          PIPELINE_PAT: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
         run: |
@@ -457,18 +453,15 @@ jobs:
 
       - name: Push branch
         if: success()
-        run: |
-          # actions/checkout injects github.token via http.extraheader — unset it
-          # so the PIPELINE_PAT embedded in the remote URL is used instead.
-          git config --global --unset-all http.https://github.com/.extraheader || true
-          git remote set-url origin "https://x-access-token:${PIPELINE_PAT}@github.com/${{ github.repository }}.git"
-          git push origin ${{ steps.branch.outputs.name }}
+        run: git push origin ${{ steps.branch.outputs.name }}
         env:
-          PIPELINE_PAT: ${{ secrets.PIPELINE_PAT }}
-          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          GH_TOKEN: ${{ github.token }}
 
+      # When COMPLIANCE_VERIFY_ENABLED is true, skip PR creation here — the
+      # compliance-verify job will open the PR after AC verification passes.
+      # When disabled (default), open the PR as normal.
       - name: Open PR
-        if: success()
+        if: success() && vars.COMPLIANCE_VERIFY_ENABLED != 'true'
         env:
           # Must use PIPELINE_PAT — github.token cannot create PRs when the
           # "Allow GitHub Actions to create pull requests" repo setting is off.
@@ -497,9 +490,10 @@ jobs:
       # Must use PIPELINE_PAT (not github.token) so the label event triggers
       # the pr-review-session workflow; github.token events cannot trigger
       # other workflow runs (GitHub platform restriction).
+      # Only fires when COMPLIANCE_VERIFY_ENABLED is off (PR was just opened above).
       - name: Apply in-review label
         id: relabel
-        if: success()
+        if: success() && vars.COMPLIANCE_VERIFY_ENABLED != 'true'
         env:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
         run: |
@@ -518,7 +512,7 @@ jobs:
       # user-owned Projects v2 (platform limit). Skipped gracefully if
       # the PAT is unset; non-blocking on failure.
       - name: Set project status to 'In Review'
-        if: success() && steps.relabel.outputs.skipped != 'true'
+        if: success() && vars.COMPLIANCE_VERIFY_ENABLED != 'true' && steps.relabel.outputs.skipped != 'true'
         continue-on-error: true
         env:
           PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
@@ -527,6 +521,223 @@ jobs:
           if [ -z "${PROJECT_PAT}" ]; then
             echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
             echo "::warning::To enable: create a PAT with user-level project read/write access, set it as PROJECT_PAT in repo secrets."
+            exit 0
+          fi
+          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
+            echo "::error::AGENTIC_PROJECT_ID is not configured."
+            exit 1
+          fi
+          export GH_TOKEN="${PROJECT_PAT}"
+          ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.node_id')
+          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
+          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+          if [ -z "${ITEM_ID}" ]; then
+            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
+            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
+          fi
+          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
+          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
+          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "In Review") | .id')
+          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+
+      # When COMPLIANCE_VERIFY_ENABLED is true: route to compliance-verify
+      # instead of PR review. Apply in-verification (removing in-development)
+      # and set project status to In Verification.
+      - name: Apply in-verification label
+        id: in_verification
+        if: success() && vars.COMPLIANCE_VERIFY_ENABLED == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+        run: |
+          COMMITS=$(git rev-list --count origin/main..HEAD)
+          if [ "${COMMITS}" -eq 0 ]; then
+            echo "No commits — nothing to verify. Leaving issue in-development."
+            echo "skipped=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          gh issue edit ${{ github.event.issue.number }} \
+            --remove-label "in-development" \
+            --add-label "in-verification"
+          echo "skipped=false" >> $GITHUB_OUTPUT
+
+      - name: Set project status to 'In Verification'
+        if: success() && vars.COMPLIANCE_VERIFY_ENABLED == 'true' && steps.in_verification.outputs.skipped != 'true'
+        continue-on-error: true
+        env:
+          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
+          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
+        run: |
+          if [ -z "${PROJECT_PAT}" ]; then
+            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
+            exit 0
+          fi
+          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
+            echo "::error::AGENTIC_PROJECT_ID is not configured."
+            exit 1
+          fi
+          export GH_TOKEN="${PROJECT_PAT}"
+          ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.node_id')
+          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
+          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+          if [ -z "${ITEM_ID}" ]; then
+            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
+            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
+          fi
+          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
+          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
+          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "In Verification") | .id')
+          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+
+  # ---------------------------------------------------------------------------
+  # Stage 4d — Compliance Verify
+  # Trigger: in-verification label applied to a feature issue
+  # Requires: COMPLIANCE_VERIFY_ENABLED=true (repo variable feature switch)
+  # ---------------------------------------------------------------------------
+  compliance-verify:
+    name: Compliance Verify (Stage 4d)
+    if: |
+      github.event_name == 'workflow_dispatch' || (
+        github.event_name == 'issues' &&
+        github.event.action == 'labeled' &&
+        contains(github.event.issue.labels.*.name, 'feature') &&
+        github.event.label.name == 'in-verification'
+      )
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    env:
+      PIPELINE_PAT: ${{ secrets.PIPELINE_PAT }}
+    steps:
+      - name: Resolve feature branch
+        id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          BRANCH=$(curl --proto '=https' --tlsv1.2 -fsSL \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/branches?per_page=100" \
+            | jq -r ".[].name | select(startswith(\"feature/${ISSUE}-\"))" \
+            | head -1)
+          if [ -z "$BRANCH" ]; then
+            echo "No branch found matching feature/${ISSUE}-*"
+            exit 1
+          fi
+          echo "name=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Checkout domain repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.name }}
+          fetch-depth: 0
+
+      - name: Resolve framework version
+        run: |
+          VERSION="${{ vars.AGENTIC_FRAMEWORK_VERSION }}"
+          if [ -z "${VERSION}" ]; then
+            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set."
+            exit 1
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install tools
+        run: |
+          VERSION="${{ vars.AGENTIC_FRAMEWORK_VERSION }}"
+          gh extension install eddiecarpenter/gh-agentic --pin "${VERSION}" 2>/dev/null || \
+            gh extension upgrade gh-agentic 2>/dev/null || true
+          curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_INSTALL_DIR=/usr/local/bin sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Setup Agent Auth
+        run: |
+          mkdir -p ~/.config/claude
+          echo "${CLAUDE_CREDENTIALS_JSON}" > ~/.config/claude/credentials.json
+        env:
+          CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+
+      - name: Configure Goose
+        run: |
+          mkdir -p ~/.config/goose
+          cat > ~/.config/goose/config.yaml <<GOOSEEOF
+          GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
+          GOOSEEOF
+
+      - name: Run compliance-verify recipe
+        run: |
+          goose run \
+            --recipe .agents/.goose/recipes/compliance-verify.yaml \
+            --params feature_number=${{ github.event.issue.number }}
+        env:
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
+          GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
+          GOOSE_MODE: auto
+          GOOSE_DISABLE_SESSION_NAMING: "true"
+          GH_TOKEN: ${{ github.token }}
+          CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+
+      # If the recipe applied compliance-verified, open the PR and move to in-review.
+      # If not (skill handled the state reset), log outcome and exit cleanly — not a failure.
+      - name: Open PR if compliance-verified
+        id: open_pr
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          BRANCH="${{ steps.branch.outputs.name }}"
+          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} --json labels --jq '[.labels[].name]')
+          if ! echo "${LABELS}" | jq -e 'contains(["compliance-verified"])' > /dev/null; then
+            echo "compliance-verified label not present — recipe did not pass. Skill has already handled state transition."
+            echo "opened=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          COMMITS=$(git rev-list --count origin/main..HEAD)
+          if [ "${COMMITS}" -eq 0 ]; then
+            echo "No commits on ${BRANCH} beyond main — nothing to PR. Skipping."
+            echo "opened=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          EXISTING=$(gh pr list --repo ${{ github.repository }} --head "${BRANCH}" --json number --jq '.[0].number')
+          if [ -n "${EXISTING}" ]; then
+            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping creation"
+            echo "opened=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          BODY=$(printf "Closes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${ISSUE_NUMBER}")
+          gh pr create \
+            --title "feat: ${ISSUE_TITLE}" \
+            --body "${BODY}" \
+            --base main \
+            --head "${BRANCH}"
+          echo "opened=true" >> $GITHUB_OUTPUT
+
+      # Must use PIPELINE_PAT so the label event triggers pr-review-session.
+      - name: Apply in-review label
+        if: success() && steps.open_pr.outputs.opened == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+        run: |
+          gh issue edit ${{ github.event.issue.number }} \
+            --remove-label "in-verification" \
+            --add-label "in-review"
+
+      - name: Set project status to 'In Review'
+        if: success() && steps.open_pr.outputs.opened == 'true'
+        continue-on-error: true
+        env:
+          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
+          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
+        run: |
+          if [ -z "${PROJECT_PAT}" ]; then
+            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
             exit 0
           fi
           if [ -z "${AGENTIC_PROJECT_ID}" ]; then

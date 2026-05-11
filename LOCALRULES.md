@@ -58,6 +58,21 @@ It is known to work end-to-end with the organisation topology.
 
 Do not reinvent what already exists in charging-domain. Adapt it.
 
+## Workflow File Changes — Interactive Only
+
+**Any feature whose implementation touches `.github/workflows/agentic-pipeline.yml` (or any
+other workflow file) MUST be implemented in an interactive session, not via the headless
+dev-session pipeline.**
+
+Reason: GitHub blocks any token — including fine-grained PATs and classic PATs with `workflow`
+scope — from pushing workflow file changes when the push originates from a GitHub Actions
+runner via `github.token`. Routing workflow changes through the pipeline causes repeated push
+failures that require manual intervention. Implement workflow changes interactively (Claude Code
+desktop or direct editor), commit and push with your own credentials, and open the PR manually.
+
+This applies to all jobs in `agentic-pipeline.yml`: adding new pipeline stages, modifying
+trigger conditions, adding steps, and updating job-level env vars.
+
 ## Notes
 
 - This repo was created manually (before the bootstrap tool existed) — bootstrap.sh was not used
