@@ -335,6 +335,67 @@ collapsible findings table only.
    Hold as `<native-findings>` — list of
    `{ tool, severity, category, file, line, message }`.
 
+9b. **Run test coverage check.**
+
+    Execute the full test suite with coverage instrumentation and
+    verify the total coverage meets the 80% minimum threshold.
+
+    ```bash
+    go test -coverprofile=coverage.out ./...
+    go tool cover -func=coverage.out | tail -1
+    ```
+
+    The last line of `go tool cover -func` output is the total:
+    ```
+    total:    (statements)    82.4%
+    ```
+
+    Parse the percentage:
+    ```bash
+    COVERAGE=$(go tool cover -func=coverage.out \
+      | grep "^total:" | awk '{print $3}' | tr -d '%')
+    ```
+
+    Hold as `<coverage-pct>` (numeric, e.g. `82.4`).
+
+    **Threshold evaluation:**
+
+    | Coverage | Severity | Action |
+    |---|---|---|
+    | ≥ 80% | — | PASS — no finding added |
+    | 70–79% | MAJOR | Below threshold but not critical |
+    | < 70% | CRITICAL | Significant coverage gap |
+
+    If coverage is below 80%, add a finding to `<native-findings>`:
+    ```
+    { tool: "go-test-coverage",
+      severity: <CRITICAL|MAJOR per table above>,
+      category: "coverage",
+      file: "overall",
+      line: "—",
+      message: "Test coverage is <coverage-pct>% — minimum required is 80%.
+                <80-coverage-pct>% of statements are untested." }
+    ```
+
+    **If `go test` itself fails** (compilation error or test failure),
+    record a CRITICAL finding for each failing package and continue:
+    ```
+    { tool: "go-test-coverage",
+      severity: "CRITICAL",
+      category: "test-failure",
+      file: "<package>",
+      line: "—",
+      message: "Test suite failed — coverage could not be measured." }
+    ```
+    Do not halt the skill on a test failure — record it and proceed.
+
+    **SonarQube cross-check** (only when `<sonar-available>` = true):
+    After the SonarQube analysis in step 10 completes, compare
+    `<coverage-pct>` against the `coverage` metric returned by
+    `get_component_measures`. If they diverge by more than 5 percentage
+    points, log a discrepancy warning in the report (informational
+    only — the native measurement is authoritative).
+
 10. **Run SonarQube analysis** (skip entirely if `<sonar-available>` = false).
 
     a. **Trigger analysis.** Submit the branch to the SonarQube server:
@@ -507,7 +568,11 @@ collapsible findings table only.
     ## Static Analysis
 
     **Result:** PASS ✅  |  WARN ⚠️  |  FAIL ❌  (use one)
-    **Tools run:** go vet, golangci-lint, govulncheck, SonarQube  (list actual tools used)
+    **Tools run:** go vet, golangci-lint, govulncheck, go-test-coverage, SonarQube  (list actual tools used)
+
+    | Metric | Value | Threshold | Status |
+    |---|---|---|---|
+    | Test coverage | <coverage-pct>% | ≥ 80% | ✅ PASS  \|  ❌ FAIL (use one) |
 
     | Severity | Count |
     |---|---|
@@ -523,6 +588,7 @@ collapsible findings table only.
     | Severity | Tool | Location | Message |
     |---|---|---|---|
     | 🔴 BLOCKER | sonarqube-gate | — | Quality gate failed |
+    | 🟠 CRITICAL | go-test-coverage | overall | Test coverage is 61.2% — minimum required is 80% |
     | 🟠 CRITICAL | govulncheck | `go.mod` | CVE-2024-XXXX in golang.org/x/net < 0.23.0 |
     | 🟡 MAJOR | golangci-lint (errcheck) | `cmd/bar.go:88` | Error return value not checked |
 
