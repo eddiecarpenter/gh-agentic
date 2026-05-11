@@ -1,84 +1,72 @@
 # Skill Catalogue
 
-Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by hand.
+Generated from skill frontmatter. Do not edit by hand — regenerate by reading every `skills/*/SKILL.md` and extracting `name`, `description`, and `triggers`.
 
 ## Session skills
 
-- **compliance-verify** — Evaluates a Feature's implementation against its acceptance criteria, test quality, and language standards by reading the diff and Feature issue in isolation — no dev-session context — and produces a structured findings report posted as an issue comment. Applies compliance-verified on all-pass; applies development-in-progress on any fail or partial; escalates and halts on oscillation or 10-cycle cap. Use when the compliance-verify pipeline stage fires on a Feature labelled in-verification — the diff is evaluated independently so findings are uncontaminated by implementation-session bias.
+- **compliance-verify** — Verifies that the implementation on a feature branch satisfies all acceptance criteria from the Feature issue. Evaluates each AC against the actual diff, posts a structured verdict, and either applies `compliance-verified` (all ACs pass — workflow then opens the PR) or posts a `<!-- compliance-feedback:v1 -->` comment and swaps `in-verification` back to `in-development` (triggering a new dev session). Use when GitHub Actions fires on a feature issue labelled `in-verification`. Headless only.
   Triggers: automated
 
-- **dev-session** — Implements every open Task sub-issue on the feature branch in order, commits per task, verifies acceptance criteria coverage, and exits cleanly so the workflow can open the PR. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-development label — never run interactively.
-  Triggers: automation: in-development
+- **dev-session** — Implements a Feature's tasks in order — reading the rationale comment and the ordered Task sub-issues, then walking each open task (read body, implement with reuse discipline, run tests, commit with the prescribed message format, push, close the task issue) until all tasks are done. On exit, the surrounding GitHub Actions workflow applies `in-verification`, triggering compliance-verify. Use when workflow automation fires on in-development label apply against a Feature whose feature-design phase has produced a rationale, ordered tasks, and a feature branch. Headless only; humans running implementation interactively use this skill as a guide.
+  Triggers: automated
 
-- **feature-design** — Decomposes a Feature issue into ordered Task sub-issues that cover every acceptance criterion, creates the feature branch, and hands off to Dev Session via the in-development label. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-design label — never run interactively.
-  Triggers: automation: in-design
+- **feature-design** — Designs a Feature by producing a rationale artefact (the Design Plan), creating ordered Task sub-issues, and creating the feature branch. Runs headless when invoked against a Feature carrying in-design, or interactively in foreground when invoked against interactive-design. Headless flow auto-triggers implementation at end-of-flow; interactive flow asks the human to choose trigger-now / park-at-designed / cancel. Use when workflow automation fires on in-design label apply, or when a human is running design interactively on a Feature flagged interactive-design.
+  Triggers: hybrid
 
-- **requirement-scoping** — Decomposes a Requirement issue into one or more well-formed Feature issues with acceptance criteria, UX triage, and deployment strategy, and hands selected features to Feature Design via the in-design label. Use when a human invokes the requirement-scoping skill to scope a backlog requirement into features.
+- **foreground-recovery** — Diagnoses and recovers stuck pipeline state interactively — stale concurrency beacons (design-in-progress / development-in-progress / issue-in-progress), label-vs-status mismatches, partial design or dev artefacts on a Feature, orphan feature branches, and backwards-transitioned issues. Walks the human through what's wrong, proposes a remediation, and applies it only after explicit confirmation. Use when the human suspects the pipeline is stuck on a specific Requirement / Feature / issue, or wants to scan the whole project for known stuck-state patterns.
   Triggers: human-interactive
 
-- **issue-session** — Handles a GitHub Issue assigned to the agent — routes by label to either fix a bug on a new branch or answer a question as a comment, and exits cleanly so the workflow can open a PR if code changed. Use when GitHub Actions triggers this session automatically on an issue being assigned to the agent user — never run interactively.
-  Triggers: automation: issue-assigned
+- **issue-session** — Handles a GitHub issue that has been assigned to the agent (label `assigned-to-agent`) — either by answering it as a question (reply + close), implementing it as a small fix (branch + commit + push + PR), or redirecting it as out-of-scope (apply `needs-scoping` and surface a pointer to the pipeline). Headless only. Use when GitHub Actions fires on an `assigned-to-agent` label being applied to a non-pipeline issue.
+  Triggers: automated
 
-- **pr-review-session** — Processes inline review comments on a PR — answers questions, implements change requests with tests, and escalates ambiguous or scope-changing feedback via the needs-foreground-review label. Use when GitHub Actions triggers this session automatically on a PR review being submitted — never run interactively.
-  Triggers: automation: pr-review-submitted
+- **pr-review-session** — Processes PR reviewer feedback by reading unaddressed reviewer comments on a Feature's PR — both inline review comments and general PR comments — and acting on each: pure questions get a direct reply, change requests get implemented (with the commit-discipline applied) and committed in a single batched commit then pushed. Approvals do NOT trigger this skill. Use when GitHub Actions fires on a review submitted with state changes_requested or commented, on a new issue comment on a PR, or on a new pull-request review comment.
+  Triggers: automated
 
-- **requirements-session** — Captures a new business need as a Requirement issue in GitHub and, when the scope is clear, completes Requirement Scoping inline. Use when a human invokes the requirements-session skill to record a new idea, need, or enhancement request.
+- **requirement-scoping** — Decomposes a Requirement into one or more well-formed Feature issues through a conversational, agent-led artefact walk — exploration, framing, MVP, decomposition, acceptance criteria, interactive-design triage, deployment, parking lot — and triggers selected Features for design via the in-design or interactive-design label. Use when a human wants to scope a Requirement that has reached backlog into Features.
   Triggers: human-interactive
 
-## Recovery skills
-
-- **foreground-recovery** — The human-driven escape hatch for any blocked pipeline state — diagnoses failures from exact error output, applies minimal fixes, and optionally rewinds to an earlier pipeline phase with explicit human confirmation. Use when the automated pipeline is blocked (red build, failing tests, merge conflict, silent workflow failure, or any situation requiring manual intervention) and a human opens the Foreground Recovery recipe.
+- **requirements-session** — Captures a new business need as a Requirement GitHub issue through a conversational, agent-led interview — listening, challenging vague or solution-framed input, and confirming the result with the human before creating the issue. Use when a human wants to record a new business need, idea, or enhancement request as a Requirement.
   Triggers: human-interactive
 
-## Bootstrap skills
+- **session-init** — Bootstraps the project environment at the start of every session — builds the skill index in memory, runs the gh agentic health check, surfaces the framework state as a greeting, and routes the user to the appropriate phase skill via an interactive menu. Use when a new session starts (RULEBOOK.md mandates this as the first action of every session).
+  Triggers: automated
 
-- **post-sync** — Handles post-sync upgrade actions left behind in POST_SYNC.md — runs required migration steps (commands, config changes, file renames) in interactive sessions, or warns and exits in automated sessions. Use only when session-init detects POST_SYNC.md at the repo root — never invoke directly.
-  Triggers: post-sync
+- **solution-architecture** — Creates or extends the project's Foundation Solution Architecture document (docs/ARCHITECTURE.md) through a conversational, agent-led interview — vision, capability domains, system context, architectural decisions, NFRs, integration points, data model, evolution notes. Operates on the current branch (refuses to run on main); the human pushes and opens a PR manually.
+  Triggers: human-interactive
 
-- **session-init** — Loads the project environment at the start of every session — reads the project brief, runs gh agentic check, loads standards and the skill catalogue, and handles post-sync actions. Use at every session start before any other skill, and again after a template sync is reported mid-session.
-  Triggers: session-start, post-sync
+- **ux-design** — Creates and extends a project's canonical UX specification at docs/UX_DESIGN.md — a long-lived, governed artefact sibling to docs/ARCHITECTURE.md that defines the project's UX rules, decision-axis verdicts, sanctioned deviations, and standards. Runs at project birth (init mode), on demand to extend rules (extend mode), and from feature-design's interactive flow when a deviation is decided (add-deviation mode).
+  Triggers: human
 
 ## Operation skills
 
-- **build-catalogue** — Regenerates CATALOGUE.md from every skill's YAML frontmatter in a deterministic, diff-friendly order (grouped by category, alphabetical within category). Use when CATALOGUE.md is missing or stale (any skill mtime newer than the catalogue), or after a skill has been added, removed, or had its frontmatter edited.
-  Triggers: on-demand
-
-- **release-notes** — Generates human-readable, well-structured release notes from git commit history and updates the GitHub release body with the AI-written notes. Use when the Release recipe fires on a version tag being pushed to main and the release body needs categorised (Features/Fixes/Documentation/Chores) notes.
-  Triggers: on-demand
-
-- **skill-creation** — Produces a correctly-classified, schema-conformant skill file from a human description (reactive mode) or surfaces a proactive suggestion when the agent observes the same substantive action repeated in the current session (proactive mode). Use when the human asks to create a skill that does X, or when the agent notices it has performed three or more substantively-similar actions at a natural pause between user turns.
-  Triggers: human-interactive, on-demand
-
-- **update-project-template** — Extracts the live GitHub Project configuration (shortDescription, readme, status field options, and views) and writes it as the canonical .agents/project-template.json so board customisations flow to downstream environments via gh agentic sync. Use when the human asks to save the current project config as the template or to update the project template from the live project (template repo only).
+- **recipe-creation** — Creates or updates a Goose recipe under a thin-shell discipline that prevents recipes from duplicating skill content. Validates that recipe instructions are a one-line pointer at the canonical SKILL.md and refuses to write recipe YAML containing numbered steps, inline gh / git commands, decision logic, or any other playbook content.
   Triggers: human-interactive
 
-## Information skills
+- **release-notes** — Generates human-readable, well-structured release notes from the git commit history between the current tag and the previous one, then updates the existing GitHub release body with the AI-written notes. Categorises commits as Features / Fixes / Documentation / Chores; detects newly-added migration docs and prepends a `## ⚠️ Required Action` callout linking each one.
+  Triggers: automated
 
-- **notify-user** — Sends an OS-level notification (macOS osascript or Linux notify-send) to alert the human that human action is required or a long-running session has completed. Use when the pipeline reaches a point where a human must act (PR ready for review, fix pushed awaiting workflow restart) or a session has run longer than the configured completion threshold.
-  Triggers: on-demand
+- **skill-creator** — Creates a new skill in this framework that conforms to the skill-spec — frontmatter, sections, verification, error handling, and a minimal evaluation set. Use when the user asks to create a skill, wants to formalise a recurring action as a reusable skill, or is refactoring an existing skill to match the current skill-spec.
+  Triggers: human-interactive
 
-## Reference skills
+## Primitive skills
 
-- **ask-user** — Canonical harness-neutral interaction shape for every confirmation, classification, disambiguation, or choice prompt raised by any skill — defines when to use a selectable prompt, option constraints, fallback phrasing, and the four canonical prompt shapes (confirm/revise, multi-choice selection, yes/no/later, name-collision). Use inline whenever a skill needs to ask the human for a decision, never as a standalone session.
-  Triggers: on-demand
+- **apply-label** — Applies one or more labels to a GitHub issue or pull request and optionally removes conflicting labels in the same call so phase-state transitions are atomic from the caller's perspective. Returns the resulting label set so the caller can verify without a second round-trip.
+  Triggers: automated
 
-- **capture-design-plan** — Defines the canonical Markdown template for the Design Plan comment feature-design publishes on a Feature issue before any Task sub-issues are created — decomposition rationale, planned tasks, alternatives considered, refactor assessment, and optional codebase findings and risks. Use when feature-design is about to publish its pre-task decomposition rationale as a durable comment on the Feature issue, or when verifying that a published Design Plan comment conforms to the required shape.
-  Triggers: on-demand
+- **gh-agentic** — Picks the right gh agentic CLI command (with the right flags, especially --raw) to answer framework, project, requirement, feature, or pipeline questions — and runs it. The cheapest token-cost path to read framework state.
+  Triggers: automated
 
-- **capture-feature** — Defines the canonical markdown body template for every Feature issue created during scoping — user story, context, scope, acceptance criteria in Given/When/Then format, deployment strategy, UX design, notes, and parent link. Use when authoring the body of any new Feature issue, or when reviewing that a Feature issue conforms to the required shape.
-  Triggers: on-demand
+- **post-issue-comment** — Posts a comment to a GitHub issue or pull request with the body the caller supplies, and returns the URL and ID of the created comment so the caller can verify or reference it.
+  Triggers: automated
 
-- **gh-agentic-tool** — Authoritative command reference for the gh agentic CLI extension — every command in the cobra tree with every declared flag, the --raw output contract for agent-oriented data retrieval, and a decision matrix for common agent questions. Use whenever the agent needs to interact with the agentic framework from the command line.
-  Triggers: on-demand
+- **prompt-user** — Asks the human a single question through the best available UI primitive — Claude Code's structured AskUserQuestion card when running interactively, or an inline conversation prompt when running headlessly — and returns the reply as a structured value to the calling skill.
+  Triggers: automated
 
-- **refactor-assessment** — Canonicalises the search-first, reuse-default, motivate-if-not procedure every code-touching skill performs before writing new code — defines the three permitted outcomes (reuse as-is, reuse via refactor, do not reuse with motivation), the opt-out variant, the single-line recording format, and the loader phrase consumer skills invoke. Use when any skill or agent is about to introduce a new function, type, module, schema, or similar symbol and must first confirm whether existing code already covers the need.
-  Triggers: on-demand
+- **set-issue-status** — Sets the Status field on a GitHub ProjectV2 item for a given issue, finding or creating the project item if needed and resolving the target status name to its option ID at runtime so the caller does not have to deal with GraphQL plumbing.
+  Triggers: automated
 
-- **session-exit** — Defines the canonical universal exit block emitted by every Session and Recovery skill at termination, with the three fixed sections (Produced, Blocked, Next) and worked variants. Use when authoring or updating any session-ending skill, or when verifying that an exit block conforms to the framework shape.
-  Triggers: on-demand
+- **trigger-design** — Triggers the design phase for a Feature by applying the appropriate trigger label (in-design for headless or interactive-design for foreground, based on the needs-interactive-design classification on the Feature) and transitioning the project status to In Design.
+  Triggers: automated
 
-- **set-issue-status** — Authoritative pattern for setting a GitHub Project V2 status on an issue via the gh CLI GraphQL API — includes the label-to-status mapping and the exact four-step sequence (resolve node ID, find/create project item, resolve field IDs, update status). Use whenever a pipeline label is applied to an issue (always in the same operation, never as a separate step).
-  Triggers: on-demand
-
-- **skill-categories** — Authoritatively defines the six-category skill taxonomy (Session, Recovery, Bootstrap, Operation, Information, Reference) and the YAML frontmatter schema every skill must conform to. Use when authoring a new skill, classifying an existing skill, validating frontmatter, or reasoning about which exit protocol applies to a skill.
-  Triggers: on-demand
+- **trigger-implementation** — Triggers the implementation phase for a Feature by removing whichever design-phase label it currently carries (in-design, interactive-design, or designed) and applying in-development, then transitioning the project status to In Development.
+  Triggers: automated
