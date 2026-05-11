@@ -158,7 +158,10 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ github.token }}
+          # Must use PIPELINE_PAT so the in-development label event triggers
+          # the dev-session workflow; github.token events cannot trigger
+          # other workflow runs (GitHub platform restriction).
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
       # Structural enforcement of the Design Plan publication contract
       # introduced by #652 (under #632). The skill (feature-design.md)
