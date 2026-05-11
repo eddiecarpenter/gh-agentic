@@ -52,8 +52,8 @@ A return value at exit:
 ```
 { repo: <string>, feature: <int>, branch: <string>,
   acs_total: <int>, acs_passed: <int>, acs_failed: <int>,
-  verdict: "PASS" | "FAIL",
-  exit_state: "pass" | "fail" | "no-acs" | "blocked" }
+  verdict: "PASS" | "FAIL" | "ESCALATED" | "BLOCKED",
+  exit_state: "pass" | "fail" | "no-acs" | "cycle-cap" | "blocked" }
 ```
 
 `exit_state`:
@@ -64,6 +64,10 @@ A return value at exit:
   Cannot evaluate. Treated as `pass` with a warning so the Feature
   is not stuck forever by a missing AC block; the PR is opened and
   a warning is included in the report.
+- `cycle-cap` — the dev-session ↔ compliance-verify feedback loop has
+  reached 3 iterations without all ACs passing. Escalation comment
+  posted; `needs-human-review` applied; `in-verification` removed.
+  No further automated cycling. Human intervention required.
 - `blocked` — the skill could not complete verification (environment
   error, branch missing, etc.); exits with an error; Feature stays
   at `in-verification` for human intervention.
@@ -130,6 +134,59 @@ and reuse as `<active-repo>`.
      If present → raise `INVALID_VERIFY_STATE`. The Feature is
      already past compliance verification; this run is a no-op or a
      workflow bug.
+
+3b. **Check the feedback cycle count.** Count how many
+    `<!-- compliance-feedback:v1 -->` comments already exist on the
+    Feature issue:
+
+    ```bash
+    gh issue view <N> --repo <active-repo> --json comments \
+      --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))] | length'
+    ```
+
+    Hold as `<feedback-count>`.
+
+    **Cap:** if `<feedback-count>` ≥ 3, the dev-session and
+    compliance-verify cycle has exceeded its permitted retries. Do
+    NOT continue verification. Instead:
+
+    a. Post an escalation comment via `post-issue-comment`:
+
+       ```markdown
+       <!-- compliance-escalation:v1 -->
+
+       # Compliance Verification — Cycle Cap Reached
+
+       Feature #<N> has failed compliance verification **<feedback-count> times**
+       and has reached the maximum automated retry limit (3 cycles).
+
+       Automated cycling has been halted. Human intervention is required to
+       diagnose why the acceptance criteria cannot be satisfied automatically.
+
+       ## Failed ACs (from last feedback comment)
+
+       See the most recent `<!-- compliance-feedback:v1 -->` comment above for
+       the specific ACs that are not passing.
+
+       ## Suggested actions
+
+       - Review the acceptance criteria — are they testable and unambiguous?
+       - Review the last compliance report for evidence of what the agent did implement.
+       - Consider splitting the AC, relaxing the phrasing, or implementing the fix manually.
+       - Once resolved, manually apply `in-development` to restart the pipeline,
+         or apply `compliance-verified` if the implementation is already acceptable.
+       ```
+
+    b. Apply `needs-human-review` label and remove `in-verification`:
+
+       ```bash
+       gh issue edit <N> --repo <active-repo> \
+         --add-label "needs-human-review" \
+         --remove-label "in-verification"
+       ```
+
+    c. Set `exit_state = "cycle-cap"` and emit **Output E** (step 14).
+       Terminate immediately — do not proceed to step 4.
 
 4. **Check out the feature branch.**
 
@@ -412,6 +469,23 @@ and reuse as `<active-repo>`.
     Feature #<N> stays at in-verification. Human intervention needed.
     ```
 
+    **Output E — Cycle Cap:**
+    ```
+    === Compliance Verify — Cycle Cap Reached ===
+
+    Feature #<N> has failed compliance verification <feedback-count> times.
+    Automated retry limit (3 cycles) exceeded.
+
+    Results:
+      - <feedback-count> compliance-feedback comments found on issue #<N>
+      - Escalation comment posted on issue #<N>
+      - Label applied: needs-human-review
+      - Label removed: in-verification
+
+    Next: human must intervene — review ACs, last compliance report, and
+    last feedback comment, then manually reset the pipeline or close the Feature.
+    ```
+
 15. **Terminate the session.** Per `emits-exit-block: true`, invoke
     the host runtime's session-close API if available; otherwise
     halt.
@@ -428,4 +502,9 @@ and reuse as `<active-repo>`.
   post) → severity `ERROR`; propagate. Without the report, the
   state is ambiguous — do not apply `compliance-verified` or swap
   labels when the audit trail cannot be written.
+- `CYCLE_CAP_EXCEEDED` from step 3b (feedback-count ≥ 3) → severity
+  `WARN` (not `ERROR`); this is an expected pipeline state, not an
+  environment failure. The escalation comment and label transition
+  are applied and the skill exits cleanly with `exit_state =
+  "cycle-cap"`. Do not propagate as an uncaught exception.
 - All other errors: propagate (default).
