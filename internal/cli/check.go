@@ -227,8 +227,10 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 					ProjectID:         projectID,
 					Run:               deps.run,
 					ReadCreds:         deps.readCreds,
-					FetchProjectTitle: project.DefaultFetchProjectTitle,
-					FrameworkSource:   isFrameworkSource,
+					FetchProjectTitle:       project.DefaultFetchProjectTitle,
+					FetchProjectFields:       project.DefaultFetchProjectFields,
+					UpdateStatusFieldOptions: project.DefaultUpdateStatusFieldOptions,
+					FrameworkSource:          isFrameworkSource,
 				}
 				pipelineReport = doctor.RunAllChecksWithProgress(pipelineCheckDeps, setLabel)
 				return nil

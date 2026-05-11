@@ -216,6 +216,9 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 		ReadCreds: func(r auth.RunCommandFunc) ([]byte, error) {
 			return auth.ReadClaudeCredentialsDefault(r)
 		},
+		FetchProjectTitle:       project.DefaultFetchProjectTitle,
+		FetchProjectFields:       project.DefaultFetchProjectFields,
+		UpdateStatusFieldOptions: project.DefaultUpdateStatusFieldOptions,
 	}, nil
 }
 

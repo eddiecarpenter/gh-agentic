@@ -6,6 +6,7 @@ import (
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
+	"github.com/eddiecarpenter/gh-agentic/internal/project"
 	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
@@ -404,6 +405,59 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 					result.Lines = append(result.Lines,
 						fmt.Sprintf("  %s  Workflow version tags updated to %s (%d file(s))",
 							ui.StatusOK.Render("✓"), mount.TrimVPrefix(version), rewrites))
+					result.Repaired++
+				}
+
+			case r.Name == "status-options":
+				if setLabel != nil {
+					setLabel("Repairing: project status options...")
+				}
+				if deps.FetchProjectFields == nil || deps.UpdateStatusFieldOptions == nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot repair status options — no GraphQL client available",
+							ui.StatusDanger.Render("✗")))
+					result.Unrepaired++
+					continue
+				}
+				tpl, err := project.ReadProjectTemplate()
+				if err != nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot repair status options — could not read template: %v",
+							ui.StatusDanger.Render("✗"), err))
+					result.Unrepaired++
+					continue
+				}
+				fields, err := deps.FetchProjectFields(deps.ProjectID)
+				if err != nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot repair status options — could not fetch fields: %v",
+							ui.StatusDanger.Render("✗"), err))
+					result.Unrepaired++
+					continue
+				}
+				var statusFieldID string
+				for _, f := range fields {
+					if f.Name == "Status" {
+						statusFieldID = f.ID
+						break
+					}
+				}
+				if statusFieldID == "" {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot repair status options — Status field not found on project",
+							ui.StatusDanger.Render("✗")))
+					result.Unrepaired++
+					continue
+				}
+				if err := deps.UpdateStatusFieldOptions(statusFieldID, tpl.StatusField.Options); err != nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Could not update project status options: %v",
+							ui.StatusDanger.Render("✗"), err))
+					result.Unrepaired++
+				} else {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Project status options synced (%d options)",
+							ui.StatusOK.Render("✓"), len(tpl.StatusField.Options)))
 					result.Repaired++
 				}
 

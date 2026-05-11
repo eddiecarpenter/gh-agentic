@@ -28,6 +28,13 @@ type CheckDeps struct {
 	// configured AGENTIC_PROJECT_ID resolves via the GraphQL API. Tests
 	// substitute a fake; production wires project.DefaultFetchProjectTitle.
 	FetchProjectTitle project.FetchProjectTitleFunc
+	// FetchProjectFields and UpdateStatusFieldOptions are used by
+	// checkProjectStatusOptions (check) and RepairPipeline (repair) to detect
+	// and fix missing project status field options. Tests substitute fakes;
+	// production wires project.DefaultFetchProjectFields and
+	// project.DefaultUpdateStatusFieldOptions.
+	FetchProjectFields       project.FetchProjectFieldsFunc
+	UpdateStatusFieldOptions project.UpdateStatusFieldOptionsFunc
 	// FrameworkSource signals that this repo IS the gh-agentic framework
 	// source itself (detected by .ai being a symlink). When true, content-
 	// layer checks that inspect a mounted .agents/ tree are replaced with a
@@ -119,6 +126,7 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 			{"Checking variables and secrets...", checkVariablesAndSecrets},
 			{"Checking pipeline labels...", checkLabels},
 			{"Checking project reachability...", checkProjectReachability},
+			{"Checking project status options...", checkProjectStatusOptions},
 		}
 		return base
 	}
@@ -148,6 +156,9 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 	// GitHub Project board via `gh agentic status`. Added last so it lands at
 	// the bottom of the report, near the "what the agent actually needs" view.
 	base = append(base, checkGroupStep{"Checking project reachability...", checkProjectReachability})
+	// Project status options run after reachability — no point checking options
+	// on a project that isn't reachable.
+	base = append(base, checkGroupStep{"Checking project status options...", checkProjectStatusOptions})
 	return base
 }
 
@@ -618,6 +629,86 @@ func checkProjectReachability(deps CheckDeps) Group {
 	g.Results = append(g.Results, CheckResult{
 		Name: "project-reachability", Status: Pass,
 		Message: fmt.Sprintf("Project reachable: %s", title),
+	})
+	return g
+}
+
+// checkProjectStatusOptions verifies that every status option defined in the
+// project template exists on the project board's Status single-select field.
+// A missing option (e.g. "In Verification" after a pipeline stage addition)
+// causes workflow steps that set project status to fail at runtime.
+func checkProjectStatusOptions(deps CheckDeps) Group {
+	g := Group{Name: "Project status options"}
+
+	projectID := strings.TrimSpace(deps.ProjectID)
+	if projectID == "" {
+		g.Results = append(g.Results, CheckResult{
+			Name: "status-options", Status: Warning,
+			Message: "project status options check skipped — AGENTIC_PROJECT_ID not configured",
+		})
+		return g
+	}
+
+	if deps.FetchProjectFields == nil {
+		g.Results = append(g.Results, CheckResult{
+			Name: "status-options", Status: Warning,
+			Message: "project status options check skipped — no GraphQL client",
+		})
+		return g
+	}
+
+	tpl, err := project.ReadProjectTemplate()
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name: "status-options", Status: Warning,
+			Message: "project status options check skipped — could not read template: " + err.Error(),
+		})
+		return g
+	}
+
+	fields, err := deps.FetchProjectFields(projectID)
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name: "status-options", Status: Warning,
+			Message: "project status options check skipped — could not fetch fields: " + err.Error(),
+		})
+		return g
+	}
+
+	var existing []string
+	for _, f := range fields {
+		if f.Name == "Status" {
+			for _, o := range f.Options {
+				existing = append(existing, o.Name)
+			}
+			break
+		}
+	}
+
+	existingSet := make(map[string]bool, len(existing))
+	for _, name := range existing {
+		existingSet[name] = true
+	}
+
+	var missing []string
+	for _, o := range tpl.StatusField.Options {
+		if !existingSet[o.Name] {
+			missing = append(missing, o.Name)
+		}
+	}
+
+	if len(missing) > 0 {
+		g.Results = append(g.Results, CheckResult{
+			Name: "status-options", Status: Fail,
+			Message:     fmt.Sprintf("missing project status options: %s", strings.Join(missing, ", ")),
+			Remediation: "run 'gh agentic repair'",
+		})
+		return g
+	}
+
+	g.Results = append(g.Results, CheckResult{
+		Name: "status-options", Status: Pass,
+		Message: fmt.Sprintf("project status options OK (%d options)", len(existing)),
 	})
 	return g
 }
