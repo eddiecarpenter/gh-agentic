@@ -380,15 +380,12 @@ func validateRequired(fieldName string) func(string) error {
 // --- Helper functions ---
 
 // stackOptions returns the selectable stack options for the form.
+// Exactly three options are supported: Go, TypeScript, and Java.
 func stackOptions() []huh.Option[string] {
 	return []huh.Option[string]{
 		huh.NewOption("Go", "Go"),
-		huh.NewOption("Java — Quarkus", "Java Quarkus"),
-		huh.NewOption("Java — Spring Boot", "Java Spring Boot"),
-		huh.NewOption("TypeScript / Node.js", "TypeScript Node.js"),
-		huh.NewOption("Python", "Python"),
-		huh.NewOption("Rust", "Rust"),
-		huh.NewOption("Other", "Other"),
+		huh.NewOption("TypeScript", "TypeScript"),
+		huh.NewOption("Java", "Java"),
 	}
 }
 

@@ -340,20 +340,23 @@ func TestSplitOwnerRepo(t *testing.T) {
 
 func TestStackOptions(t *testing.T) {
 	opts := stackOptions()
-	if len(opts) == 0 {
-		t.Fatal("expected non-empty stack options")
+
+	// Verify exact three-option set: Go, TypeScript, Java — no more, no fewer.
+	wantValues := []string{"Go", "TypeScript", "Java"}
+
+	if len(opts) != len(wantValues) {
+		t.Fatalf("expected exactly %d stack options, got %d", len(wantValues), len(opts))
 	}
 
-	// Verify Go is present.
-	found := false
-	for _, opt := range opts {
-		if opt.Value == "Go" {
-			found = true
-			break
-		}
+	got := make([]string, len(opts))
+	for i, opt := range opts {
+		got[i] = opt.Value
 	}
-	if !found {
-		t.Error("expected 'Go' to be in stack options")
+
+	for i, want := range wantValues {
+		if got[i] != want {
+			t.Errorf("option[%d]: got %q, want %q", i, got[i], want)
+		}
 	}
 }
 
