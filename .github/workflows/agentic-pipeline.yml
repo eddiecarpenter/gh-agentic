@@ -416,7 +416,7 @@ jobs:
             git rebase --abort
             exit 1
           }
-          git config --unset-all http.https://github.com/.extraheader || true
+          git config --global --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${PIPELINE_PAT}@github.com/${{ github.repository }}.git"
           git push origin HEAD:${{ steps.branch.outputs.name }} --force-with-lease
         env:
@@ -460,7 +460,7 @@ jobs:
         run: |
           # actions/checkout injects github.token via http.extraheader — unset it
           # so the PIPELINE_PAT embedded in the remote URL is used instead.
-          git config --unset-all http.https://github.com/.extraheader || true
+          git config --global --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${PIPELINE_PAT}@github.com/${{ github.repository }}.git"
           git push origin ${{ steps.branch.outputs.name }}
         env:
