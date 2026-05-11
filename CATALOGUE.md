@@ -4,6 +4,9 @@ Generated from skill frontmatter by skills/build-catalogue.md. Do not edit by ha
 
 ## Session skills
 
+- **compliance-verify** — Evaluates a Feature's implementation against its acceptance criteria, test quality, and language standards by reading the diff and Feature issue in isolation — no dev-session context — and produces a structured findings report posted as an issue comment. Applies compliance-verified on all-pass; applies development-in-progress on any fail or partial; escalates and halts on oscillation or 10-cycle cap. Use when the compliance-verify pipeline stage fires on a Feature labelled in-verification — the diff is evaluated independently so findings are uncontaminated by implementation-session bias.
+  Triggers: automated
+
 - **dev-session** — Implements every open Task sub-issue on the feature branch in order, commits per task, verifies acceptance criteria coverage, and exits cleanly so the workflow can open the PR. Use when GitHub Actions triggers this session automatically on a Feature issue receiving the in-development label — never run interactively.
   Triggers: automation: in-development
 
