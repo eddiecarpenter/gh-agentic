@@ -406,14 +406,20 @@ jobs:
 
       - name: Rebase feature branch onto main
         run: |
+          git config user.email "agent@gh-agentic.io"
+          git config user.name "gh-agentic"
           git fetch origin main
           git rebase origin/main || {
             echo "::error::Rebase failed — conflicts require manual resolution."
+            echo "Conflicting files:"
             git diff --name-only --diff-filter=U
             git rebase --abort
             exit 1
           }
+          git remote set-url origin "https://x-access-token:${PIPELINE_PAT}@github.com/${{ github.repository }}.git"
           git push origin HEAD:${{ steps.branch.outputs.name }} --force-with-lease
+        env:
+          PIPELINE_PAT: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
         run: |
