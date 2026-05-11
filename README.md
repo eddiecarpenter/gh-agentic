@@ -31,17 +31,19 @@ You run `gh agentic init` once in your repo, inherit the entire pipeline, and fr
 flowchart LR
     R[Requirement<br/><i>human captures need</i>] --> S[Scoping<br/><i>human decomposes<br/>into Features</i>]
     S --> D[Design<br/><i>agent drafts plan +<br/>creates Tasks + branch</i>]
-    D --> I[Implementation<br/><i>agent writes code,<br/>commits per task,<br/>opens PR</i>]
-    I --> V[Review<br/><i>human reviews;<br/>agent addresses<br/>review comments</i>]
+    D --> I[Implementation<br/><i>agent writes code,<br/>commits per task</i>]
+    I --> CV[Compliance Verify<br/><i>agent checks coverage,<br/>ACs, best practices</i>]
+    CV --> |"pass"| V[Review<br/><i>human reviews;<br/>agent addresses<br/>review comments</i>]
+    CV --> |"fail"| I
     V --> M[Merged<br/><i>human merges</i>]
 
     classDef human fill:#e8f4fd,stroke:#3b82f6,color:#1e40af
     classDef agent fill:#fef3c7,stroke:#f59e0b,color:#92400e
     class R,S,V,M human
-    class D,I agent
+    class D,I,CV agent
 ```
 
-Phase transitions are driven by GitHub labels on the issue, but humans don't apply those labels by hand. The framework provides primitive skills (`trigger-design`, `trigger-implementation`) that pick the right label based on the Feature's flags. The human gates **entry** into the agent pipeline (invoking `trigger-design` for a scoped Feature) and **exit** (reviewing the PR). Within the agent pipeline, **design hands off to implementation autonomously**: once headless design completes, `trigger-implementation` transitions the Feature to `in-development` without waiting for human input, and the dev-session fires immediately. This is the only autonomous transition in the pipeline; every other handoff (Requirement → Scoping, Scoping → Design, Implementation → Review, Review → Merged) is gated by a human action.
+Phase transitions are driven by GitHub labels on the issue, but humans don't apply those labels by hand. The framework provides primitive skills (`trigger-design`, `trigger-implementation`) that pick the right label based on the Feature's flags. The human gates **entry** into the agent pipeline (invoking `trigger-design` for a scoped Feature) and **exit** (reviewing the PR). Within the agent pipeline, **design hands off to implementation, which hands off to compliance verification, autonomously**: once headless design completes, `trigger-implementation` transitions the Feature to `in-development` without waiting for human input; the dev-session fires, and on completion the compliance-verify skill checks coverage, acceptance criteria, and best-practice rules before the PR is opened. Only on a clean compliance pass does the Feature reach `in-review`. Every other handoff (Requirement → Scoping, Scoping → Design, Review → Merged) is gated by a human action.
 
 `trigger-design` reads the Feature's labels to pick the right path: a Feature flagged `needs-interactive-design` (set during scoping for UX/UI work, novel architecture, or anything where a wrong design is expensive to undo) gets `interactive-design`; everything else gets `in-design` and runs headlessly. For Features that took the interactive path, the human chooses at end-of-design between *trigger now*, *park at `designed`*, or *cancel*. A parked Feature is later un-parked by invoking `trigger-implementation`, the same primitive the headless design auto-fires, just human-driven this time.
 
@@ -54,6 +56,8 @@ Phase transitions are driven by GitHub labels on the issue, but humans don't app
 | `backlog` → `interactive-design` (via `trigger-design` when `needs-interactive-design` is set) | none (interactive) | A human runs `/feature-design <N>` for Features that need foreground attention (UX, novel architecture); at end-of-design the human chooses whether to trigger implementation, park at `designed`, or cancel |
 | `in-design` → `in-development` (autonomous) | `agentic-pipeline.yml` (Stage 4) | Walks each Task in order, writes code, runs tests, commits per task, pushes, opens the PR |
 | `designed` → `in-development` (via `trigger-implementation`) | `agentic-pipeline.yml` (Stage 4) | Same as above; this is the path for Features that were parked at `designed` after interactive design |
+| `in-development` → `in-verification` | `agentic-pipeline.yml` | Runs the compliance-verify skill: checks coverage, ACs, and best-practice rules; loops back to `in-development` on any failure |
+| `in-verification` → `in-review` | `agentic-pipeline.yml` | All compliance checks passed; dev-session opens the PR and transitions the Feature to `in-review` |
 | PR review submitted (changes requested) | `agentic-pipeline.yml` (Stage 4b) | Reads the review, implements requested changes, commits, pushes |
 | PR merged | `agentic-pipeline.yml` (Stage 5) | Closes the Feature; transitions parent Requirement to `done` if all child Features are complete |
 
