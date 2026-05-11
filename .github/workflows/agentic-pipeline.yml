@@ -611,6 +611,9 @@ jobs:
           # events trigger downstream workflows; github.token events cannot
           # trigger other workflow runs (GitHub platform restriction).
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          # SonarQube token — injected so the compliance-verify skill can
+          # detect SonarQube availability and run analysis when configured.
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       # If the recipe applied compliance-verified, open the PR and move to in-review.
       # If not (skill handled the state reset), log outcome and exit cleanly — not a failure.
