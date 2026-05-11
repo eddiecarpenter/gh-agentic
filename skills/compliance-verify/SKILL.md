@@ -1,452 +1,431 @@
 ---
 name: compliance-verify
-description: Evaluates a Feature's implementation against its acceptance criteria, test quality, and language standards by reading the diff and Feature issue in isolation — no dev-session context — and produces a structured findings report posted as an issue comment. Applies compliance-verified on all-pass; applies development-in-progress on any fail or partial; escalates and halts on oscillation or 10-cycle cap. Use when the compliance-verify pipeline stage fires on a Feature labelled in-verification — the diff is evaluated independently so findings are uncontaminated by implementation-session bias.
-category: Session
+description: Verifies that the implementation on a feature branch satisfies all acceptance criteria from the Feature issue. Evaluates each AC against the actual diff, posts a structured verdict, and either applies `compliance-verified` (all ACs pass — workflow then opens the PR) or posts a `<!-- compliance-feedback:v1 -->` comment and swaps `in-verification` back to `in-development` (triggering a new dev session). Use when GitHub Actions fires on a feature issue labelled `in-verification`. Headless only.
 triggers: automated
+user-invocable: false
 loads:
   - skills/definitions/error-handling.md
   - skills/definitions/verification-procedure.md
-  - skills/apply-label/SKILL.md
+  - skills/definitions/step-skip-rule.md
+  - skills/gh-agentic/SKILL.md
   - skills/post-issue-comment/SKILL.md
 emits-exit-block: true
-exit-hands-to: "pipeline: in-review (all-pass) | pipeline: in-development (fail/partial, no oscillation, cycle < 10) | human: escalation (oscillation or 10-cycle cap)"
+exit-hands-to: "automation: on PASS — workflow opens PR and applies in-review; on FAIL — workflow swapped in-verification→in-development, triggering a new dev session with the compliance feedback comment as context"
 ---
 
 # Compliance Verify
 
 ## Goal
 
-Take a Feature in `in-verification` state and evaluate its implementation
-against the Feature's acceptance criteria, test coverage, test existence,
-and language-standard best practices. Post the findings as a structured
-report on the Feature issue. Route to `compliance-verified` (all pass),
-`development-in-progress` (any fail or partial, no oscillation, cycle < 10),
-or escalation halt (oscillation detected or 10-cycle cap reached).
+After the dev session has committed its work, evaluate the feature
+branch implementation against every acceptance criterion (AC) in the
+Feature issue. Post a structured compliance report as a comment on
+the Feature issue. Then:
 
-The skill operates in isolation — it reads only the diff, the Feature issue,
-and prior report comments. No dev-session conversation history is consulted.
-This isolation is intentional: findings must be uncontaminated by
-implementation-session context so the verification is independent.
+- **All ACs pass** — apply the `compliance-verified` label. The
+  surrounding workflow opens the PR and transitions the Feature to
+  `in-review`. A human then reviews the PR.
+- **Any AC fails** — post the compliance-feedback comment (with the
+  `<!-- compliance-feedback:v1 -->` marker) and swap the Feature
+  from `in-verification` → `in-development` using `PIPELINE_PAT`
+  (so the label event triggers a new dev session). The dev session
+  will read the feedback comment and use it as additional context.
+
+The skill is headless — invoked by workflow automation when the
+`in-verification` label is applied.
 
 ## Output Artefacts
 
-- **One findings report comment** on the Feature issue, starting with
-  `<!-- compliance-verify-report:v1 -->`. Every run posts a report —
-  even re-runs and escalation cycles — so the issue thread is a complete
-  durable audit trail.
-- **Label transitions** — one of:
-  - All-pass: `compliance-verified` added, `in-verification` removed.
-  - Any-fail: `development-in-progress` added, `in-verification` removed.
-  - Oscillation escalation: `in-verification` removed; no new label added.
-  - 10-cycle cap: `in-verification` removed; no new label added.
+- **A compliance report comment** on the Feature issue, always —
+  whether PASS or FAIL. Subject begins with `<!-- compliance-report:v1 -->`.
+  Contains the per-AC verdict table, evidence, and the overall
+  verdict.
+- **On PASS only:** the `compliance-verified` label applied to the
+  Feature issue (via `PIPELINE_PAT`). The workflow's post-recipe
+  step checks for this label and opens the PR.
+- **On FAIL only:** a compliance-feedback comment with marker
+  `<!-- compliance-feedback:v1 -->` and the label transition
+  `in-verification` → `in-development` (via `PIPELINE_PAT`). This
+  triggers a new dev-session run.
 
 A return value at exit:
 ```
-{ repo: <string>, feature: <int>,
-  cycle: <int>, verdict: "pass" | "fail" | "escalated",
-  findings_total: <int>, findings_fail: <int>, findings_partial: <int> }
+{ repo: <string>, feature: <int>, branch: <string>,
+  acs_total: <int>, acs_passed: <int>, acs_failed: <int>,
+  verdict: "PASS" | "FAIL",
+  exit_state: "pass" | "fail" | "no-acs" | "blocked" }
 ```
+
+`exit_state`:
+- `pass` — all ACs evaluated and all passed.
+- `fail` — one or more ACs failed; feedback comment posted;
+  `in-development` label applied.
+- `no-acs` — Feature issue has no `## Acceptance Criteria` section.
+  Cannot evaluate. Treated as `pass` with a warning so the Feature
+  is not stuck forever by a missing AC block; the PR is opened and
+  a warning is included in the report.
+- `blocked` — the skill could not complete verification (environment
+  error, branch missing, etc.); exits with an error; Feature stays
+  at `in-verification` for human intervention.
 
 ## Definitions
 
-- `skills/definitions/error-handling.md` — severity taxonomy applied to
-  `INVALID_VERIFY_STATE`, `DIFF_EMPTY`, `COVERAGE_TOOL_UNAVAILABLE`,
-  `OSCILLATION_DETECTED`, `CYCLE_CAP_REACHED`.
-- `skills/definitions/verification-procedure.md` — change-pinning and
-  re-run verification rules applied throughout.
+- `skills/definitions/error-handling.md` — severity taxonomy for
+  `INVALID_VERIFY_STATE`, `BRANCH_MISSING`, `REPORT_FAILED`.
+- `skills/definitions/verification-procedure.md` — evidence must be
+  grounded: cite specific files, functions, test names, and commit
+  SHAs; no fabrication.
+- `skills/definitions/step-skip-rule.md` — articulation-as-enforcement.
 
 ## Dependencies
 
-- `skills/apply-label/SKILL.md` — all label transitions in Section C.
-- `skills/post-issue-comment/SKILL.md` — posting the findings report and
-  escalation comments.
+- `skills/gh-agentic/SKILL.md` — used in step 2 to read the Feature.
+- `skills/post-issue-comment/SKILL.md` — used in step 8 to post the
+  compliance report and (on FAIL) in step 11 to post the feedback
+  comment.
+
+---
 
 ## Steps
 
-**Resolving the active repo.** Resolve once at the start:
+The **step-skip rule** applies throughout.
+
+**Resolving the active repo.** Resolve once via:
 
 ```bash
 gh repo view --json nameWithOwner -q .nameWithOwner
 ```
 
-Hold as `<active-repo>`.
+and reuse as `<active-repo>`.
 
 ---
 
 ### Section A — Setup
 
-1. **Announce the session.** Print the banner verbatim before any tool call:
+1. **Announce the session.** Print the banner verbatim before any
+   tool call:
 
    ```
    ==========================================================
-   === Compliance Verify — Started                        ===
+   === Compliance Verify — Started                            ===
    ==========================================================
    ```
 
-2. **Read the Feature.** Query the issue:
+   Resolve `<active-repo>` per the rule above.
+
+2. **Read the Feature.** Query the full state:
 
    ```bash
-   gh issue view <N> --repo <active-repo> \
-     --json number,title,body,labels
+   gh agentic status feature <N> --raw
    ```
 
-   Hold as `<feature>`.
+   Capture title, body, labels, branch metadata. Hold as `<feature>`.
 
    On non-zero exit → raise `INVALID_VERIFY_STATE` (`ERROR`).
 
 3. **Validate state.** Inspect `<feature>.labels`:
 
    - MUST contain `feature` and `in-verification`.
-   - If `in-verification` is absent → raise `INVALID_VERIFY_STATE`
-     (`ERROR`). The workflow should not have triggered without it.
-   - If `compliance-verified` or `in-review` or `done` is present →
-     raise `INVALID_VERIFY_STATE` (`ERROR`). The Feature has moved
-     past verification; this run should not proceed.
+   - MUST NOT contain `in-review`, `compliance-verified`, or `done`.
+     If present → raise `INVALID_VERIFY_STATE`. The Feature is
+     already past compliance verification; this run is a no-op or a
+     workflow bug.
 
-4. **Extract the AC list.** Parse `<feature>.body` for the
-   `## Acceptance Criteria` section. Extract every line matching
-   `**Given** ... **When** ... **Then** ...` as an AC item indexed
-   AC-1, AC-2, ..., AC-N in document order.
+4. **Check out the feature branch.**
 
-   If no `## Acceptance Criteria` section exists → log the omission,
-   skip the AC evaluation in Section B step 7, and continue.
-   Coverage, test-existence, and standards checks still run.
+   ```bash
+   git fetch origin
+   BRANCH="feature/<N>-<slug>"   # resolved from remote listing
+   git checkout -B "$BRANCH" "origin/$BRANCH"
+   ```
 
-5. **Read cycle history.** Query prior compliance-verify-report comments:
+   On failure → raise `BRANCH_MISSING` (`ERROR`).
+
+5. **Read the design plan.** Query the Feature's comments for the
+   one starting with `<!-- design-plan:v1 -->`:
 
    ```bash
    gh issue view <N> --repo <active-repo> --json comments \
-     --jq '[.comments[] | select(.body | startswith("<!-- compliance-verify-report:v1 -->"))]'
+     --jq '[.comments[] | select(.body | startswith("<!-- design-plan:v1 -->"))]
+            | .[0].body'
    ```
 
-   Count as `<cycle-count>`. Extract the most recent report's
-   findings as `<prior-findings>` — a list of
-   `{ key: "<ac-index|coverage|test-existence|standards-<rule>>",
-     verdict: "pass" | "fail" | "partial" }`.
+   Hold as `<design-plan>`. If missing, log a warning and proceed
+   without it — the ACs in the Feature body are the primary source
+   of truth.
 
-   If no prior reports → `<cycle-count> = 0`, `<prior-findings> = []`.
-
-6. **Compute the diff.**
+6. **Get the implementation diff.** Produce the unified diff between
+   the feature branch and `origin/main`:
 
    ```bash
-   git diff origin/main..HEAD
+   git diff origin/main...HEAD --stat
+   git diff origin/main...HEAD
    ```
 
-   Hold as `<diff>`.
+   Hold `<diff-stat>` and `<diff>`. If `<diff>` is empty (no commits
+   beyond main), the feature has no implementation — raise
+   `INVALID_VERIFY_STATE` (`ERROR`). Nothing to verify.
 
-   If `<diff>` is empty → post a findings comment with a single
-   finding: `{ key: "diff-empty", verdict: "fail",
-   detail: "No commits found on this branch ahead of main — nothing to verify." }`.
-   Then raise `DIFF_EMPTY` (`WARN`) and exit with Output D (blocked).
-   Do NOT apply any label transition — a human must investigate why
-   the branch has no commits.
+7. **Extract acceptance criteria.** Parse the Feature issue body for
+   the `## Acceptance Criteria` section. Treat each bullet or
+   numbered item starting with `AC-` (or unlabelled bullets if the
+   AC block exists but items are not prefixed) as one criterion.
+
+   Hold as `<acs>` — ordered list of `{ index, text }`.
+
+   If `<acs>` is empty (no `## Acceptance Criteria` section found)
+   → set `exit_state = "no-acs"` and proceed to step 8 with an
+   empty evaluation table (see step 8's `no-acs` handling).
 
 ---
 
 ### Section B — Evaluation
 
-The evaluation produces `<findings>` — an ordered list of finding objects:
-```
-{ key: <string>, verdict: "pass" | "fail" | "partial",
-  detail: <string>, location: <file:line> | null }
-```
+8. **Evaluate each AC.** For each criterion in `<acs>`, independently
+   assess whether the implementation satisfies it:
 
-7. **AC evaluation.** For each AC-K in the AC list:
+   **Method:**
+   - Read the AC text carefully.
+   - Search the diff for code changes relevant to the AC's stated
+     outcome. Look for: new functions, modified logic, new tests,
+     changed configuration.
+   - Search the test suite for tests that assert the AC's observable
+     behaviour (not just "tests exist" but "tests assert this
+     specific outcome").
+   - Assign a verdict: `PASS`, `PARTIAL`, or `FAIL`.
 
-   - Search `<diff>` for code changes that implement the observable
-     behaviour described in the AC's **Then** clause.
-   - A **pass** requires a positive code reference (file + line or
-     hunk in the diff) that directly addresses the Then clause.
-   - A **partial** applies when code changes exist but the evidence
-     is incomplete (e.g. the happy path is covered but an error branch
-     is missing, or a test asserts the behaviour but no production code
-     implements it).
-   - A **fail** applies when no code evidence for the Then clause
-     is found in the diff.
+   **Verdict definitions:**
+   - `PASS` — the AC is fully satisfied: the implementation change
+     is present AND at least one test asserts the stated outcome.
+   - `PARTIAL` — the implementation change appears to be there but
+     test coverage is missing or the implementation only covers
+     part of the AC's stated condition.
+   - `FAIL` — no implementation change relevant to the AC, or the
+     change exists but is incorrect, or a test for the AC fails.
 
-   Record each finding as:
+   **Evidence requirement (verification-procedure rule):** For each
+   verdict, record specific evidence: file path(s), function/struct
+   name(s), test name(s), line ranges. No generic statements like
+   "tests exist" — cite the actual test name and what it asserts.
+
+   Hold as `<evaluations>` — list of
+   `{ ac_index, ac_text, verdict, evidence }`.
+
+   **`no-acs` case:** If step 7 found no ACs, produce a single
+   synthetic evaluation:
    ```
-   { key: "AC-K", verdict: "pass|fail|partial",
-     detail: "<one sentence>",
-     location: "<file>:<hunk-start>" | null }
+   { ac_index: "—", ac_text: "No acceptance criteria defined",
+     verdict: "PASS (no-acs warning)",
+     evidence: "Feature issue body has no ## Acceptance Criteria section. Compliance verification is advisory only." }
    ```
-
-   Append all AC findings to `<findings>`.
-
-8. **Test-existence check.** Inspect `<diff>` for hunks that add or
-   modify production logic (non-test files: files not matching
-   `*_test.go` or `testdata/`).
-
-   For each such hunk, check whether the diff also contains
-   corresponding test additions or modifications in a `*_test.go`
-   file within the same package.
-
-   - If all changed production logic has accompanying test changes →
-     record `{ key: "test-existence", verdict: "pass", detail: "...", location: null }`.
-   - If any changed production logic has NO accompanying test → record
-     `{ key: "test-existence", verdict: "fail",
-       detail: "New/changed logic in <file> has no corresponding test changes.",
-       location: "<file>:<hunk-start>" }`.
-
-   This check is distinct from the coverage check — it looks at
-   whether tests were written at all, not whether coverage thresholds
-   were met. Append to `<findings>`.
-
-   **Skill-only files (no Go production code):** if `<diff>` contains
-   only Markdown skill/recipe files and no `.go` files, skip this
-   check and record:
-   ```
-   { key: "test-existence", verdict: "pass",
-     detail: "No Go production code in diff — check not applicable.",
-     location: null }
-   ```
-
-9. **Coverage check.** Run the Go test suite with coverage:
-
-   ```bash
-   go test -coverprofile=coverage.out ./... 2>&1
-   go tool cover -func=coverage.out | grep "^total:"
-   ```
-
-   Parse the total coverage percentage from the `total:` line.
-
-   - If total ≥ 80% → record `{ key: "coverage", verdict: "pass",
-     detail: "Coverage: <pct>% (threshold: 80%)", location: null }`.
-   - If total < 80% → record `{ key: "coverage", verdict: "fail",
-     detail: "Coverage: <pct>% is below 80% threshold.", location: null }`.
-
-   If `go` is unavailable or the command fails with a tool-not-found
-   error → record `{ key: "coverage", verdict: "fail",
-   detail: "go tool unavailable — coverage check could not run." }` and
-   raise `COVERAGE_TOOL_UNAVAILABLE` (`WARN`). Log the reason; continue.
-
-   **Skill-only files (no Go code):** if `<diff>` contains only
-   Markdown skill/recipe files and no `.go` files, skip this check
-   and record:
-   ```
-   { key: "coverage", verdict: "pass",
-     detail: "No Go production code in diff — coverage check not applicable.",
-     location: null }
-   ```
-
-   Append to `<findings>`.
-
-10. **Standards check.** Read the language standard file:
-
-    ```bash
-    cat standards/go.md
-    ```
-
-    Locate the `## Coding Standards` section. For each named rule
-    in that section (context propagation, nil safety, panics,
-    interface design, struct initialisation, constants, time, financial
-    values, sensitive data, concurrency):
-
-    - Inspect `<diff>` for violations of that specific rule.
-    - If no violation found → record `{ key: "standards-<rule>",
-      verdict: "pass", detail: "No violations found.", location: null }`.
-    - If a violation is found → record `{ key: "standards-<rule>",
-      verdict: "fail",
-      detail: "Violation of rule: <rule-name>. <one sentence describing the specific violation>.",
-      location: "<file>:<line>" }`.
-
-    **Skill-only files (no Go code):** if `<diff>` contains only
-    Markdown skill/recipe files and no `.go` files, record a single
-    finding: `{ key: "standards", verdict: "pass",
-    detail: "No Go production code in diff — standards check not applicable.",
-    location: null }` and skip the per-rule walk.
-
-    Append all standards findings to `<findings>`.
+   Proceed to the report step.
 
 ---
 
-### Section C — Report, oscillation, and exit
+### Section C — Report and transition
 
-11. **Compute summary counts.**
+9. **Compute the overall verdict.**
+
+   - All verdicts are `PASS` (or `PASS (no-acs warning)`) →
+     overall verdict = `PASS`.
+   - Any verdict is `PARTIAL` or `FAIL` → overall verdict = `FAIL`.
+
+   Hold as `<verdict>`.
+
+10. **Post the compliance report comment.** Always, regardless of
+    verdict. Use `post-issue-comment`:
 
     ```
-    <findings-fail>    = count(f in <findings> where f.verdict == "fail")
-    <findings-partial> = count(f in <findings> where f.verdict == "partial")
-    <findings-total>   = len(<findings>)
-    <any-nonpass>      = (<findings-fail> + <findings-partial>) > 0
+    post-issue-comment(
+      repo=<active-repo>,
+      issue=<N>,
+      body=<report>
+    )
     ```
 
-12. **Oscillation detection.** If `<prior-findings>` is non-empty
-    and `<any-nonpass>` is true:
-
-    Compute `<oscillating>` = findings in `<findings>` where
-    `(f.key, f.verdict)` also appears in `<prior-findings>` (the
-    most recent prior cycle). The oscillation key is `(key, verdict)`;
-    code references (location, detail) are NOT part of the key.
-
-    If `<oscillating>` is non-empty → set `<oscillation-detected> = true`.
-    Otherwise → `<oscillation-detected> = false`.
-
-13. **Cycle-cap check.** If `<cycle-count>` ≥ 10 and `<any-nonpass>`
-    is true and `<oscillation-detected>` is false →
-    set `<cap-reached> = true`. Otherwise `<cap-reached> = false`.
-
-14. **Build the findings report.** Format the structured report:
+    Report format:
 
     ```markdown
-    <!-- compliance-verify-report:v1 -->
+    <!-- compliance-report:v1 -->
 
-    # Compliance Verify — Cycle <cycle-count + 1>
+    # Compliance Verification Report — Feature #<N>
 
-    **Feature:** #<N> — <title>
-    **Verdict:** <ALL PASS | FAIL (<findings-fail> fail, <findings-partial> partial)>
-    **Date:** <ISO-8601>
+    **Branch:** `feature/<N>-<slug>`
+    **Verdict:** PASS ✅  |  FAIL ❌  (use one)
 
-    ## Findings
+    ## Acceptance Criteria Results
 
-    | # | Key | Verdict | Detail | Location |
-    |---|-----|---------|--------|----------|
-    | 1 | AC-1 | ✅ pass / ❌ fail / ⚠️ partial | <detail> | <location or —> |
-    | 2 | AC-2 | ...                            | ...      | ...              |
-    | … | test-existence | ...               | ...      | ...              |
-    | … | coverage       | ...               | ...      | ...              |
-    | … | standards-<rule> | ...             | ...      | ...              |
+    | AC | Status | Evidence |
+    |---|---|---|
+    | AC-1 | ✅ PASS | `pkg/foo.go:42` — `funcBar` implements the stated behaviour; `TestFuncBar` asserts the outcome |
+    | AC-2 | ❌ FAIL | No implementation found for X; no test asserts Y |
+    | AC-3 | ⚠️ PARTIAL | Implementation in `pkg/baz.go` covers the success path; error path is unhandled; no test for error case |
 
-    ## Summary
-    Total findings: <N> | Pass: <P> | Fail: <findings-fail> | Partial: <findings-partial>
+    ## Required Fixes
+    <!-- only present when verdict is FAIL -->
+
+    For each failed or partial AC, describe concisely what the dev
+    session needs to add or fix. Be specific: file, function,
+    behaviour.
+
+    - **AC-2:** Add `funcX` in `pkg/foo.go` that handles Y. Add
+      `TestFuncX_HandlesY` asserting [observable outcome].
+    - **AC-3:** Extend `funcBaz` to handle the error path; add
+      `TestFuncBaz_ErrorCase`.
     ```
 
-15. **Build escalation comment (if needed).** When oscillation
-    detected or cap reached, format:
+    Verify the comment was posted:
+    ```bash
+    gh issue view <N> --repo <active-repo> --json comments \
+      --jq '[.comments[] | select(.body | startswith("<!-- compliance-report:v1 -->"))] | length'
+    ```
+    Should be ≥ 1. On failure → raise `REPORT_FAILED` (`ERROR`).
+
+11. **On PASS — apply `compliance-verified`.**
+
+    ```bash
+    gh issue edit <N> --repo <active-repo> \
+      --add-label "compliance-verified"
+    ```
+
+    Use `GH_TOKEN` from the environment (the workflow sets this to
+    `PIPELINE_PAT` — required so the label event can trigger the
+    `pr-review-session` workflow if needed). Verify the label is
+    present after the edit.
+
+    The surrounding workflow's `Open PR if compliance-verified` step
+    checks for this label and opens the PR.
+
+    Emit **Output A** (step 14) and exit.
+
+12. **On FAIL — post the feedback comment.**
+
+    Post a second comment containing the actionable feedback:
 
     ```markdown
-    <!-- compliance-verify-report:v1 -->
+    <!-- compliance-feedback:v1 -->
 
-    # Compliance Verify — Escalation (Cycle <cycle-count + 1>)
+    # Compliance Feedback — Feature #<N>
 
-    **Feature:** #<N>
-    **Reason:** <"Oscillation detected" | "10-cycle cap reached">
+    The compliance verification run found the following ACs not
+    fully satisfied. The dev session will re-enter with this
+    feedback as context.
 
-    ## Oscillating violations
-    [Only for oscillation case: table of (key, verdict) present in both
-     current and prior cycle with cycle numbers]
+    ## ACs Requiring Work
 
-    ## Action required
-    Human review required. The automated verify loop cannot resolve
-    these findings. Options:
-    - Edit the Feature acceptance criteria if requirements changed
-    - Implement the missing behaviour and re-trigger manually
-    - Close the Feature if no longer relevant
+    - **AC-<idx>:** <one-sentence summary of what's missing>
+      - Evidence: <specific file/function/test reference>
+      - Fix needed: <concrete description>
+
+    <!-- repeated for each FAIL or PARTIAL AC -->
+
+    The feature branch already contains the work for passing ACs.
+    The dev session should implement ONLY the fixes listed above —
+    do not re-implement passing criteria.
     ```
 
-16. **Post the report.**
-
-    ```
-    post-issue-comment(repo=<active-repo>, issue=<N>,
-                       body=<findings report or escalation comment>)
-    ```
-
-    On failure → surface the error as `WARN` and continue to label
-    transitions — the label transition is more critical than the comment.
-
-17. **Exit routing.** Branch on the outcome:
-
-    **A — Oscillation detected:**
-    ```
-    apply-label(repo=<active-repo>, issue=<N>,
-                add=[], remove=["in-verification"])
-    ```
-    Emit Output D (escalation). Halt.
-
-    **B — Cycle cap reached:**
-    ```
-    apply-label(repo=<active-repo>, issue=<N>,
-                add=[], remove=["in-verification"])
-    ```
-    Emit Output D (escalation). Halt.
-
-    **C — All findings pass:**
-    ```
-    apply-label(repo=<active-repo>, issue=<N>,
-                add=["compliance-verified"], remove=["in-verification"])
-    ```
-    Emit Output A (completed). Halt.
-
-    **D — Any fail or partial (no oscillation, cycle < 10):**
-    ```
-    apply-label(repo=<active-repo>, issue=<N>,
-                add=["development-in-progress"], remove=["in-verification"])
-    ```
-    Emit Output B (fail cycle). Halt.
-
-18. **Emit the exit block.** Match the actual outcome:
-
-    **Output A — All pass:**
-    ```
-    === Compliance Verify — Completed ===
-
-    Feature #<N> — cycle <cycle-count+1>
-    Verdict: ALL PASS
-
-    Findings: <total> | Pass: <pass> | Fail: 0 | Partial: 0
-
-    Applied: compliance-verified
-    Removed: in-verification
-
-    Next: workflow opens the PR and applies in-review
+    Verify posted:
+    ```bash
+    gh issue view <N> --repo <active-repo> --json comments \
+      --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))] | length'
     ```
 
-    **Output B — Fail cycle (no oscillation, cycle < 10):**
-    ```
-    === Compliance Verify — Fail Cycle ===
+13. **On FAIL — swap `in-verification` → `in-development`.**
 
-    Feature #<N> — cycle <cycle-count+1>
-    Verdict: FAIL
-
-    Findings: <total> | Pass: <pass> | Fail: <fail> | Partial: <partial>
-
-    Failed findings:
-      - <key>: <detail>
-      ...
-
-    Applied: development-in-progress
-    Removed: in-verification
-
-    Next: dev-session implements the missing behaviour; re-triggers compliance-verify
+    ```bash
+    gh issue edit <N> --repo <active-repo> \
+      --remove-label "in-verification" \
+      --add-label "in-development"
     ```
 
-    **Output C — Re-run no-op:**
-    (Not applicable — `in-verification` guard in step 3 prevents this.)
+    This MUST use `PIPELINE_PAT` (set as `GH_TOKEN` by the workflow)
+    so the `in-development` label event triggers the dev-session
+    workflow. `github.token` events cannot trigger other workflow
+    runs (GitHub platform restriction).
 
-    **Output D — Blocked (escalation or diff-empty):**
+    Verify the label transition:
+    ```bash
+    gh issue view <N> --repo <active-repo> --json labels \
+      --jq '[.labels[].name]'
     ```
-    === Compliance Verify — Escalated ===
+    Must contain `in-development`; must not contain `in-verification`.
 
-    Feature #<N> — cycle <cycle-count+1>
-    Reason: <oscillation detected | 10-cycle cap reached | diff empty>
+---
 
-    <oscillating violations or cap context>
+### Section D — Closeout
 
-    Removed: in-verification
-    NOT applied: development-in-progress
+14. **Emit the exit block.** Match the actual outcome:
 
-    Next: human reviews the Feature and decides the path forward
+    **Output A — PASS:**
+    ```
+    === Compliance Verify — PASS ===
+
+    Feature #<N> satisfies all <M> acceptance criteria.
+
+    Results:
+      - <M> of <M> ACs passed
+      - compliance-verified label applied
+      - Report posted on issue #<N>
+
+    Next: workflow opens PR and applies in-review
     ```
 
-19. **Terminate the session.** Per `emits-exit-block: true`, halt.
+    **Output B — FAIL:**
+    ```
+    === Compliance Verify — FAIL ===
+
+    Feature #<N> does not yet satisfy all acceptance criteria.
+
+    Results:
+      - <P> of <M> ACs passed
+      - <F> ACs failed or partial: AC-<x>, AC-<y>, ...
+      - Feedback comment posted on issue #<N>
+      - Label swapped: in-verification → in-development
+
+    Next: dev session will re-enter with compliance feedback as context
+    ```
+
+    **Output C — No ACs (advisory PASS):**
+    ```
+    === Compliance Verify — PASS (no-acs warning) ===
+
+    Feature #<N> has no ## Acceptance Criteria section.
+    Compliance verification was advisory only.
+
+    Results:
+      - compliance-verified label applied (no-acs path)
+      - Report posted with advisory warning on issue #<N>
+
+    Next: workflow opens PR and applies in-review
+    Warning: add an ## Acceptance Criteria section to future Features.
+    ```
+
+    **Output D — Blocked:**
+    ```
+    === Compliance Verify — Blocked ===
+
+    Verification could not complete.
+
+    Error: <BRANCH_MISSING | REPORT_FAILED | INVALID_VERIFY_STATE>
+    Reason: <specific diagnosis>
+
+    Feature #<N> stays at in-verification. Human intervention needed.
+    ```
+
+15. **Terminate the session.** Per `emits-exit-block: true`, invoke
+    the host runtime's session-close API if available; otherwise
+    halt.
 
 ## Error Handling
 
 - `INVALID_VERIFY_STATE` from steps 2–3 (Feature missing, wrong
-  labels, or already past verification) → severity `ERROR`; propagate.
-  Workflow bug — should not have triggered without `in-verification`.
-- `DIFF_EMPTY` from step 6 (no commits ahead of main) → severity
-  `WARN`; propagate. Post a finding comment before raising so the
-  issue thread records the state.
-- `COVERAGE_TOOL_UNAVAILABLE` from step 9 (go binary missing) →
-  severity `WARN`; record a fail finding for coverage and continue.
-  The finding will appear in the report; if it is the only failure it
-  will trigger a fail cycle, and the operator must install the toolchain.
-- `OSCILLATION_DETECTED` from step 12 → severity `WARN`; the skill
-  handles this via the escalation path in step 17A.
-- `CYCLE_CAP_REACHED` from step 13 → severity `WARN`; the skill
-  handles this via the escalation path in step 17B.
-- All other errors: propagate (default). The label transition in step
-  17 should be attempted as a best-effort on every exit path — if the
-  label edit fails, surface the failure clearly so a human can manually
-  remove `in-verification`.
+  labels, empty diff) → severity `ERROR`; propagate. The pipeline
+  invoked this skill against a Feature not ready for verification.
+- `BRANCH_MISSING` from step 4 (no remote feature branch) → severity
+  `ERROR`; propagate. The feature branch must exist before
+  `in-verification` is applied.
+- `REPORT_FAILED` from step 10 (compliance report comment did not
+  post) → severity `ERROR`; propagate. Without the report, the
+  state is ambiguous — do not apply `compliance-verified` or swap
+  labels when the audit trail cannot be written.
+- All other errors: propagate (default).

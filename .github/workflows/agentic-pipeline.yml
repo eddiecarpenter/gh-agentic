@@ -462,95 +462,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # When COMPLIANCE_VERIFY_ENABLED is true, skip PR creation here — the
-      # compliance-verify job will open the PR after AC verification passes.
-      # When disabled (default), open the PR as normal.
-      - name: Open PR
-        if: success() && vars.COMPLIANCE_VERIFY_ENABLED != 'true'
-        env:
-          # Must use PIPELINE_PAT — github.token cannot create PRs when the
-          # "Allow GitHub Actions to create pull requests" repo setting is off.
-          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          BRANCH="${{ steps.branch.outputs.name }}"
-          COMMITS=$(git rev-list --count origin/main..HEAD)
-          if [ "${COMMITS}" -eq 0 ]; then
-            echo "No commits on ${BRANCH} beyond main — nothing to PR. Skipping."
-            exit 0
-          fi
-          EXISTING=$(gh pr list --repo ${{ github.repository }} --head "${BRANCH}" --json number --jq '.[0].number')
-          if [ -n "${EXISTING}" ]; then
-            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping"
-            exit 0
-          fi
-          BODY=$(printf "Closes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${ISSUE_NUMBER}")
-          gh pr create \
-            --title "feat: ${ISSUE_TITLE}" \
-            --body "${BODY}" \
-            --base main \
-            --head ${BRANCH}
-
-      # Must use PIPELINE_PAT (not github.token) so the label event triggers
-      # the pr-review-session workflow; github.token events cannot trigger
-      # other workflow runs (GitHub platform restriction).
-      # Only fires when COMPLIANCE_VERIFY_ENABLED is off (PR was just opened above).
-      - name: Apply in-review label
-        id: relabel
-        if: success() && vars.COMPLIANCE_VERIFY_ENABLED != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
-        run: |
-          COMMITS=$(git rev-list --count origin/main..HEAD)
-          if [ "${COMMITS}" -eq 0 ]; then
-            echo "No commits — leaving issue in-development."
-            echo "skipped=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          gh issue edit ${{ github.event.issue.number }} \
-            --remove-label "in-development" \
-            --add-label "in-review"
-          echo "skipped=false" >> $GITHUB_OUTPUT
-
-      # Project status update uses PROJECT_PAT — Apps cannot mutate
-      # user-owned Projects v2 (platform limit). Skipped gracefully if
-      # the PAT is unset; non-blocking on failure.
-      - name: Set project status to 'In Review'
-        if: success() && vars.COMPLIANCE_VERIFY_ENABLED != 'true' && steps.relabel.outputs.skipped != 'true'
-        continue-on-error: true
-        env:
-          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
-        run: |
-          if [ -z "${PROJECT_PAT}" ]; then
-            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
-            echo "::warning::To enable: create a PAT with user-level project read/write access, set it as PROJECT_PAT in repo secrets."
-            exit 0
-          fi
-          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "::error::AGENTIC_PROJECT_ID is not configured."
-            exit 1
-          fi
-          export GH_TOKEN="${PROJECT_PAT}"
-          ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.node_id')
-          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
-          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
-          if [ -z "${ITEM_ID}" ]; then
-            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
-            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
-          fi
-          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
-          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
-          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "In Review") | .id')
-          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
-
-      # When COMPLIANCE_VERIFY_ENABLED is true: route to compliance-verify
-      # instead of PR review. Apply in-verification (removing in-development)
-      # and set project status to In Verification.
+      # All dev sessions route to compliance-verify (Stage 5) — no PR is
+      # opened here. Must use PIPELINE_PAT so the in-verification label
+      # event triggers the compliance-verify workflow; github.token events
+      # cannot trigger other workflow runs (GitHub platform restriction).
       - name: Apply in-verification label
         id: in_verification
-        if: success() && vars.COMPLIANCE_VERIFY_ENABLED == 'true'
+        if: success()
         env:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
         run: |
@@ -566,7 +484,7 @@ jobs:
           echo "skipped=false" >> $GITHUB_OUTPUT
 
       - name: Set project status to 'In Verification'
-        if: success() && vars.COMPLIANCE_VERIFY_ENABLED == 'true' && steps.in_verification.outputs.skipped != 'true'
+        if: success() && steps.in_verification.outputs.skipped != 'true'
         continue-on-error: true
         env:
           PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
@@ -594,12 +512,13 @@ jobs:
           gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
 
   # ---------------------------------------------------------------------------
-  # Stage 4d — Compliance Verify
+  # Stage 5 — Compliance Verify
   # Trigger: in-verification label applied to a feature issue
-  # Requires: COMPLIANCE_VERIFY_ENABLED=true (repo variable feature switch)
+  # Opens the PR and transitions to in-review on PASS.
+  # Swaps back to in-development on FAIL, triggering a new dev session.
   # ---------------------------------------------------------------------------
   compliance-verify:
-    name: Compliance Verify (Stage 4d)
+    name: Compliance Verify (Stage 5)
     if: |
       github.event_name == 'workflow_dispatch' || (
         github.event_name == 'issues' &&
@@ -631,40 +550,43 @@ jobs:
           echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
       - name: Checkout domain repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ steps.branch.outputs.name }}
           fetch-depth: 0
+          submodules: recursive
+          token: ${{ github.token }}
 
       - name: Resolve framework version
+        id: version
+        env:
+          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
         run: |
-          VERSION="${{ vars.AGENTIC_FRAMEWORK_VERSION }}"
-          if [ -z "${VERSION}" ]; then
+          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
             echo "::error::AGENTIC_FRAMEWORK_VERSION is not set."
             exit 1
           fi
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
-          node-version: '20'
+          node-version: 'lts/*'
 
       - name: Install tools
-        run: |
-          VERSION="${{ vars.AGENTIC_FRAMEWORK_VERSION }}"
-          gh extension install eddiecarpenter/gh-agentic --pin "${VERSION}" 2>/dev/null || \
-            gh extension upgrade gh-agentic 2>/dev/null || true
-          curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_INSTALL_DIR=/usr/local/bin sh
-        env:
-          GH_TOKEN: ${{ github.token }}
+        uses: ./.agents/.github/actions/install-ai-tools
+        with:
+          agentic-version: ${{ steps.version.outputs.version }}
+          gh-token: ${{ github.token }}
 
       - name: Setup Agent Auth
-        run: |
-          mkdir -p ~/.config/claude
-          echo "${CLAUDE_CREDENTIALS_JSON}" > ~/.config/claude/credentials.json
-        env:
-          CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+        uses: ./.agents/.github/actions/setup-agent-auth
+        with:
+          agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
         run: |
@@ -685,8 +607,10 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ github.token }}
-          CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          # Must use PIPELINE_PAT so compliance-verified/in-development label
+          # events trigger downstream workflows; github.token events cannot
+          # trigger other workflow runs (GitHub platform restriction).
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
       # If the recipe applied compliance-verified, open the PR and move to in-review.
       # If not (skill handled the state reset), log outcome and exit cleanly — not a failure.
@@ -763,11 +687,11 @@ jobs:
           gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
 
   # ---------------------------------------------------------------------------
-  # Stage 4b — PR Review Session
+  # Stage 6 — PR Review Session
   # Trigger: PR review submitted (comments or changes requested)
   # ---------------------------------------------------------------------------
   pr-review-session:
-    name: PR Review Session (Stage 4b)
+    name: PR Review Session (Stage 6)
     if: |
       github.event_name == 'workflow_dispatch' || (
         github.event_name == 'pull_request_review' &&
@@ -989,11 +913,11 @@ jobs:
           echo "✓ PR opened for ${BRANCH}"
 
   # ---------------------------------------------------------------------------
-  # Stage 5 — Feature Complete
+  # Stage 7 — Feature Complete
   # Trigger: feature branch PR merged to main
   # ---------------------------------------------------------------------------
   feature-complete:
-    name: Feature Complete (Stage 5)
+    name: Feature Complete (Stage 7)
     if: |
       github.event_name == 'pull_request' &&
       github.event.pull_request.merged == true &&
@@ -1039,6 +963,7 @@ jobs:
             --remove-label "backlog" \
             --remove-label "in-design" \
             --remove-label "in-development" \
+            --remove-label "in-verification" \
             --remove-label "in-review" \
             --add-label "done"
           gh issue close ${ISSUE} \
