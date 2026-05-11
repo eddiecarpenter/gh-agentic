@@ -140,3 +140,59 @@ describe("getUserById", () => {
 
 - All exported functions, classes, and types must have a JSDoc comment
 - Comments describe what and why — not restate the code
+
+---
+
+## Compliance & Quality
+
+The compliance-verify skill reads this section to determine what to enforce when
+verifying a TypeScript Feature's implementation. Rules here are machine-parseable
+constraints — they supplement (not replace) the guidance in the sections above.
+
+### Coverage Threshold
+
+≥80% statement coverage is required for every module containing business logic.
+
+**Coverage command:**
+```bash
+npm test -- --coverage
+```
+
+Any module below 80% statement coverage fails the compliance check.
+
+### Test Quality Expectations
+
+Coverage numbers alone are not sufficient. The compliance verifier additionally
+enforces:
+
+- Tests must assert on the content of return values and thrown errors, not merely
+  that they exist. A test that only checks `expect(result).toBeDefined()` without
+  inspecting the result's meaningful content does not satisfy coverage requirements.
+- Async tests containing multiple assertion branches must use `expect.assertions(N)`
+  to prevent false-positive passing caused by a branch that does not run at all.
+- At least 50% of test lines must exercise non-trivial logic — error paths,
+  conditional branches, business-rule outcomes. Tests that only invoke constructors
+  or access read-only properties do not satisfy the 80% threshold in spirit.
+
+### TypeScript-Specific Enforcement Rules
+
+1. **Accompanying test file** — every `.ts` file that exports at least one function
+   must have a corresponding `.test.ts` file. Files that only declare types,
+   interfaces, or re-export are exempt. Files without a companion test file fail
+   the compliance check.
+
+2. **No `as unknown as X` casts in test code** — casting to `unknown` and then
+   to a specific type in test files hides type bugs that the test is meant to
+   catch. Any occurrence of `as unknown as` in a `.test.ts` file is a failing
+   pattern.
+
+3. **Every exported function must have an error-path test** — the happy path alone
+   is insufficient. Each exported function must have at least one `it` block that
+   exercises a failure scenario (rejected promise, thrown error, or returned error
+   discriminant). Functions with no error-path test fail the compliance check.
+
+4. **`expect.assertions(N)` in async multi-branch tests** — async test functions
+   that contain two or more assertion branches (e.g. a `try/catch` with assertions
+   in both arms) must declare `expect.assertions(N)` at the top of the `it` block
+   to ensure every branch fires. Omitting this in a qualifying test is a failing
+   pattern.

@@ -143,3 +143,60 @@ For the full contract framework and approval rules, see `.agents/RULEBOOK.md` �
 
 - All public functions and methods must have a Go doc comment
 - Comments must describe what and why — not restate the code
+
+---
+
+## Compliance & Quality
+
+The compliance-verify skill reads this section to determine what to enforce when
+verifying a Go Feature's implementation. Rules here are machine-parseable
+constraints — they supplement (not replace) the guidance in the sections above.
+
+### Coverage Threshold
+
+≥80% statement coverage is required for every package containing business logic.
+
+**Coverage command:**
+```bash
+go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
+```
+
+Any package below 80% statement coverage fails the compliance check.
+
+### Test Quality Expectations
+
+Coverage numbers alone are not sufficient. The compliance verifier additionally
+enforces:
+
+- Tests must assert on the content of return values, not merely their non-nil-ness.
+  A test that only checks `if err != nil` without inspecting the error type or value
+  does not satisfy the error-path coverage requirement.
+- Table-driven tests are required for functions with two or more input/output
+  combinations (see the Testing section above). A test file that exercises
+  multi-case logic through repeated identical `t.Run` blocks rather than a
+  `tests := []struct{}` table fails the quality check.
+- At least 50% of test lines must exercise non-trivial logic paths — trivial
+  getter/setter tests are insufficient. Coverage inflated purely by testing simple
+  field access does not satisfy the 80% threshold in spirit.
+
+### Go-Specific Enforcement Rules
+
+1. **Accompanying test file** — every Go source file that declares at least one
+   function must have a corresponding `_test.go` file. Files that only declare
+   types, constants, or interfaces are exempt. Files without a companion test file
+   fail the compliance check.
+
+2. **No content-free assertions** — test code must not assert only on non-nil
+   returns without also verifying the returned value's meaningful content (error
+   code, field value, slice length, etc.). `assert.NotNil(t, err)` without a
+   follow-up `assert.Equal(t, expectedCode, err.Code)` (or equivalent) is a
+   failing pattern.
+
+3. **No artificial coverage inflation** — coverage must not be padded with
+   trivial getter/setter tests or tests that do nothing but call a constructor
+   and assert the struct is non-nil. At least 50% of test lines must touch
+   conditional branches, error paths, or non-trivial computation.
+
+4. **Race-condition gate** — packages containing goroutines, channels, or shared
+   mutable state must pass `go test -race ./...` without data-race reports. A
+   package in this category that is not run with `-race` fails the check.
