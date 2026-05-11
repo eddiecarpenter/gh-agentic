@@ -470,7 +470,9 @@ jobs:
       - name: Open PR
         if: success()
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Must use PIPELINE_PAT — github.token cannot create PRs when the
+          # "Allow GitHub Actions to create pull requests" repo setting is off.
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
