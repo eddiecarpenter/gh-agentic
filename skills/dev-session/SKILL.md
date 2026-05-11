@@ -12,7 +12,7 @@ loads:
   - skills/gh-agentic/SKILL.md
   - skills/apply-label/SKILL.md
 emits-exit-block: true
-exit-hands-to: "automation: workflow pushes (no-op if agent already pushed), opens PR, applies in-review, sets project status"
+exit-hands-to: "automation: workflow pushes (no-op if agent already pushed), applies in-verification, triggers compliance-verify (Stage 5)"
 ---
 
 # Dev Session
@@ -39,9 +39,10 @@ interactively use this skill as a reference; they do not invoke it.
 - **All N task sub-issues closed** as their commits land.
 - **Branch pushed to origin** after each commit (per-task push).
 - **No label transitions** — the surrounding workflow applies
-  `in-review` after opening the PR. This skill never applies
-  `in-review` itself.
-- **No PR created** — the surrounding workflow opens it.
+  `in-verification` after pushing. This skill never applies
+  `in-verification` itself.
+- **No PR created** — the compliance-verify stage (Stage 5) opens
+  the PR after all ACs are verified.
 
 A return value at exit summarising the run:
 ```
@@ -288,6 +289,35 @@ discipline at task granularity:
     Missing recovery.md → fresh run; `<recovered-completed>` is
     empty.
 
+6b. **Compliance-feedback probe.** Check whether a prior
+    compliance-verify run left feedback on this Feature. This is
+    how dev-session knows it is a _fix run_, not a fresh run.
+
+    ```bash
+    gh issue view <N> --repo <active-repo> --json comments \
+      --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))]
+             | last | .body'
+    ```
+
+    - **Comment found** → hold as `<compliance-feedback>`. This
+      run is a fix run: the agent must address the specific ACs
+      listed in the feedback, not re-implement the whole feature.
+      Surface the feedback in the session banner:
+
+      ```
+      === Compliance Feedback Detected ===
+      This is a fix run. The following ACs require work:
+      <compliance-feedback excerpt>
+      ===================================
+      ```
+
+      When walking tasks (Section B), after completing each task
+      check whether it addresses a compliance feedback item and
+      note it in the commit body.
+
+    - **No comment found** → fresh run; `<compliance-feedback>` is
+      null. Normal task walk.
+
 ---
 
 ### Section B — Task walk
@@ -530,7 +560,7 @@ discipline at task granularity:
 
     Blocked: none
 
-    Next: workflow opens the PR and applies in-review
+    Next: workflow applies in-verification, triggering compliance-verify
     ```
 
     **Output B — Resumed and completed:**
@@ -546,7 +576,7 @@ discipline at task granularity:
 
     All <M> tasks for #<N> are closed.
 
-    Next: workflow opens the PR and applies in-review
+    Next: workflow applies in-verification, triggering compliance-verify
     ```
 
     **Output C — Re-run no-op:**
@@ -556,8 +586,7 @@ discipline at task granularity:
     Entered with zero open tasks. All <M> tasks for #<N> were
     already closed.
 
-    Next: workflow's PR-creation step is idempotent — it will
-          open the PR if one does not already exist.
+    Next: workflow applies in-verification, triggering compliance-verify.
     ```
 
     **Output D — Blocked:**
@@ -582,8 +611,8 @@ discipline at task granularity:
 19. **Terminate the session.** Per `emits-exit-block: true`, invoke
     the host runtime's session-close API if available; otherwise
     halt. The surrounding workflow's post-agent steps run next:
-    push (no-op since the agent pushed), `gh pr create` (no-op
-    if a PR already exists), apply `in-review`, set project status.
+    push (no-op since the agent pushed), apply `in-verification`,
+    set project status — triggering the compliance-verify stage.
 
 ## Error Handling
 
