@@ -93,6 +93,16 @@ var requiredPipelineLabels = []LabelDef{
 		Color:       "d93f0b",
 		Description: "Dev Session active — concurrency beacon",
 	},
+	{
+		Name:        "in-verification",
+		Color:       "d93f0b",
+		Description: "Compliance Verify session active — awaiting AC check",
+	},
+	{
+		Name:        "compliance-verified",
+		Color:       "0075ca",
+		Description: "All acceptance criteria verified — ready for PR",
+	},
 }
 
 // checksForTopologyWithLabels returns the ordered list of labelled check steps.
