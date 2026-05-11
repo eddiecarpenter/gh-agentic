@@ -184,13 +184,15 @@ jobs:
           ISSUE: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
         run: |
-          # Look for at least one comment on the Feature issue authored
-          # by the agentic bot whose body begins with the canonical
-          # Design Plan marker. feature-design and dev-session both key
-          # off this marker (`<!-- design-plan:v1 -->`); the workflow
-          # verifies the same contract so the three signals agree.
+          # Look for at least one comment on the Feature issue whose body
+          # begins with the canonical Design Plan marker. feature-design
+          # and dev-session both key off this marker
+          # (`<!-- design-plan:v1 -->`); the workflow verifies the same
+          # contract so the three signals agree. Author type is not
+          # checked — the recipe may post as a Bot (App token) or as a
+          # human user (PIPELINE_PAT), depending on config.
           COMMENT_COUNT=$(gh api "repos/${REPO}/issues/${ISSUE}/comments" \
-            --jq '[.[] | select(.user.type == "Bot") | select(.body | startswith("<!-- design-plan:v1 -->"))] | length')
+            --jq '[.[] | select(.body | startswith("<!-- design-plan:v1 -->"))] | length')
           if [ "${COMMENT_COUNT}" -lt 1 ]; then
             echo "::error::Design Plan comment was not published on issue #${ISSUE} by the feature-design recipe."
             echo ""
