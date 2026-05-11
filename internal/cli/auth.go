@@ -27,10 +27,16 @@ func newAuthCmd() *cobra.Command {
 			return auth.ReadClaudeCredentialsDefault(run)
 		},
 		claudeRefresh: func() error {
-			cmd := exec.Command("claude", "-p", "Say Hi")
-			return cmd.Run()
+			return defaultClaudeRefreshCmd().Run()
 		},
 	})
+}
+
+// defaultClaudeRefreshCmd returns the exec.Cmd used by the production
+// claudeRefresh wiring in newAuthCmd. Extracted so tests can inspect
+// the command and args without invoking the real claude binary.
+func defaultClaudeRefreshCmd() *exec.Cmd {
+	return exec.Command("claude", "auth", "login") //nolint:gosec
 }
 
 // warnIfFederatedControlPlane prints an advisory when the current repo is the
