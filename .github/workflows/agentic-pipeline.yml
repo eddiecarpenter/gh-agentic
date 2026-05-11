@@ -482,6 +482,11 @@ jobs:
             echo "No commits on ${BRANCH} beyond main — nothing to PR. Skipping."
             exit 0
           fi
+          EXISTING=$(gh pr list --repo ${{ github.repository }} --head "${BRANCH}" --json number --jq '.[0].number')
+          if [ -n "${EXISTING}" ]; then
+            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping"
+            exit 0
+          fi
           BODY=$(printf "Closes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${ISSUE_NUMBER}")
           gh pr create \
             --title "feat: ${ISSUE_TITLE}" \
