@@ -1,6 +1,6 @@
 ---
 name: compliance-verify
-description: Verifies that the implementation on a feature branch satisfies all acceptance criteria from the Feature issue. Evaluates each AC against the actual diff, posts a structured verdict, and either applies `compliance-verified` (all ACs pass — workflow then opens the PR) or posts a `<!-- compliance-feedback:v1 -->` comment and swaps `in-verification` back to `in-development` (triggering a new dev session). Use when GitHub Actions fires on a feature issue labelled `in-verification`. Headless only.
+description: Verifies that the implementation on a feature branch passes both a static analysis gate (code standards, OWASP vulnerability checks, bug scan via language-native tools and SonarQube) and every acceptance criterion from the Feature issue. Posts a structured verdict, and either applies `compliance-verified` (all checks pass — workflow then opens the PR) or posts a `<!-- compliance-feedback:v1 -->` comment and swaps `in-verification` back to `in-development` (triggering a new dev session). Use when GitHub Actions fires on a feature issue labelled `in-verification`. Headless only.
 triggers: automated
 user-invocable: false
 loads:
@@ -17,15 +17,23 @@ exit-hands-to: "automation: on PASS — workflow opens PR and applies in-review;
 
 ## Goal
 
-After the dev session has committed its work, evaluate the feature
-branch implementation against every acceptance criterion (AC) in the
-Feature issue. Post a structured compliance report as a comment on
-the Feature issue. Then:
+After the dev session has committed its work, run two independent
+verification gates against the feature branch:
 
-- **All ACs pass** — apply the `compliance-verified` label. The
+1. **Static analysis** — code standards, OWASP-category vulnerability
+   checks, and a bug scan using language-native tools and SonarQube
+   (if configured). Any BLOCKER or CRITICAL finding is a hard failure.
+
+2. **AC evaluation** — evaluate every acceptance criterion in the
+   Feature issue against the implementation diff and test suite.
+
+Post a structured compliance report as a comment on the Feature issue.
+Then:
+
+- **All checks pass** — apply the `compliance-verified` label. The
   surrounding workflow opens the PR and transitions the Feature to
   `in-review`. A human then reviews the PR.
-- **Any AC fails** — post the compliance-feedback comment (with the
+- **Any check fails** — post the compliance-feedback comment (with the
   `<!-- compliance-feedback:v1 -->` marker) and swap the Feature
   from `in-verification` → `in-development` using `PIPELINE_PAT`
   (so the label event triggers a new dev session). The dev session
@@ -37,9 +45,9 @@ The skill is headless — invoked by workflow automation when the
 ## Output Artefacts
 
 - **A compliance report comment** on the Feature issue, always —
-  whether PASS or FAIL. Subject begins with `<!-- compliance-report:v1 -->`.
-  Contains the per-AC verdict table, evidence, and the overall
-  verdict.
+  whether PASS or FAIL. Begins with `<!-- compliance-report:v1 -->`.
+  Contains the static-analysis findings summary, per-AC verdict table,
+  evidence, and the overall verdict.
 - **On PASS only:** the `compliance-verified` label applied to the
   Feature issue (via `PIPELINE_PAT`). The workflow's post-recipe
   step checks for this label and opens the PR.
@@ -51,21 +59,21 @@ The skill is headless — invoked by workflow automation when the
 A return value at exit:
 ```
 { repo: <string>, feature: <int>, branch: <string>,
+  sa_verdict: "PASS" | "WARN" | "FAIL",
   acs_total: <int>, acs_passed: <int>, acs_failed: <int>,
   verdict: "PASS" | "FAIL" | "ESCALATED" | "BLOCKED",
   exit_state: "pass" | "fail" | "no-acs" | "cycle-cap" | "blocked" }
 ```
 
 `exit_state`:
-- `pass` — all ACs evaluated and all passed.
-- `fail` — one or more ACs failed; feedback comment posted;
-  `in-development` label applied.
+- `pass` — static analysis passed (or WARN-only) AND all ACs passed.
+- `fail` — static analysis found BLOCKER/CRITICAL issues, OR one or
+  more ACs failed; feedback comment posted; `in-development` applied.
 - `no-acs` — Feature issue has no `## Acceptance Criteria` section.
-  Cannot evaluate. Treated as `pass` with a warning so the Feature
-  is not stuck forever by a missing AC block; the PR is opened and
-  a warning is included in the report.
+  Static analysis still runs. If static analysis passes, treated as
+  advisory pass; if static analysis fails, treated as `fail`.
 - `cycle-cap` — the dev-session ↔ compliance-verify feedback loop has
-  reached 3 iterations without all ACs passing. Escalation comment
+  reached 3 iterations without all checks passing. Escalation comment
   posted; `needs-human-review` applied; `in-verification` removed.
   No further automated cycling. Human intervention required.
 - `blocked` — the skill could not complete verification (environment
@@ -84,8 +92,8 @@ A return value at exit:
 ## Dependencies
 
 - `skills/gh-agentic/SKILL.md` — used in step 2 to read the Feature.
-- `skills/post-issue-comment/SKILL.md` — used in step 8 to post the
-  compliance report and (on FAIL) in step 11 to post the feedback
+- `skills/post-issue-comment/SKILL.md` — used in step 14 to post the
+  compliance report and (on FAIL) in step 16 to post the feedback
   comment.
 
 ---
@@ -161,17 +169,17 @@ and reuse as `<active-repo>`.
        and has reached the maximum automated retry limit (3 cycles).
 
        Automated cycling has been halted. Human intervention is required to
-       diagnose why the acceptance criteria cannot be satisfied automatically.
+       diagnose why the checks cannot be satisfied automatically.
 
-       ## Failed ACs (from last feedback comment)
+       ## Last feedback comment
 
        See the most recent `<!-- compliance-feedback:v1 -->` comment above for
-       the specific ACs that are not passing.
+       the specific issues that are not passing.
 
        ## Suggested actions
 
        - Review the acceptance criteria — are they testable and unambiguous?
-       - Review the last compliance report for evidence of what the agent did implement.
+       - Review the last compliance report for static-analysis findings.
        - Consider splitting the AC, relaxing the phrasing, or implementing the fix manually.
        - Once resolved, manually apply `in-development` to restart the pipeline,
          or apply `compliance-verified` if the implementation is already acceptable.
@@ -185,7 +193,7 @@ and reuse as `<active-repo>`.
          --remove-label "in-verification"
        ```
 
-    c. Set `exit_state = "cycle-cap"` and emit **Output E** (step 14).
+    c. Set `exit_state = "cycle-cap"` and emit **Output E** (step 18).
        Terminate immediately — do not proceed to step 4.
 
 4. **Check out the feature branch.**
@@ -231,65 +239,249 @@ and reuse as `<active-repo>`.
    Hold as `<acs>` — ordered list of `{ index, text }`.
 
    If `<acs>` is empty (no `## Acceptance Criteria` section found)
-   → set `exit_state = "no-acs"` and proceed to step 8 with an
-   empty evaluation table (see step 8's `no-acs` handling).
+   → set `exit_state = "no-acs"` and continue. Static analysis in
+   Section B still runs in full. The AC evaluation in Section C
+   produces a synthetic no-acs entry. The overall verdict in step 13
+   is driven entirely by `<sa-verdict>` when no ACs exist.
 
 ---
 
-### Section B — Evaluation
+### Section B — Static Analysis
 
-8. **Evaluate each AC.** For each criterion in `<acs>`, independently
-   assess whether the implementation satisfies it:
+Perform a code-quality and security gate before AC evaluation. This
+section runs entirely against the checked-out feature branch. All
+findings are recorded for inclusion in the compliance report (step 14)
+and, if the overall verdict is FAIL, the feedback comment (step 16).
 
-   **Method:**
-   - Read the AC text carefully.
-   - Search the diff for code changes relevant to the AC's stated
-     outcome. Look for: new functions, modified logic, new tests,
-     changed configuration.
-   - Search the test suite for tests that assert the AC's observable
-     behaviour (not just "tests exist" but "tests assert this
-     specific outcome").
-   - Assign a verdict: `PASS`, `PARTIAL`, or `FAIL`.
+**Severity levels used throughout this section:**
 
-   **Verdict definitions:**
-   - `PASS` — the AC is fully satisfied: the implementation change
-     is present AND at least one test asserts the stated outcome.
-   - `PARTIAL` — the implementation change appears to be there but
-     test coverage is missing or the implementation only covers
-     part of the AC's stated condition.
-   - `FAIL` — no implementation change relevant to the AC, or the
-     change exists but is incorrect, or a test for the AC fails.
+| Level | Meaning | Verdict impact |
+|---|---|---|
+| BLOCKER | Must not ship — correctness, data loss, or security-critical | Causes `sa-verdict` = FAIL |
+| CRITICAL | Must not ship — known vulnerability or severe bug | Causes `sa-verdict` = FAIL |
+| MAJOR | Should fix soon — functional issue or OWASP concern | Causes `sa-verdict` = WARN |
+| MINOR / INFO | Low-priority — style or advisory | Informational only |
 
-   **Evidence requirement (verification-procedure rule):** For each
-   verdict, record specific evidence: file path(s), function/struct
-   name(s), test name(s), line ranges. No generic statements like
-   "tests exist" — cite the actual test name and what it asserts.
+Only BLOCKER and CRITICAL findings cause `<sa-verdict>` = `FAIL`.
+MAJOR findings produce `<sa-verdict>` = `WARN` — they appear in the
+report but do NOT block compliance. MINOR/INFO are included in the
+collapsible findings table only.
 
-   Hold as `<evaluations>` — list of
-   `{ ac_index, ac_text, verdict, evidence }`.
+8. **Detect available tooling.** Determine which analysis tools are
+   present in the environment:
 
-   **`no-acs` case:** If step 7 found no ACs, produce a single
-   synthetic evaluation:
+   a. **SonarQube:** check for both a project configuration and a
+      valid token:
+
+      ```bash
+      # Configuration present?
+      test -f sonar-project.properties && echo "config:yes" || echo "config:no"
+
+      # Token available?
+      test -n "${SONAR_TOKEN:-}" && echo "token:yes" || echo "token:no"
+      ```
+
+      If both are present → `<sonar-available>` = true.
+      If either is missing → `<sonar-available>` = false. Log a note
+      that SonarQube analysis was skipped and proceed with native tools
+      only. Do NOT treat this as an error.
+
+   b. **Language-native tools:** inspect the project stack from
+      `LOCALRULES.md`. For each detected language, check tool presence:
+
+      **Go:**
+      ```bash
+      which go           # always present if Go project
+      which golangci-lint || echo "golangci-lint:absent"
+      which govulncheck  || echo "govulncheck:absent"
+      ```
+
+      **Other stacks:** apply the equivalent linter, vet, and
+      vulnerability scanner for that language (e.g. `npm audit` /
+      `semgrep` for Node; `bandit` / `safety` for Python).
+
+   Hold `<sa-toolset>` = `{ sonar: bool, native: [tool-name, ...] }`.
+
+9. **Run language-native checks.**
+
+   Execute each available native tool against the full module/package
+   tree. Capture stdout and stderr. Map findings to the severity
+   taxonomy above.
+
+   **Go commands (run from repo root):**
+
+   ```bash
+   # Correctness and vet checks
+   go vet ./...
+
+   # Comprehensive lint — covers style, bugs, and security patterns
+   golangci-lint run ./...          # if available
+
+   # Known-vulnerability database scan (Go vuln DB + CVEs)
+   govulncheck ./...                # if available
    ```
-   { ac_index: "—", ac_text: "No acceptance criteria defined",
-     verdict: "PASS (no-acs warning)",
-     evidence: "Feature issue body has no ## Acceptance Criteria section. Compliance verification is advisory only." }
-   ```
-   Proceed to the report step.
+
+   **Mapping native tool output to severity:**
+
+   | Tool | Finding type | Severity |
+   |---|---|---|
+   | `go vet` | any | CRITICAL — vet catches correctness bugs |
+   | `golangci-lint` (gosec, G-series) | security rule | CRITICAL |
+   | `golangci-lint` (errcheck, staticcheck SA-series) | bug rule | MAJOR |
+   | `golangci-lint` (gofmt, goimports, style) | style rule | MINOR |
+   | `govulncheck` | affects packages in diff | CRITICAL |
+   | `govulncheck` | transitive dependency only | MAJOR |
+
+   Hold as `<native-findings>` — list of
+   `{ tool, severity, category, file, line, message }`.
+
+10. **Run SonarQube analysis** (skip entirely if `<sonar-available>` = false).
+
+    a. **Trigger analysis.** Submit the branch to the SonarQube server:
+
+       ```bash
+       sonar-scanner \
+         -Dsonar.branch.name="$BRANCH" \
+         -Dsonar.token="$SONAR_TOKEN"
+       ```
+
+       Wait for the analysis task to complete. On scanner failure, log
+       a `WARN`, set `<sonar-available>` = false, and continue with
+       native findings only. Do NOT raise a hard error — a SonarQube
+       outage must not block compliance verification.
+
+    b. **Fetch quality gate status.**
+
+       ```
+       get_project_quality_gate_status(projectKey=<sonar-project-key>)
+       ```
+
+       If gate status = `ERROR` → record one BLOCKER finding:
+       `{ tool: "sonarqube-gate", severity: "BLOCKER",
+          message: "Quality gate failed — see SonarQube dashboard for details" }`.
+
+    c. **Fetch security hotspots** (OWASP category coverage).
+
+       ```
+       search_security_hotspots(
+         projectKey=<sonar-project-key>,
+         status=TO_REVIEW,
+         branch=<BRANCH>
+       )
+       ```
+
+       Map each hotspot severity using the OWASP Top 10 category:
+
+       | OWASP categories | Severity |
+       |---|---|
+       | A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection | CRITICAL |
+       | A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable & Outdated Components | MAJOR |
+       | A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF | MAJOR |
+
+    d. **Fetch bugs and vulnerabilities.**
+
+       ```
+       search_sonar_issues_in_projects(
+         projectKeys=<sonar-project-key>,
+         types=BUG,VULNERABILITY,
+         severities=BLOCKER,CRITICAL,MAJOR,
+         branch=<BRANCH>,
+         resolved=false
+       )
+       ```
+
+       Map each issue directly to the SonarQube severity returned.
+
+    Merge all SonarQube findings into `<sonar-findings>` — same schema
+    as `<native-findings>`. Deduplicate against `<native-findings>` on
+    `{ file, line, message }` — keep the higher-severity entry.
+
+11. **Compute the static-analysis verdict.**
+
+    Merge `<native-findings>` and `<sonar-findings>` into
+    `<sa-findings>`.
+
+    ```
+    if any finding in <sa-findings> has severity BLOCKER or CRITICAL:
+      <sa-verdict> = FAIL
+    else if any finding has severity MAJOR:
+      <sa-verdict> = WARN
+    else:
+      <sa-verdict> = PASS
+    ```
+
+    Log a one-line summary before proceeding:
+
+    ```
+    Static analysis: <sa-verdict> — <B> blockers, <C> critical, <M> major, <I> minor/info
+    ```
 
 ---
 
-### Section C — Report and transition
+### Section C — AC Evaluation
 
-9. **Compute the overall verdict.**
+12. **Evaluate each AC.** For each criterion in `<acs>`, independently
+    assess whether the implementation satisfies it:
 
-   - All verdicts are `PASS` (or `PASS (no-acs warning)`) →
-     overall verdict = `PASS`.
-   - Any verdict is `PARTIAL` or `FAIL` → overall verdict = `FAIL`.
+    **Method:**
+    - Read the AC text carefully.
+    - Search the diff for code changes relevant to the AC's stated
+      outcome. Look for: new functions, modified logic, new tests,
+      changed configuration.
+    - Search the test suite for tests that assert the AC's observable
+      behaviour (not just "tests exist" but "tests assert this
+      specific outcome").
+    - Assign a verdict: `PASS`, `PARTIAL`, or `FAIL`.
 
-   Hold as `<verdict>`.
+    **Verdict definitions:**
+    - `PASS` — the AC is fully satisfied: the implementation change
+      is present AND at least one test asserts the stated outcome.
+    - `PARTIAL` — the implementation change appears to be there but
+      test coverage is missing or the implementation only covers
+      part of the AC's stated condition.
+    - `FAIL` — no implementation change relevant to the AC, or the
+      change exists but is incorrect, or a test for the AC fails.
 
-10. **Post the compliance report comment.** Always, regardless of
+    **Evidence requirement (verification-procedure rule):** For each
+    verdict, record specific evidence: file path(s), function/struct
+    name(s), test name(s), line ranges. No generic statements like
+    "tests exist" — cite the actual test name and what it asserts.
+
+    Hold as `<evaluations>` — list of
+    `{ ac_index, ac_text, verdict, evidence }`.
+
+    **`no-acs` case:** If step 7 found no ACs, produce a single
+    synthetic evaluation:
+    ```
+    { ac_index: "—", ac_text: "No acceptance criteria defined",
+      verdict: "PASS (no-acs warning)",
+      evidence: "Feature issue body has no ## Acceptance Criteria section. AC compliance verification is advisory only." }
+    ```
+    Proceed to the report step.
+
+---
+
+### Section D — Report and transition
+
+13. **Compute the overall verdict.**
+
+    ```
+    ac-verdict:
+      PASS  — all AC verdicts are PASS (or PASS (no-acs warning))
+      FAIL  — any AC verdict is PARTIAL or FAIL
+
+    overall-verdict:
+      PASS  — ac-verdict = PASS  AND  sa-verdict ∈ {PASS, WARN}
+      FAIL  — ac-verdict = FAIL  OR   sa-verdict = FAIL
+    ```
+
+    Note: `<sa-verdict>` = `WARN` does NOT cause an overall FAIL.
+    WARN findings appear in the report for developer awareness but do
+    not block the PR.
+
+    Hold as `<verdict>`.
+
+14. **Post the compliance report comment.** Always, regardless of
     verdict. Use `post-issue-comment`:
 
     ```
@@ -308,9 +500,37 @@ and reuse as `<active-repo>`.
     # Compliance Verification Report — Feature #<N>
 
     **Branch:** `feature/<N>-<slug>`
-    **Verdict:** PASS ✅  |  FAIL ❌  (use one)
+    **Overall verdict:** PASS ✅  |  FAIL ❌  (use one)
 
-    ## Acceptance Criteria Results
+    ---
+
+    ## Static Analysis
+
+    **Result:** PASS ✅  |  WARN ⚠️  |  FAIL ❌  (use one)
+    **Tools run:** go vet, golangci-lint, govulncheck, SonarQube  (list actual tools used)
+
+    | Severity | Count |
+    |---|---|
+    | 🔴 BLOCKER | <n> |
+    | 🟠 CRITICAL | <n> |
+    | 🟡 MAJOR | <n> |
+    | 🔵 MINOR / INFO | <n> |
+
+    <!-- Only render the findings table when BLOCKER/CRITICAL/MAJOR findings exist -->
+    <details>
+    <summary>Findings requiring attention (<B+C+M> issues)</summary>
+
+    | Severity | Tool | Location | Message |
+    |---|---|---|---|
+    | 🔴 BLOCKER | sonarqube-gate | — | Quality gate failed |
+    | 🟠 CRITICAL | govulncheck | `go.mod` | CVE-2024-XXXX in golang.org/x/net < 0.23.0 |
+    | 🟡 MAJOR | golangci-lint (errcheck) | `cmd/bar.go:88` | Error return value not checked |
+
+    </details>
+
+    ---
+
+    ## Acceptance Criteria
 
     | AC | Status | Evidence |
     |---|---|---|
@@ -318,12 +538,21 @@ and reuse as `<active-repo>`.
     | AC-2 | ❌ FAIL | No implementation found for X; no test asserts Y |
     | AC-3 | ⚠️ PARTIAL | Implementation in `pkg/baz.go` covers the success path; error path is unhandled; no test for error case |
 
-    ## Required Fixes
-    <!-- only present when verdict is FAIL -->
+    ---
 
-    For each failed or partial AC, describe concisely what the dev
-    session needs to add or fix. Be specific: file, function,
-    behaviour.
+    ## Required Fixes
+    <!-- only present when overall verdict is FAIL -->
+
+    ### Static Analysis Issues
+    <!-- only present when sa-verdict = FAIL -->
+
+    - **🔴 BLOCKER — sonarqube-gate:** Quality gate failed. Resolve all
+      open SonarQube issues before re-submitting.
+    - **🟠 CRITICAL — govulncheck:** `go.mod` — upgrade `golang.org/x/net`
+      to ≥ 0.23.0 to resolve CVE-2024-XXXX.
+
+    ### Acceptance Criteria Issues
+    <!-- only present when any AC is FAIL or PARTIAL -->
 
     - **AC-2:** Add `funcX` in `pkg/foo.go` that handles Y. Add
       `TestFuncX_HandlesY` asserting [observable outcome].
@@ -338,7 +567,7 @@ and reuse as `<active-repo>`.
     ```
     Should be ≥ 1. On failure → raise `REPORT_FAILED` (`ERROR`).
 
-11. **On PASS — apply `compliance-verified`.**
+15. **On PASS — apply `compliance-verified`.**
 
     ```bash
     gh issue edit <N> --repo <active-repo> \
@@ -353,9 +582,9 @@ and reuse as `<active-repo>`.
     The surrounding workflow's `Open PR if compliance-verified` step
     checks for this label and opens the PR.
 
-    Emit **Output A** (step 14) and exit.
+    Emit **Output A** (step 18) and exit.
 
-12. **On FAIL — post the feedback comment.**
+16. **On FAIL — post the feedback comment.**
 
     Post a second comment containing the actionable feedback:
 
@@ -364,11 +593,22 @@ and reuse as `<active-repo>`.
 
     # Compliance Feedback — Feature #<N>
 
-    The compliance verification run found the following ACs not
-    fully satisfied. The dev session will re-enter with this
-    feedback as context.
+    The compliance verification run found the following issues not
+    resolved. The dev session will re-enter with this feedback as
+    context.
 
-    ## ACs Requiring Work
+    ## Static Analysis Issues Requiring Fixes
+    <!-- only present when sa-verdict = FAIL -->
+
+    - **🔴 BLOCKER — <tool>:** `<file>:<line>` — <message>
+      - Fix needed: <concrete description of the change required>
+    - **🟠 CRITICAL — <tool>:** `<file>:<line>` — <message>
+      - Fix needed: <concrete description>
+
+    <!-- repeated for each BLOCKER or CRITICAL finding -->
+
+    ## Acceptance Criteria Requiring Work
+    <!-- only present when any AC is FAIL or PARTIAL -->
 
     - **AC-<idx>:** <one-sentence summary of what's missing>
       - Evidence: <specific file/function/test reference>
@@ -376,9 +616,9 @@ and reuse as `<active-repo>`.
 
     <!-- repeated for each FAIL or PARTIAL AC -->
 
-    The feature branch already contains the work for passing ACs.
+    The feature branch already contains the work for passing checks.
     The dev session should implement ONLY the fixes listed above —
-    do not re-implement passing criteria.
+    do not re-implement passing criteria or re-run passing tools.
     ```
 
     Verify posted:
@@ -387,7 +627,7 @@ and reuse as `<active-repo>`.
       --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))] | length'
     ```
 
-13. **On FAIL — swap `in-verification` → `in-development`.**
+17. **On FAIL — swap `in-verification` → `in-development`.**
 
     ```bash
     gh issue edit <N> --repo <active-repo> \
@@ -409,17 +649,18 @@ and reuse as `<active-repo>`.
 
 ---
 
-### Section D — Closeout
+### Section E — Closeout
 
-14. **Emit the exit block.** Match the actual outcome:
+18. **Emit the exit block.** Match the actual outcome:
 
     **Output A — PASS:**
     ```
     === Compliance Verify — PASS ===
 
-    Feature #<N> satisfies all <M> acceptance criteria.
+    Feature #<N> satisfies all checks.
 
     Results:
+      - Static analysis: <sa-verdict> (PASS or WARN — no blockers/criticals)
       - <M> of <M> ACs passed
       - compliance-verified label applied
       - Report posted on issue #<N>
@@ -431,9 +672,10 @@ and reuse as `<active-repo>`.
     ```
     === Compliance Verify — FAIL ===
 
-    Feature #<N> does not yet satisfy all acceptance criteria.
+    Feature #<N> does not yet satisfy all checks.
 
     Results:
+      - Static analysis: <sa-verdict> — <B> blockers, <C> critical, <M> major
       - <P> of <M> ACs passed
       - <F> ACs failed or partial: AC-<x>, AC-<y>, ...
       - Feedback comment posted on issue #<N>
@@ -447,9 +689,10 @@ and reuse as `<active-repo>`.
     === Compliance Verify — PASS (no-acs warning) ===
 
     Feature #<N> has no ## Acceptance Criteria section.
-    Compliance verification was advisory only.
+    AC compliance verification was advisory only.
 
     Results:
+      - Static analysis: <sa-verdict>
       - compliance-verified label applied (no-acs path)
       - Report posted with advisory warning on issue #<N>
 
@@ -482,11 +725,11 @@ and reuse as `<active-repo>`.
       - Label applied: needs-human-review
       - Label removed: in-verification
 
-    Next: human must intervene — review ACs, last compliance report, and
-    last feedback comment, then manually reset the pipeline or close the Feature.
+    Next: human must intervene — review last compliance report and feedback
+    comment, then manually reset the pipeline or close the Feature.
     ```
 
-15. **Terminate the session.** Per `emits-exit-block: true`, invoke
+19. **Terminate the session.** Per `emits-exit-block: true`, invoke
     the host runtime's session-close API if available; otherwise
     halt.
 
@@ -498,7 +741,7 @@ and reuse as `<active-repo>`.
 - `BRANCH_MISSING` from step 4 (no remote feature branch) → severity
   `ERROR`; propagate. The feature branch must exist before
   `in-verification` is applied.
-- `REPORT_FAILED` from step 10 (compliance report comment did not
+- `REPORT_FAILED` from step 14 (compliance report comment did not
   post) → severity `ERROR`; propagate. Without the report, the
   state is ambiguous — do not apply `compliance-verified` or swap
   labels when the audit trail cannot be written.
@@ -507,4 +750,8 @@ and reuse as `<active-repo>`.
   environment failure. The escalation comment and label transition
   are applied and the skill exits cleanly with `exit_state =
   "cycle-cap"`. Do not propagate as an uncaught exception.
+- **SonarQube scanner failure** (step 10a) → severity `WARN`. Log,
+  set `<sonar-available>` = false, and continue with native-tool
+  findings only. A SonarQube outage must not block compliance
+  verification.
 - All other errors: propagate (default).
