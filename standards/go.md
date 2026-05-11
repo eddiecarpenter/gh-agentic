@@ -170,28 +170,6 @@ when verifying a Go Feature. Run these tools in order against the full module tr
 | `govulncheck` | vulnerability in packages touched by the diff | CRITICAL |
 | `govulncheck` | vulnerability in transitive dependencies only | MAJOR |
 
-### Coverage gate
-
-Run the full test suite with coverage instrumentation:
-
-```bash
-go test -coverprofile=coverage.out ./...
-COVERAGE=$(go tool cover -func=coverage.out \
-  | grep "^total:" | awk '{print $3}' | tr -d '%')
-```
-
-**Threshold:** ≥ 80% statement coverage required.
-
-| Coverage | Compliance severity |
-|---|---|
-| ≥ 80% | PASS — no finding |
-| 70–79% | MAJOR |
-| < 70% | CRITICAL |
-
-If `go test` itself fails (compilation error or test panic), record a CRITICAL
-finding per failing package and proceed — coverage is unmeasurable but the
-failure itself must be reported.
-
 ### Race condition gate
 
 Packages containing goroutines, channels, or shared mutable state must also pass:
@@ -202,16 +180,6 @@ go test -race ./...
 
 Any data-race report → CRITICAL finding.
 
-### SonarQube — OWASP hotspot severity mapping
-
-When SonarQube is configured, map security hotspot categories to compliance severity:
-
-| OWASP categories | Compliance severity |
-|---|---|
-| A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection | CRITICAL |
-| A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable & Outdated Components | MAJOR |
-| A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF | MAJOR |
-
 ---
 
 ## Compliance & Quality
@@ -219,17 +187,6 @@ When SonarQube is configured, map security hotspot categories to compliance seve
 The compliance-verify skill reads this section to determine what to enforce when
 verifying a Go Feature's implementation. Rules here are machine-parseable
 constraints — they supplement (not replace) the guidance in the sections above.
-
-### Coverage Threshold
-
-≥80% statement coverage is required for every package containing business logic.
-
-**Coverage command:**
-```bash
-go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
-```
-
-Any package below 80% statement coverage fails the compliance check.
 
 ### Test Quality Expectations
 

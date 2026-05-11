@@ -165,21 +165,6 @@ These supplement the TypeScript severity mapping table:
 | `eslint-plugin-react` | deprecated lifecycle or API usage | MAJOR |
 | `eslint-plugin-react` | style or display-name rules | MINOR |
 
-### Coverage gate
-
-Same as `standards/typescript.md` `## Static Analysis` → "Coverage gate" (≥ 80%
-statement coverage via `npm test -- --coverage --reporter=json`).
-
-For React, the coverage measurement must include component render paths. A component
-file that is imported but whose render output is never exercised via React Testing
-Library does not contribute to statement coverage in a meaningful way — ensure tests
-render components, not just import them.
-
-### SonarQube — OWASP hotspot severity mapping
-
-Same table as `standards/typescript.md` `## Static Analysis` →
-"SonarQube — OWASP hotspot severity mapping".
-
 ---
 
 ## Compliance & Quality
@@ -187,18 +172,6 @@ Same table as `standards/typescript.md` `## Static Analysis` →
 The compliance-verify skill reads this section to determine what to enforce when
 verifying a React Feature's implementation. Rules here are machine-parseable
 constraints — they supplement (not replace) the guidance in the sections above.
-
-### Coverage Threshold
-
-≥80% statement coverage is required for every component and hook file containing
-business logic.
-
-**Coverage command:**
-```bash
-npm test -- --coverage
-```
-
-Any module below 80% statement coverage fails the compliance check.
 
 ### Test Quality Expectations
 

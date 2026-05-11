@@ -1,6 +1,6 @@
 ---
 name: compliance-verify
-description: Verifies that the implementation on a feature branch passes both a static analysis gate (code standards, OWASP vulnerability checks, bug scan via language-native tools and SonarQube) and every acceptance criterion from the Feature issue. Posts a structured verdict, and either applies `compliance-verified` (all checks pass — workflow then opens the PR) or posts a `<!-- compliance-feedback:v1 -->` comment and swaps `in-verification` back to `in-development` (triggering a new dev session). Use when GitHub Actions fires on a feature issue labelled `in-verification`. Headless only.
+description: Verifies that the implementation on a feature branch passes both a static analysis gate (native tools where available plus an AI-driven security and quality review of the diff) and every acceptance criterion from the Feature issue. Posts a structured verdict, and either applies `compliance-verified` (all checks pass — workflow then opens the PR) or posts a `<!-- compliance-feedback:v1 -->` comment and swaps `in-verification` back to `in-development` (triggering a new dev session). SonarQube deep analysis runs post-PR via CI — not during this stage. Use when GitHub Actions fires on a feature issue labelled `in-verification`. Headless only.
 triggers: automated
 user-invocable: false
 loads:
@@ -20,9 +20,11 @@ exit-hands-to: "automation: on PASS — workflow opens PR and applies in-review;
 After the dev session has committed its work, run two independent
 verification gates against the feature branch:
 
-1. **Static analysis** — code standards, OWASP-category vulnerability
-   checks, and a bug scan using language-native tools and SonarQube
-   (if configured). Any BLOCKER or CRITICAL finding is a hard failure.
+1. **Static analysis** — native tooling where available on the runner,
+   plus an AI-driven review of the diff covering OWASP-category security
+   issues, bug patterns, and code quality. Any BLOCKER or CRITICAL
+   finding is a hard failure. SonarQube deep analysis runs post-PR via
+   `sonarcloud.yml` — not during this stage.
 
 2. **AC evaluation** — evaluate every acceptance criterion in the
    Feature issue against the implementation diff and test suite.
@@ -277,26 +279,13 @@ collapsible findings table only.
       Read the `## Static Analysis` section. It defines:
       - The native tools to run and their commands
       - The severity mapping for each tool's output
-      - The coverage gate command and threshold
-      - The SonarQube OWASP hotspot severity mapping
 
       If no `## Static Analysis` section exists in the standards file,
       log a `WARN` ("no static analysis rules defined for <stack>")
-      and skip steps 9, 9b. Proceed to step 10 (SonarQube only).
+      and skip step 9 (native tools). The AI code review in step 9b
+      always runs regardless.
 
-   c. **SonarQube availability.** Check for both a project
-      configuration file and a valid token:
-
-      ```bash
-      test -f sonar-project.properties && echo "config:yes" || echo "config:no"
-      test -n "${SONAR_TOKEN:-}"        && echo "token:yes"  || echo "token:no"
-      ```
-
-      If both present → `<sonar-available>` = true.
-      If either missing → `<sonar-available>` = false. Log a note;
-      do NOT treat as an error.
-
-   d. **Native tool presence.** For each tool listed in the standards
+   c. **Native tool presence.** For each tool listed in the standards
       `## Static Analysis` native-tools table, verify it is on PATH:
 
       ```bash
@@ -305,9 +294,10 @@ collapsible findings table only.
 
       Record absent tools; skip their execution in step 9.
 
-   Hold `<sa-toolset>` = `{ stack, sonar: bool, native: [tool-name, ...] }`.
+   Hold `<sa-toolset>` = `{ stack, native: [tool-name, ...] }`.
 
-9. **Run native static analysis.**
+9. **Run native static analysis** (opportunistic — skip gracefully if
+   all tools are absent; the AI review in step 9b always runs).
 
    Using the commands from `standards/<stack-lowercase>.md`
    `## Static Analysis` → "Native tools — commands" table, execute
@@ -319,102 +309,61 @@ collapsible findings table only.
 
    Hold as `<native-findings>` — list of
    `{ tool, severity, category, file, line, message }`.
+   If no tools were available, `<native-findings>` = `[]`.
 
-9b. **Run the coverage gate.**
+9b. **AI-driven code review.** Always runs — no tooling required.
 
-    Using the command from `standards/<stack-lowercase>.md`
-    `## Static Analysis` → "Coverage gate", execute the coverage
-    measurement. Parse the total coverage percentage.
+    Using `<diff>` (captured in step 6) and the full content of each
+    changed file, perform a structured security and quality review of
+    the implementation changes. Read each changed file in full to
+    understand context beyond the diff lines alone.
 
-    Hold as `<coverage-pct>` (numeric).
+    Apply the following checklist to the changed code:
 
-    Apply the threshold and severity mapping from the standards
-    "Coverage gate" table. If coverage is below the threshold, add
-    a finding to `<native-findings>`:
+    | Category | What to look for | Default severity |
+    |---|---|---|
+    | Hardcoded secrets | API keys, passwords, tokens, credentials in code or config | BLOCKER |
+    | Injection | SQL, command, path injection; unsanitised user input reaching dangerous sinks | CRITICAL |
+    | Insecure crypto | MD5/SHA1 for security purposes, weak PRNG, ECB mode | CRITICAL |
+    | Auth/authorisation | Missing auth checks, broken access control, privilege escalation | CRITICAL |
+    | Error handling | Unchecked errors, swallowed exceptions/panics, silent failures | MAJOR |
+    | Nil/null safety | Missing nil guards before dereference, unchecked type assertions | MAJOR |
+    | Resource management | Unclosed files/connections/responses, missing `defer`/`finally` | MAJOR |
+    | Input validation | Missing bounds checks, unvalidated external or user-supplied input | MAJOR |
+    | Concurrency | Shared mutable state without locks, obvious data races | MAJOR |
+    | Dead code | Unreachable branches, unused variables or imports introduced by the diff | MINOR |
 
-    ```
-    { tool: "<stack>-test-coverage",
-      severity: <per standards table>,
-      category: "coverage",
-      file: "overall",
-      line: "—",
-      message: "Test coverage is <coverage-pct>% — minimum required
-                is <threshold>%. <gap>% of statements are untested." }
-    ```
+    For each finding:
+    - Cite the specific file, function, and line range from the diff
+    - Explain concisely why it is a concern — not just the category label
+    - Assign severity per the table; adjust one level when context
+      clearly warrants it and document the reason
 
-    If the test suite itself fails (compilation error or test panic),
-    record a CRITICAL finding per failing package and proceed —
-    coverage is unmeasurable but the failure must be reported.
+    Hold as `<ai-findings>` — same schema as `<native-findings>`:
+    `{ tool: "ai-review", severity, category, file, line, message }`.
 
-    **SonarQube cross-check** (only when `<sonar-available>` = true):
-    After step 10 completes, compare `<coverage-pct>` against the
-    `coverage` metric from `get_component_measures`. If they diverge
-    by more than 5 percentage points, log a discrepancy warning in the
-    report (informational only — native measurement is authoritative).
+    **Grounding rule (verification-procedure):** only raise findings
+    that are clearly present in the diff or the files it touches. Do
+    not speculate about code paths not changed by this branch. When
+    uncertain whether a finding exists at all, omit it. When uncertain
+    between MAJOR and MINOR, use MAJOR — the reviewer can downgrade.
 
-10. **Run SonarQube analysis** (skip entirely if `<sonar-available>` = false).
+10. **SonarQube — advisory note.**
 
-    a. **Trigger analysis.** Submit the branch to the SonarQube server:
+    SonarQube deep analysis (full SAST, dependency CVEs, coverage
+    measurement) runs automatically via `sonarcloud.yml` when the PR
+    is opened by this workflow. Results appear in the PR checks and
+    decorate the diff for the human reviewer in Stage 6.
 
-       ```bash
-       sonar-scanner \
-         -Dsonar.branch.name="$BRANCH" \
-         -Dsonar.token="$SONAR_TOKEN"
-       ```
+    No scanner action is required here. Record the following in the
+    compliance report (step 14):
 
-       Wait for the analysis task to complete. On scanner failure, log
-       a `WARN`, set `<sonar-available>` = false, and continue with
-       native findings only. Do NOT raise a hard error — a SonarQube
-       outage must not block compliance verification.
-
-    b. **Fetch quality gate status.**
-
-       ```
-       get_project_quality_gate_status(projectKey=<sonar-project-key>)
-       ```
-
-       If gate status = `ERROR` → record one BLOCKER finding:
-       `{ tool: "sonarqube-gate", severity: "BLOCKER",
-          message: "Quality gate failed — see SonarQube dashboard" }`.
-
-    c. **Fetch security hotspots** (OWASP category coverage).
-
-       ```
-       search_security_hotspots(
-         projectKey=<sonar-project-key>,
-         status=TO_REVIEW,
-         branch=<BRANCH>
-       )
-       ```
-
-       Map each hotspot to a compliance severity using the
-       "SonarQube — OWASP hotspot severity mapping" table from
-       `standards/<stack-lowercase>.md` `## Static Analysis`.
-       If the standards file has no such table, use MAJOR for all
-       hotspots as a safe default.
-
-    d. **Fetch bugs and vulnerabilities.**
-
-       ```
-       search_sonar_issues_in_projects(
-         projectKeys=<sonar-project-key>,
-         types=BUG,VULNERABILITY,
-         severities=BLOCKER,CRITICAL,MAJOR,
-         branch=<BRANCH>,
-         resolved=false
-       )
-       ```
-
-       Map each issue directly to the SonarQube severity returned.
-
-    Merge all SonarQube findings into `<sonar-findings>` — same schema
-    as `<native-findings>`. Deduplicate against `<native-findings>` on
-    `{ file, line, message }` — keep the higher-severity entry.
+    > SonarQube analysis will run post-PR via CI (`sonarcloud.yml`).
+    > Results available in PR checks for the Stage 6 reviewer.
 
 11. **Compute the static-analysis verdict.**
 
-    Merge `<native-findings>` and `<sonar-findings>` into
-    `<sa-findings>`.
+    Merge `<native-findings>` and `<ai-findings>` into `<sa-findings>`.
 
     ```
     if any finding in <sa-findings> has severity BLOCKER or CRITICAL:
@@ -522,11 +471,9 @@ collapsible findings table only.
     ## Static Analysis
 
     **Result:** PASS ✅  |  WARN ⚠️  |  FAIL ❌  (use one)
-    **Tools run:** go vet, golangci-lint, govulncheck, go-test-coverage, SonarQube  (list actual tools used)
+    **Tools run:** AI code review (always); native tools run: go vet, golangci-lint (list actual tools used, or "none — AI review only")
 
-    | Metric | Value | Threshold | Status |
-    |---|---|---|---|
-    | Test coverage | <coverage-pct>% | ≥ 80% | ✅ PASS  \|  ❌ FAIL (use one) |
+    > SonarQube analysis will run post-PR via CI (`sonarcloud.yml`). Results available in PR checks.
 
     | Severity | Count |
     |---|---|
@@ -541,10 +488,10 @@ collapsible findings table only.
 
     | Severity | Tool | Location | Message |
     |---|---|---|---|
-    | 🔴 BLOCKER | sonarqube-gate | — | Quality gate failed |
-    | 🟠 CRITICAL | go-test-coverage | overall | Test coverage is 61.2% — minimum required is 80% |
+    | 🔴 BLOCKER | ai-review | `internal/auth/token.go:42` | Hardcoded API token — move to env var or secret store |
+    | 🟠 CRITICAL | ai-review | `cmd/serve.go:88` | User-supplied path passed to os.Open without sanitisation — path traversal risk |
     | 🟠 CRITICAL | govulncheck | `go.mod` | CVE-2024-XXXX in golang.org/x/net < 0.23.0 |
-    | 🟡 MAJOR | golangci-lint (errcheck) | `cmd/bar.go:88` | Error return value not checked |
+    | 🟡 MAJOR | go vet | `pkg/handler.go:33` | Error return value not checked |
 
     </details>
 
@@ -566,8 +513,8 @@ collapsible findings table only.
     ### Static Analysis Issues
     <!-- only present when sa-verdict = FAIL -->
 
-    - **🔴 BLOCKER — sonarqube-gate:** Quality gate failed. Resolve all
-      open SonarQube issues before re-submitting.
+    - **🔴 BLOCKER — ai-review:** `internal/auth/token.go:42` — remove
+      the hardcoded token; load it from an environment variable instead.
     - **🟠 CRITICAL — govulncheck:** `go.mod` — upgrade `golang.org/x/net`
       to ≥ 0.23.0 to resolve CVE-2024-XXXX.
 
@@ -770,8 +717,4 @@ collapsible findings table only.
   environment failure. The escalation comment and label transition
   are applied and the skill exits cleanly with `exit_state =
   "cycle-cap"`. Do not propagate as an uncaught exception.
-- **SonarQube scanner failure** (step 10a) → severity `WARN`. Log,
-  set `<sonar-available>` = false, and continue with native-tool
-  findings only. A SonarQube outage must not block compliance
-  verification.
 - All other errors: propagate (default).

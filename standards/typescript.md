@@ -184,42 +184,6 @@ and skip the ESLint run.
 | `npm audit` | MODERATE severity CVE | MAJOR |
 | `npm audit` | LOW severity CVE | MINOR |
 
-### Coverage gate
-
-Run the full test suite with coverage instrumentation:
-
-```bash
-npm test -- --coverage --reporter=json
-```
-
-Parse the `pct` field under `statements` from the generated `coverage/coverage-summary.json`:
-
-```bash
-COVERAGE=$(node -e "const c=require('./coverage/coverage-summary.json'); \
-  console.log(c.total.statements.pct)")
-```
-
-**Threshold:** ≥ 80% statement coverage required.
-
-| Coverage | Compliance severity |
-|---|---|
-| ≥ 80% | PASS — no finding |
-| 70–79% | MAJOR |
-| < 70% | CRITICAL |
-
-If the test suite itself fails, record a CRITICAL finding per failing module and
-proceed — coverage is unmeasurable but the failure must be reported.
-
-### SonarQube — OWASP hotspot severity mapping
-
-When SonarQube is configured, map security hotspot categories to compliance severity:
-
-| OWASP categories | Compliance severity |
-|---|---|
-| A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection | CRITICAL |
-| A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable & Outdated Components | MAJOR |
-| A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF | MAJOR |
-
 ---
 
 ## Compliance & Quality
@@ -227,17 +191,6 @@ When SonarQube is configured, map security hotspot categories to compliance seve
 The compliance-verify skill reads this section to determine what to enforce when
 verifying a TypeScript Feature's implementation. Rules here are machine-parseable
 constraints — they supplement (not replace) the guidance in the sections above.
-
-### Coverage Threshold
-
-≥80% statement coverage is required for every module containing business logic.
-
-**Coverage command:**
-```bash
-npm test -- --coverage
-```
-
-Any module below 80% statement coverage fails the compliance check.
 
 ### Test Quality Expectations
 

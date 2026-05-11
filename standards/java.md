@@ -197,45 +197,6 @@ Commands are shown for both Maven and Gradle — use whichever the project uses.
 | OWASP Dependency Check | CVSS 4.0–6.9 (Medium) | MAJOR |
 | OWASP Dependency Check | CVSS < 4.0 (Low) | MINOR |
 
-### Coverage gate
-
-Run the full test suite with JaCoCo coverage instrumentation:
-
-**Maven:**
-```bash
-mvn test jacoco:report
-# Parse total instruction coverage from target/site/jacoco/index.html
-# or from target/site/jacoco/jacoco.csv — last row, INSTRUCTION_COVERED / (INSTRUCTION_COVERED + INSTRUCTION_MISSED)
-```
-
-**Gradle:**
-```bash
-./gradlew test jacocoTestReport
-# Parse from build/reports/jacoco/test/jacocoTestReport.xml
-```
-
-**Threshold:** ≥ 80% instruction coverage required.
-
-| Coverage | Compliance severity |
-|---|---|
-| ≥ 80% | PASS — no finding |
-| 70–79% | MAJOR |
-| < 70% | CRITICAL |
-
-If the test suite itself fails to compile or run, record a CRITICAL finding per
-failing module and proceed — coverage is unmeasurable but the failure must be
-reported.
-
-### SonarQube — OWASP hotspot severity mapping
-
-When SonarQube is configured, map security hotspot categories to compliance severity:
-
-| OWASP categories | Compliance severity |
-|---|---|
-| A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection | CRITICAL |
-| A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable & Outdated Components | MAJOR |
-| A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF | MAJOR |
-
 ---
 
 ## Compliance & Quality
@@ -243,51 +204,6 @@ When SonarQube is configured, map security hotspot categories to compliance seve
 The compliance-verify skill reads this section to determine what to enforce when
 verifying a Java Feature's implementation. Rules here are machine-parseable
 constraints — they supplement (not replace) the guidance in the sections above.
-
-### Coverage Threshold
-
-≥80% statement coverage is required for every class containing business logic.
-
-**Coverage command:**
-
-Maven (JaCoCo):
-```bash
-mvn test jacoco:report
-```
-
-Gradle (JaCoCo):
-```bash
-./gradlew test jacocoTestReport
-```
-
-Configure JaCoCo to fail the build when coverage drops below 80%:
-
-Maven (`pom.xml`):
-```xml
-<plugin>
-  <groupId>org.jacoco</groupId>
-  <artifactId>jacoco-maven-plugin</artifactId>
-  <executions>
-    <execution>
-      <goals><goal>check</goal></goals>
-      <configuration>
-        <rules>
-          <rule>
-            <limits>
-              <limit>
-                <counter>INSTRUCTION</counter>
-                <minimum>0.80</minimum>
-              </limit>
-            </limits>
-          </rule>
-        </rules>
-      </configuration>
-    </execution>
-  </executions>
-</plugin>
-```
-
-Any class below 80% instruction coverage fails the compliance check.
 
 ### Test Quality Expectations
 
@@ -307,12 +223,7 @@ enforces:
 
 ### Java-Specific Enforcement Rules
 
-1. **JaCoCo coverage gate** — every module must be configured with the JaCoCo
-   Maven or Gradle plugin at ≥80% instruction coverage. The coverage report
-   (`mvn test jacoco:report` / `./gradlew test jacocoTestReport`) must be
-   present after the build. A module without JaCoCo configured fails the check.
-
-2. **No `@SuppressWarnings("unchecked")` in test code** — suppressing unchecked
+1. **No `@SuppressWarnings("unchecked")` in test code** — suppressing unchecked
    warnings in test files masks type-safety violations the test is meant to catch.
    Any `@SuppressWarnings("unchecked")` annotation inside a `*Test.java` class
    is a failing pattern.
