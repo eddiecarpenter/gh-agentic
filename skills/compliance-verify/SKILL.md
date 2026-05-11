@@ -267,134 +267,90 @@ MAJOR findings produce `<sa-verdict>` = `WARN` — they appear in the
 report but do NOT block compliance. MINOR/INFO are included in the
 collapsible findings table only.
 
-8. **Detect available tooling.** Determine which analysis tools are
-   present in the environment:
+8. **Detect available tooling.**
 
-   a. **SonarQube:** check for both a project configuration and a
-      valid token:
+   a. **Project stack.** Read `LOCALRULES.md` → `## Stack` (or
+      equivalent field). Resolve the stack name (e.g. `Go`, `Java`,
+      `TypeScript`). Hold as `<stack>`.
+
+   b. **Standards file.** Load `standards/<stack-lowercase>.md`.
+      Read the `## Static Analysis` section. It defines:
+      - The native tools to run and their commands
+      - The severity mapping for each tool's output
+      - The coverage gate command and threshold
+      - The SonarQube OWASP hotspot severity mapping
+
+      If no `## Static Analysis` section exists in the standards file,
+      log a `WARN` ("no static analysis rules defined for <stack>")
+      and skip steps 9, 9b. Proceed to step 10 (SonarQube only).
+
+   c. **SonarQube availability.** Check for both a project
+      configuration file and a valid token:
 
       ```bash
-      # Configuration present?
       test -f sonar-project.properties && echo "config:yes" || echo "config:no"
-
-      # Token available?
-      test -n "${SONAR_TOKEN:-}" && echo "token:yes" || echo "token:no"
+      test -n "${SONAR_TOKEN:-}"        && echo "token:yes"  || echo "token:no"
       ```
 
-      If both are present → `<sonar-available>` = true.
-      If either is missing → `<sonar-available>` = false. Log a note
-      that SonarQube analysis was skipped and proceed with native tools
-      only. Do NOT treat this as an error.
+      If both present → `<sonar-available>` = true.
+      If either missing → `<sonar-available>` = false. Log a note;
+      do NOT treat as an error.
 
-   b. **Language-native tools:** inspect the project stack from
-      `LOCALRULES.md`. For each detected language, check tool presence:
+   d. **Native tool presence.** For each tool listed in the standards
+      `## Static Analysis` native-tools table, verify it is on PATH:
 
-      **Go:**
       ```bash
-      which go           # always present if Go project
-      which golangci-lint || echo "golangci-lint:absent"
-      which govulncheck  || echo "govulncheck:absent"
+      which <tool-name> || echo "<tool-name>:absent"
       ```
 
-      **Other stacks:** apply the equivalent linter, vet, and
-      vulnerability scanner for that language (e.g. `npm audit` /
-      `semgrep` for Node; `bandit` / `safety` for Python).
+      Record absent tools; skip their execution in step 9.
 
-   Hold `<sa-toolset>` = `{ sonar: bool, native: [tool-name, ...] }`.
+   Hold `<sa-toolset>` = `{ stack, sonar: bool, native: [tool-name, ...] }`.
 
-9. **Run language-native checks.**
+9. **Run native static analysis.**
 
-   Execute each available native tool against the full module/package
-   tree. Capture stdout and stderr. Map findings to the severity
-   taxonomy above.
+   Using the commands from `standards/<stack-lowercase>.md`
+   `## Static Analysis` → "Native tools — commands" table, execute
+   each available tool against the full module/package tree. Capture
+   stdout and stderr.
 
-   **Go commands (run from repo root):**
-
-   ```bash
-   # Correctness and vet checks
-   go vet ./...
-
-   # Comprehensive lint — covers style, bugs, and security patterns
-   golangci-lint run ./...          # if available
-
-   # Known-vulnerability database scan (Go vuln DB + CVEs)
-   govulncheck ./...                # if available
-   ```
-
-   **Mapping native tool output to severity:**
-
-   | Tool | Finding type | Severity |
-   |---|---|---|
-   | `go vet` | any | CRITICAL — vet catches correctness bugs |
-   | `golangci-lint` (gosec, G-series) | security rule | CRITICAL |
-   | `golangci-lint` (errcheck, staticcheck SA-series) | bug rule | MAJOR |
-   | `golangci-lint` (gofmt, goimports, style) | style rule | MINOR |
-   | `govulncheck` | affects packages in diff | CRITICAL |
-   | `govulncheck` | transitive dependency only | MAJOR |
+   Apply the severity mapping from the standards "Native tools —
+   severity mapping" table to classify each finding.
 
    Hold as `<native-findings>` — list of
    `{ tool, severity, category, file, line, message }`.
 
-9b. **Run test coverage check.**
+9b. **Run the coverage gate.**
 
-    Execute the full test suite with coverage instrumentation and
-    verify the total coverage meets the 80% minimum threshold.
+    Using the command from `standards/<stack-lowercase>.md`
+    `## Static Analysis` → "Coverage gate", execute the coverage
+    measurement. Parse the total coverage percentage.
 
-    ```bash
-    go test -coverprofile=coverage.out ./...
-    go tool cover -func=coverage.out | tail -1
+    Hold as `<coverage-pct>` (numeric).
+
+    Apply the threshold and severity mapping from the standards
+    "Coverage gate" table. If coverage is below the threshold, add
+    a finding to `<native-findings>`:
+
     ```
-
-    The last line of `go tool cover -func` output is the total:
-    ```
-    total:    (statements)    82.4%
-    ```
-
-    Parse the percentage:
-    ```bash
-    COVERAGE=$(go tool cover -func=coverage.out \
-      | grep "^total:" | awk '{print $3}' | tr -d '%')
-    ```
-
-    Hold as `<coverage-pct>` (numeric, e.g. `82.4`).
-
-    **Threshold evaluation:**
-
-    | Coverage | Severity | Action |
-    |---|---|---|
-    | ≥ 80% | — | PASS — no finding added |
-    | 70–79% | MAJOR | Below threshold but not critical |
-    | < 70% | CRITICAL | Significant coverage gap |
-
-    If coverage is below 80%, add a finding to `<native-findings>`:
-    ```
-    { tool: "go-test-coverage",
-      severity: <CRITICAL|MAJOR per table above>,
+    { tool: "<stack>-test-coverage",
+      severity: <per standards table>,
       category: "coverage",
       file: "overall",
       line: "—",
-      message: "Test coverage is <coverage-pct>% — minimum required is 80%.
-                <80-coverage-pct>% of statements are untested." }
+      message: "Test coverage is <coverage-pct>% — minimum required
+                is <threshold>%. <gap>% of statements are untested." }
     ```
 
-    **If `go test` itself fails** (compilation error or test failure),
-    record a CRITICAL finding for each failing package and continue:
-    ```
-    { tool: "go-test-coverage",
-      severity: "CRITICAL",
-      category: "test-failure",
-      file: "<package>",
-      line: "—",
-      message: "Test suite failed — coverage could not be measured." }
-    ```
-    Do not halt the skill on a test failure — record it and proceed.
+    If the test suite itself fails (compilation error or test panic),
+    record a CRITICAL finding per failing package and proceed —
+    coverage is unmeasurable but the failure must be reported.
 
     **SonarQube cross-check** (only when `<sonar-available>` = true):
-    After the SonarQube analysis in step 10 completes, compare
-    `<coverage-pct>` against the `coverage` metric returned by
-    `get_component_measures`. If they diverge by more than 5 percentage
-    points, log a discrepancy warning in the report (informational
-    only — the native measurement is authoritative).
+    After step 10 completes, compare `<coverage-pct>` against the
+    `coverage` metric from `get_component_measures`. If they diverge
+    by more than 5 percentage points, log a discrepancy warning in the
+    report (informational only — native measurement is authoritative).
 
 10. **Run SonarQube analysis** (skip entirely if `<sonar-available>` = false).
 
@@ -419,7 +375,7 @@ collapsible findings table only.
 
        If gate status = `ERROR` → record one BLOCKER finding:
        `{ tool: "sonarqube-gate", severity: "BLOCKER",
-          message: "Quality gate failed — see SonarQube dashboard for details" }`.
+          message: "Quality gate failed — see SonarQube dashboard" }`.
 
     c. **Fetch security hotspots** (OWASP category coverage).
 
@@ -431,13 +387,11 @@ collapsible findings table only.
        )
        ```
 
-       Map each hotspot severity using the OWASP Top 10 category:
-
-       | OWASP categories | Severity |
-       |---|---|
-       | A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection | CRITICAL |
-       | A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable & Outdated Components | MAJOR |
-       | A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF | MAJOR |
+       Map each hotspot to a compliance severity using the
+       "SonarQube — OWASP hotspot severity mapping" table from
+       `standards/<stack-lowercase>.md` `## Static Analysis`.
+       If the standards file has no such table, use MAJOR for all
+       hotspots as a safe default.
 
     d. **Fetch bugs and vulnerabilities.**
 

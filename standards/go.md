@@ -146,6 +146,74 @@ For the full contract framework and approval rules, see `.agents/RULEBOOK.md` �
 
 ---
 
+## Static Analysis
+
+The compliance-verify skill reads this section to execute the correct toolchain
+when verifying a Go Feature. Run these tools in order against the full module tree.
+
+### Native tools — commands
+
+| Tool | Command | Notes |
+|---|---|---|
+| Go vet | `go vet ./...` | Always available with the Go toolchain |
+| golangci-lint | `golangci-lint run ./...` | Skip if absent (`which golangci-lint` fails) |
+| govulncheck | `govulncheck ./...` | Skip if absent (`which govulncheck` fails) |
+
+### Native tools — severity mapping
+
+| Tool | Finding type | Compliance severity |
+|---|---|---|
+| `go vet` | any finding | CRITICAL |
+| `golangci-lint` | gosec / G-series (security rules) | CRITICAL |
+| `golangci-lint` | errcheck, staticcheck SA-series (bug rules) | MAJOR |
+| `golangci-lint` | gofmt, goimports, style rules | MINOR |
+| `govulncheck` | vulnerability in packages touched by the diff | CRITICAL |
+| `govulncheck` | vulnerability in transitive dependencies only | MAJOR |
+
+### Coverage gate
+
+Run the full test suite with coverage instrumentation:
+
+```bash
+go test -coverprofile=coverage.out ./...
+COVERAGE=$(go tool cover -func=coverage.out \
+  | grep "^total:" | awk '{print $3}' | tr -d '%')
+```
+
+**Threshold:** ≥ 80% statement coverage required.
+
+| Coverage | Compliance severity |
+|---|---|
+| ≥ 80% | PASS — no finding |
+| 70–79% | MAJOR |
+| < 70% | CRITICAL |
+
+If `go test` itself fails (compilation error or test panic), record a CRITICAL
+finding per failing package and proceed — coverage is unmeasurable but the
+failure itself must be reported.
+
+### Race condition gate
+
+Packages containing goroutines, channels, or shared mutable state must also pass:
+
+```bash
+go test -race ./...
+```
+
+Any data-race report → CRITICAL finding.
+
+### SonarQube — OWASP hotspot severity mapping
+
+When SonarQube is configured, map security hotspot categories to compliance severity:
+
+| OWASP categories | Compliance severity |
+|---|---|
+| A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection | CRITICAL |
+| A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable & Outdated Components | MAJOR |
+| A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF | MAJOR |
+
+---
+
 ## Compliance & Quality
 
 The compliance-verify skill reads this section to determine what to enforce when
