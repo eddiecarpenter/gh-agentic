@@ -87,6 +87,18 @@ func RepairWithProgress(deps Deps, setLabel func(string)) RepairResult {
 				result.Lines = append(result.Lines, strings.TrimRight(buf.String(), "\n"))
 				result.Repaired++
 			}
+		case "status-options":
+			if setLabel != nil {
+				setLabel("Repairing: project status options...")
+			}
+			var buf bytes.Buffer
+			if err := repairStatusOptions(&buf, deps); err != nil {
+				result.Lines = append(result.Lines, fmt.Sprintf("  %s  Could not repair status options: %v", ui.StatusDanger.Render("✗"), err))
+				result.Unrepaired++
+			} else {
+				result.Lines = append(result.Lines, strings.TrimRight(buf.String(), "\n"))
+				result.Repaired++
+			}
 		case "topology-vars":
 			if setLabel != nil {
 				setLabel("Repairing: topology variables...")
@@ -254,6 +266,46 @@ func repairTopologyVars(w io.Writer, deps Deps) error {
 	}
 
 	return fmt.Errorf("unrecognised topology %q", ctx.Topology)
+}
+
+// repairStatusOptions syncs the project's Status single-select field options
+// to match the full set defined in the project template. Uses a replace-all
+// approach so that both missing options and stale ordering are corrected in
+// a single mutation.
+func repairStatusOptions(w io.Writer, deps Deps) error {
+	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
+	if err != nil || projectID == "" {
+		return fmt.Errorf(ProjectVarName + " not set")
+	}
+
+	tpl, err := ReadProjectTemplate()
+	if err != nil {
+		return fmt.Errorf("reading project template: %w", err)
+	}
+
+	fields, err := deps.FetchProjectFields(projectID)
+	if err != nil {
+		return fmt.Errorf("fetching project fields: %w", err)
+	}
+
+	var statusFieldID string
+	for _, f := range fields {
+		if f.Name == "Status" {
+			statusFieldID = f.ID
+			break
+		}
+	}
+	if statusFieldID == "" {
+		return fmt.Errorf("Status field not found on project")
+	}
+
+	if err := deps.UpdateStatusFieldOptions(statusFieldID, tpl.StatusField.Options); err != nil {
+		return fmt.Errorf("updating status field options: %w", err)
+	}
+
+	fmt.Fprintf(w, "  %s  Project status options synced (%d options)\n",
+		ui.StatusOK.Render("✓"), len(tpl.StatusField.Options))
+	return nil
 }
 
 // repairFramework mounts the latest framework version into .agents/.

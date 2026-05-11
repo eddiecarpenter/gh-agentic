@@ -50,7 +50,23 @@ func testDeps(owner, repo string) Deps {
 		},
 		UpdateProject: func(projectID, shortDescription, readme string) error { return nil },
 		FetchProjectFields: func(projectID string) ([]ProjectField, error) {
-			return []ProjectField{{ID: "field-id", Name: "Status", DataType: "SINGLE_SELECT"}}, nil
+			// Return all template status options so checkStatusFieldOptions passes.
+			return []ProjectField{{
+				ID:       "field-id",
+				Name:     "Status",
+				DataType: "SINGLE_SELECT",
+				Options: []FieldOption{
+					{ID: "opt-1", Name: "Backlog"},
+					{ID: "opt-2", Name: "Scoping"},
+					{ID: "opt-3", Name: "Ready to Implement"},
+					{ID: "opt-4", Name: "In Design"},
+					{ID: "opt-5", Name: "Designed"},
+					{ID: "opt-6", Name: "In Development"},
+					{ID: "opt-7", Name: "In Verification"},
+					{ID: "opt-8", Name: "In Review"},
+					{ID: "opt-9", Name: "Done"},
+				},
+			}}, nil
 		},
 		UpdateStatusFieldOptions: func(fieldID string, options []StatusOption) error { return nil },
 		FetchProjectNumber:       func(projectID string) (int, error) { return 1, nil },

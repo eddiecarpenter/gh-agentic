@@ -66,6 +66,7 @@ func allCheckSteps() []checkStep {
 		{"Checking topology...", checkTopologyResolvable},
 		{"Checking framework mount...", checkFrameworkMounted},
 		{"Checking agentic project views...", checkProjectViews},
+		{"Checking project status options...", checkStatusFieldOptions},
 		{"Checking framework version sync...", checkFrameworkVersionSync},
 		{"Checking topology variables...", checkTopologyVars},
 	}
@@ -369,6 +370,83 @@ func checkTopologyVars(deps Deps) CheckResult {
 		Status:      CheckWarn,
 		Message:     "unrecognised topology " + ctx.Topology,
 		Remediation: "run 'gh agentic repair'",
+	}
+}
+
+func checkStatusFieldOptions(deps Deps) CheckResult {
+	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
+	if err != nil || projectID == "" {
+		return CheckResult{
+			Name:    "status-options",
+			Status:  CheckWarn,
+			Message: "project status options check skipped — " + ProjectVarName + " not set",
+		}
+	}
+
+	tpl, err := ReadProjectTemplate()
+	if err != nil {
+		return CheckResult{
+			Name:    "status-options",
+			Status:  CheckWarn,
+			Message: "project status options check skipped — could not read template",
+		}
+	}
+
+	fields, err := deps.FetchProjectFields(projectID)
+	if err != nil {
+		return CheckResult{
+			Name:    "status-options",
+			Status:  CheckWarn,
+			Message: "project status options check skipped — could not fetch fields: " + err.Error(),
+		}
+	}
+
+	var statusFieldID string
+	var existingOptions []string
+	for _, f := range fields {
+		if f.Name == "Status" {
+			statusFieldID = f.ID
+			for _, o := range f.Options {
+				existingOptions = append(existingOptions, o.Name)
+			}
+			break
+		}
+	}
+
+	if statusFieldID == "" {
+		return CheckResult{
+			Name:        "status-options",
+			Status:      CheckFail,
+			Message:     "project Status field not found",
+			Remediation: "run 'gh agentic repair'",
+		}
+	}
+
+	existing := make(map[string]bool, len(existingOptions))
+	for _, name := range existingOptions {
+		existing[name] = true
+	}
+
+	var missing []string
+	for _, o := range tpl.StatusField.Options {
+		if !existing[o.Name] {
+			missing = append(missing, o.Name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return CheckResult{
+			Name:        "status-options",
+			Status:      CheckFail,
+			Message:     fmt.Sprintf("missing project status options: %s", strings.Join(missing, ", ")),
+			Remediation: "run 'gh agentic repair'",
+		}
+	}
+
+	return CheckResult{
+		Name:    "status-options",
+		Status:  CheckPass,
+		Message: fmt.Sprintf("project status options OK (%d options)", len(existingOptions)),
 	}
 }
 

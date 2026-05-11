@@ -52,7 +52,22 @@ func fakeProjectDeps(owner, repo string) project.Deps {
 		},
 		UpdateProject: func(projectID, shortDescription, readme string) error { return nil },
 		FetchProjectFields: func(projectID string) ([]project.ProjectField, error) {
-			return []project.ProjectField{{ID: "field-id", Name: "Status", DataType: "SINGLE_SELECT"}}, nil
+			return []project.ProjectField{{
+				ID:       "field-id",
+				Name:     "Status",
+				DataType: "SINGLE_SELECT",
+				Options: []project.FieldOption{
+					{ID: "opt-1", Name: "Backlog"},
+					{ID: "opt-2", Name: "Scoping"},
+					{ID: "opt-3", Name: "Ready to Implement"},
+					{ID: "opt-4", Name: "In Design"},
+					{ID: "opt-5", Name: "Designed"},
+					{ID: "opt-6", Name: "In Development"},
+					{ID: "opt-7", Name: "In Verification"},
+					{ID: "opt-8", Name: "In Review"},
+					{ID: "opt-9", Name: "Done"},
+				},
+			}}, nil
 		},
 		UpdateStatusFieldOptions: func(fieldID string, options []project.StatusOption) error { return nil },
 		FetchProjectNumber:       func(projectID string) (int, error) { return 1, nil },

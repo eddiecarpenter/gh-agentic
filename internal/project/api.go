@@ -84,10 +84,17 @@ type FetchProjectNumberFunc func(projectID string) (int, error)
 type CreateProjectViewFunc func(owner, ownerType string, projectNumber int, name, layout, filter string) error
 
 // ProjectField represents a field on a GitHub ProjectV2.
+// FieldOption is a single option within a single-select ProjectV2 field.
+type FieldOption struct {
+	ID   string
+	Name string
+}
+
 type ProjectField struct {
 	ID       string
 	Name     string
 	DataType string
+	Options  []FieldOption // populated for SINGLE_SELECT fields; empty otherwise
 }
 
 // FetchProjectFieldsFunc fetches the fields defined on a ProjectV2.
@@ -394,6 +401,10 @@ type graphqlProjectFieldsResponse struct {
 				ID       string `json:"id"`
 				Name     string `json:"name"`
 				DataType string `json:"dataType"`
+				Options  []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"options"`
 			} `json:"nodes"`
 		} `json:"fields"`
 	} `json:"node"`
@@ -412,7 +423,10 @@ func DefaultFetchProjectFields(projectID string) ([]ProjectField, error) {
 				fields(first: 20) {
 					nodes {
 						... on ProjectV2Field { id name dataType }
-						... on ProjectV2SingleSelectField { id name dataType }
+						... on ProjectV2SingleSelectField {
+							id name dataType
+							options { id name }
+						}
 						... on ProjectV2IterationField { id name dataType }
 					}
 				}
@@ -427,7 +441,11 @@ func DefaultFetchProjectFields(projectID string) ([]ProjectField, error) {
 
 	fields := make([]ProjectField, 0, len(resp.Node.Fields.Nodes))
 	for _, n := range resp.Node.Fields.Nodes {
-		fields = append(fields, ProjectField{ID: n.ID, Name: n.Name, DataType: n.DataType})
+		f := ProjectField{ID: n.ID, Name: n.Name, DataType: n.DataType}
+		for _, o := range n.Options {
+			f.Options = append(f.Options, FieldOption{ID: o.ID, Name: o.Name})
+		}
+		fields = append(fields, f)
 	}
 	return fields, nil
 }
