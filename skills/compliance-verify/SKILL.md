@@ -195,7 +195,7 @@ and reuse as `<active-repo>`.
          --remove-label "in-verification"
        ```
 
-    c. Set `exit_state = "cycle-cap"` and emit **Output E** (step 18).
+    c. Set `exit_state = "cycle-cap"` and emit **Output E** (step 19).
        Terminate immediately — do not proceed to step 4.
 
 4. **Check out the feature branch.**
@@ -534,7 +534,61 @@ collapsible findings table only.
     ```
     Should be ≥ 1. On failure → raise `REPORT_FAILED` (`ERROR`).
 
-15. **On PASS — apply `compliance-verified`.**
+15. **On PASS — compose and post the PR body.**
+
+    Using the feature title, `<diff-stat>`, `<evaluations>`, and
+    `<sa-findings>`, compose a PR body and post it as a
+    `<!-- pr-body:v1 -->` comment on the feature issue. The workflow
+    reads this comment when opening the PR.
+
+    The body must follow this structure exactly:
+
+    ```markdown
+    <!-- pr-body:v1 -->
+
+    ## Summary
+
+    <2–3 sentences describing what was implemented: what problem was
+    solved, what changed, and the approach taken. Derived from the
+    feature title, body, and the diff. Be specific — name the key
+    function or file changed.>
+
+    ## Changes
+
+    <bullet list — max 5 bullets — of the key files and functions
+    modified. Format: `path/to/file.go` — what changed.>
+
+    ## Acceptance Criteria
+
+    | AC | Status |
+    |---|---|
+    | <AC-1 text, truncated to ~70 chars if long> | ✅ PASS |
+    | <AC-2 text> | ✅ PASS |
+    <!-- one row per AC from <evaluations> — PASS/PARTIAL/FAIL -->
+
+    ## Static Analysis
+
+    <sa-verdict emoji> <sa-verdict> — AI code review: <B> blockers, <C> critical, <M> major (<I> informational)
+
+    > SonarQube deep analysis will run on this PR via CI (`sonarcloud.yml`).
+
+    Closes #<N>
+
+    🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)
+    ```
+
+    Post via `post-issue-comment`. Verify posted:
+
+    ```bash
+    gh issue view <N> --repo <active-repo> --json comments \
+      --jq '[.comments[] | select(.body | startswith("<!-- pr-body:v1 -->"))] | length'
+    ```
+
+    Should be ≥ 1. On failure → log a `WARN` and continue — the
+    workflow falls back to a minimal body. Do NOT raise a hard error;
+    a missing PR body must not block the compliance-verified label.
+
+16. **On PASS — apply `compliance-verified`.**
 
     ```bash
     gh issue edit <N> --repo <active-repo> \
@@ -547,11 +601,11 @@ collapsible findings table only.
     present after the edit.
 
     The surrounding workflow's `Open PR if compliance-verified` step
-    checks for this label and opens the PR.
+    reads the `<!-- pr-body:v1 -->` comment and opens the PR with it.
 
-    Emit **Output A** (step 18) and exit.
+    Emit **Output A** (step 19) and exit.
 
-16. **On FAIL — post the feedback comment.**
+17. **On FAIL — post the feedback comment.**
 
     Post a second comment containing the actionable feedback:
 
@@ -594,7 +648,7 @@ collapsible findings table only.
       --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))] | length'
     ```
 
-17. **On FAIL — swap `in-verification` → `in-development`.**
+18. **On FAIL — swap `in-verification` → `in-development`.**
 
     ```bash
     gh issue edit <N> --repo <active-repo> \
@@ -618,7 +672,7 @@ collapsible findings table only.
 
 ### Section E — Closeout
 
-18. **Emit the exit block.** Match the actual outcome:
+19. **Emit the exit block.** Match the actual outcome:
 
     **Output A — PASS:**
     ```
@@ -696,7 +750,7 @@ collapsible findings table only.
     comment, then manually reset the pipeline or close the Feature.
     ```
 
-19. **Terminate the session.** Per `emits-exit-block: true`, invoke
+20. **Terminate the session.** Per `emits-exit-block: true`, invoke
     the host runtime's session-close API if available; otherwise
     halt.
 
