@@ -1,0 +1,28 @@
+version: "1.0.0"
+title: "Compliance Verify"
+description: "As the compliance-verify agent, I want to evaluate a Feature's implementation against its acceptance criteria, test quality, and language standards, so that gaps are surfaced as a structured violation list before a PR is opened."
+
+parameters:
+  - key: feature_number
+    input_type: number
+    requirement: required
+    default: ""
+    description: "The Feature issue to verify."
+
+extensions:
+  - type: builtin
+    name: developer
+    display_name: Developer
+    timeout: 600
+    bundled: true
+
+settings:
+  max_turns: 200
+
+instructions: |
+  You are an automated agent in this project's agentic delivery pipeline.
+
+prompt: |
+  Load `AGENTS.md` (the project rulebook). Then execute the
+  `compliance-verify` skill for Feature {{ feature_number }}. The
+  skill is the authoritative playbook; do not improvise.
