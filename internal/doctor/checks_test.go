@@ -658,6 +658,99 @@ func TestCheckLabels_FrameworkSource(t *testing.T) {
 	}
 }
 
+// TestCheckLabels_VerificationLabels_PresentInRequiredSet confirms that
+// the two labels added for Feature #746 (in-verification and compliance-verified)
+// are registered in requiredPipelineLabels with the canonical attributes.
+func TestCheckLabels_VerificationLabels_PresentInRequiredSet(t *testing.T) {
+	tests := []struct {
+		labelName   string
+		wantColor   string
+		wantDescSub string
+	}{
+		{
+			labelName:   "in-verification",
+			wantColor:   "d93f0b",
+			wantDescSub: "Compliance Verify session active",
+		},
+		{
+			labelName:   "compliance-verified",
+			wantColor:   "0075ca",
+			wantDescSub: "All acceptance criteria verified",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.labelName, func(t *testing.T) {
+			found := false
+			for _, lbl := range requiredPipelineLabels {
+				if lbl.Name != tc.labelName {
+					continue
+				}
+				found = true
+				if lbl.Color != tc.wantColor {
+					t.Errorf("label %q: color = %q, want %q", tc.labelName, lbl.Color, tc.wantColor)
+				}
+				if !strings.Contains(lbl.Description, tc.wantDescSub) {
+					t.Errorf("label %q: description %q missing expected substring %q",
+						tc.labelName, lbl.Description, tc.wantDescSub)
+				}
+			}
+			if !found {
+				t.Errorf("label %q not found in requiredPipelineLabels", tc.labelName)
+			}
+		})
+	}
+}
+
+// TestCheckLabels_VerificationLabels_Missing_FailWithRemediation verifies that
+// when in-verification or compliance-verified are absent from the repo, checkLabels
+// produces Fail results with a valid gh label create remediation string.
+func TestCheckLabels_VerificationLabels_Missing_FailWithRemediation(t *testing.T) {
+	for _, labelName := range []string{"in-verification", "compliance-verified"} {
+		t.Run(labelName, func(t *testing.T) {
+			// Return all labels EXCEPT the one under test.
+			var sb strings.Builder
+			for _, lbl := range requiredPipelineLabels {
+				if lbl.Name == labelName {
+					continue
+				}
+				fmt.Fprintf(&sb, "%s\t%s\t#%s\n", lbl.Name, lbl.Description, lbl.Color)
+			}
+			partial := sb.String()
+
+			deps := CheckDeps{
+				RepoFullName: "owner/repo",
+				Run: func(name string, args ...string) (string, error) {
+					if name == "gh" && len(args) >= 2 && args[0] == "label" && args[1] == "list" {
+						return partial, nil
+					}
+					return "", nil
+				},
+			}
+			g := checkLabels(deps)
+
+			found := false
+			for _, r := range g.Results {
+				if r.Name != "label:"+labelName {
+					continue
+				}
+				found = true
+				if r.Status != Fail {
+					t.Errorf("label %q: expected Fail status, got %v (%s)", labelName, r.Status, r.Message)
+				}
+				if !strings.HasPrefix(r.Remediation, "gh label create ") {
+					t.Errorf("label %q: expected 'gh label create' remediation, got %q", labelName, r.Remediation)
+				}
+				if !strings.Contains(r.Remediation, labelName) {
+					t.Errorf("label %q: remediation %q does not contain label name", labelName, r.Remediation)
+				}
+			}
+			if !found {
+				t.Errorf("no CheckResult found with Name 'label:%s'", labelName)
+			}
+		})
+	}
+}
+
 // TestContainsLabelName covers the first-token matching semantics that
 // prevent false-positives when one label name is a prefix of another.
 func TestContainsLabelName(t *testing.T) {
