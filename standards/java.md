@@ -168,6 +168,76 @@ mvn versions:display-dependency-updates  # check for updates
 
 ---
 
+## Static Analysis
+
+The compliance-verify skill reads this section to execute the correct toolchain
+when verifying a Java Feature. Run these tools in order against the full module tree.
+Commands are shown for both Maven and Gradle — use whichever the project uses.
+
+### Native tools — commands
+
+| Tool | Maven command | Gradle command | Notes |
+|---|---|---|---|
+| SpotBugs | `mvn spotbugs:check` | `./gradlew spotbugsMain` | Bug and correctness analysis |
+| Checkstyle | `mvn checkstyle:check` | `./gradlew checkstyleMain` | Coding-standards enforcement |
+| PMD | `mvn pmd:check` | `./gradlew pmdMain` | Skip if not configured in build file |
+| OWASP Dependency Check | `mvn dependency-check:check` | `./gradlew dependencyCheckAnalyze` | Known CVE scan against declared dependencies |
+
+### Native tools — severity mapping
+
+| Tool | Finding type | Compliance severity |
+|---|---|---|
+| SpotBugs | `SCARY` or `TROUBLING` category | CRITICAL |
+| SpotBugs | `DODGY` / style category | MAJOR |
+| Checkstyle | any violation | MINOR |
+| PMD | Priority 1–2 (error-prone, security) | CRITICAL |
+| PMD | Priority 3–4 (design, best practice) | MAJOR |
+| PMD | Priority 5 (code style) | MINOR |
+| OWASP Dependency Check | CVSS ≥ 7.0 (High / Critical) | CRITICAL |
+| OWASP Dependency Check | CVSS 4.0–6.9 (Medium) | MAJOR |
+| OWASP Dependency Check | CVSS < 4.0 (Low) | MINOR |
+
+### Coverage gate
+
+Run the full test suite with JaCoCo coverage instrumentation:
+
+**Maven:**
+```bash
+mvn test jacoco:report
+# Parse total instruction coverage from target/site/jacoco/index.html
+# or from target/site/jacoco/jacoco.csv — last row, INSTRUCTION_COVERED / (INSTRUCTION_COVERED + INSTRUCTION_MISSED)
+```
+
+**Gradle:**
+```bash
+./gradlew test jacocoTestReport
+# Parse from build/reports/jacoco/test/jacocoTestReport.xml
+```
+
+**Threshold:** ≥ 80% instruction coverage required.
+
+| Coverage | Compliance severity |
+|---|---|
+| ≥ 80% | PASS — no finding |
+| 70–79% | MAJOR |
+| < 70% | CRITICAL |
+
+If the test suite itself fails to compile or run, record a CRITICAL finding per
+failing module and proceed — coverage is unmeasurable but the failure must be
+reported.
+
+### SonarQube — OWASP hotspot severity mapping
+
+When SonarQube is configured, map security hotspot categories to compliance severity:
+
+| OWASP categories | Compliance severity |
+|---|---|
+| A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection | CRITICAL |
+| A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable & Outdated Components | MAJOR |
+| A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF | MAJOR |
+
+---
+
 ## Compliance & Quality
 
 The compliance-verify skill reads this section to determine what to enforce when

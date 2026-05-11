@@ -143,6 +143,85 @@ describe("getUserById", () => {
 
 ---
 
+## Static Analysis
+
+The compliance-verify skill reads this section to execute the correct toolchain
+when verifying a TypeScript Feature. Run these tools in order against the full
+source tree.
+
+### Native tools — commands
+
+| Tool | Command | Notes |
+|---|---|---|
+| TypeScript compiler | `npx tsc --noEmit` | Always run — type errors are hard failures |
+| ESLint | `npx eslint . --ext .ts,.tsx` | Requires `@typescript-eslint/recommended` + `eslint-plugin-security` |
+| npm audit | `npm audit --audit-level=moderate` | Known CVE scan against declared dependencies |
+
+**Required ESLint plugins** — the following must be configured in `.eslintrc.*` for
+the ESLint run to cover security and bug categories:
+
+```bash
+npm install --save-dev \
+  @typescript-eslint/eslint-plugin \
+  @typescript-eslint/parser \
+  eslint-plugin-security \
+  eslint-plugin-n
+```
+
+If `.eslintrc.*` is absent, record a MAJOR finding
+`{ tool: "eslint", severity: "MAJOR", message: "No ESLint configuration found — static analysis rules not enforced" }`
+and skip the ESLint run.
+
+### Native tools — severity mapping
+
+| Tool | Finding type | Compliance severity |
+|---|---|---|
+| `tsc --noEmit` | any type error | CRITICAL |
+| ESLint (`eslint-plugin-security` rules) | security rule violation | CRITICAL |
+| ESLint (`@typescript-eslint` — `no-floating-promises`, `no-misused-promises`, `strict-boolean-expressions`) | bug-prone rule | MAJOR |
+| ESLint (`@typescript-eslint` — style/preference rules) | style rule | MINOR |
+| `npm audit` | CRITICAL or HIGH severity CVE | CRITICAL |
+| `npm audit` | MODERATE severity CVE | MAJOR |
+| `npm audit` | LOW severity CVE | MINOR |
+
+### Coverage gate
+
+Run the full test suite with coverage instrumentation:
+
+```bash
+npm test -- --coverage --reporter=json
+```
+
+Parse the `pct` field under `statements` from the generated `coverage/coverage-summary.json`:
+
+```bash
+COVERAGE=$(node -e "const c=require('./coverage/coverage-summary.json'); \
+  console.log(c.total.statements.pct)")
+```
+
+**Threshold:** ≥ 80% statement coverage required.
+
+| Coverage | Compliance severity |
+|---|---|
+| ≥ 80% | PASS — no finding |
+| 70–79% | MAJOR |
+| < 70% | CRITICAL |
+
+If the test suite itself fails, record a CRITICAL finding per failing module and
+proceed — coverage is unmeasurable but the failure must be reported.
+
+### SonarQube — OWASP hotspot severity mapping
+
+When SonarQube is configured, map security hotspot categories to compliance severity:
+
+| OWASP categories | Compliance severity |
+|---|---|
+| A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection | CRITICAL |
+| A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable & Outdated Components | MAJOR |
+| A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF | MAJOR |
+
+---
+
 ## Compliance & Quality
 
 The compliance-verify skill reads this section to determine what to enforce when
