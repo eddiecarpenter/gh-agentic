@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
@@ -27,7 +28,11 @@ func newAuthCmd() *cobra.Command {
 			return auth.ReadClaudeCredentialsDefault(run)
 		},
 		claudeRefresh: func() error {
-			return defaultClaudeRefreshCmd().Run()
+			cmd := defaultClaudeRefreshCmd()
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
 		},
 	})
 }
