@@ -43,7 +43,7 @@ flowchart LR
     class D,I,CV agent
 ```
 
-Phase transitions are driven by GitHub labels on the issue, but humans don't apply those labels by hand. The framework provides primitive skills (`trigger-design`, `trigger-implementation`) that pick the right label based on the Feature's flags. The human gates **entry** into the agent pipeline (invoking `trigger-design` for a scoped Feature) and **exit** (reviewing the PR). Within the agent pipeline, **design hands off to implementation, which hands off to compliance verification, autonomously**: once headless design completes, `trigger-implementation` transitions the Feature to `in-development` without waiting for human input; the dev-session fires, and on completion the compliance-verify skill checks coverage, acceptance criteria, and best-practice rules before the PR is opened. Only on a clean compliance pass does the Feature reach `in-review`. Every other handoff (Requirement → Scoping, Scoping → Design, Review → Merged) is gated by a human action.
+Phase transitions are driven by GitHub labels on the issue, but humans don't apply those labels by hand. The framework provides primitive skills (`trigger-design`, `trigger-implementation`) that pick the right label based on the Feature's flags. The human gates **entry** into the agent pipeline (invoking `trigger-design` for a scoped Feature) and **exit** (reviewing the PR). Within the agent pipeline, **design hands off to implementation, which hands off to compliance verification, autonomously**: once headless design completes, `trigger-implementation` transitions the Feature to `in-development` without waiting for human input; the dev-session fires, and on completion the compliance-verify skill runs an AI-driven code review against the diff, evaluates every acceptance criterion, and — only on a clean pass — opens the PR and transitions the Feature to `in-review`. On failure, structured feedback is posted and `in-development` is re-applied, triggering a new dev-session. Only on a clean compliance pass does the Feature reach `in-review` for human inspection. Every other handoff (Requirement → Scoping, Scoping → Design, Review → Merged) is gated by a human action.
 
 `trigger-design` reads the Feature's labels to pick the right path: a Feature flagged `needs-interactive-design` (set during scoping for UX/UI work, novel architecture, or anything where a wrong design is expensive to undo) gets `interactive-design`; everything else gets `in-design` and runs headlessly. For Features that took the interactive path, the human chooses at end-of-design between *trigger now*, *park at `designed`*, or *cancel*. A parked Feature is later un-parked by invoking `trigger-implementation`, the same primitive the headless design auto-fires, just human-driven this time.
 
@@ -54,12 +54,41 @@ Phase transitions are driven by GitHub labels on the issue, but humans don't app
 | `backlog` → `scoping` | none (interactive) | A human runs `/requirement-scoping` in their workbench; the agent walks nine artefacts and produces Feature issues |
 | `backlog` → `in-design` (via `trigger-design`) | `agentic-pipeline.yml` (Stage 3) | Reads the Feature, drafts a Design Plan rationale, creates ordered Task sub-issues, creates the feature branch, then auto-applies `in-development` so Stage 4 fires without human input |
 | `backlog` → `interactive-design` (via `trigger-design` when `needs-interactive-design` is set) | none (interactive) | A human runs `/feature-design <N>` for Features that need foreground attention (UX, novel architecture); at end-of-design the human chooses whether to trigger implementation, park at `designed`, or cancel |
-| `in-design` → `in-development` (autonomous) | `agentic-pipeline.yml` (Stage 4) | Walks each Task in order, writes code, runs tests, commits per task, pushes, opens the PR |
+| `in-design` → `in-development` (autonomous) | `agentic-pipeline.yml` (Stage 4) | Walks each Task in order, writes code, runs tests, commits per task, pushes |
 | `designed` → `in-development` (via `trigger-implementation`) | `agentic-pipeline.yml` (Stage 4) | Same as above; this is the path for Features that were parked at `designed` after interactive design |
-| `in-development` → `in-verification` | `agentic-pipeline.yml` | Runs the compliance-verify skill: checks coverage, ACs, and best-practice rules; loops back to `in-development` on any failure |
-| `in-verification` → `in-review` | `agentic-pipeline.yml` | All compliance checks passed; dev-session opens the PR and transitions the Feature to `in-review` |
-| PR review submitted (changes requested) | `agentic-pipeline.yml` (Stage 4b) | Reads the review, implements requested changes, commits, pushes |
-| PR merged | `agentic-pipeline.yml` (Stage 5) | Closes the Feature; transitions parent Requirement to `done` if all child Features are complete |
+| `in-development` → `in-verification` | `agentic-pipeline.yml` (Stage 5) | Runs the compliance-verify skill: AI code review + native static analysis against the diff; evaluates every AC; loops back to `in-development` with a structured feedback comment on any failure |
+| `in-verification` → `compliance-verified` | `agentic-pipeline.yml` (Stage 5) | All checks pass; compliance-verify posts a structured PR body and applies `compliance-verified`; the workflow opens the PR and transitions to `in-review` |
+| PR review submitted (changes requested) | `agentic-pipeline.yml` (Stage 6) | Reads the review, implements requested changes, commits, pushes |
+| PR merged | `agentic-pipeline.yml` (Stage 7) | Closes the Feature; transitions parent Requirement to `done` if all child Features are complete |
+
+### Stage 5 — Compliance Verify
+
+Compliance Verify is the quality gate that sits between implementation and the human PR reviewer. It runs headlessly on the feature branch after the dev-session completes and before any PR is opened. Nothing reaches `in-review` that has not passed this stage.
+
+**Two independent checks run on every feature:**
+
+**1. Static analysis.** Native tooling (stack-dependent — `go vet`, `golangci-lint`, `govulncheck` for Go; `tsc`, `eslint`, `npm audit` for TypeScript/React; SpotBugs, Checkstyle, OWASP Dependency Check for Java) is run where available on the runner. An **AI-driven code review** always runs regardless of tooling — it examines the diff and every changed file against a 10-category checklist:
+
+| Category | Severity |
+|---|---|
+| Hardcoded secrets — API keys, tokens, credentials in code | BLOCKER |
+| Injection — SQL, command, path injection; unsanitised input reaching dangerous sinks | CRITICAL |
+| Insecure crypto — MD5/SHA1 for security, weak PRNG, ECB mode | CRITICAL |
+| Auth/authorisation — missing auth checks, broken access control | CRITICAL |
+| Error handling — unchecked errors, swallowed exceptions, silent failures | MAJOR |
+| Nil/null safety — missing nil guards before dereference | MAJOR |
+| Resource management — unclosed files, connections, responses | MAJOR |
+| Input validation — missing bounds checks, unvalidated external input | MAJOR |
+| Concurrency — shared mutable state without locks, data races | MAJOR |
+| Dead code — unreachable branches, unused variables introduced by the diff | MINOR |
+
+BLOCKER or CRITICAL findings are hard failures. MAJOR findings produce a warning in the report but do not block the stage. SonarQube deep analysis (full SAST, dependency CVEs, coverage) runs separately via `sonarcloud.yml` when the PR is opened — its results are available to the Stage 6 human reviewer in the PR checks.
+
+**2. Acceptance criteria evaluation.** Every AC in the Feature issue is independently assessed against the implementation diff and test suite. Each AC receives a `PASS`, `PARTIAL`, or `FAIL` verdict with specific evidence (file, function, test name). A single `PARTIAL` or `FAIL` fails the overall check.
+
+**The feedback loop.** On failure, the skill posts a `<!-- compliance-feedback:v1 -->` comment with structured, actionable feedback (exact file/line/fix for each failing check), then swaps `in-verification` → `in-development`. This label event triggers a new dev-session, which reads the feedback comment as context and implements only the fixes listed — it does not re-implement passing criteria. The loop is capped at **3 cycles**; after the third failure the Feature receives `needs-human-review` and automated cycling stops.
+
+**On pass.** The skill composes a structured PR body (summary, changes, AC verdict table, static analysis one-liner, SonarQube advisory) as a comment on the Feature issue, applies `compliance-verified`, and exits. The surrounding workflow reads the comment and opens the PR with it.
 
 ### The framework discipline
 
@@ -96,11 +125,11 @@ your-repo/
 
 Every checkout step in the workflow uses `submodules: recursive`, so the submodule is automatically populated on the runner; no separate "mount" step required, and no copy of framework files committed into your repo.
 
-The `gh-agentic` repo itself uses a `.ai -> .` symlink as a documented self-mounting exception (the framework can't submodule itself). The CLI's `upgrade` command refuses to operate on this exception.
+The `gh-agentic` repo itself uses a `.agents -> .` symlink as a documented self-mounting exception (the framework can't submodule itself). The CLI's `upgrade` command refuses to operate on this exception.
 
 ### The workbench
 
-The interactive phases (Requirements, Scoping, interactive Design) run wherever the human is: Claude Code, Goose, or any other agentic workbench. The headless phases (`in-design`, `in-development`, `pr-review-session`) always run via Goose in GitHub Actions; that's hard-wired in the reusable workflows.
+The interactive phases (Requirements, Scoping, interactive Design) run in any **agentic workbench** — such as [Anthropic Claude Code](https://claude.ai/code), [Block Goose](https://block.github.io/goose/), or [Mistral Le Chat](https://chat.mistral.ai/) — wherever the human prefers to work. The headless phases (`in-design`, `in-development`, `pr-review-session`) always run via Goose in GitHub Actions; that's hard-wired in the reusable workflows.
 
 `gh-agentic` is workbench-agnostic by design. Skills live in `.agents/skills/<name>/SKILL.md` and contain everything an agent needs to walk the phase: triggers, steps, error handling, exit blocks. The workbench just has to load the SKILL.md and follow it.
 
