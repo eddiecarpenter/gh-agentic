@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -166,5 +167,18 @@ func TestAuthRefresh_NoCredentials(t *testing.T) {
 	err := auth.Refresh(&buf, deps)
 	if err == nil {
 		t.Fatal("expected error when credentials missing")
+	}
+}
+
+func TestDefaultClaudeRefreshCmd(t *testing.T) {
+	cmd := defaultClaudeRefreshCmd()
+	if len(cmd.Args) < 3 {
+		t.Fatalf("expected at least 3 args, got %v", cmd.Args)
+	}
+	if filepath.Base(cmd.Args[0]) != "claude" {
+		t.Errorf("expected binary 'claude', got %q", cmd.Args[0])
+	}
+	if cmd.Args[1] != "auth" || cmd.Args[2] != "login" {
+		t.Errorf("expected args [auth login], got %v", cmd.Args[1:])
 	}
 }
