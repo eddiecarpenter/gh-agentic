@@ -384,7 +384,39 @@ collapsible findings table only.
 
 ### Section C — AC Evaluation
 
-12. **Evaluate each AC.** For each criterion in `<acs>`, independently
+12. **AC quality pre-check.** Before evaluating individual ACs,
+    assess the overall AC set for behaviour coverage.
+
+    Scan all ACs in `<acs>`. Classify each as either:
+    - **Behaviour AC** — describes what a user, caller, or external
+      system observes when the feature runs: what appears in the
+      terminal, what the API returns, what the UI shows, what event
+      is emitted.
+    - **Implementation AC** — describes internal code structure:
+      a function exists with certain args, a test asserts a call
+      signature, the build compiles, a config value is set.
+
+    If the Feature delivers user-facing behaviour (CLI command, API
+    endpoint, UI interaction, or any change a user can directly
+    invoke) AND all ACs are implementation-only with none describing
+    observable behaviour, add the following to `<ai-findings>`:
+
+    ```
+    { tool: "ac-quality", severity: "MAJOR", category: "AC coverage",
+      message: "All ACs are implementation-detail checks — no
+      user-observable behaviour AC is present. The feature appears
+      to be user-facing but no AC describes what the user sees or
+      experiences. This means compliance can pass while the
+      user-visible behaviour is wrong or absent." }
+    ```
+
+    This finding flows into `<sa-findings>` and contributes to
+    `<sa-verdict>` as a MAJOR — visible in the report but does not
+    by itself cause `sa-verdict = FAIL`. Record whether a behaviour
+    AC was found; use it when writing the compliance-feedback comment
+    if the overall verdict is FAIL.
+
+    **Evaluate each AC.** For each criterion in `<acs>`, independently
     assess whether the implementation satisfies it:
 
     **Method:**

@@ -657,6 +657,29 @@ prompt-user(
     Then  <observable outcome>
     ```
 
+    **Behaviour-coverage rule.** For any Feature that delivers
+    user-facing behaviour — CLI commands, API endpoints, UI
+    interactions, or any change a user can directly invoke or
+    observe — at least one AC MUST describe what the user sees or
+    experiences when the feature works correctly. ACs that only
+    describe internal implementation (e.g. "the code calls function
+    X", "a test asserts Y arguments", "the build passes", "the
+    config uses Z") are *insufficient on their own*. They may exist
+    alongside behaviour ACs but cannot be the complete AC set.
+
+    Examples of failing patterns (implementation-only ACs):
+    - "`newAuthCmd()` wires `claudeRefresh` using `exec.Command("claude", "auth", "login")`"
+    - "A unit test in `internal/cli/` verifies the closure invokes `claude` with args `["auth", "login"]`"
+    - "`go build ./...` passes cleanly"
+
+    The corresponding behaviour AC that was missing:
+    - "Given the user has no active Claude session, When they run `gh agentic auth login`, Then an interactive login prompt appears in their terminal and they can complete the Claude authentication flow"
+
+    If the human supplies only implementation ACs, surface this gap
+    explicitly before closing artefact 6. Add the missing behaviour
+    AC or confirm with the human that no user-facing behaviour is
+    introduced (e.g. a pure internal refactor with no CLI change).
+
 14. **Artefact 7 — Interactive-design triage (per-Feature).** A
     binary yes/no question. The decision is whether this Feature's
     *design phase* must run in foreground (interactive) — typically
