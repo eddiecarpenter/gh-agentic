@@ -129,7 +129,7 @@ The `gh-agentic` repo itself uses a `.agents -> .` symlink as a documented self-
 
 ### The workbench
 
-The interactive phases (Requirements, Scoping, interactive Design) run wherever the human is: Claude Code, Goose, or any other agentic workbench. The headless phases (`in-design`, `in-development`, `pr-review-session`) always run via Goose in GitHub Actions; that's hard-wired in the reusable workflows.
+The interactive phases (Requirements, Scoping, interactive Design) run in any **agentic workbench** — such as [Anthropic Claude Code](https://claude.ai/code), [Block Goose](https://block.github.io/goose/), or [Mistral Le Chat](https://chat.mistral.ai/) — wherever the human prefers to work. The headless phases (`in-design`, `in-development`, `pr-review-session`) always run via Goose in GitHub Actions; that's hard-wired in the reusable workflows.
 
 `gh-agentic` is workbench-agnostic by design. Skills live in `.agents/skills/<name>/SKILL.md` and contain everything an agent needs to walk the phase: triggers, steps, error handling, exit blocks. The workbench just has to load the SKILL.md and follow it.
 
