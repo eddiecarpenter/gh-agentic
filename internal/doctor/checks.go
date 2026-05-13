@@ -21,7 +21,8 @@ type CheckDeps struct {
 	RepoName     string
 	OwnerType    string
 	Topology     string // "single", "federated-cp", "federated-domain", "" (unknown)
-	ProjectID    string // value of AGENTIC_PROJECT_ID if set
+	ProjectID           string // value of AGENTIC_PROJECT_ID if set
+	ProjectIDReadFailed bool   // true when AGENTIC_PROJECT_ID could not be read due to token permission error
 	Run          auth.RunCommandFunc
 	ReadCreds    auth.ReadCredentialsFunc
 	// FetchProjectTitle is used by checkProjectReachability to confirm the
@@ -497,11 +498,21 @@ func checkProjectAffiliation(deps CheckDeps) Group {
 	g := Group{Name: "Agentic project membership"}
 
 	if strings.TrimSpace(deps.ProjectID) == "" {
-		g.Results = append(g.Results, CheckResult{
-			Name: "AGENTIC_PROJECT_ID", Status: Fail,
-			Message:     "AGENTIC_PROJECT_ID not configured",
-			Remediation: remediationSet("variable", "AGENTIC_PROJECT_ID", deps),
-		})
+		if deps.ProjectIDReadFailed {
+			// Token lacked Variables:Read (Actions:Read) permission — the variable
+			// may be set but we cannot verify it from this token. Surface as Warning
+			// so CI pipelines using a scoped PIPELINE_PAT don't report false failures.
+			g.Results = append(g.Results, CheckResult{
+				Name: "AGENTIC_PROJECT_ID", Status: Warning,
+				Message: "AGENTIC_PROJECT_ID — unable to verify (token lacks variable-read permission)",
+			})
+		} else {
+			g.Results = append(g.Results, CheckResult{
+				Name: "AGENTIC_PROJECT_ID", Status: Fail,
+				Message:     "AGENTIC_PROJECT_ID not configured",
+				Remediation: remediationSet("variable", "AGENTIC_PROJECT_ID", deps),
+			})
+		}
 	} else {
 		g.Results = append(g.Results, CheckResult{
 			Name: "AGENTIC_PROJECT_ID", Status: Pass,
@@ -845,7 +856,8 @@ func isPermissionError(out string) bool {
 	return strings.Contains(lower, "403") ||
 		strings.Contains(lower, "resource not accessible") ||
 		strings.Contains(lower, "insufficient scopes") ||
-		strings.Contains(lower, "must have admin rights")
+		strings.Contains(lower, "must have admin rights") ||
+		strings.Contains(lower, "forbidden")
 }
 
 // containsVariableName returns true if the gh output from

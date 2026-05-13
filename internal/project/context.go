@@ -48,6 +48,13 @@ type Context struct {
 	// ProjectDeleted is true when ProjectID is set but the project node
 	// no longer resolves — the affiliation is stale.
 	ProjectDeleted bool
+	// ProjectIDReadFailed is true when the AGENTIC_PROJECT_ID variable could
+	// not be read due to a token permission error (HTTP 403). The variable may
+	// be set; the token simply lacked Variables:Read (Actions:Read) permission.
+	// Distinguishes "not configured" from "couldn't check" so the doctor can
+	// emit Warning rather than Fail in CI contexts where PIPELINE_PAT has
+	// limited scopes.
+	ProjectIDReadFailed bool
 
 	// --- Topology ---
 
@@ -134,10 +141,19 @@ func Resolve(deps Deps) (*Context, error) {
 	}
 
 	// Read AGENTIC_PROJECT_ID. Empty means unaffiliated — a safe default,
-	// not an error (see doc comment).
+	// not an error (see doc comment). A permission error (HTTP 403) means
+	// the token lacks Variables:Read scope; record that separately so the
+	// doctor can emit Warning rather than Fail.
 	if deps.GetRepoVariable != nil {
-		pid, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
-		ctx.ProjectID = strings.TrimSpace(pid)
+		pid, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
+		if err != nil {
+			if isVariablePermissionError(err) {
+				ctx.ProjectIDReadFailed = true
+			}
+			// else: genuine absence or transient error — leave ProjectID empty
+		} else {
+			ctx.ProjectID = strings.TrimSpace(pid)
+		}
 	}
 
 	// Resolve topology — the canonical precedence: explicit
@@ -392,3 +408,21 @@ func ensureContextValid(ctx *Context, err error) (*Context, error) {
 // deliberately lean) can share the same whitespace-normalisation rule Resolve
 // uses on variable values.
 func trim(s string) string { return strings.TrimSpace(s) }
+
+// isVariablePermissionError returns true when a GetRepoVariable error indicates
+// a token-permission failure (HTTP 403) rather than a genuinely absent variable
+// (HTTP 404) or a transient error. Fine-grained PATs that lack Actions:Read
+// (Variables:Read) and GitHub App installation tokens without that scope both
+// produce 403 errors; the doctor must not report these as "variable not
+// configured" — they should be surfaced as "unable to verify".
+func isVariablePermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "403") ||
+		strings.Contains(s, "resource not accessible") ||
+		strings.Contains(s, "insufficient scopes") ||
+		strings.Contains(s, "must have admin rights") ||
+		strings.Contains(s, "forbidden")
+}
