@@ -699,7 +699,24 @@ jobs:
           gh issue edit "${ISSUE_NUMBER}" --repo ${{ github.repository }} \
             --remove-label "in-verification" \
             --add-label "in-development"
-          echo "::warning::compliance-verify skill exited without completing FAIL path — safety net swapped in-verification → in-development on #${ISSUE_NUMBER}."
+          echo "::error::compliance-verify skill aborted before completing the FAIL path — safety net recovered the pipeline by cycling #${ISSUE_NUMBER} back to in-development. Investigate the session log above."
+          exit 1
+
+      # Fail the job when the skill reached the cycle cap and applied
+      # needs-human-review. The automated pipeline has halted; a red job
+      # makes this visible at a glance rather than silently green.
+      - name: Fail if cycle cap reached — human review required
+        if: success() && steps.open_pr.outputs.opened == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} --json labels --jq '[.labels[].name]')
+          if echo "${LABELS}" | jq -e 'contains(["needs-human-review"])' > /dev/null; then
+            echo "::error::Compliance verification cycle cap reached on Feature #${ISSUE_NUMBER} — 3 successive FAIL verdicts. Automated cycling halted. Human review required before the pipeline can restart."
+            exit 1
+          fi
+          echo "Compliance cycle continuing normally — feature cycling back to in-development for next dev session."
 
       # Must use PIPELINE_PAT so the label event triggers pr-review-session.
       - name: Apply in-review label
