@@ -199,26 +199,29 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 	ctx, _ := project.Resolve(pdeps)
 	projectID := ""
 	topology := ""
+	projectIDReadFailed := false
 	if ctx != nil {
 		projectID = ctx.ProjectID
 		topology = ctx.Topology
+		projectIDReadFailed = ctx.ProjectIDReadFailed
 	}
 
 	return doctor.CheckDeps{
-		Root:         root,
-		RepoFullName: pdeps.RepoFullName,
-		Owner:        pdeps.Owner,
-		RepoName:     pdeps.RepoName,
-		OwnerType:    ownerType,
-		Topology:     topology,
-		ProjectID:    projectID,
-		Run:          run,
+		Root:                root,
+		RepoFullName:        pdeps.RepoFullName,
+		Owner:               pdeps.Owner,
+		RepoName:            pdeps.RepoName,
+		OwnerType:           ownerType,
+		Topology:            topology,
+		ProjectID:           projectID,
+		ProjectIDReadFailed: projectIDReadFailed,
+		Run:                 run,
 		ReadCreds: func(r auth.RunCommandFunc) ([]byte, error) {
 			return auth.ReadClaudeCredentialsDefault(r)
 		},
-		FetchProjectTitle:       project.DefaultFetchProjectTitle,
-		FetchProjectFields:       project.DefaultFetchProjectFields,
-		UpdateStatusFieldOptions: project.DefaultUpdateStatusFieldOptions,
+		FetchProjectTitle:        project.DefaultFetchProjectTitle,
+		FetchProjectFields:        project.DefaultFetchProjectFields,
+		UpdateStatusFieldOptions:  project.DefaultUpdateStatusFieldOptions,
 	}, nil
 }
 
