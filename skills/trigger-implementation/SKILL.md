@@ -1,6 +1,6 @@
 ---
 name: trigger-implementation
-description: Triggers the implementation phase for a Feature by removing whichever design-phase label it currently carries (in-design, interactive-design, or designed) and applying in-development, then transitioning the project status to In Development. Workflow automation picks up in-development and runs the dev-session headlessly. Use when a calling skill or human needs to start the implementation phase for a Feature whose design is complete — both at the end of feature-design (interactive mode, "trigger now" choice) and standalone for un-parking a Feature that was previously stopped at designed. Use even when the caller doesn't say "trigger implementation" — phrases like "send this Feature to development", "start the dev phase on #42", "un-park this designed Feature", "ship the design to implementation" should trigger this primitive.
+description: Triggers the implementation phase for a Feature by removing whichever design-phase label it currently carries (in-design, interactive-design, or designed) and applying in-development, then transitioning the project status to In Development. Workflow automation picks up in-development and runs the dev-session headlessly. Use when a calling skill or human needs to start the implementation phase for a Feature whose design is complete — both at the end of feature-design (interactive mode, "trigger now" choice) and standalone for un-parking a Feature that was previously stopped at designed. Use even when the caller doesn't say "trigger implementation" — phrases like "send this Feature to development", "start the dev phase on #42", "un-park this designed Feature", "ship the design to implementation" should trigger this primitive. IMPORTANT: this primitive requires the Feature to already be at a design-phase label (in-design, interactive-design, or designed). If the Feature is still at backlog, the caller must invoke trigger-design instead — never apply in-development to a backlog feature. The bare "trigger #N" phrase without qualification is NOT a signal to trigger implementation; it means trigger-design when the feature is at backlog.
 triggers: automated
 user-invocable: true
 loads:
@@ -101,6 +101,14 @@ No file artefacts. No state outside the named Feature changes.
 
    - The label set MUST contain `feature`. If not, raise
      `INVALID_TRIGGER_STATE` (`ERROR`) — the issue is not a Feature.
+   - **Pre-check:** if the label set contains `backlog` (and none of
+     `in-design`, `interactive-design`, or `designed`), STOP immediately.
+     Do NOT apply `in-development`. Raise `INVALID_TRIGGER_STATE` (`ERROR`)
+     with the message:
+     > "Feature #N is at backlog — design has not run yet. Use
+     > trigger-design to start the design phase first."
+     This is the most common caller mistake: "trigger #N" on a backlog
+     feature must always go to trigger-design, never trigger-implementation.
    - The label set MUST contain exactly one of `in-design`,
      `interactive-design`, or `designed`. Capture which one as
      `<source-label>`.
