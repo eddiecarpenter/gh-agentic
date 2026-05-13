@@ -686,11 +686,14 @@ jobs:
             --json comments \
             --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))] | length')
           if [ "${FEEDBACK_COUNT}" -eq 0 ]; then
-            gh issue comment "${ISSUE_NUMBER}" --repo ${{ github.repository }} --body \
-"<!-- compliance-feedback:v1 -->
-## Compliance Feedback
-
-The compliance-verify session exited before completing the feedback step. See the \`<!-- compliance-report:v1 -->\` comment above for the full FAIL verdict and required fixes. Address all items marked **PARTIAL** or **FAIL** before the next verification run."
+            FALLBACK_BODY=$(printf '%s\n' \
+              '<!-- compliance-feedback:v1 -->' \
+              '## Compliance Feedback' \
+              '' \
+              'The compliance-verify session exited before completing the feedback step.' \
+              'See the compliance-report comment above for the full FAIL verdict and required fixes.' \
+              'Address all items marked PARTIAL or FAIL before the next verification run.')
+            gh issue comment "${ISSUE_NUMBER}" --repo ${{ github.repository }} --body "${FALLBACK_BODY}"
             echo "Posted fallback compliance-feedback:v1 comment."
           fi
           gh issue edit "${ISSUE_NUMBER}" --repo ${{ github.repository }} \
