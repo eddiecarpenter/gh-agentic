@@ -627,7 +627,7 @@ jobs:
           BRANCH="${{ steps.branch.outputs.name }}"
           LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} --json labels --jq '[.labels[].name]')
           if ! echo "${LABELS}" | jq -e 'contains(["compliance-verified"])' > /dev/null; then
-            echo "compliance-verified label not present — recipe did not pass. Skill has already handled state transition."
+            echo "compliance-verified label not present — recipe did not pass."
             echo "opened=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -662,6 +662,41 @@ jobs:
             --base main \
             --head "${BRANCH}"
           echo "opened=true" >> $GITHUB_OUTPUT
+
+      # Safety net: if the recipe exited on the FAIL path without completing
+      # the label swap (e.g. context exhaustion mid-step), the issue is left
+      # stuck at in-verification. Detect this and force the swap so the pipeline
+      # is not silently stalled. Must use PIPELINE_PAT so the in-development
+      # label event triggers a new dev session.
+      - name: Safety net — swap in-verification on skill abort
+        if: success() && steps.open_pr.outputs.opened == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} --json labels --jq '[.labels[].name]')
+          if ! echo "${LABELS}" | jq -e 'contains(["in-verification"])' > /dev/null; then
+            echo "in-verification label already removed by skill — no safety-net action needed."
+            exit 0
+          fi
+          # Skill exited without completing the FAIL path. Post a minimal
+          # feedback comment if the skill did not post one, so the next
+          # dev session has context pointing to the compliance report.
+          FEEDBACK_COUNT=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} \
+            --json comments \
+            --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))] | length')
+          if [ "${FEEDBACK_COUNT}" -eq 0 ]; then
+            gh issue comment "${ISSUE_NUMBER}" --repo ${{ github.repository }} --body \
+"<!-- compliance-feedback:v1 -->
+## Compliance Feedback
+
+The compliance-verify session exited before completing the feedback step. See the \`<!-- compliance-report:v1 -->\` comment above for the full FAIL verdict and required fixes. Address all items marked **PARTIAL** or **FAIL** before the next verification run."
+            echo "Posted fallback compliance-feedback:v1 comment."
+          fi
+          gh issue edit "${ISSUE_NUMBER}" --repo ${{ github.repository }} \
+            --remove-label "in-verification" \
+            --add-label "in-development"
+          echo "::warning::compliance-verify skill exited without completing FAIL path — safety net swapped in-verification → in-development on #${ISSUE_NUMBER}."
 
       # Must use PIPELINE_PAT so the label event triggers pr-review-session.
       - name: Apply in-review label
