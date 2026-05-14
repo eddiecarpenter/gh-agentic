@@ -125,6 +125,19 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      # System packages that the composite action cannot reliably install on
+      # self-hosted runners: the composite action is loaded from the locally-
+      # mounted .agents/ directory (gitignored, persists between runs), which
+      # may lag the workflow version. Inline steps are always at the current
+      # workflow ref and are the authoritative place for system dep changes.
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          dpkg -s libvulkan1 >/dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libvulkan1
+          }
+
       - name: Install tools
         uses: ./.agents/.github/actions/install-ai-tools
         with:
@@ -394,6 +407,19 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      # System packages that the composite action cannot reliably install on
+      # self-hosted runners: the composite action is loaded from the locally-
+      # mounted .agents/ directory (gitignored, persists between runs), which
+      # may lag the workflow version. Inline steps are always at the current
+      # workflow ref and are the authoritative place for system dep changes.
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          dpkg -s libvulkan1 >/dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libvulkan1
+          }
+
       - name: Install tools
         uses: ./.agents/.github/actions/install-ai-tools
         with:
@@ -573,6 +599,19 @@ jobs:
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
           node-version: 'lts/*'
+
+      # System packages that the composite action cannot reliably install on
+      # self-hosted runners: the composite action is loaded from the locally-
+      # mounted .agents/ directory (gitignored, persists between runs), which
+      # may lag the workflow version. Inline steps are always at the current
+      # workflow ref and are the authoritative place for system dep changes.
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          dpkg -s libvulkan1 >/dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libvulkan1
+          }
 
       - name: Install tools
         uses: ./.agents/.github/actions/install-ai-tools
@@ -803,6 +842,19 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      # System packages that the composite action cannot reliably install on
+      # self-hosted runners: the composite action is loaded from the locally-
+      # mounted .agents/ directory (gitignored, persists between runs), which
+      # may lag the workflow version. Inline steps are always at the current
+      # workflow ref and are the authoritative place for system dep changes.
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          dpkg -s libvulkan1 >/dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libvulkan1
+          }
+
       - name: Install tools
         uses: ./.agents/.github/actions/install-ai-tools
         with:
@@ -898,6 +950,19 @@ jobs:
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
           node-version: 'lts/*'
+
+      # System packages that the composite action cannot reliably install on
+      # self-hosted runners: the composite action is loaded from the locally-
+      # mounted .agents/ directory (gitignored, persists between runs), which
+      # may lag the workflow version. Inline steps are always at the current
+      # workflow ref and are the authoritative place for system dep changes.
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          dpkg -s libvulkan1 >/dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libvulkan1
+          }
 
       - name: Install tools
         uses: ./.agents/.github/actions/install-ai-tools
