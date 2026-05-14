@@ -37,7 +37,7 @@ runs:
       id: sys-check
       shell: bash
       run: |
-        dpkg -s gh bzip2 libgomp1 >/dev/null 2>&1 \
+        dpkg -s gh bzip2 libgomp1 libvulkan1 >/dev/null 2>&1 \
           && echo "installed=true" >> $GITHUB_OUTPUT \
           || echo "installed=false" >> $GITHUB_OUTPUT
 
@@ -50,7 +50,8 @@ runs:
         GH_VER=$(apt-cache show gh 2>/dev/null | grep '^Version:' | head -1 | awk '{print $2}' || echo "latest")
         BZIP2_VER=$(apt-cache show bzip2 2>/dev/null | grep '^Version:' | head -1 | awk '{print $2}' || echo "latest")
         LIBGOMP_VER=$(apt-cache show libgomp1 2>/dev/null | grep '^Version:' | head -1 | awk '{print $2}' || echo "latest")
-        echo "key=apt-sys-deps-${{ runner.os }}-${{ runner.arch }}-gh${GH_VER}-bzip2${BZIP2_VER}-gomp${LIBGOMP_VER}" >> $GITHUB_OUTPUT
+        LIBVULKAN_VER=$(apt-cache show libvulkan1 2>/dev/null | grep '^Version:' | head -1 | awk '{print $2}' || echo "latest")
+        echo "key=apt-sys-deps-${{ runner.os }}-${{ runner.arch }}-gh${GH_VER}-bzip2${BZIP2_VER}-gomp${LIBGOMP_VER}-vulkan${LIBVULKAN_VER}" >> $GITHUB_OUTPUT
 
     - name: Cache apt archives
       if: steps.sys-check.outputs.installed != 'true'
@@ -66,7 +67,7 @@ runs:
       run: |
         sudo rm -rf /var/lib/apt/lists/*
         sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends --fix-missing gh bzip2 libgomp1
+        sudo apt-get install -y --no-install-recommends --fix-missing gh bzip2 libgomp1 libvulkan1
 
     - name: Resolve Goose version
       id: goose-version
