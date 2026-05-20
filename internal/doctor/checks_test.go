@@ -937,7 +937,7 @@ func TestCheckSecret_Single_SecretAtOrgOnly_Fail(t *testing.T) {
 func TestCheckVariable_Federated_SharedName_QueriesOrg(t *testing.T) {
 	r := &ghRun{
 		Outputs: map[string]string{
-			"variable|--org": "AGENT_USER\tsome-value",
+			"variable|--org": "RUNNER_LABEL\tsome-value",
 			// repo variable get returns empty (not set)
 		},
 	}
@@ -945,7 +945,7 @@ func TestCheckVariable_Federated_SharedName_QueriesOrg(t *testing.T) {
 		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
 		Run: r.fn(),
 	}
-	res := checkVariable(deps, "AGENT_USER")
+	res := checkVariable(deps, "RUNNER_LABEL")
 	if res.Status != Pass {
 		t.Fatalf("got %d (%s), want Pass", res.Status, res.Message)
 	}
@@ -994,7 +994,7 @@ func (s shadowScenario) ghRun() *ghRun {
 func TestCheckShadowVars_Federated_NoShadows_Pass(t *testing.T) {
 	r := shadowScenario{
 		// Shared name present only at org — correct federated placement.
-		VarOrg: "AGENT_USER\tvalue",
+		VarOrg: "RUNNER_LABEL\tvalue",
 		SecOrg: "PROJECT_PAT\tupdated",
 	}.ghRun()
 	deps := CheckDeps{
@@ -1012,15 +1012,15 @@ func TestCheckShadowVars_Federated_NoShadows_Pass(t *testing.T) {
 
 func TestCheckShadowVars_Federated_VariableShadow_FailWithDeleteCommand(t *testing.T) {
 	r := shadowScenario{
-		VarRepo: "AGENT_USER\tshadow",
-		VarOrg:  "AGENT_USER\ttrue-value",
+		VarRepo: "RUNNER_LABEL\tshadow",
+		VarOrg:  "RUNNER_LABEL\ttrue-value",
 	}.ghRun()
 	deps := CheckDeps{
 		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
 		Run: r.fn(),
 	}
 	g := checkShadowVars(deps)
-	// Expect: 1 summary Fail + 1 per-item Fail for AGENT_USER variable.
+	// Expect: 1 summary Fail + 1 per-item Fail for RUNNER_LABEL variable.
 	if len(g.Results) != 2 {
 		t.Fatalf("expected 2 results (summary + item), got %d: %+v", len(g.Results), g.Results)
 	}
@@ -1031,10 +1031,10 @@ func TestCheckShadowVars_Federated_VariableShadow_FailWithDeleteCommand(t *testi
 	if !ok || len(data) != 1 {
 		t.Fatalf("expected []ShadowValue of length 1 on summary, got %v", g.Results[0].Data)
 	}
-	if data[0].Kind != "variable" || data[0].Name != "AGENT_USER" {
-		t.Errorf("structured data: got %+v, want variable/AGENT_USER", data[0])
+	if data[0].Kind != "variable" || data[0].Name != "RUNNER_LABEL" {
+		t.Errorf("structured data: got %+v, want variable/RUNNER_LABEL", data[0])
 	}
-	wantCmd := "gh variable delete --repo acme/cp AGENT_USER"
+	wantCmd := "gh variable delete --repo acme/cp RUNNER_LABEL"
 	if data[0].DeleteCommand != wantCmd {
 		t.Errorf("structured delete command: got %q, want %q", data[0].DeleteCommand, wantCmd)
 	}
@@ -1068,8 +1068,8 @@ func TestCheckShadowVars_Federated_SecretShadow_FailWithDeleteCommand(t *testing
 
 func TestCheckShadowVars_Federated_MixedShadows_AllListed(t *testing.T) {
 	r := shadowScenario{
-		VarRepo: "AGENT_USER\tx\nRUNNER_LABEL\ty",
-		VarOrg:  "AGENT_USER\tx\nRUNNER_LABEL\ty",
+		VarRepo: "RUNNER_LABEL\tx\nAGENT_PROVIDER\ty",
+		VarOrg:  "RUNNER_LABEL\tx\nAGENT_PROVIDER\ty",
 		SecRepo: "PROJECT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
 		SecOrg:  "PROJECT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
 	}.ghRun()
@@ -1159,10 +1159,10 @@ func TestFindShadowValues_DeterministicOrder(t *testing.T) {
 	// should emit the variable entry before the secret entry (declaration
 	// order in the canonical shared list).
 	r := shadowScenario{
-		VarRepo: "AGENT_USER\tv",
-		VarOrg:  "AGENT_USER\tv",
-		SecRepo: "AGENT_USER\ts", // Same name, different kind.
-		SecOrg:  "AGENT_USER\ts",
+		VarRepo: "RUNNER_LABEL\tv",
+		VarOrg:  "RUNNER_LABEL\tv",
+		SecRepo: "RUNNER_LABEL\ts", // Same name, different kind.
+		SecOrg:  "RUNNER_LABEL\ts",
 	}.ghRun()
 	deps := CheckDeps{
 		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
@@ -1206,11 +1206,11 @@ func TestCheckVariable_Federated_SharedAtNeither_FailWithOrgRemediation(t *testi
 		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
 		Run: r.fn(),
 	}
-	res := checkVariable(deps, "AGENT_USER")
+	res := checkVariable(deps, "RUNNER_LABEL")
 	if res.Status != Fail {
 		t.Fatalf("got %d (%s), want Fail", res.Status, res.Message)
 	}
-	wantHint := "gh variable set AGENT_USER --org acme"
+	wantHint := "gh variable set RUNNER_LABEL --org acme"
 	if res.Remediation != wantHint {
 		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
 	}
@@ -1236,7 +1236,7 @@ func TestCheckVariable_PermissionError_Warns(t *testing.T) {
 					return tc.output, fmt.Errorf("gh: exit status 1")
 				},
 			}
-			res := checkVariable(deps, "AGENT_USER")
+			res := checkVariable(deps, "RUNNER_LABEL")
 			if res.Status != Warning {
 				t.Fatalf("status: got %d (%s), want Warning", res.Status, res.Message)
 			}

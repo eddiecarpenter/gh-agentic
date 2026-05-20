@@ -13,14 +13,14 @@ func TestProjectScopeReExports_AreWiredCorrectly(t *testing.T) {
 		repo  = "acme-org/charging-cp"
 	)
 
-	if !IsSharedName("AGENT_USER") {
-		t.Error("IsSharedName(AGENT_USER) should be true")
+	if !IsSharedName("RUNNER_LABEL") {
+		t.Error("IsSharedName(RUNNER_LABEL) should be true")
 	}
 	if !IsIdentityName("AGENTIC_PROJECT_ID") {
 		t.Error("IsIdentityName(AGENTIC_PROJECT_ID) should be true")
 	}
 
-	flag, target := ScopeFor("AGENT_USER", "federated", owner, repo)
+	flag, target := ScopeFor("RUNNER_LABEL", "federated", owner, repo)
 	if flag != ScopeFlagOrg || target != owner {
 		t.Errorf("federated shared: got (%q, %q), want (%q, %q)", flag, target, ScopeFlagOrg, owner)
 	}
