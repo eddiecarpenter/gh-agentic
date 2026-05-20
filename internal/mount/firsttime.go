@@ -10,9 +10,7 @@ import (
 // RunFirstTime orchestrates the first-time mount flow when no .agents/
 // directory exists yet. It:
 //  1. Installs the framework as a `.agents/` submodule
-//  2. Generates CLAUDE.md
-//  3. Generates AGENTS.md with bootstrap rule
-//  4. Generates wrapper workflows in .github/workflows/
+//  2. Generates CLAUDE.md, AGENTS.md, and wrapper workflows via ScaffoldProjectFiles
 //
 // The mounted version is recorded by the submodule's gitlink in the
 // parent repo's index. Callers that need to broadcast the version
@@ -29,28 +27,9 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 		return fmt.Errorf("installing framework: %w", err)
 	}
 
-	// Step 2: Generate CLAUDE.md (only if it doesn't exist).
-	claudePath := filepath.Join(root, "CLAUDE.md")
-	if _, err := os.Stat(claudePath); os.IsNotExist(err) {
-		fmt.Fprintln(w, "  ✓ CLAUDE.md created")
-		if err := os.WriteFile(claudePath, []byte(claudeMDTemplate), 0o644); err != nil {
-			return fmt.Errorf("creating CLAUDE.md: %w", err)
-		}
-	}
-
-	// Step 3: Generate AGENTS.md (only if it doesn't exist).
-	agentsPath := filepath.Join(root, "AGENTS.md")
-	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
-		fmt.Fprintln(w, "  ✓ AGENTS.md created")
-		if err := os.WriteFile(agentsPath, []byte(agentsMDTemplate), 0o644); err != nil {
-			return fmt.Errorf("creating AGENTS.md: %w", err)
-		}
-	}
-
-	// Step 4: Generate wrapper workflows.
-	fmt.Fprintln(w, "  ✓ Wrapper workflows created")
-	if err := generateWorkflows(w, root, version); err != nil {
-		return fmt.Errorf("creating workflows: %w", err)
+	// Steps 2-4: Generate CLAUDE.md, AGENTS.md, and wrapper workflows.
+	if err := ScaffoldProjectFiles(w, root, version); err != nil {
+		return err
 	}
 
 	fmt.Fprintln(w)
@@ -61,6 +40,58 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 	fmt.Fprintln(w, "  2. Run 'gh agentic init' to join or create an agentic project")
 	fmt.Fprintln(w, "  3. Run 'gh agentic check' to verify the full setup")
 
+	return nil
+}
+
+// ScaffoldProjectFiles creates the standard agent instruction files and
+// wrapper workflows for a domain repo. It is safe to call after
+// DownloadFramework — each file is only written when it does not already
+// exist (idempotent). project.Create and project.initFederated call this
+// after mounting the framework so that init always produces the full set
+// of required files regardless of which code path ran.
+func ScaffoldProjectFiles(w io.Writer, root, version string) error {
+	// CLAUDE.md — only if absent.
+	claudePath := filepath.Join(root, "CLAUDE.md")
+	if _, err := os.Stat(claudePath); os.IsNotExist(err) {
+		fmt.Fprintln(w, "  ✓ CLAUDE.md created")
+		if err := os.WriteFile(claudePath, []byte(claudeMDTemplate), 0o644); err != nil {
+			return fmt.Errorf("creating CLAUDE.md: %w", err)
+		}
+	}
+
+	// AGENTS.md — only if absent.
+	agentsPath := filepath.Join(root, "AGENTS.md")
+	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
+		fmt.Fprintln(w, "  ✓ AGENTS.md created")
+		if err := os.WriteFile(agentsPath, []byte(agentsMDTemplate), 0o644); err != nil {
+			return fmt.Errorf("creating AGENTS.md: %w", err)
+		}
+	}
+
+	// Wrapper workflows.
+	fmt.Fprintln(w, "  ✓ Wrapper workflows created")
+	if err := generateWorkflows(w, root, version); err != nil {
+		return fmt.Errorf("creating workflows: %w", err)
+	}
+
+	return nil
+}
+
+// ScaffoldLocalRules creates a starter LOCALRULES.md in root when none
+// exists. The file is pre-populated with the repo name, owner, and
+// topology so the developer has a ready-to-edit file rather than a blank
+// slate. It is safe to call multiple times — a no-op when LOCALRULES.md
+// already exists.
+func ScaffoldLocalRules(w io.Writer, root, repoName, owner, topology string) error {
+	path := filepath.Join(root, "LOCALRULES.md")
+	if _, err := os.Stat(path); err == nil {
+		return nil // already exists — preserve the user's overrides
+	}
+	content := localrulesMDTemplate(repoName, owner, topology)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("creating LOCALRULES.md: %w", err)
+	}
+	fmt.Fprintln(w, "  ✓ LOCALRULES.md created")
 	return nil
 }
 
