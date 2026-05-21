@@ -392,7 +392,10 @@ func checkWorkflows(deps CheckDeps) Group {
 		path := filepath.Join(workflowsDir, wf)
 		if !fileExists(path) {
 			g.Results = append(g.Results, CheckResult{
-				Name: wf, Status: Warning, Message: wf + " not found",
+				Name:        wf,
+				Status:      Fail,
+				Message:     wf + " — not found",
+				Remediation: "Run 'gh agentic repair'",
 			})
 			continue
 		}

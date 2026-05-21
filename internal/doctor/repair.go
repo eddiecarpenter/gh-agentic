@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
@@ -292,11 +293,18 @@ var pendingDescriptions = map[string]struct {
 }
 
 // workflowRepairNames is the set of CheckResult names produced by checkWorkflows
-// that map to a workflow-tag mismatch (auto-fixable via UpdateWorkflowVersions).
+// that are auto-fixable by repair — either a missing file (scaffold) or a
+// version-tag mismatch (UpdateWorkflowVersions).
 var workflowRepairNames = map[string]bool{
 	"agentic-pipeline.yml": true,
 	"release.yml":          true,
 }
+
+// workflowMissingRemediation is the exact Remediation string that
+// checkWorkflows writes when a workflow file does not exist. RepairPipeline
+// uses it to distinguish "file absent" from "version tag mismatch" so the
+// two cases can be routed to their respective repair paths.
+const workflowMissingRemediation = "Run 'gh agentic repair'"
 
 // RepairPipeline runs all pipeline checks and attempts to auto-repair the
 // failures that are mechanically fixable. Failures that require human input
@@ -311,6 +319,7 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 	report := RunAllChecksWithProgress(deps, setLabel)
 
 	workflowRepairAttempted := false
+	workflowScaffoldAttempted := false
 
 	for _, g := range report.Groups {
 		for _, r := range g.Results {
@@ -360,6 +369,37 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 					result.Lines = append(result.Lines,
 						fmt.Sprintf("  %s  Label %s created",
 							ui.StatusOK.Render("✓"), r.Name))
+					result.Repaired++
+				}
+
+			case workflowRepairNames[r.Name] && r.Remediation == workflowMissingRemediation:
+				// Workflow file is absent — scaffold it (and any other missing
+				// workflow) in a single pass. One call to GenerateWorkflows
+				// writes both agentic-pipeline.yml and release.yml, so dedupe.
+				if workflowScaffoldAttempted {
+					continue
+				}
+				workflowScaffoldAttempted = true
+				if setLabel != nil {
+					setLabel("Repairing: scaffolding missing workflow files...")
+				}
+				version, verr := mount.ReadAIVersionFromGit(deps.Root)
+				if verr != nil || version == "" {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot scaffold workflows: framework version unknown — run 'gh agentic mount' first",
+							ui.StatusDanger.Render("✗")))
+					result.Unrepaired++
+					continue
+				}
+				if err := mount.GenerateWorkflows(io.Discard, deps.Root, version); err != nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Could not scaffold workflow files: %v",
+							ui.StatusDanger.Render("✗"), err))
+					result.Unrepaired++
+				} else {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Wrapper workflows created at .github/workflows/ (version %s)",
+							ui.StatusOK.Render("✓"), mount.TrimVPrefix(version)))
 					result.Repaired++
 				}
 

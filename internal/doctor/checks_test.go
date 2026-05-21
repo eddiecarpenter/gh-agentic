@@ -181,6 +181,38 @@ func TestCheckFramework_NotMounted(t *testing.T) {
 	}
 }
 
+func TestCheckWorkflows_MissingFile_Fail(t *testing.T) {
+	// No .github/workflows directory at all — both files missing.
+	root := t.TempDir()
+	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.0.0")
+	deps := CheckDeps{Root: root}
+
+	g := checkWorkflows(deps)
+
+	// Both workflow files must produce a Fail (not Warning) with a non-empty
+	// Remediation so that RepairPipeline can pick them up.
+	for _, wf := range []string{"agentic-pipeline.yml", "release.yml"} {
+		found := false
+		for _, r := range g.Results {
+			if r.Name == wf {
+				found = true
+				if r.Status != Fail {
+					t.Errorf("%s: got status %d, want Fail", wf, r.Status)
+				}
+				if r.Remediation == "" {
+					t.Errorf("%s: missing remediation hint", wf)
+				}
+				if !strings.Contains(r.Message, "not found") {
+					t.Errorf("%s: message %q should contain 'not found'", wf, r.Message)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("no result for %s", wf)
+		}
+	}
+}
+
 func TestCheckWorkflows_VersionMismatch(t *testing.T) {
 	root := t.TempDir()
 	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.0.0")

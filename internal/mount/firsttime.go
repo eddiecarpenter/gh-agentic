@@ -70,7 +70,7 @@ func ScaffoldProjectFiles(w io.Writer, root, version string) error {
 
 	// Wrapper workflows.
 	fmt.Fprintln(w, "  ✓ Wrapper workflows created")
-	if err := generateWorkflows(w, root, version); err != nil {
+	if err := GenerateWorkflows(w, root, version); err != nil {
 		return fmt.Errorf("creating workflows: %w", err)
 	}
 
@@ -95,8 +95,10 @@ func ScaffoldLocalRules(w io.Writer, root, repoName, owner, topology string) err
 	return nil
 }
 
-// generateWorkflows creates the wrapper workflow files in .github/workflows/.
-func generateWorkflows(w io.Writer, root, version string) error {
+// GenerateWorkflows creates the wrapper workflow files in .github/workflows/.
+// It is exported so that repair tooling can scaffold missing workflow files
+// without going through the full first-time mount flow.
+func GenerateWorkflows(w io.Writer, root, version string) error {
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	if err := os.MkdirAll(workflowsDir, 0o755); err != nil {
 		return fmt.Errorf("creating workflows directory: %w", err)

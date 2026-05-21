@@ -117,6 +117,59 @@ func TestRepairPipeline_FixesGitignoreAndWorkflowTags(t *testing.T) {
 	}
 }
 
+func TestRepairPipeline_ScaffoldsMissingWorkflows(t *testing.T) {
+	// Build a repo that has the framework mounted but no .github/workflows/
+	// directory at all — simulating a repo where init ran but the workflow
+	// scaffolding was skipped (the exact scenario the user reported).
+	root := t.TempDir()
+	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.0.0")
+
+	// Framework files — enough to pass non-workflow checks.
+	_ = os.MkdirAll(filepath.Join(root, ".agents", "skills"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, ".agents", "RULEBOOK.md"), []byte("# Rules"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# CLAUDE.md\n@AGENTS.md"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# AGENTS.md\n@.agents/RULEBOOK.md"), 0o644)
+
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "owner/repo",
+		Owner:        "owner",
+		RepoName:     "repo",
+		OwnerType:    "User",
+		Topology:     "single",
+		Run:          fakeRunMissingVarsAndSecret,
+		ReadCreds:    func(run auth.RunCommandFunc) ([]byte, error) { return []byte(`{"token":"abc"}`), nil },
+	}
+
+	result := RepairPipeline(deps, nil)
+
+	// Both workflow files should now exist on disk.
+	for _, wf := range []string{"agentic-pipeline.yml", "release.yml"} {
+		path := filepath.Join(root, ".github", "workflows", wf)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("%s was not created by repair", wf)
+		}
+	}
+
+	// There should be exactly one scaffold success line (GenerateWorkflows
+	// writes both files in one call, so the repair loop dedupes).
+	scaffoldLines := 0
+	for _, l := range result.Lines {
+		if strings.Contains(l, "Wrapper workflows created") {
+			scaffoldLines++
+		}
+	}
+	if scaffoldLines != 1 {
+		t.Errorf("expected 1 scaffold success line, got %d (lines: %v)", scaffoldLines, result.Lines)
+	}
+
+	// The scaffold should count as one repair.
+	if result.Repaired < 1 {
+		t.Errorf("expected at least 1 repaired, got %d", result.Repaired)
+	}
+}
+
 // capturedGH holds every gh invocation a fake run function received, so
 // routing tests can assert exactly which scope flag/target was used.
 type capturedGH struct {
