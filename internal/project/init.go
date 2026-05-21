@@ -134,18 +134,31 @@ func initFederated(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 	// is tracked via .agents/.git metadata — no flat .ai-version file is
 	// written (removed by feature #571 / task #585).
 	aiDir := filepath.Join(deps.Root, ".agents")
+	freshMount := false
 	if _, err := os.Stat(aiDir); os.IsNotExist(err) {
 		fmt.Fprintf(w, "  Mounting framework %s...\n", cpVersion)
 		if err := mount.DownloadFramework(deps.Root, cpVersion, deps.Clone); err != nil {
 			return fmt.Errorf("mounting framework: %w", err)
 		}
 		fmt.Fprintf(w, "  %s  Framework mounted at %s\n", ui.StatusOK.Render("✓"), cpVersion)
+		freshMount = true
 	} else {
 		localVersion, _ := mount.ReadAIVersionFromGit(deps.Root)
 		if localVersion == "" {
 			localVersion = "(unknown)"
 		}
 		fmt.Fprintf(w, "  %s  Framework already mounted at %s\n", ui.StatusOK.Render("✓"), localVersion)
+	}
+
+	// Scaffold agent instruction files and wrapper workflows on fresh mounts.
+	// Skipped when the framework was already present to avoid clobbering edits.
+	if freshMount {
+		if err := mount.ScaffoldProjectFiles(w, deps.Root, cpVersion); err != nil {
+			return fmt.Errorf("scaffolding project files: %w", err)
+		}
+		if err := mount.ScaffoldLocalRules(w, deps.Root, deps.RepoName, deps.Owner, "federated"); err != nil {
+			return fmt.Errorf("scaffolding LOCALRULES.md: %w", err)
+		}
 	}
 
 	// Configure secrets, variables, and agent access.

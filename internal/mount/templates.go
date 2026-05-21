@@ -1,6 +1,9 @@
 package mount
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // claudeMDTemplate is the standard CLAUDE.md content for domain repos.
 const claudeMDTemplate = `# CLAUDE.md
@@ -72,6 +75,41 @@ jobs:
       issues: write
       pull-requests: write
 `, "{{VERSION}}", version)
+}
+
+// localrulesMDTemplate returns a starter LOCALRULES.md for a domain repo.
+// The known fields (repo name, owner, topology) are pre-populated; the
+// developer fills in the stack, description, module, and custom commands.
+func localrulesMDTemplate(repoName, owner, topology string) string {
+	return fmt.Sprintf("# LOCALRULES.md — Local Overrides\n"+
+		"\n"+
+		"This file contains project-specific rules and overrides that extend or\n"+
+		"supersede the global protocol defined in `.agents/RULEBOOK.md`.\n"+
+		"\n"+
+		"This file is never overwritten by a template sync.\n"+
+		"\n"+
+		"---\n"+
+		"\n"+
+		"## Project\n"+
+		"\n"+
+		"- **Name:** %s\n"+
+		"- **Topology:** %s\n"+
+		"- **Stack:** <!-- TODO: e.g. Go, TypeScript, Python -->\n"+
+		"- **Description:** <!-- TODO: short description of this project -->\n"+
+		"\n"+
+		"## Repo\n"+
+		"\n"+
+		"- **GitHub:** https://github.com/%s/%s\n"+
+		"- **Module:** <!-- TODO: module/package path if applicable -->\n"+
+		"\n"+
+		"## Commands\n"+
+		"\n"+
+		"<!-- TODO: add project-specific CLI commands and their descriptions here -->\n"+
+		"\n"+
+		"## Notes\n"+
+		"\n"+
+		"<!-- TODO: add any project-specific rules, conventions, or notes here -->\n",
+		repoName, topology, owner, repoName)
 }
 
 // releaseWorkflowTemplate returns the release wrapper workflow content
