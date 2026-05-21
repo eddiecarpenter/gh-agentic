@@ -437,7 +437,7 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 
 	// Check variables via gh CLI.
 	variables := []string{
-		"AGENT_USER", "RUNNER_LABEL",
+		"RUNNER_LABEL",
 		"AGENT_PROVIDER", "AGENT_MODEL",
 	}
 	for _, v := range variables {
@@ -726,7 +726,7 @@ func checkProjectStatusOptions(deps CheckDeps) Group {
 
 // checkVariable checks if a GitHub variable exists.
 //
-// Under federated topology the shared names (AGENT_USER, RUNNER_LABEL,
+// Under federated topology the shared names (RUNNER_LABEL,
 // AGENT_PROVIDER, AGENT_MODEL) live at the organisation level and are not
 // visible via `gh variable list --repo OWNER/REPO`. The check therefore
 // consults the org scope for shared names under federated topology, treating
@@ -945,7 +945,6 @@ func FindShadowValues(deps CheckDeps) []ShadowValue {
 	// on map iteration order. The names themselves come from scope's
 	// canonical shared set; we iterate a stable slice here.
 	shared := []string{
-		"AGENT_USER",
 		"RUNNER_LABEL",
 		"AGENT_PROVIDER",
 		"AGENT_MODEL",

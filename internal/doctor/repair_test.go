@@ -152,7 +152,7 @@ func assertGHScope(t *testing.T, c *capturedGH, wantFlag, wantTarget string) {
 }
 
 func TestApplyPendingPrompt_Federated_SharedName_RoutesToOrg(t *testing.T) {
-	shared := []string{"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON"}
+	shared := []string{"RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL", "PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON"}
 	for _, name := range shared {
 		t.Run(name, func(t *testing.T) {
 			c := &capturedGH{}
@@ -194,7 +194,7 @@ func TestApplyPendingPrompt_Federated_IdentityName_StaysAtRepo(t *testing.T) {
 
 func TestApplyPendingPrompt_Single_AllNames_StayAtRepo(t *testing.T) {
 	all := []string{
-		"AGENT_USER", "RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL",
+		"RUNNER_LABEL", "AGENT_PROVIDER", "AGENT_MODEL",
 		"PROJECT_PAT", "CLAUDE_CREDENTIALS_JSON",
 		"AGENTIC_PROJECT_ID", "AGENTIC_TOPOLOGY", "AGENTIC_FRAMEWORK_VERSION",
 	}
@@ -291,7 +291,7 @@ func (c *recordedConfirm) run(title, body string) (bool, error) {
 
 func makeShadowItems() []ShadowValue {
 	return []ShadowValue{
-		{Name: "AGENT_USER", Kind: "variable", DeleteCommand: "gh variable delete --repo acme/cp AGENT_USER"},
+		{Name: "RUNNER_LABEL", Kind: "variable", DeleteCommand: "gh variable delete --repo acme/cp RUNNER_LABEL"},
 		{Name: "PROJECT_PAT", Kind: "secret", DeleteCommand: "gh secret delete --repo acme/cp PROJECT_PAT"},
 	}
 }
@@ -316,7 +316,7 @@ func TestRepairShadowValues_ConfirmYes_AllDeletesSucceed(t *testing.T) {
 		t.Fatalf("gh called %d times, want 2: %v", len(run.calls), run.calls)
 	}
 	// Delete commands use the injected runner with the right scope and name.
-	wantFirst := []string{"variable", "delete", "AGENT_USER", "--repo", "acme/cp"}
+	wantFirst := []string{"variable", "delete", "RUNNER_LABEL", "--repo", "acme/cp"}
 	wantSecond := []string{"secret", "delete", "PROJECT_PAT", "--repo", "acme/cp"}
 	if !reflectDeepEqualStrings(run.calls[0], wantFirst) {
 		t.Errorf("call 0: got %v, want %v", run.calls[0], wantFirst)
@@ -330,7 +330,7 @@ func TestRepairShadowValues_ConfirmYes_OneFailureDoesNotAbortBatch(t *testing.T)
 	items := makeShadowItems()
 	run := &shadowRunRecorder{
 		errs: map[string]error{
-			"variable|AGENT_USER": fmt.Errorf("boom"),
+			"variable|RUNNER_LABEL": fmt.Errorf("boom"),
 		},
 	}
 	confirm := &recordedConfirm{yes: true}

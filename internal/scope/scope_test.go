@@ -13,7 +13,6 @@ const (
 // Kept in a slice (not the set) so tests iterate deterministically and the
 // exhaustiveness assertion can compare lengths.
 var allSharedNames = []string{
-	"AGENT_USER",
 	"RUNNER_LABEL",
 	"AGENT_PROVIDER",
 	"AGENT_MODEL",
