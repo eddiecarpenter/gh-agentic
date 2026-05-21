@@ -177,7 +177,7 @@ func TestGenerateWorkflows_CreatesDirectory(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
 
-	err := generateWorkflows(&buf, root, "v2.0.0")
+	err := GenerateWorkflows(&buf, root, "v2.0.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

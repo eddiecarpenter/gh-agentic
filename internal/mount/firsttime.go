@@ -49,7 +49,7 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 
 	// Step 4: Generate wrapper workflows.
 	fmt.Fprintln(w, "  ✓ Wrapper workflows created")
-	if err := generateWorkflows(w, root, version); err != nil {
+	if err := GenerateWorkflows(w, root, version); err != nil {
 		return fmt.Errorf("creating workflows: %w", err)
 	}
 
@@ -64,8 +64,10 @@ func RunFirstTime(w io.Writer, root, version string, fetch CloneFunc) error {
 	return nil
 }
 
-// generateWorkflows creates the wrapper workflow files in .github/workflows/.
-func generateWorkflows(w io.Writer, root, version string) error {
+// GenerateWorkflows creates the wrapper workflow files in .github/workflows/.
+// It is exported so that repair tooling can scaffold missing workflow files
+// without going through the full first-time mount flow.
+func GenerateWorkflows(w io.Writer, root, version string) error {
 	workflowsDir := filepath.Join(root, ".github", "workflows")
 	if err := os.MkdirAll(workflowsDir, 0o755); err != nil {
 		return fmt.Errorf("creating workflows directory: %w", err)
