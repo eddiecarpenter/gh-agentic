@@ -211,3 +211,106 @@ func TestReleaseWorkflowTemplate_ContainsVersion(t *testing.T) {
 		t.Errorf("release workflow should reference @v2.1.0, got: %s", content)
 	}
 }
+
+func TestScaffoldProjectFiles_CreatesAllFiles(t *testing.T) {
+	root := t.TempDir()
+	var buf bytes.Buffer
+
+	if err := ScaffoldProjectFiles(&buf, root, "v2.5.0"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	claude, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("CLAUDE.md not created: %v", err)
+	}
+	if !strings.Contains(string(claude), "@AGENTS.md") {
+		t.Errorf("CLAUDE.md should reference @AGENTS.md")
+	}
+
+	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("AGENTS.md not created: %v", err)
+	}
+	if !strings.Contains(string(agents), "@.agents/RULEBOOK.md") {
+		t.Errorf("AGENTS.md should reference @.agents/RULEBOOK.md")
+	}
+
+	pipeline, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "agentic-pipeline.yml"))
+	if err != nil {
+		t.Fatalf("agentic-pipeline.yml not created: %v", err)
+	}
+	if !strings.Contains(string(pipeline), "@v2.5.0") {
+		t.Errorf("pipeline workflow should reference @v2.5.0")
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".github", "workflows", "release.yml")); os.IsNotExist(err) {
+		t.Error("release.yml should exist")
+	}
+}
+
+func TestScaffoldProjectFiles_IdempotentWhenFilesExist(t *testing.T) {
+	root := t.TempDir()
+	var buf bytes.Buffer
+
+	_ = os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# Custom\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# Custom AGENTS\n"), 0o644)
+
+	if err := ScaffoldProjectFiles(&buf, root, "v2.5.0"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Existing files must be preserved.
+	data, _ := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
+	if string(data) != "# Custom\n" {
+		t.Errorf("CLAUDE.md should be preserved, got: %s", data)
+	}
+	data, _ = os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if string(data) != "# Custom AGENTS\n" {
+		t.Errorf("AGENTS.md should be preserved, got: %s", data)
+	}
+}
+
+func TestScaffoldLocalRules_CreatesFile(t *testing.T) {
+	root := t.TempDir()
+	var buf bytes.Buffer
+
+	if err := ScaffoldLocalRules(&buf, root, "my-repo", "myorg", "single"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "LOCALRULES.md"))
+	if err != nil {
+		t.Fatalf("LOCALRULES.md not created: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "my-repo") {
+		t.Error("LOCALRULES.md should contain repo name")
+	}
+	if !strings.Contains(content, "myorg") {
+		t.Error("LOCALRULES.md should contain owner")
+	}
+	if !strings.Contains(content, "single") {
+		t.Error("LOCALRULES.md should contain topology")
+	}
+	if !strings.Contains(buf.String(), "LOCALRULES.md created") {
+		t.Error("output should confirm LOCALRULES.md creation")
+	}
+}
+
+func TestScaffoldLocalRules_PreservesExisting(t *testing.T) {
+	root := t.TempDir()
+	var buf bytes.Buffer
+
+	existing := "# My custom rules\n"
+	_ = os.WriteFile(filepath.Join(root, "LOCALRULES.md"), []byte(existing), 0o644)
+
+	if err := ScaffoldLocalRules(&buf, root, "my-repo", "myorg", "single"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(root, "LOCALRULES.md"))
+	if string(data) != existing {
+		t.Errorf("existing LOCALRULES.md should be preserved, got: %s", data)
+	}
+}

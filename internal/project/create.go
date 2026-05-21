@@ -133,6 +133,14 @@ func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 	}
 	fmt.Fprintf(w, "  %s  Framework mounted at %s\n", ui.StatusOK.Render("✓"), cfg.Version)
 
+	// Step 8a: Scaffold agent instruction files and wrapper workflows.
+	if err := mount.ScaffoldProjectFiles(w, deps.Root, cfg.Version); err != nil {
+		return fmt.Errorf("scaffolding project files: %w", err)
+	}
+	if err := mount.ScaffoldLocalRules(w, deps.Root, deps.RepoName, deps.Owner, topology); err != nil {
+		return fmt.Errorf("scaffolding LOCALRULES.md: %w", err)
+	}
+
 	// Step 9: Scaffold project from template (description, readme, status options, views).
 	fmt.Fprintf(w, "  Scaffolding project from template...\n")
 	scaffoldProject(w, deps, projectID, ownerType)

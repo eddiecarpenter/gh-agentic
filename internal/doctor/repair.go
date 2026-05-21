@@ -285,7 +285,6 @@ var pendingDescriptions = map[string]struct {
 	Description string
 	Default     string
 }{
-	"AGENT_USER":     {"GitHub username the agent commits as (e.g. goose-bot)", ""},
 	"RUNNER_LABEL":   {"GitHub Actions runner label", ""}, // resolved via select in cli layer
 	"AGENT_PROVIDER": {"The LLM provider the agent will use", "claude-code"},
 	"AGENT_MODEL":    {"Agent model override", "default"},
