@@ -98,6 +98,7 @@ jobs:
     permissions:
       contents: write
       issues: write
+      actions: read
 
     steps:
       - name: Checkout domain repo
@@ -363,6 +364,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      actions: read
 
     steps:
       - name: Resolve feature branch
@@ -818,6 +820,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: read
     concurrency:
       group: pr-review-${{ github.event.pull_request.number || inputs.pr_number || github.event.inputs.pr_number }}
       cancel-in-progress: false
@@ -929,6 +932,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      actions: read
     concurrency:
       group: issue-${{ github.event.issue.number }}
       cancel-in-progress: false
@@ -1071,6 +1075,7 @@ jobs:
     permissions:
       contents: write
       issues: write
+      actions: read
 
     steps:
       - name: Extract feature issue number
