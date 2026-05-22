@@ -338,7 +338,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "claude-md", Status: Fail,
 			Message:     "CLAUDE.md not found",
-			Remediation: "Run 'gh agentic mount'",
+			Remediation: "Run 'gh agentic repair'",
 		})
 	}
 
@@ -351,7 +351,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "agents-md", Status: Fail,
 			Message:     "AGENTS.md not found",
-			Remediation: "Run 'gh agentic mount'",
+			Remediation: "Run 'gh agentic repair'",
 		})
 	}
 
@@ -426,7 +426,7 @@ func checkWorkflows(deps CheckDeps) Group {
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Fail,
 				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, mount.TrimVPrefix(version)),
-				Remediation: "Run 'gh agentic mount'",
+				Remediation: "Run 'gh agentic repair'",
 			})
 		}
 	}
