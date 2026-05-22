@@ -248,12 +248,73 @@ and reuse as `<active-repo>`.
 
 ---
 
+### Section A.0 — Build & Test Gate
+
+The gate runs **before** any other compliance check. It is the
+first action after Section A setup completes and the diff +
+acceptance-criteria list have been loaded.
+
+The rule lives in `standards/<stack-lowercase>.md` →
+`## Verification Gate (build + test)`. Load that section, execute
+the listed commands verbatim, in order, from the repo root. The
+same commands will have been run by the dev session as its
+last step before exit; this is a fresh re-run that re-validates the
+pushed branch is consistent with the build and test contract.
+
+**Possible outcomes:**
+
+1. **All commands exit zero** → record `gate=PASS` plus the
+   captured command output summary into working memory. Continue
+   to Section B. The compliance report's first section reflects
+   the PASS.
+
+2. **Any command exits non-zero** → record `gate=FAIL` plus the
+   captured failure output. Skip Section B (static analysis) and
+   Section C (AC evaluation) entirely — ACs cannot be PASS while
+   the build is broken. Jump directly to Section D with
+   `<sa-verdict>` and `<ac-verdict>` both set to "skipped — gate
+   failed". The overall verdict is FAIL with the gate-failure
+   output as the structured violation list.
+
+3. **Toolchain unavailable** (e.g. `go` not on PATH, the standards
+   file lists tools the runner does not have) → record
+   `gate=BLOCKED`. Do NOT post a FAIL verdict — a BLOCKED verdict
+   is qualitatively different. Apply the `needs-human-review`
+   label (this is not part of the FAIL cycle; it is a runner
+   environment failure the human must resolve). Post a
+   `<!-- compliance-blocked:v1 -->` comment surfacing the missing
+   tool and the standards-file requirement. Exit with Output D.
+   Subsequent runs on the same Feature pick up only when the
+   human has installed the toolchain and re-toggled the label.
+
+4. **No standards file** for the active stack (no
+   `standards/<stack>.md` exists, or the file has no
+   `## Verification Gate` section) → raise
+   `STACK_GATE_UNDEFINED` (`ERROR`). The compliance verifier
+   cannot enforce a contract the framework has not defined.
+   Surface the missing file to the human as a framework-level fix
+   needed; exit with Output D.
+
+The gate's outcome is the first line of the compliance report
+(see step 14). When the report shows AC PASS but the gate ran
+and failed, that is a protocol violation — the gate gates
+everything.
+
+**Compliance MUST NOT mark "build and tests pass" as PASS by code
+inspection.** If the gate could not run, the verdict for that AC
+is BLOCKED, recorded as such, and the cycle does not advance.
+
+---
+
 ### Section B — Static Analysis
 
 Perform a code-quality and security gate before AC evaluation. This
 section runs entirely against the checked-out feature branch. All
 findings are recorded for inclusion in the compliance report (step 14)
 and, if the overall verdict is FAIL, the feedback comment (step 16).
+
+**Pre-requisite:** Section A.0 has executed and `gate=PASS`. If
+`gate=FAIL`, Section B is skipped — see Section A.0 outcome #2.
 
 **Severity levels used throughout this section:**
 

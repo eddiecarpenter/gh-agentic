@@ -472,6 +472,39 @@ discipline at task granularity:
 
 ### Section C — Closeout
 
+15pre. **Build + test gate.** Before any closeout work, load
+    `standards/<stack-lowercase>.md` (where `<stack>` is the
+    project's primary language — `go`, `java`, `typescript`, etc.,
+    matching `vars.PROJECT_STACK` or the value in the project
+    config). Read the `## Verification Gate (build + test)` section
+    and execute the listed commands verbatim, in order, from the
+    repo root.
+
+    Outcomes:
+
+    - **All commands exit zero** → record `gate=PASS` in working
+      memory; continue to step 15a.
+    - **Any command exits non-zero** → the dev session has produced
+      broken code. Do NOT exit. Loop back: read the failure output,
+      identify the offending change (most often the task most
+      recently committed), and fix it. Commit the fix with the
+      task-N-of-M format (a fix commit counts as a continuation of
+      the task whose work it corrects). Re-run the gate. Repeat
+      until `gate=PASS`. The dev session exits only on a clean gate.
+    - **Toolchain unavailable** (e.g. `go` not on PATH) → raise
+      `VERIFICATION_TOOLCHAIN_MISSING` (`ERROR`) and exit Output D.
+      The dev session never claims completion without an actual
+      gate run; downstream compliance will surface the same gap.
+
+    No standards file exists for the active stack → raise
+    `VERIFICATION_GATE_UNDEFINED` (`ERROR`) and exit Output D.
+    Adding the language to `standards/` is a framework-level fix,
+    not work the dev session can route around.
+
+    Record the gate's final outcome (`gate=PASS` plus the command
+    output line summary) in working memory for inclusion in the
+    exit block (step 18).
+
 15a. **Acceptance-criteria coverage gate.** Before the closeout
     label flips, verify that every Feature acceptance criterion
     is satisfied by the work that just landed.
@@ -558,10 +591,19 @@ discipline at task granularity:
       - <K> task issue(s) closed: #<T_a>, #<T_b>, ...
       - All <M> tasks for #<N> are closed
 
+    Verification gate: PASS
+      - go build ./... ✓
+      - go test ./... ✓ (or the stack-equivalent commands)
+
     Blocked: none
 
     Next: workflow applies in-verification, triggering compliance-verify
     ```
+
+    The "Verification gate" line is mandatory in Output A and
+    Output B. Omitting it is a protocol violation per
+    `standards/<stack>.md` → Verification Gate. The exact commands
+    shown match what was actually run in step 15pre.
 
     **Output B — Resumed and completed:**
     ```
