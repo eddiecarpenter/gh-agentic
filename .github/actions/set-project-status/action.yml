@@ -1,0 +1,124 @@
+name: Set Project Status
+description: >
+  Updates the Status field on a GitHub Projects v2 board for the given issue.
+  Finds or adds the issue to the project, then sets the Status single-select
+  field to the requested value.
+
+  Skips gracefully (with a warning) when PROJECT_PAT is unset — project status
+  updates are optional; the rest of the pipeline must not depend on them.
+  Non-blocking on failure (caller sets continue-on-error: true).
+
+  Auth note: PROJECT_PAT (not PIPELINE_PAT or github.token) is required because
+  GitHub Apps and github.token cannot mutate user-owned Projects v2 (platform
+  limitation). PROJECT_PAT must be a classic or fine-grained PAT with
+  project read/write access.
+
+inputs:
+  project-pat:
+    description: >
+      Personal Access Token with project read/write access (PROJECT_PAT secret).
+      When empty the step is skipped with a warning.
+    required: true
+  project-id:
+    description: 'ProjectV2 node ID (AGENTIC_PROJECT_ID repo variable).'
+    required: true
+  repo:
+    description: 'Repository in owner/name format used to resolve the issue node ID.'
+    required: true
+  issue-number:
+    description: 'Issue number to update on the project board.'
+    required: true
+  status:
+    description: >
+      Target Status field value (e.g. "In Development", "In Verification",
+      "In Review", "Done"). Must exactly match the option name on the board.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Update project status
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.project-pat }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        REPO: ${{ inputs.repo }}
+        ISSUE_NUMBER: ${{ inputs.issue-number }}
+        STATUS: ${{ inputs.status }}
+      run: |
+        if [ -z "${GH_TOKEN}" ]; then
+          echo "::warning::PROJECT_PAT is not set — project status update skipped."
+          echo "::warning::To enable: create a PAT with project read/write access and set it as PROJECT_PAT in repo secrets."
+          exit 0
+        fi
+        if [ -z "${PROJECT_ID}" ]; then
+          echo "::error::AGENTIC_PROJECT_ID is not configured. Set the repo variable to the ProjectV2 node ID."
+          exit 1
+        fi
+
+        # Resolve the issue's GraphQL node ID.
+        ISSUE_NODE_ID=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" --jq '.node_id')
+
+        # Find the issue's existing project item, or add it if absent.
+        RESULT=$(gh api graphql -f query='
+          query($issueId: ID!) {
+            node(id: $issueId) {
+              ... on Issue {
+                projectItems(first: 100) { nodes { id project { id } } }
+              }
+            }
+          }
+        ' -f issueId="${ISSUE_NODE_ID}")
+        ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${PROJECT_ID}" \
+          '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
+
+        if [ -z "${ITEM_ID}" ]; then
+          ADD_RESULT=$(gh api graphql -f query='
+            mutation($projectId: ID!, $contentId: ID!) {
+              addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                item { id }
+              }
+            }
+          ' -f projectId="${PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
+          ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
+        fi
+
+        # Fetch the Status field ID and the target option ID in one query.
+        FIELDS=$(gh api graphql -f query='
+          query($projectId: ID!) {
+            node(id: $projectId) {
+              ... on ProjectV2 {
+                fields(first: 50) {
+                  nodes {
+                    ... on ProjectV2SingleSelectField {
+                      id name options { id name }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ' -f projectId="${PROJECT_ID}")
+        FIELD_ID=$(echo "${FIELDS}" | jq -r \
+          '.data.node.fields.nodes[] | select(.name == "Status") | .id')
+        OPTION_ID=$(echo "${FIELDS}" | jq -r \
+          --arg status "${STATUS}" \
+          '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == $status) | .id')
+
+        if [ -z "${FIELD_ID}" ] || [ -z "${OPTION_ID}" ]; then
+          echo "::error::Could not resolve Status field or option '${STATUS}' on project ${PROJECT_ID}."
+          echo "Check that the project board has a 'Status' single-select field with an option named '${STATUS}'."
+          exit 1
+        fi
+
+        gh api graphql -f query='
+          mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+            updateProjectV2ItemFieldValue(input: {
+              projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
+              value: { singleSelectOptionId: $optionId }
+            }) { projectV2Item { id } }
+          }
+        ' -f projectId="${PROJECT_ID}" -f itemId="${ITEM_ID}" \
+          -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+
+        echo "✓ Project status set to '${STATUS}' for issue #${ISSUE_NUMBER}."

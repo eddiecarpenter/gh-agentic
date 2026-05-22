@@ -1,0 +1,111 @@
+name: Setup Goose Environment
+description: >
+  Validates the framework version, installs Node.js, AI tools (Goose, Claude Code
+  CLI, gh-agentic extension), configures agent authentication, and writes the Goose
+  config file. Encapsulates the six setup steps that are identical across every
+  Goose-running pipeline job so the workflow stays thin and the logic stays in one
+  authoritative place.
+
+  Auth note: pipeline-pat is used for both the gh-agentic extension install (reads
+  the release) and for Claude credential rotation (requires secrets:write). The same
+  token that drives pipeline label operations is therefore sufficient here.
+
+inputs:
+  agentic-framework-version:
+    description: >
+      Value of vars.AGENTIC_FRAMEWORK_VERSION. Required — the job fails immediately
+      if this is unset so the error surfaces at the top of the log rather than mid-run.
+    required: true
+  goose-version:
+    description: 'Goose version to install (default: latest)'
+    required: false
+    default: 'latest'
+  agent-provider:
+    description: >
+      Agent provider matching vars.AGENT_PROVIDER (e.g. claude-code, mistral).
+      Drives which credential is configured and which Claude CLI cache key is used.
+    required: false
+    default: 'claude-code'
+  agent-model:
+    description: >
+      Model written to GOOSE_MODEL in the Goose config file. Overridden at runtime
+      by the GOOSE_MODEL env var on the recipe run step.
+    required: false
+    default: 'default'
+  pipeline-pat:
+    description: >
+      PIPELINE_PAT secret. Used for the gh-agentic extension install and Claude
+      credential rotation (secrets:write). Must not be github.token — see
+      docs/pipeline-auth.md for the full rationale.
+    required: true
+  claude-credentials-json:
+    description: >
+      Base64-encoded Claude Code credentials (CLAUDE_CREDENTIALS_JSON secret).
+      Required when agent-provider is claude-code; silently unused otherwise.
+    required: false
+    default: ''
+  mistral-api-key:
+    description: >
+      Mistral API key (MISTRAL_API_KEY secret). Required when agent-provider is
+      mistral; silently unused otherwise.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # Fail early if the framework version is unset — a clear error here is better
+    # than a cryptic failure mid-install when the extension version can't be resolved.
+    - name: Validate framework version
+      id: version
+      shell: bash
+      env:
+        AGENTIC_FRAMEWORK_VERSION: ${{ inputs.agentic-framework-version }}
+      run: |
+        if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
+          echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
+          exit 1
+        fi
+        VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
+        echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
+    # Node.js is required by the Claude Code CLI npm install inside install-ai-tools.
+    # Placed here (in the non-submodule action) so it is always at the current
+    # workflow version, not the pinned .agents/ submodule version.
+    - name: Setup Node.js
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+      with:
+        node-version: 'lts/*'
+
+    # install-ai-tools handles: system packages, Goose binary, Claude Code CLI,
+    # and the gh-agentic extension. Loaded from .agents/ (pinned to
+    # agentic-framework-version) so it tracks the declared framework release.
+    - name: Install tools
+      uses: ./.agents/.github/actions/install-ai-tools
+      with:
+        agentic-version: ${{ steps.version.outputs.value }}
+        goose-version: ${{ inputs.goose-version }}
+        agent-provider: ${{ inputs.agent-provider }}
+        gh-token: ${{ inputs.pipeline-pat }}
+
+    # setup-agent-auth decodes credentials, validates the session, and handles
+    # Claude token rotation if the session refreshed during validation.
+    - name: Setup Agent Auth
+      uses: ./.agents/.github/actions/setup-agent-auth
+      with:
+        agent-provider: ${{ inputs.agent-provider }}
+        claude-credentials-json: ${{ inputs.claude-credentials-json }}
+        mistral-api-key: ${{ inputs.mistral-api-key }}
+        gh-token: ${{ inputs.pipeline-pat }}
+
+    # Write provider/model to the Goose config file so they are the defaults even
+    # if the env vars are not inherited by a subprocess. The recipe run step also
+    # sets GOOSE_PROVIDER and GOOSE_MODEL as env vars, which take precedence.
+    - name: Configure Goose
+      shell: bash
+      run: |
+        mkdir -p ~/.config/goose
+        cat > ~/.config/goose/config.yaml <<GOOSEEOF
+        GOOSE_PROVIDER: ${{ inputs.agent-provider }}
+        GOOSE_MODEL: ${{ inputs.agent-model }}
+        GOOSEEOF

@@ -11,26 +11,42 @@ name: Agentic Pipeline
 #      forward the event context (and any workflow_dispatch inputs) via
 #      `workflow_call`.
 #
-# Authentication: every job uses the built-in `github.token` provided by
-# GitHub Actions. No external GitHub App installation token is required.
+# Authentication — two tokens are used throughout:
 #
-# Framework mount: `.agents/` is tracked as a git submodule (since PR #620)
-# pointing at eddiecarpenter/gh-agentic. Checkout steps use
-# `submodules: recursive` to populate it — no separate clone or
-# `Mount AI framework` step. Composite actions are reached via
-# `./.agents/.github/actions/...`, which resolves into the submodule on
-# domain repos and via the `.ai -> .` symlink in gh-agentic itself.
+#   github.token — read-only and structural operations: checkout, git push
+#     to the feature branch, reading issue/PR data. Sufficient for
+#     `contents: write`, `issues: write`, `pull-requests: write` when those
+#     permissions are declared. Cannot be used where an event must trigger
+#     another workflow run (GitHub platform restriction).
+#
+#   PIPELINE_PAT — a fine-grained PAT with Issues:write, Pull-requests:write,
+#     and Secrets:write. Required for two distinct reasons:
+#       (a) Label applications that must fire a downstream workflow run
+#           (in-development, in-verification, in-review): github.token events
+#           cannot trigger other workflow runs.
+#       (b) The GH_TOKEN passed to Goose recipe run steps: go-gh (used by
+#           `gh agentic` inside the session) needs a token with sufficient
+#           scope to read Actions variables (AGENTIC_PROJECT_ID). github.token
+#           does not propagate reliably through Goose's subprocess environment.
+#
+#   PROJECT_PAT — a classic or fine-grained PAT with project read/write.
+#     Required only for Projects v2 mutations (GitHub Apps and github.token
+#     cannot mutate user-owned Projects v2 — platform limitation). Optional:
+#     project status updates are skipped gracefully when this secret is unset.
+#
+# Framework mount: `.agents/` is tracked as a git submodule pointing at
+# eddiecarpenter/gh-agentic. Checkout steps use `submodules: recursive` to
+# populate it. Composite actions are reached via `./.agents/.github/actions/...`
+# (resolves into the submodule on domain repos; via the `.agents -> .` symlink
+# in gh-agentic itself). The new local composite actions (setup-goose-env,
+# set-project-status, resolve-feature-branch) live in .github/actions/ and are
+# reached as .agents/.github/actions/ via the same symlink/submodule mechanism.
 #
 # `workflow_dispatch` inputs (pr_number, branch_name) reach this workflow
 # two ways: directly from a dispatch event on gh-agentic (via
 # github.event.inputs.*), or forwarded from a caller via `with:` and
 # exposed as inputs.*. Jobs resolve both: `inputs.pr_number ||
 # github.event.inputs.pr_number`.
-#
-# History: this workflow was previously duplicated as
-# agentic-pipeline-reusable.yml. The two drifted repeatedly across four
-# hot-fix releases. Collapsed here — the `-reusable` filename convention
-# is not required by GitHub Actions for a workflow to be callable.
 
 on:
   issues:
@@ -69,23 +85,24 @@ on:
       PIPELINE_PAT:
         required: true
         description: |
-          Fine-grained PAT with Issues: write, Pull requests: write, and
-          Secrets: write. Used for trigger-label application (so the label
-          event fires the next workflow), PR creation, and credential
-          rotation. github.token cannot be used for these because events
-          fired by github.token do not trigger other workflow runs.
+          Fine-grained PAT with Issues:write, Pull-requests:write, and Secrets:write.
+          Used for: trigger-label application (so label events fire downstream
+          workflow runs), Goose session GH_TOKEN (so go-gh can read Actions variables),
+          and Claude credential rotation. github.token cannot be used for these.
       PROJECT_PAT:
         required: false
         description: |
-          Personal Access Token for user-owned Project v2 mutations only.
-          When unset, project status updates are skipped with a warning;
-          the rest of the pipeline proceeds.
+          Personal Access Token with project read/write scope. Used for Projects v2
+          mutations only. When unset, project status updates are skipped with a
+          warning; the rest of the pipeline proceeds unaffected.
 
 jobs:
 
   # ---------------------------------------------------------------------------
   # Stage 3 — Feature Design
   # Trigger: feature issue labelled 'in-design'
+  # Produces: ordered Task sub-issues, feature branch, Design Plan comment.
+  # Transitions: in-design → in-development (triggers Stage 4).
   # ---------------------------------------------------------------------------
   feature-design:
     name: Feature Design (Stage 3)
@@ -101,7 +118,7 @@ jobs:
       actions: read
 
     steps:
-      - name: Checkout domain repo
+      - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
@@ -109,59 +126,16 @@ jobs:
           submodules: recursive
           token: ${{ github.token }}
 
-      - name: Resolve framework version
-        id: version
-        env:
-          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
-        run: |
-          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
-            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
-            exit 1
-          fi
-          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+      - name: Setup Goose environment
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
-          node-version: 'lts/*'
-
-      # System packages that the composite action cannot reliably install on
-      # self-hosted runners: the composite action is loaded from the locally-
-      # mounted .agents/ directory (gitignored, persists between runs), which
-      # may lag the workflow version. Inline steps are always at the current
-      # workflow ref and are the authoritative place for system dep changes.
-      - name: Install system dependencies
-        shell: bash
-        run: |
-          dpkg -s libvulkan1 >/dev/null 2>&1 || {
-            sudo add-apt-repository -y universe
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libvulkan1
-          }
-
-      - name: Install tools
-        uses: ./.agents/.github/actions/install-ai-tools
-        with:
-          agentic-version: ${{ steps.version.outputs.version }}
+          agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
-          gh-token: ${{ github.token }}
-
-      - name: Setup Agent Auth
-        uses: ./.agents/.github/actions/setup-agent-auth
-        with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          agent-model: ${{ vars.AGENT_MODEL || 'default' }}
+          pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ secrets.PIPELINE_PAT }}
-
-      - name: Configure Goose
-        run: |
-          mkdir -p ~/.config/goose
-          cat > ~/.config/goose/config.yaml <<GOOSEEOF
-          GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
-          GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
-          GOOSEEOF
 
       - name: Run feature-design recipe
         run: |
@@ -174,25 +148,18 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          # Must use PIPELINE_PAT so the in-development label event triggers
-          # the dev-session workflow; github.token events cannot trigger
-          # other workflow runs (GitHub platform restriction).
+          # PIPELINE_PAT (not github.token): the recipe applies in-development
+          # which must fire the dev-session workflow. github.token events cannot
+          # trigger other workflow runs (GitHub platform restriction). PIPELINE_PAT
+          # also ensures go-gh can read Actions variables inside the Goose session.
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
-      # Structural enforcement of the Design Plan publication contract
-      # introduced by #652 (under #632). The skill (feature-design.md)
-      # already instructs the agent to publish a Design Plan comment on
-      # the Feature issue per capture-design-plan.md before proceeding to
-      # Task creation. Empirically, the agent silently skipped this step
-      # on multi-task Features (#666 was the first proof). Skill prose
-      # alone does not enforce the artefact — this step does, by checking
-      # the comment exists immediately after the recipe exits and halting
-      # the workflow if not, BEFORE the branch is committed/pushed and
-      # the in-development label is applied. Halting here keeps the
-      # broken state visible: Tasks may exist (created by the agent
-      # during the recipe run; we cannot un-create them from the
-      # workflow), but no branch is pushed and no label transition
-      # happens, so foreground-recovery has a clean handle on the state.
+      # Structural enforcement of the Design Plan publication contract (#652/#632).
+      # The skill instructs the agent to post a <!-- design-plan:v1 --> comment
+      # before creating Tasks. Empirically the agent skips this on multi-task
+      # features without enforcement (#666). Halting here keeps the state
+      # visible: Tasks may exist but no branch is pushed and no label transition
+      # fires, giving foreground-recovery a clean handle.
       - name: Verify Design Plan comment was published
         if: success()
         env:
@@ -200,35 +167,25 @@ jobs:
           ISSUE: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
         run: |
-          # Look for at least one comment on the Feature issue whose body
-          # begins with the canonical Design Plan marker. feature-design
-          # and dev-session both key off this marker
-          # (`<!-- design-plan:v1 -->`); the workflow verifies the same
-          # contract so the three signals agree. Author type is not
-          # checked — the recipe may post as a Bot (App token) or as a
-          # human user (PIPELINE_PAT), depending on config.
           COMMENT_COUNT=$(gh api "repos/${REPO}/issues/${ISSUE}/comments" \
             --jq '[.[] | select(.body | startswith("<!-- design-plan:v1 -->"))] | length')
           if [ "${COMMENT_COUNT}" -lt 1 ]; then
-            echo "::error::Design Plan comment was not published on issue #${ISSUE} by the feature-design recipe."
+            echo "::error::Design Plan comment not published on issue #${ISSUE}."
             echo ""
-            echo "Per skills/feature-design.md (updated by #652), the design phase MUST publish a Design Plan comment on the Feature issue, structured per skills/capture-design-plan.md, BEFORE Task creation. The recipe's agent run did not produce this artefact."
+            echo "Per skills/feature-design.md (#652), the design phase MUST publish a"
+            echo "Design Plan comment (<!-- design-plan:v1 --> marker) before Task creation."
             echo ""
             echo "To recover:"
             echo "  1. Close any Task issues created on this Feature."
-            echo "  2. Delete the local feature branch (it has not been pushed)."
-            echo "  3. Re-trigger design (toggle in-design label off and back on)."
-            echo ""
-            echo "If this failure recurs across multiple runs, the skill or recipe has a regression — investigate before relabelling."
+            echo "  2. Delete the local feature branch (not yet pushed)."
+            echo "  3. Re-trigger design (toggle in-design off and back on)."
             exit 1
           fi
           echo "✓ Design Plan comment found on issue #${ISSUE} (${COMMENT_COUNT} match(es))."
 
-      # Recipe never pushes — per RULEBOOK, "the workflow pushes after the
-      # recipe exits cleanly". The recipe creates `feature/<N>-*` locally
-      # and may have added commits (refactor tasks, scaffolding, etc.).
-      # Commit any leftover working-tree changes, then push the branch so
-      # Stage 4 can find it.
+      # Per RULEBOOK: "the workflow pushes after the recipe exits cleanly."
+      # The recipe creates feature/<N>-* locally. Commit any leftover
+      # working-tree changes then push so Stage 4 can find the branch.
       - name: Commit and push feature branch
         id: push
         if: success()
@@ -238,7 +195,7 @@ jobs:
         run: |
           BRANCH=$(git branch --list "feature/${ISSUE}-*" --format='%(refname:short)' | head -1)
           if [ -z "${BRANCH}" ]; then
-            echo "::error::Feature Design recipe exited without creating a feature/${ISSUE}-* branch."
+            echo "::error::feature-design recipe exited without creating a feature/${ISSUE}-* branch."
             echo "Dev Session cannot proceed without the branch. Inspect the recipe log above."
             exit 1
           fi
@@ -253,11 +210,9 @@ jobs:
           git push --set-upstream origin "${BRANCH}"
           echo "✓ Pushed ${BRANCH} to origin."
 
-      # The recipe attempts the in-design → in-development swap itself, but
-      # the agent's token can be denied that transition. Retry here —
-      # idempotent. Must use PIPELINE_PAT (not github.token) so the label
-      # event triggers the dev-session workflow; github.token events cannot
-      # trigger other workflow runs (GitHub platform restriction).
+      # The recipe attempts in-design → in-development itself, but the agent's
+      # token may be denied that transition. This step retries idempotently.
+      # PIPELINE_PAT: the label event must fire the dev-session workflow.
       - name: Swap in-design → in-development
         if: success() && steps.push.outputs.name != ''
         env:
@@ -266,7 +221,7 @@ jobs:
         run: |
           LABELS=$(gh issue view "${ISSUE}" --json labels --jq '[.labels[].name] | join(",")')
           if echo ",${LABELS}," | grep -q ",in-development,"; then
-            echo "Issue #${ISSUE} already labelled in-development — swap already performed by recipe."
+            echo "Issue #${ISSUE} already labelled in-development — swap already done by recipe."
             exit 0
           fi
           gh issue edit "${ISSUE}" \
@@ -274,83 +229,25 @@ jobs:
             --add-label in-development
           echo "✓ Swapped in-design → in-development on #${ISSUE} (will trigger Dev Session)."
 
-      # Inline project status update — mirror the dev-session pattern so
-      # Stage 3 also keeps the project board in lockstep with the label.
-      # Uses PROJECT_PAT (not the App token) because GitHub Apps cannot
-      # mutate user-owned Projects v2 (platform limitation). Skipped
-      # gracefully if PROJECT_PAT is unset; non-blocking on failure.
+      # PROJECT_PAT: github.token and GitHub Apps cannot mutate user-owned
+      # Projects v2 (platform limitation). Non-blocking — project status is
+      # informational; pipeline correctness does not depend on it.
       - name: Set project status to 'In Development'
         if: success() && steps.push.outputs.name != ''
         continue-on-error: true
-        env:
-          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
-          ISSUE: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          if [ -z "${PROJECT_PAT}" ]; then
-            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
-            echo "::warning::To enable: create a PAT with user-level project read/write access, set it as PROJECT_PAT in repo secrets."
-            echo "::warning::Background: GitHub Apps cannot mutate user-owned Projects v2 (platform limit, see docs/github-app-setup.md)."
-            exit 0
-          fi
-          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "::error::AGENTIC_PROJECT_ID is not configured. Set the repo variable to the ProjectV2 node ID."
-            exit 1
-          fi
-          export GH_TOKEN="${PROJECT_PAT}"
-          ISSUE_NODE_ID=$(gh api "repos/${REPO}/issues/${ISSUE}" --jq '.node_id')
-          RESULT=$(gh api graphql -f query='
-            query($issueId: ID!) {
-              node(id: $issueId) {
-                ... on Issue {
-                  projectItems(first: 100) { nodes { id project { id } } }
-                }
-              }
-            }
-          ' -f issueId="${ISSUE_NODE_ID}")
-          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" \
-            '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
-          if [ -z "${ITEM_ID}" ]; then
-            ADD_RESULT=$(gh api graphql -f query='
-              mutation($projectId: ID!, $contentId: ID!) {
-                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                  item { id }
-                }
-              }
-            ' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
-            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
-          fi
-          FIELDS=$(gh api graphql -f query='
-            query($projectId: ID!) {
-              node(id: $projectId) {
-                ... on ProjectV2 {
-                  fields(first: 50) {
-                    nodes {
-                      ... on ProjectV2SingleSelectField {
-                        id name options { id name }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          ' -f projectId="${AGENTIC_PROJECT_ID}")
-          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
-          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "In Development") | .id')
-          gh api graphql -f query='
-            mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-              updateProjectV2ItemFieldValue(input: {
-                projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
-                value: { singleSelectOptionId: $optionId }
-              }) { projectV2Item { id } }
-            }
-          ' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
-          echo "✓ Project status set to 'In Development'."
+        uses: ./.agents/.github/actions/set-project-status
+        with:
+          project-pat: ${{ secrets.PROJECT_PAT }}
+          project-id: ${{ vars.AGENTIC_PROJECT_ID }}
+          repo: ${{ github.repository }}
+          issue-number: ${{ github.event.issue.number }}
+          status: 'In Development'
 
   # ---------------------------------------------------------------------------
   # Stage 4 — Dev Session
   # Trigger: feature issue labelled 'in-development'
+  # Produces: committed code on the feature branch.
+  # Transitions: in-development → in-verification (triggers Stage 5).
   # ---------------------------------------------------------------------------
   dev-session:
     name: Dev Session (Stage 4)
@@ -367,26 +264,17 @@ jobs:
       actions: read
 
     steps:
+      # Resolve the branch name before checkout so the checkout ref is known.
+      # github.token is sufficient — this is a read-only branches list query.
       - name: Resolve feature branch
         id: branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ISSUE: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          BRANCH=$(curl --proto '=https' --tlsv1.2 -fsSL \
-            -H "Authorization: token ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${REPO}/branches?per_page=100" \
-            | jq -r ".[].name | select(startswith(\"feature/${ISSUE}-\"))" \
-            | head -1)
-          if [ -z "$BRANCH" ]; then
-            echo "No branch found matching feature/${ISSUE}-*"
-            exit 1
-          fi
-          echo "name=$BRANCH" >> $GITHUB_OUTPUT
+        uses: ./.agents/.github/actions/resolve-feature-branch
+        with:
+          gh-token: ${{ github.token }}
+          repo: ${{ github.repository }}
+          issue-number: ${{ github.event.issue.number }}
 
-      - name: Checkout domain repo
+      - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ steps.branch.outputs.name }}
@@ -394,53 +282,19 @@ jobs:
           submodules: recursive
           token: ${{ github.token }}
 
-      - name: Resolve framework version
-        id: version
-        env:
-          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
-        run: |
-          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
-            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set. Set the repo variable to pin the framework version."
-            exit 1
-          fi
-          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+      - name: Setup Goose environment
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
-          node-version: 'lts/*'
-
-      # System packages that the composite action cannot reliably install on
-      # self-hosted runners: the composite action is loaded from the locally-
-      # mounted .agents/ directory (gitignored, persists between runs), which
-      # may lag the workflow version. Inline steps are always at the current
-      # workflow ref and are the authoritative place for system dep changes.
-      - name: Install system dependencies
-        shell: bash
-        run: |
-          dpkg -s libvulkan1 >/dev/null 2>&1 || {
-            sudo add-apt-repository -y universe
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libvulkan1
-          }
-
-      - name: Install tools
-        uses: ./.agents/.github/actions/install-ai-tools
-        with:
-          agentic-version: ${{ steps.version.outputs.version }}
+          agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
-          agent-provider: ${{ vars.AGENT_PROVIDER }}
-          gh-token: ${{ github.token }}
-
-      - name: Setup Agent Auth
-        uses: ./.agents/.github/actions/setup-agent-auth
-        with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          agent-model: ${{ vars.AGENT_MODEL || 'default' }}
+          pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ secrets.PIPELINE_PAT }}
 
+      # Rebase before the Goose session so the agent works against the latest main.
+      # Force-push with --force-with-lease (safe: aborts if someone else pushed).
       - name: Rebase feature branch onto main
         run: |
           git config user.email "agent@gh-agentic.io"
@@ -455,18 +309,13 @@ jobs:
           }
           git push origin HEAD:${{ steps.branch.outputs.name }} --force-with-lease
 
-      - name: Configure Goose
-        run: |
-          mkdir -p ~/.config/goose
-          cat > ~/.config/goose/config.yaml <<GOOSEEOF
-          GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
-          GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
-          GOOSEEOF
-
+      # Retry up to 3 times: transient Goose/Claude auth errors are common on
+      # first run (credential warm-up). PIPELINE_PAT: go-gh inside Goose reads
+      # AGENTIC_PROJECT_ID via the Actions variables API; github.token does not
+      # reliably propagate through Goose's subprocess environment.
       - name: Run dev-session recipe
         id: goose
         run: |
-          BRANCH="${{ steps.branch.outputs.name }}"
           for attempt in 1 2 3; do
             echo "--- Dev session attempt ${attempt} ---"
             goose run \
@@ -486,24 +335,17 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          # Must use PIPELINE_PAT so go-gh (used by `gh agentic` inside the Goose
-          # session) can resolve the token from the environment — PIPELINE_PAT has
-          # the scopes needed to read Actions variables (AGENTIC_PROJECT_ID) and to
-          # apply trigger labels that fire downstream workflow runs. github.token is
-          # scope-restricted and does not reliably propagate through Goose's
-          # subprocess environment. Mirrors the same choice made in feature-design.
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
+      # github.token sufficient for a plain git push (contents: write is declared).
       - name: Push branch
         if: success()
         run: git push origin ${{ steps.branch.outputs.name }}
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # All dev sessions route to compliance-verify (Stage 5) — no PR is
-      # opened here. Must use PIPELINE_PAT so the in-verification label
-      # event triggers the compliance-verify workflow; github.token events
-      # cannot trigger other workflow runs (GitHub platform restriction).
+      # PIPELINE_PAT: in-verification must fire the compliance-verify workflow.
+      # Skip the transition when the session produced no commits (nothing to verify).
       - name: Apply in-verification label
         id: in_verification
         if: success()
@@ -520,40 +362,26 @@ jobs:
             --remove-label "in-development" \
             --add-label "in-verification"
           echo "skipped=false" >> $GITHUB_OUTPUT
+          echo "✓ Applied in-verification on #${{ github.event.issue.number }}."
 
       - name: Set project status to 'In Verification'
         if: success() && steps.in_verification.outputs.skipped != 'true'
         continue-on-error: true
-        env:
-          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
-        run: |
-          if [ -z "${PROJECT_PAT}" ]; then
-            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
-            exit 0
-          fi
-          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "::error::AGENTIC_PROJECT_ID is not configured."
-            exit 1
-          fi
-          export GH_TOKEN="${PROJECT_PAT}"
-          ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.node_id')
-          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
-          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
-          if [ -z "${ITEM_ID}" ]; then
-            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
-            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
-          fi
-          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
-          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
-          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "In Verification") | .id')
-          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+        uses: ./.agents/.github/actions/set-project-status
+        with:
+          project-pat: ${{ secrets.PROJECT_PAT }}
+          project-id: ${{ vars.AGENTIC_PROJECT_ID }}
+          repo: ${{ github.repository }}
+          issue-number: ${{ github.event.issue.number }}
+          status: 'In Verification'
 
   # ---------------------------------------------------------------------------
   # Stage 5 — Compliance Verify
-  # Trigger: in-verification label applied to a feature issue
-  # Opens the PR and transitions to in-review on PASS.
-  # Swaps back to in-development on FAIL, triggering a new dev session.
+  # Trigger: feature issue labelled 'in-verification'
+  # Produces: compliance-verified label + open PR (PASS), or cycling back to
+  #   in-development for another dev session (FAIL).
+  # Transitions: in-verification → in-review (PASS, triggers Stage 6)
+  #              in-verification → in-development (FAIL, triggers Stage 4)
   # ---------------------------------------------------------------------------
   compliance-verify:
     name: Compliance Verify (Stage 5)
@@ -565,29 +393,22 @@ jobs:
         github.event.label.name == 'in-verification'
       )
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    env:
-      PIPELINE_PAT: ${{ secrets.PIPELINE_PAT }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+
     steps:
       - name: Resolve feature branch
         id: branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ISSUE: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          BRANCH=$(curl --proto '=https' --tlsv1.2 -fsSL \
-            -H "Authorization: token ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${REPO}/branches?per_page=100" \
-            | jq -r ".[].name | select(startswith(\"feature/${ISSUE}-\"))" \
-            | head -1)
-          if [ -z "$BRANCH" ]; then
-            echo "No branch found matching feature/${ISSUE}-*"
-            exit 1
-          fi
-          echo "name=$BRANCH" >> $GITHUB_OUTPUT
+        uses: ./.agents/.github/actions/resolve-feature-branch
+        with:
+          gh-token: ${{ github.token }}
+          repo: ${{ github.repository }}
+          issue-number: ${{ github.event.issue.number }}
 
-      - name: Checkout domain repo
+      - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ steps.branch.outputs.name }}
@@ -595,60 +416,21 @@ jobs:
           submodules: recursive
           token: ${{ github.token }}
 
-      - name: Resolve framework version
-        id: version
-        env:
-          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
-        run: |
-          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
-            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set."
-            exit 1
-          fi
-          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+      - name: Setup Goose environment
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
-          node-version: 'lts/*'
-
-      # System packages that the composite action cannot reliably install on
-      # self-hosted runners: the composite action is loaded from the locally-
-      # mounted .agents/ directory (gitignored, persists between runs), which
-      # may lag the workflow version. Inline steps are always at the current
-      # workflow ref and are the authoritative place for system dep changes.
-      - name: Install system dependencies
-        shell: bash
-        run: |
-          dpkg -s libvulkan1 >/dev/null 2>&1 || {
-            sudo add-apt-repository -y universe
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libvulkan1
-          }
-
-      - name: Install tools
-        uses: ./.agents/.github/actions/install-ai-tools
-        with:
-          agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ github.token }}
+          agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
-
-      - name: Setup Agent Auth
-        uses: ./.agents/.github/actions/setup-agent-auth
-        with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          agent-model: ${{ vars.AGENT_MODEL || 'default' }}
+          pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ secrets.PIPELINE_PAT }}
 
-      - name: Configure Goose
-        run: |
-          mkdir -p ~/.config/goose
-          cat > ~/.config/goose/config.yaml <<GOOSEEOF
-          GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
-          GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
-          GOOSEEOF
-
+      # PIPELINE_PAT: the recipe applies compliance-verified or in-development
+      # labels that must trigger downstream workflow runs.
+      # SONAR_TOKEN: injected so the compliance-verify skill can detect SonarQube
+      # availability and run analysis when configured.
       - name: Run compliance-verify recipe
         run: |
           goose run \
@@ -660,25 +442,23 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          # Must use PIPELINE_PAT so compliance-verified/in-development label
-          # events trigger downstream workflows; github.token events cannot
-          # trigger other workflow runs (GitHub platform restriction).
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
-          # SonarQube token — injected so the compliance-verify skill can
-          # detect SonarQube availability and run analysis when configured.
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       # If the recipe applied compliance-verified, open the PR and move to in-review.
-      # If not (skill handled the state reset), log outcome and exit cleanly — not a failure.
+      # If not (skill handled the FAIL state reset itself), log and exit cleanly.
+      # PIPELINE_PAT: the PR creation must fire the pull_request event so
+      # pr-review-session can trigger on it.
       - name: Open PR if compliance-verified
         id: open_pr
         env:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
         run: |
           BRANCH="${{ steps.branch.outputs.name }}"
-          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} --json labels --jq '[.labels[].name]')
+          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json labels --jq '[.labels[].name]')
           if ! echo "${LABELS}" | jq -e 'contains(["compliance-verified"])' > /dev/null; then
             echo "compliance-verified label not present — recipe did not pass."
             echo "opened=false" >> $GITHUB_OUTPUT
@@ -690,18 +470,18 @@ jobs:
             echo "opened=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          EXISTING=$(gh pr list --repo ${{ github.repository }} --head "${BRANCH}" --json number --jq '.[0].number')
+          EXISTING=$(gh pr list --repo "${REPO}" --head "${BRANCH}" --json number --jq '.[0].number')
           if [ -n "${EXISTING}" ]; then
-            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping creation"
+            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping creation."
             echo "opened=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           # Read the PR body authored by the compliance-verify skill.
-          # The skill posts a <!-- pr-body:v1 --> comment containing the
-          # implementation summary, AC table, and static-analysis verdict.
-          # Strip the marker line; fall back to a minimal body if absent.
+          # The skill posts a <!-- pr-body:v1 --> comment with the implementation
+          # summary, AC table, and static-analysis verdict. Strip the marker line;
+          # fall back to a minimal body if the comment is absent.
           PR_BODY_RAW=$(gh issue view "${ISSUE_NUMBER}" \
-            --repo ${{ github.repository }} \
+            --repo "${REPO}" \
             --json comments \
             --jq '[.comments[] | select(.body | startswith("<!-- pr-body:v1 -->"))] | last | .body // ""')
           if [ -n "${PR_BODY_RAW}" ]; then
@@ -715,27 +495,27 @@ jobs:
             --base main \
             --head "${BRANCH}"
           echo "opened=true" >> $GITHUB_OUTPUT
+          echo "✓ PR opened for ${BRANCH}."
 
       # Safety net: if the recipe exited on the FAIL path without completing
-      # the label swap (e.g. context exhaustion mid-step), the issue is left
-      # stuck at in-verification. Detect this and force the swap so the pipeline
-      # is not silently stalled. Must use PIPELINE_PAT so the in-development
-      # label event triggers a new dev session.
+      # the label swap (e.g. context exhaustion mid-step), the issue is stuck
+      # at in-verification. Force the swap so the pipeline is not silently stalled.
+      # PIPELINE_PAT: in-development must fire a new dev-session workflow run.
       - name: Safety net — swap in-verification on skill abort
         if: success() && steps.open_pr.outputs.opened == 'false'
         env:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          REPO: ${{ github.repository }}
         run: |
           ISSUE_NUMBER="${{ github.event.issue.number }}"
-          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} --json labels --jq '[.labels[].name]')
+          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json labels --jq '[.labels[].name]')
           if ! echo "${LABELS}" | jq -e 'contains(["in-verification"])' > /dev/null; then
-            echo "in-verification label already removed by skill — no safety-net action needed."
+            echo "in-verification already removed by skill — no safety-net action needed."
             exit 0
           fi
-          # Skill exited without completing the FAIL path. Post a minimal
-          # feedback comment if the skill did not post one, so the next
-          # dev session has context pointing to the compliance report.
-          FEEDBACK_COUNT=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} \
+          # Post a minimal feedback comment if the skill did not post one, so
+          # the next dev session has context about what failed.
+          FEEDBACK_COUNT=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" \
             --json comments \
             --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))] | length')
           if [ "${FEEDBACK_COUNT}" -eq 0 ]; then
@@ -746,32 +526,34 @@ jobs:
               'The compliance-verify session exited before completing the feedback step.' \
               'See the compliance-report comment above for the full FAIL verdict and required fixes.' \
               'Address all items marked PARTIAL or FAIL before the next verification run.')
-            gh issue comment "${ISSUE_NUMBER}" --repo ${{ github.repository }} --body "${FALLBACK_BODY}"
+            gh issue comment "${ISSUE_NUMBER}" --repo "${REPO}" --body "${FALLBACK_BODY}"
             echo "Posted fallback compliance-feedback:v1 comment."
           fi
-          gh issue edit "${ISSUE_NUMBER}" --repo ${{ github.repository }} \
+          gh issue edit "${ISSUE_NUMBER}" --repo "${REPO}" \
             --remove-label "in-verification" \
             --add-label "in-development"
-          echo "::error::compliance-verify skill aborted before completing the FAIL path — safety net recovered the pipeline by cycling #${ISSUE_NUMBER} back to in-development. Investigate the session log above."
+          echo "::error::compliance-verify aborted before completing FAIL path — safety net cycled #${ISSUE_NUMBER} back to in-development."
           exit 1
 
-      # Fail the job when the skill reached the cycle cap and applied
-      # needs-human-review. The automated pipeline has halted; a red job
-      # makes this visible at a glance rather than silently green.
+      # Fail visibly when the skill reached the cycle cap and applied
+      # needs-human-review. A red job makes the halted pipeline visible at a
+      # glance rather than silently green.
       - name: Fail if cycle cap reached — human review required
         if: success() && steps.open_pr.outputs.opened == 'false'
         env:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          REPO: ${{ github.repository }}
         run: |
           ISSUE_NUMBER="${{ github.event.issue.number }}"
-          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo ${{ github.repository }} --json labels --jq '[.labels[].name]')
+          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json labels --jq '[.labels[].name]')
           if echo "${LABELS}" | jq -e 'contains(["needs-human-review"])' > /dev/null; then
-            echo "::error::Compliance verification cycle cap reached on Feature #${ISSUE_NUMBER} — 3 successive FAIL verdicts. Automated cycling halted. Human review required before the pipeline can restart."
+            echo "::error::Compliance cycle cap reached on Feature #${ISSUE_NUMBER} — 3 successive FAIL verdicts."
+            echo "Automated cycling halted. Human review required before the pipeline can restart."
             exit 1
           fi
-          echo "Compliance cycle continuing normally — feature cycling back to in-development for next dev session."
+          echo "Compliance cycle continuing — feature cycling back to in-development for next dev session."
 
-      # Must use PIPELINE_PAT so the label event triggers pr-review-session.
+      # PIPELINE_PAT: in-review must fire the pr-review-session workflow.
       - name: Apply in-review label
         if: success() && steps.open_pr.outputs.opened == 'true'
         env:
@@ -780,38 +562,23 @@ jobs:
           gh issue edit ${{ github.event.issue.number }} \
             --remove-label "in-verification" \
             --add-label "in-review"
+          echo "✓ Applied in-review on #${{ github.event.issue.number }}."
 
       - name: Set project status to 'In Review'
         if: success() && steps.open_pr.outputs.opened == 'true'
         continue-on-error: true
-        env:
-          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
-        run: |
-          if [ -z "${PROJECT_PAT}" ]; then
-            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
-            exit 0
-          fi
-          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "::error::AGENTIC_PROJECT_ID is not configured."
-            exit 1
-          fi
-          export GH_TOKEN="${PROJECT_PAT}"
-          ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.node_id')
-          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
-          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
-          if [ -z "${ITEM_ID}" ]; then
-            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
-            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
-          fi
-          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
-          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
-          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "In Review") | .id')
-          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+        uses: ./.agents/.github/actions/set-project-status
+        with:
+          project-pat: ${{ secrets.PROJECT_PAT }}
+          project-id: ${{ vars.AGENTIC_PROJECT_ID }}
+          repo: ${{ github.repository }}
+          issue-number: ${{ github.event.issue.number }}
+          status: 'In Review'
 
   # ---------------------------------------------------------------------------
   # Stage 6 — PR Review Session
-  # Trigger: PR review submitted (comments or changes requested)
+  # Trigger: PR review submitted on a feature branch (commented or changes_requested)
+  # Produces: code fixes pushed to the PR branch + review replies.
   # ---------------------------------------------------------------------------
   pr-review-session:
     name: PR Review Session (Stage 6)
@@ -832,7 +599,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Checkout domain repo
+      - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
@@ -840,79 +607,35 @@ jobs:
           submodules: recursive
           token: ${{ github.token }}
 
-      - name: Resolve framework version
-        id: version
-        env:
-          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
-        run: |
-          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
-            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set."
-            exit 1
-          fi
-          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+      - name: Setup Goose environment
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
-          node-version: 'lts/*'
-
-      # System packages that the composite action cannot reliably install on
-      # self-hosted runners: the composite action is loaded from the locally-
-      # mounted .agents/ directory (gitignored, persists between runs), which
-      # may lag the workflow version. Inline steps are always at the current
-      # workflow ref and are the authoritative place for system dep changes.
-      - name: Install system dependencies
-        shell: bash
-        run: |
-          dpkg -s libvulkan1 >/dev/null 2>&1 || {
-            sudo add-apt-repository -y universe
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libvulkan1
-          }
-
-      - name: Install tools
-        uses: ./.agents/.github/actions/install-ai-tools
-        with:
-          agentic-version: ${{ steps.version.outputs.version }}
-          gh-token: ${{ github.token }}
+          agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
-
-      - name: Setup Agent Auth
-        uses: ./.agents/.github/actions/setup-agent-auth
-        with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          agent-model: ${{ vars.AGENT_MODEL || 'default' }}
+          pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ secrets.PIPELINE_PAT }}
 
-      - name: Configure Goose
-        run: |
-          mkdir -p ~/.config/goose
-          cat > ~/.config/goose/config.yaml <<GOOSEEOF
-          GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
-          GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
-          GOOSEEOF
-
+      # PIPELINE_PAT: go-gh inside Goose needs to read Actions variables
+      # (AGENTIC_PROJECT_ID). github.token does not propagate reliably through
+      # Goose's subprocess environment.
       - name: Run PR review recipe
         env:
           PR_NUMBER: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
-          BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
           GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          # Must use PIPELINE_PAT — mirrors the same choice as feature-design and
-          # dev-session. go-gh inside Goose needs a token with sufficient scope to
-          # read Actions variables (AGENTIC_PROJECT_ID); github.token propagation
-          # through Goose's subprocess environment is unreliable.
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
         run: |
           goose run \
             --recipe .agents/.goose/recipes/pr-review-session.yaml \
             --params pr_number=${PR_NUMBER}
 
+      # github.token is sufficient for a git push (contents: write declared).
       - name: Push fixes
         if: success()
         env:
@@ -923,13 +646,15 @@ jobs:
           REMOTE=$(git rev-parse origin/${BRANCH})
           if [ "$LOCAL" != "$REMOTE" ]; then
             git push origin ${BRANCH}
+            echo "✓ Pushed fixes to ${BRANCH}."
           else
-            echo "No code changes — only review replies posted"
+            echo "No code changes — only review replies posted."
           fi
 
   # ---------------------------------------------------------------------------
   # Stage 4c — Issue Session
-  # Trigger: issue labelled `assigned-to-agent`
+  # Trigger: any issue labelled 'assigned-to-agent'
+  # Produces: fix branch + PR, or a reply comment (no-code resolution).
   # ---------------------------------------------------------------------------
   issue-session:
     name: Issue Session (Stage 4c)
@@ -948,7 +673,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Checkout domain repo
+      - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: main
@@ -956,60 +681,20 @@ jobs:
           submodules: recursive
           token: ${{ github.token }}
 
-      - name: Resolve framework version
-        id: version
-        env:
-          AGENTIC_FRAMEWORK_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
-        run: |
-          if [ -z "${AGENTIC_FRAMEWORK_VERSION}" ]; then
-            echo "::error::AGENTIC_FRAMEWORK_VERSION is not set."
-            exit 1
-          fi
-          VERSION=$(echo "${AGENTIC_FRAMEWORK_VERSION}" | tr -d '[:space:]')
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+      - name: Setup Goose environment
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
-          node-version: 'lts/*'
-
-      # System packages that the composite action cannot reliably install on
-      # self-hosted runners: the composite action is loaded from the locally-
-      # mounted .agents/ directory (gitignored, persists between runs), which
-      # may lag the workflow version. Inline steps are always at the current
-      # workflow ref and are the authoritative place for system dep changes.
-      - name: Install system dependencies
-        shell: bash
-        run: |
-          dpkg -s libvulkan1 >/dev/null 2>&1 || {
-            sudo add-apt-repository -y universe
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libvulkan1
-          }
-
-      - name: Install tools
-        uses: ./.agents/.github/actions/install-ai-tools
-        with:
-          agentic-version: ${{ steps.version.outputs.version }}
+          agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
-          gh-token: ${{ github.token }}
-
-      - name: Setup Agent Auth
-        uses: ./.agents/.github/actions/setup-agent-auth
-        with:
           agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          agent-model: ${{ vars.AGENT_MODEL || 'default' }}
+          pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          gh-token: ${{ secrets.PIPELINE_PAT }}
 
-      - name: Configure Goose
-        run: |
-          mkdir -p ~/.config/goose
-          cat > ~/.config/goose/config.yaml <<GOOSEEOF
-          GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
-          GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
-          GOOSEEOF
-
+      # PIPELINE_PAT: go-gh inside Goose needs to read Actions variables
+      # (AGENTIC_PROJECT_ID). github.token does not propagate reliably through
+      # Goose's subprocess environment.
       - name: Run issue session recipe
         run: |
           goose run \
@@ -1021,12 +706,9 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          # Must use PIPELINE_PAT — mirrors the same choice as feature-design and
-          # dev-session. go-gh inside Goose needs a token with sufficient scope to
-          # read Actions variables (AGENTIC_PROJECT_ID); github.token propagation
-          # through Goose's subprocess environment is unreliable.
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
+      # github.token sufficient for push (contents: write declared).
       - name: Push fix branch
         if: success()
         env:
@@ -1035,49 +717,52 @@ jobs:
           BRANCH=$(git branch --show-current)
           if [[ "${BRANCH}" == issue/* ]]; then
             git push origin ${BRANCH}
-            echo "Pushed ${BRANCH}"
+            echo "✓ Pushed ${BRANCH}."
           else
-            echo "No fix branch checked out locally — agent may have pushed directly or found nothing to fix"
+            echo "No fix branch checked out — agent may have pushed directly or found nothing to fix."
           fi
 
+      # PIPELINE_PAT: the PR creation must fire the pull_request event so
+      # pr-review-session triggers. github.token events cannot trigger other
+      # workflow runs (GitHub platform restriction).
       - name: Open PR
         if: success()
         env:
-          # Must use PIPELINE_PAT (not github.token) so the pull_request event
-          # fires and triggers pr-review-session; github.token events cannot
-          # trigger other workflow runs (GitHub platform restriction).
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
         run: |
           # Detect the issue branch from the remote by convention (issue/N-*)
-          # rather than relying on git branch --show-current, which may be
-          # 'main' if the agent pushed the branch directly without switching
-          # the local checkout (e.g. on a re-run where the branch already existed).
+          # rather than relying on git branch --show-current, which may be 'main'
+          # if the agent pushed the branch directly without switching the local
+          # checkout (e.g. on a re-run where the branch already existed).
           BRANCH=$(git ls-remote --heads origin "refs/heads/issue/${ISSUE_NUMBER}-*" \
             | head -1 | sed 's|.*refs/heads/||')
           if [ -z "${BRANCH}" ]; then
-            echo "No issue branch found on remote for issue #${ISSUE_NUMBER} — skipping PR creation"
+            echo "No issue branch found on remote for issue #${ISSUE_NUMBER} — skipping PR creation."
             exit 0
           fi
-          # Skip if a PR already exists for this branch
-          EXISTING=$(gh pr list --repo ${{ github.repository }} --head "${BRANCH}" --json number --jq '.[0].number')
+          EXISTING=$(gh pr list --repo "${REPO}" --head "${BRANCH}" --json number --jq '.[0].number')
           if [ -n "${EXISTING}" ]; then
-            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping"
+            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping."
             exit 0
           fi
-          ISSUE_TITLE=$(gh issue view "${ISSUE_NUMBER}" \
-            --repo ${{ github.repository }} --json title --jq '.title')
+          ISSUE_TITLE=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json title --jq '.title')
           BODY=$(printf "Fixes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${ISSUE_NUMBER}")
           gh pr create \
             --title "fix: ${ISSUE_TITLE}" \
             --body "${BODY}" \
             --base main \
             --head "${BRANCH}"
-          echo "✓ PR opened for ${BRANCH}"
+          echo "✓ PR opened for ${BRANCH}."
 
   # ---------------------------------------------------------------------------
   # Stage 7 — Feature Complete
   # Trigger: feature branch PR merged to main
+  # Produces: feature issue closed + 'done' label; parent requirement auto-closed
+  #   when all sibling features are done.
+  # Note: branch deletion is handled by GitHub's "Automatically delete head
+  #   branches" repo setting which fires on merge before this job runs.
   # ---------------------------------------------------------------------------
   feature-complete:
     name: Feature Complete (Stage 7)
@@ -1085,7 +770,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'feature/')
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
       contents: write
       issues: write
@@ -1101,91 +786,72 @@ jobs:
           ISSUE_NUMBER=$(echo "${BRANCH}" | sed 's|feature/\([0-9]*\)-.*|\1|')
           echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
 
-      # Label transition + issue close use github.token. Must succeed —
-      # downstream auto-close-parent and branch-delete steps depend on it.
-      # Uses PIPELINE_PAT (not github.token) — github.token events cannot
-      # trigger other workflow runs (GitHub platform restriction).
+      # PIPELINE_PAT (not github.token): the 'done' label could trigger downstream
+      # automation in some topologies. Using PIPELINE_PAT is consistent with all
+      # other label operations in the pipeline.
       - name: Apply done label and close feature issue
         id: doneclose
         env:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          REPO: ${{ github.repository }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
-            echo "Could not extract issue number from branch — skipping"
+            echo "Could not extract issue number from branch — skipping."
             echo "skipped=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          ISSUE_TYPE=$(gh api repos/${{ github.repository }}/issues/${ISSUE} --jq '.pull_request // "issue"' 2>/dev/null || echo "")
+          ISSUE_TYPE=$(gh api "repos/${REPO}/issues/${ISSUE}" --jq '.pull_request // "issue"' 2>/dev/null || echo "")
           if [ -z "${ISSUE_TYPE}" ] || [ "${ISSUE_TYPE}" != "issue" ]; then
-            echo "Issue #${ISSUE} is not an open feature issue — skipping"
+            echo "Issue #${ISSUE} is not an open feature issue — skipping."
             echo "skipped=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          gh issue edit ${ISSUE} \
-            --repo ${{ github.repository }} \
+          gh issue edit ${ISSUE} --repo "${REPO}" \
             --remove-label "backlog" \
             --remove-label "in-design" \
             --remove-label "in-development" \
             --remove-label "in-verification" \
             --remove-label "in-review" \
             --add-label "done"
-          gh issue close ${ISSUE} \
-            --repo ${{ github.repository }} \
+          gh issue close ${ISSUE} --repo "${REPO}" \
             --comment "Feature implemented and merged via PR #${{ github.event.pull_request.number }}."
           echo "skipped=false" >> $GITHUB_OUTPUT
+          echo "✓ Closed feature #${ISSUE} with 'done' label."
 
-      # Project status update uses PROJECT_PAT — Apps cannot mutate
-      # user-owned Projects v2 (platform limit). Skipped gracefully if
-      # the PAT is unset; non-blocking on failure.
       - name: Set project status to 'Done'
         if: success() && steps.doneclose.outputs.skipped != 'true'
         continue-on-error: true
-        env:
-          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
-        run: |
-          ISSUE="${{ steps.feature.outputs.issue_number }}"
-          if [ -z "${PROJECT_PAT}" ]; then
-            echo "::warning::PROJECT_PAT secret is not set — project status update skipped."
-            echo "::warning::To enable: create a PAT with user-level project read/write access, set it as PROJECT_PAT in repo secrets."
-            exit 0
-          fi
-          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "::error::AGENTIC_PROJECT_ID is not configured."
-            exit 1
-          fi
-          export GH_TOKEN="${PROJECT_PAT}"
-          ISSUE_NODE_ID=$(gh api repos/${{ github.repository }}/issues/${ISSUE} --jq '.node_id')
-          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${ISSUE_NODE_ID}")
-          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
-          if [ -z "${ITEM_ID}" ]; then
-            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${ISSUE_NODE_ID}")
-            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
-          fi
-          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
-          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
-          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
-          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
+        uses: ./.agents/.github/actions/set-project-status
+        with:
+          project-pat: ${{ secrets.PROJECT_PAT }}
+          project-id: ${{ vars.AGENTIC_PROJECT_ID }}
+          repo: ${{ github.repository }}
+          issue-number: ${{ steps.feature.outputs.issue_number }}
+          status: 'Done'
 
+      # Parse the parent Requirement issue from the feature issue body.
+      # A feature issue body contains "Closes #N" or "Closes part of owner/repo#N"
+      # where N is the Requirement issue number.
       - name: Parse parent requirement
         id: parent
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          AGENTIC_REPO: ${{ vars.AGENTIC_REPO || github.repository }}
         run: |
           ISSUE="${{ steps.feature.outputs.issue_number }}"
           if [ -z "${ISSUE}" ]; then
             exit 0
           fi
-          AGENTIC_REPO="${{ vars.AGENTIC_REPO || github.repository }}"
-          BODY=$(gh issue view ${ISSUE} --repo ${{ github.repository }} --json body --jq '.body')
+          BODY=$(gh issue view ${ISSUE} --repo "${REPO}" --json body --jq '.body')
           PARENT=$(echo "${BODY}" | \
             grep -oP '(?:Closes(?:\s+part\s+of)?\s+(?:[a-zA-Z0-9_.\-]+/[a-zA-Z0-9_.\-]+#|#))(\d+)' | \
             grep -oP '\d+$' | head -1)
           if [ -z "${PARENT}" ]; then
             exit 0
           fi
-          HAS_LABEL=$(gh issue view ${PARENT} --repo ${AGENTIC_REPO} --json labels \
+          HAS_LABEL=$(gh issue view ${PARENT} --repo "${AGENTIC_REPO}" --json labels \
             --jq '.labels[].name' | grep -c '^requirement$' || true)
           if [ "${HAS_LABEL}" -eq 0 ]; then
             exit 0
@@ -1193,9 +859,8 @@ jobs:
           echo "requirement_number=${PARENT}" >> $GITHUB_OUTPUT
           echo "agentic_repo=${AGENTIC_REPO}" >> $GITHUB_OUTPUT
 
-      # Label transition + parent close use github.token. Project status
-      # update for the parent requirement is split into the next step
-      # (uses PROJECT_PAT, non-blocking).
+      # Auto-close the parent Requirement when all its child Features are done.
+      # github.token is sufficient — this does not need to trigger another workflow.
       - name: Auto-close parent requirement if all sub-issues complete
         id: autoclose
         env:
@@ -1207,63 +872,43 @@ jobs:
             echo "no_parent=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          REQ_NODE_ID=$(gh api repos/${AGENTIC_REPO}/issues/${PARENT} --jq '.node_id')
+          REQ_NODE_ID=$(gh api "repos/${AGENTIC_REPO}/issues/${PARENT}" --jq '.node_id')
           if [ -z "${REQ_NODE_ID}" ]; then
             echo "no_parent=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          OPEN_COUNT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { subIssues(first: 100) { nodes { state } } } } }' -f issueId="${REQ_NODE_ID}" \
+          OPEN_COUNT=$(gh api graphql -f query='
+            query($issueId: ID!) {
+              node(id: $issueId) {
+                ... on Issue { subIssues(first: 100) { nodes { state } } }
+              }
+            }
+          ' -f issueId="${REQ_NODE_ID}" \
             --jq '[.data.node.subIssues.nodes[] | select(.state == "OPEN")] | length')
           if [ "${OPEN_COUNT}" -gt 0 ]; then
-            echo "${OPEN_COUNT} sub-issue(s) still open — leaving requirement #${PARENT} open"
+            echo "${OPEN_COUNT} sub-issue(s) still open — leaving requirement #${PARENT} open."
             echo "still_open=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          gh issue edit ${PARENT} \
-            --repo ${AGENTIC_REPO} \
+          gh issue edit ${PARENT} --repo "${AGENTIC_REPO}" \
             --remove-label "backlog" \
             --remove-label "scoping" \
             --remove-label "ready-to-implement" \
             --add-label "done"
-          gh issue close ${PARENT} \
-            --repo ${AGENTIC_REPO} \
+          gh issue close ${PARENT} --repo "${AGENTIC_REPO}" \
             --comment "All child feature issues are now complete. Auto-closing requirement."
           echo "req_node_id=${REQ_NODE_ID}" >> $GITHUB_OUTPUT
           echo "no_parent=false" >> $GITHUB_OUTPUT
           echo "still_open=false" >> $GITHUB_OUTPUT
+          echo "✓ Auto-closed requirement #${PARENT}."
 
-      # Project status update for the parent requirement uses PROJECT_PAT.
-      # Same pattern as the feature-status step: skip gracefully if the
-      # PAT isn't set; non-blocking on failure.
       - name: Set parent requirement project status to 'Done'
         if: success() && steps.autoclose.outputs.no_parent != 'true' && steps.autoclose.outputs.still_open != 'true'
         continue-on-error: true
-        env:
-          PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
-          AGENTIC_PROJECT_ID: ${{ vars.AGENTIC_PROJECT_ID }}
-          REQ_NODE_ID: ${{ steps.autoclose.outputs.req_node_id }}
-        run: |
-          if [ -z "${PROJECT_PAT}" ]; then
-            echo "::warning::PROJECT_PAT secret is not set — parent requirement project status update skipped."
-            exit 0
-          fi
-          if [ -z "${AGENTIC_PROJECT_ID}" ]; then
-            echo "::warning::AGENTIC_PROJECT_ID is not configured — skipping parent project status update."
-            exit 0
-          fi
-          export GH_TOKEN="${PROJECT_PAT}"
-          RESULT=$(gh api graphql -f query='query($issueId: ID!) { node(id: $issueId) { ... on Issue { projectItems(first: 100) { nodes { id project { id } } } } } }' -f issueId="${REQ_NODE_ID}")
-          ITEM_ID=$(echo "${RESULT}" | jq -r --arg pid "${AGENTIC_PROJECT_ID}" '.data.node.projectItems.nodes[] | select(.project.id == $pid) | .id')
-          if [ -z "${ITEM_ID}" ]; then
-            ADD_RESULT=$(gh api graphql -f query='mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f contentId="${REQ_NODE_ID}")
-            ITEM_ID=$(echo "${ADD_RESULT}" | jq -r '.data.addProjectV2ItemById.item.id')
-          fi
-          FIELDS=$(gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId="${AGENTIC_PROJECT_ID}")
-          FIELD_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .id')
-          OPTION_ID=$(echo "${FIELDS}" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
-          gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId } }) { projectV2Item { id } } }' -f projectId="${AGENTIC_PROJECT_ID}" -f itemId="${ITEM_ID}" -f fieldId="${FIELD_ID}" -f optionId="${OPTION_ID}"
-
-      # Branch deletion is handled by GitHub's "Automatically delete head
-      # branches" repo setting, which fires on merge before this job runs.
-      # The previous explicit `gh api ... DELETE` step is gone — it raced
-      # the auto-delete and failed with 422 on every successful merge.
+        uses: ./.agents/.github/actions/set-project-status
+        with:
+          project-pat: ${{ secrets.PROJECT_PAT }}
+          project-id: ${{ vars.AGENTIC_PROJECT_ID }}
+          repo: ${{ steps.parent.outputs.agentic_repo }}
+          issue-number: ${{ steps.parent.outputs.requirement_number }}
+          status: 'Done'

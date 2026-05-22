@@ -21,9 +21,9 @@ inputs:
     required: false
     default: ''
   agent-provider:
-    description: 'Agent provider to use for the agent (e.g. claude, mistral, openai).'
+    description: 'Agent provider to use for the agent (e.g. claude-code, mistral).'
     required: false
-    default: 'claude'
+    default: 'claude-code'
 
 runs:
   using: composite
@@ -102,7 +102,7 @@ runs:
         tar -xj -C ~/.local/bin -f /tmp/goose.tar.bz2
 
     - name: Resolve Claude CLI version
-      if: inputs.agent-provider == 'claude'
+      if: inputs.agent-provider == 'claude-code'
       id: claude-version
       shell: bash
       env:
@@ -117,7 +117,7 @@ runs:
 
     - name: Cache Claude Code CLI
       id: cache-claude
-      if: inputs.agent-provider == 'claude'
+      if: inputs.agent-provider == 'claude-code'
       uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
       with:
         path: ${{ runner.tool_cache }}/claude-cli
