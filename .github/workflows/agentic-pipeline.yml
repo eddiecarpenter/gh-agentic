@@ -143,6 +143,7 @@ jobs:
         uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
+          goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
           gh-token: ${{ github.token }}
 
       - name: Setup Agent Auth
@@ -426,6 +427,7 @@ jobs:
         uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
+          goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
           agent-provider: ${{ vars.AGENT_PROVIDER }}
           gh-token: ${{ github.token }}
 
@@ -621,6 +623,7 @@ jobs:
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ github.token }}
+          goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
 
       - name: Setup Agent Auth
         uses: ./.agents/.github/actions/setup-agent-auth
@@ -864,6 +867,7 @@ jobs:
         with:
           agentic-version: ${{ steps.version.outputs.version }}
           gh-token: ${{ github.token }}
+          goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
 
       - name: Setup Agent Auth
         uses: ./.agents/.github/actions/setup-agent-auth
@@ -973,6 +977,7 @@ jobs:
         uses: ./.agents/.github/actions/install-ai-tools
         with:
           agentic-version: ${{ steps.version.outputs.version }}
+          goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
           gh-token: ${{ github.token }}
 
       - name: Setup Agent Auth
