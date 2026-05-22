@@ -426,7 +426,7 @@ func checkWorkflows(deps CheckDeps) Group {
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Fail,
 				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, mount.TrimVPrefix(version)),
-				Remediation: "Run 'gh agentic repair'",
+				Remediation: "Run 'gh agentic repair' to update workflow versions",
 			})
 		}
 	}
