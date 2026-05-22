@@ -156,12 +156,19 @@ jobs:
           gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
+          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
+          # session) can resolve the token from gh's config file rather than relying
+          # on GH_TOKEN propagating through Goose's subprocess environment — which
+          # is not guaranteed for all Goose/Claude Code versions.
+          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run feature-design recipe
         run: |
@@ -456,12 +463,19 @@ jobs:
           git push origin HEAD:${{ steps.branch.outputs.name }} --force-with-lease
 
       - name: Configure Goose
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
+          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
+          # session) can resolve the token from gh's config file rather than relying
+          # on GH_TOKEN propagating through Goose's subprocess environment — which
+          # is not guaranteed for all Goose/Claude Code versions.
+          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run dev-session recipe
         id: goose
@@ -636,12 +650,19 @@ jobs:
           gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
+          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
+          # session) can resolve the token from gh's config file rather than relying
+          # on GH_TOKEN propagating through Goose's subprocess environment — which
+          # is not guaranteed for all Goose/Claude Code versions.
+          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run compliance-verify recipe
         run: |
@@ -881,12 +902,19 @@ jobs:
           gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
+          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
+          # session) can resolve the token from gh's config file rather than relying
+          # on GH_TOKEN propagating through Goose's subprocess environment — which
+          # is not guaranteed for all Goose/Claude Code versions.
+          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run PR review recipe
         env:
@@ -993,12 +1021,19 @@ jobs:
           gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
+          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
+          # session) can resolve the token from gh's config file rather than relying
+          # on GH_TOKEN propagating through Goose's subprocess environment — which
+          # is not guaranteed for all Goose/Claude Code versions.
+          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run issue session recipe
         run: |
