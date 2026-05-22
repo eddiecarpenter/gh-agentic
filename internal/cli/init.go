@@ -214,4 +214,3 @@ func tryUploadClaudeCredentials(w io.Writer, deps project.Deps, ownerType string
 		fmt.Fprintf(w, "  %s  Claude credentials not found locally — run 'gh agentic auth refresh' to upload them\n", ui.StatusWarning.Render("⚠"))
 	}
 }
-

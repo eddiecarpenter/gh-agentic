@@ -15,16 +15,16 @@ import (
 
 // CheckDeps holds injectable dependencies for check functions.
 type CheckDeps struct {
-	Root         string
-	RepoFullName string
-	Owner        string
-	RepoName     string
-	OwnerType    string
-	Topology     string // "single", "federated-cp", "federated-domain", "" (unknown)
+	Root                string
+	RepoFullName        string
+	Owner               string
+	RepoName            string
+	OwnerType           string
+	Topology            string // "single", "federated-cp", "federated-domain", "" (unknown)
 	ProjectID           string // value of AGENTIC_PROJECT_ID if set
 	ProjectIDReadFailed bool   // true when AGENTIC_PROJECT_ID could not be read due to token permission error
-	Run          auth.RunCommandFunc
-	ReadCreds    auth.ReadCredentialsFunc
+	Run                 auth.RunCommandFunc
+	ReadCreds           auth.ReadCredentialsFunc
 	// FetchProjectTitle is used by checkProjectReachability to confirm the
 	// configured AGENTIC_PROJECT_ID resolves via the GraphQL API. Tests
 	// substitute a fake; production wires project.DefaultFetchProjectTitle.

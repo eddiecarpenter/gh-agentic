@@ -228,8 +228,8 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 			return auth.ReadClaudeCredentialsDefault(r)
 		},
 		FetchProjectTitle:        project.DefaultFetchProjectTitle,
-		FetchProjectFields:        project.DefaultFetchProjectFields,
-		UpdateStatusFieldOptions:  project.DefaultUpdateStatusFieldOptions,
+		FetchProjectFields:       project.DefaultFetchProjectFields,
+		UpdateStatusFieldOptions: project.DefaultUpdateStatusFieldOptions,
 	}, nil
 }
 

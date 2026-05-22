@@ -220,20 +220,20 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 				}
 
 				pipelineCheckDeps := doctor.CheckDeps{
-					Root:                root,
-					RepoFullName:        info.FullName,
-					Owner:               info.Owner,
-					RepoName:            info.RepoName,
-					OwnerType:           info.OwnerType,
-					Topology:            topology,
-					ProjectID:           projectID,
-					ProjectIDReadFailed: projectIDReadFailed,
-					Run:                 deps.run,
-					ReadCreds:           deps.readCreds,
+					Root:                     root,
+					RepoFullName:             info.FullName,
+					Owner:                    info.Owner,
+					RepoName:                 info.RepoName,
+					OwnerType:                info.OwnerType,
+					Topology:                 topology,
+					ProjectID:                projectID,
+					ProjectIDReadFailed:      projectIDReadFailed,
+					Run:                      deps.run,
+					ReadCreds:                deps.readCreds,
 					FetchProjectTitle:        project.DefaultFetchProjectTitle,
-					FetchProjectFields:        project.DefaultFetchProjectFields,
-					UpdateStatusFieldOptions:  project.DefaultUpdateStatusFieldOptions,
-					FrameworkSource:           isFrameworkSource,
+					FetchProjectFields:       project.DefaultFetchProjectFields,
+					UpdateStatusFieldOptions: project.DefaultUpdateStatusFieldOptions,
+					FrameworkSource:          isFrameworkSource,
 				}
 				pipelineReport = doctor.RunAllChecksWithProgress(pipelineCheckDeps, setLabel)
 				return nil

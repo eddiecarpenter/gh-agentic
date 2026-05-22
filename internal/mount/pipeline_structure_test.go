@@ -22,8 +22,8 @@ import (
 //     the gate is caught at test time.
 
 type compositeAction struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
+	Name        string         `yaml:"name"`
+	Description string         `yaml:"description"`
 	Inputs      map[string]any `yaml:"inputs"`
 	Runs        struct {
 		Using string `yaml:"using"`
