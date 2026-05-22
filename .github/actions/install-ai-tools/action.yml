@@ -74,9 +74,12 @@ runs:
       shell: bash
       env:
         INPUT_GOOSE_VERSION: ${{ inputs.goose-version }}
+        GH_TOKEN: ${{ inputs.gh-token }}
       run: |
         if [ "${INPUT_GOOSE_VERSION}" = "latest" ]; then
-          GOOSE_VERSION=$(curl --proto '=https' --tlsv1.2 -fsSL https://api.github.com/repos/block/goose/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+          # Use gh api (authenticated via GH_TOKEN) to avoid the 60 req/hour
+          # unauthenticated rate limit that causes 403s on shared runner IPs.
+          GOOSE_VERSION=$(gh api repos/block/goose/releases/latest --jq '.tag_name' | sed 's/^v//')
         else
           GOOSE_VERSION="${INPUT_GOOSE_VERSION}"
         fi
