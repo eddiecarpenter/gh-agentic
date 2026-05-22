@@ -104,21 +104,7 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 				}
 			}
 
-			fmt.Fprintln(w, "")
-			fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
-			fmt.Fprintln(w, "  "+ui.Divider(48))
-			switch {
-			case pipelineSkipped:
-				fmt.Fprintf(w, "  %s  Skipped — framework is out of sync; run 'gh agentic repair' to sync\n", ui.StatusWarning.Render("⚠"))
-			case pdepsErr != nil:
-				fmt.Fprintf(w, "  %s  Skipped: %v\n", ui.StatusWarning.Render("⚠"), pdepsErr)
-			case len(pipelineResult.Lines) == 0 && len(pipelineResult.PendingPrompts) == 0:
-				fmt.Fprintf(w, "  %s  No pipeline issues found\n", ui.StatusOK.Render("✓"))
-			default:
-				for _, line := range pipelineResult.Lines {
-					fmt.Fprintln(w, line)
-				}
-			}
+			renderRepairPipelineSection(w, pipelineSkipped, pdepsErr, pipelineResult)
 
 			// Phase 3: prompt for missing variables/secrets and apply them.
 			if !pipelineSkipped && pdepsErr == nil && len(pipelineResult.PendingPrompts) > 0 {
@@ -172,6 +158,28 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 	}
 
 	return cmd
+}
+
+// renderRepairPipelineSection writes the Pipeline section of the repair report to w.
+// It is extracted from RunE so the pipelineSkipped output path can be tested directly
+// without wiring up live project and pipeline dependencies — analogous to
+// renderCheckSections in check.go.
+func renderRepairPipelineSection(w io.Writer, pipelineSkipped bool, pdepsErr error, pipelineResult doctor.RepairResult) {
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
+	fmt.Fprintln(w, "  "+ui.Divider(48))
+	switch {
+	case pipelineSkipped:
+		fmt.Fprintf(w, "  %s  Skipped — framework is out of sync; run 'gh agentic repair' to sync\n", ui.StatusWarning.Render("⚠"))
+	case pdepsErr != nil:
+		fmt.Fprintf(w, "  %s  Skipped: %v\n", ui.StatusWarning.Render("⚠"), pdepsErr)
+	case len(pipelineResult.Lines) == 0 && len(pipelineResult.PendingPrompts) == 0:
+		fmt.Fprintf(w, "  %s  No pipeline issues found\n", ui.StatusOK.Render("✓"))
+	default:
+		for _, line := range pipelineResult.Lines {
+			fmt.Fprintln(w, line)
+		}
+	}
 }
 
 // buildPipelineCheckDeps constructs the doctor.CheckDeps used for the
