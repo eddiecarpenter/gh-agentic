@@ -2,9 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/eddiecarpenter/gh-agentic/internal/doctor"
+	initpkg "github.com/eddiecarpenter/gh-agentic/internal/init"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
 )
 
@@ -101,6 +105,53 @@ func TestNoMountStringsInUserFacingOutput(t *testing.T) {
 		out := stripANSI(buf.String())
 		if strings.Contains(out, stale) {
 			t.Errorf("repair --help output contains stale %q:\n%s", stale, out)
+		}
+	})
+
+	// --- 6. repair — pipeline-skipped runtime output (AC3 + AC8a) ---
+	// Exercises renderRepairPipelineSection with pipelineSkipped=true, which
+	// previously emitted "Skipped — framework mount is out of sync; run 'gh agentic mount' first".
+	t.Run("repair_pipeline_skipped", func(t *testing.T) {
+		var buf bytes.Buffer
+		renderRepairPipelineSection(&buf, true, nil, doctor.RepairResult{})
+		out := stripANSI(buf.String())
+		if strings.Contains(out, stale) {
+			t.Errorf("repair pipeline-skipped output contains stale %q:\n%s", stale, out)
+		}
+		// Confirm the replacement wording is present.
+		if !strings.Contains(out, "gh agentic repair") {
+			t.Errorf("repair pipeline-skipped output missing expected 'gh agentic repair' wording:\n%s", out)
+		}
+	})
+
+	// --- 7. init — already-mounted hint (AC8b) ---
+	// Exercises the early-return branch in initpkg.Run where .agents/ already
+	// exists and --force was not passed. Previously emitted
+	// "Run 'gh agentic mount <version>' to upgrade".
+	t.Run("init_already_mounted", func(t *testing.T) {
+		// Construct a minimal directory that looks like an already-initialised repo:
+		// Run() requires .git to exist, then returns ErrAlreadyInitialised when
+		// .agents/ is present and force=false.
+		root := t.TempDir()
+		if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+			t.Fatalf("creating .git dir: %v", err)
+		}
+		if err := os.Mkdir(filepath.Join(root, ".agents"), 0o755); err != nil {
+			t.Fatalf("creating .agents dir: %v", err)
+		}
+
+		var buf bytes.Buffer
+		err := initpkg.Run(&buf, root, false, initpkg.Deps{})
+		if err != initpkg.ErrAlreadyInitialised {
+			t.Fatalf("expected ErrAlreadyInitialised, got: %v", err)
+		}
+		out := stripANSI(buf.String())
+		if strings.Contains(out, stale) {
+			t.Errorf("init already-mounted output contains stale %q:\n%s", stale, out)
+		}
+		// Confirm the replacement wording is present.
+		if !strings.Contains(out, "gh agentic upgrade") {
+			t.Errorf("init already-mounted output missing expected 'gh agentic upgrade' wording:\n%s", out)
 		}
 	})
 }
