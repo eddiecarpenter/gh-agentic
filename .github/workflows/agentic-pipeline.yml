@@ -271,7 +271,9 @@ jobs:
       # Resolve the branch name before checkout so the checkout ref is known.
       # Inline (not a composite action) because the workspace has no checkout yet —
       # local composite actions require the submodule tree to be on disk first.
-      # github.token is sufficient — read-only branches list query.
+      # Uses curl+jq (not gh) because gh is installed by setup-goose-env which
+      # runs after checkout — self-hosted runners do not have gh pre-installed.
+      # Paginated: fetches up to 100 branches per page until branch found or exhausted.
       - name: Resolve feature branch
         id: branch
         env:
@@ -279,10 +281,18 @@ jobs:
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
-          BRANCH=$(gh api "repos/${REPO}/branches" --paginate \
-            --jq '.[].name' \
-            | grep "^feature/${ISSUE}-" \
-            | head -1)
+          PAGE=1
+          BRANCH=""
+          while [ -z "${BRANCH}" ]; do
+            RESPONSE=$(curl --proto '=https' --tlsv1.2 -fsSL \
+              -H "Authorization: token ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPO}/branches?per_page=100&page=${PAGE}")
+            BRANCH=$(echo "${RESPONSE}" | jq -r '.[].name' | grep "^feature/${ISSUE}-" | head -1 || true)
+            COUNT=$(echo "${RESPONSE}" | jq '. | length')
+            [ "${COUNT}" -lt 100 ] && break
+            PAGE=$((PAGE + 1))
+          done
           if [ -z "${BRANCH}" ]; then
             echo "::error::No branch matching feature/${ISSUE}-* found in ${REPO}."
             exit 1
@@ -416,7 +426,8 @@ jobs:
       actions: read
 
     steps:
-      # Inline (not composite action) — workspace not yet checked out here.
+      # Inline curl+jq (not gh) — workspace not yet checked out here and
+      # gh is not pre-installed on self-hosted runners.
       - name: Resolve feature branch
         id: branch
         env:
@@ -424,10 +435,18 @@ jobs:
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
-          BRANCH=$(gh api "repos/${REPO}/branches" --paginate \
-            --jq '.[].name' \
-            | grep "^feature/${ISSUE}-" \
-            | head -1)
+          PAGE=1
+          BRANCH=""
+          while [ -z "${BRANCH}" ]; do
+            RESPONSE=$(curl --proto '=https' --tlsv1.2 -fsSL \
+              -H "Authorization: token ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPO}/branches?per_page=100&page=${PAGE}")
+            BRANCH=$(echo "${RESPONSE}" | jq -r '.[].name' | grep "^feature/${ISSUE}-" | head -1 || true)
+            COUNT=$(echo "${RESPONSE}" | jq '. | length')
+            [ "${COUNT}" -lt 100 ] && break
+            PAGE=$((PAGE + 1))
+          done
           if [ -z "${BRANCH}" ]; then
             echo "::error::No branch matching feature/${ISSUE}-* found in ${REPO}."
             exit 1
