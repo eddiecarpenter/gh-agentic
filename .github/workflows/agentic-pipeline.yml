@@ -38,9 +38,13 @@ name: Agentic Pipeline
 # eddiecarpenter/gh-agentic. Checkout steps use `submodules: recursive` to
 # populate it. Composite actions are reached via `./.agents/.github/actions/...`
 # (resolves into the submodule on domain repos; via the `.agents -> .` symlink
-# in gh-agentic itself). The new local composite actions (setup-goose-env,
-# set-project-status, resolve-feature-branch) live in .github/actions/ and are
-# reached as .agents/.github/actions/ via the same symlink/submodule mechanism.
+# in gh-agentic itself). The local composite actions (setup-goose-env,
+# set-project-status) live in .github/actions/ and are reached as
+# .agents/.github/actions/ via the same symlink/submodule mechanism.
+#
+# IMPORTANT: composite actions require the checkout (submodules: recursive)
+# to have run first. Steps that run BEFORE checkout (e.g. branch resolution)
+# must use inline `run:` scripts, not `uses: ./.agents/.github/actions/...`.
 #
 # `workflow_dispatch` inputs (pr_number, branch_name) reach this workflow
 # two ways: directly from a dispatch event on gh-agentic (via
@@ -265,14 +269,26 @@ jobs:
 
     steps:
       # Resolve the branch name before checkout so the checkout ref is known.
-      # github.token is sufficient — this is a read-only branches list query.
+      # Inline (not a composite action) because the workspace has no checkout yet —
+      # local composite actions require the submodule tree to be on disk first.
+      # github.token is sufficient — read-only branches list query.
       - name: Resolve feature branch
         id: branch
-        uses: ./.agents/.github/actions/resolve-feature-branch
-        with:
-          gh-token: ${{ github.token }}
-          repo: ${{ github.repository }}
-          issue-number: ${{ github.event.issue.number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          BRANCH=$(gh api "repos/${REPO}/branches" --paginate \
+            --jq '.[].name' \
+            | grep "^feature/${ISSUE}-" \
+            | head -1)
+          if [ -z "${BRANCH}" ]; then
+            echo "::error::No branch matching feature/${ISSUE}-* found in ${REPO}."
+            exit 1
+          fi
+          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "✓ Found feature branch: ${BRANCH}"
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -400,13 +416,24 @@ jobs:
       actions: read
 
     steps:
+      # Inline (not composite action) — workspace not yet checked out here.
       - name: Resolve feature branch
         id: branch
-        uses: ./.agents/.github/actions/resolve-feature-branch
-        with:
-          gh-token: ${{ github.token }}
-          repo: ${{ github.repository }}
-          issue-number: ${{ github.event.issue.number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          BRANCH=$(gh api "repos/${REPO}/branches" --paginate \
+            --jq '.[].name' \
+            | grep "^feature/${ISSUE}-" \
+            | head -1)
+          if [ -z "${BRANCH}" ]; then
+            echo "::error::No branch matching feature/${ISSUE}-* found in ${REPO}."
+            exit 1
+          fi
+          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "✓ Found feature branch: ${BRANCH}"
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
