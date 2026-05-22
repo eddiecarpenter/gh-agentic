@@ -73,7 +73,7 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			// Phase 2: pipeline-side checks and auto-repairs.
 			// Skip when the framework mount is out of sync — the pipeline
 			// checks run against `.agents/` and only produce noise until the
-			// user runs `gh agentic mount`.
+			// user runs `gh agentic repair`.
 			pipelineDeps, pdepsErr := buildPipelineCheckDeps(deps)
 			if pdepsErr == nil {
 				pipelineDeps.FrameworkSource = isFrameworkSource
@@ -109,7 +109,7 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 			fmt.Fprintln(w, "  "+ui.Divider(48))
 			switch {
 			case pipelineSkipped:
-				fmt.Fprintf(w, "  %s  Skipped — framework mount is out of sync; run 'gh agentic mount' first\n", ui.StatusWarning.Render("⚠"))
+				fmt.Fprintf(w, "  %s  Skipped — framework is out of sync; run 'gh agentic repair' to sync\n", ui.StatusWarning.Render("⚠"))
 			case pdepsErr != nil:
 				fmt.Fprintf(w, "  %s  Skipped: %v\n", ui.StatusWarning.Render("⚠"), pdepsErr)
 			case len(pipelineResult.Lines) == 0 && len(pipelineResult.PendingPrompts) == 0:
