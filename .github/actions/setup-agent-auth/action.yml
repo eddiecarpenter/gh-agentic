@@ -26,10 +26,10 @@ description: >
   whether rotation matters) stay isolated.
 
   The Claude rotation step requires gh-token to carry secrets:write.
-  The agentic GitHub App carries this transitionally — see
-  docs/github-app-setup.md "secrets: write rationale". When the
-  production switch to the Anthropic API key lands, the rotation
-  step and the secrets:write requirement both go away.
+  PIPELINE_PAT satisfies this — it is the same token used for all
+  pipeline label operations. When the production switch to the Anthropic
+  API key lands, the rotation step and the secrets:write requirement
+  both go away.
 
 inputs:
   agent-provider:
@@ -54,9 +54,9 @@ inputs:
     default: ''
   gh-token:
     description: >
-      GitHub App installation token with secrets:write. Required
-      when agent-provider is claude-code (used for the Claude
-      rotation step). Ignored otherwise.
+      PIPELINE_PAT with secrets:write. Required when agent-provider
+      is claude-code (used to write the rotated credentials back to
+      the CLAUDE_CREDENTIALS_JSON secret). Ignored otherwise.
     required: false
     default: ''
 

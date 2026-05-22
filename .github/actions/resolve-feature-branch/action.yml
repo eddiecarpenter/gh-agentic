@@ -1,0 +1,52 @@
+name: Resolve Feature Branch
+description: >
+  Finds the feature branch for a given issue number by querying the GitHub API
+  with pagination and matching the convention feature/{issue}-*. Fails the step
+  if no matching branch is found so the pipeline produces a clear early error
+  rather than a confusing checkout failure later.
+
+  Uses gh api rather than raw curl so authentication flows through GH_TOKEN
+  automatically and pagination is handled without manual page iteration.
+
+inputs:
+  gh-token:
+    description: >
+      GitHub token for the API call. github.token is sufficient — this is a
+      read-only branches list query.
+    required: true
+  repo:
+    description: 'Repository in owner/name format (e.g. github.repository).'
+    required: true
+  issue-number:
+    description: 'Feature issue number. The action looks for a branch named feature/{issue}-*.'
+    required: true
+
+outputs:
+  name:
+    description: 'Full branch name matching feature/{issue-number}-* (e.g. feature/42-add-login).'
+    value: ${{ steps.find.outputs.name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find feature branch
+      id: find
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        REPO: ${{ inputs.repo }}
+        ISSUE: ${{ inputs.issue-number }}
+      run: |
+        # --paginate fetches all pages; jq filters to the matching branch name.
+        # head -1 handles the unlikely case of multiple matching branches (take first).
+        BRANCH=$(gh api "repos/${REPO}/branches" --paginate \
+          --jq '.[].name' \
+          | grep "^feature/${ISSUE}-" \
+          | head -1)
+        if [ -z "${BRANCH}" ]; then
+          echo "::error::No branch matching feature/${ISSUE}-* found in ${REPO}."
+          echo "The feature-design job must run and push the branch before this stage can proceed."
+          exit 1
+        fi
+        echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
+        echo "✓ Found feature branch: ${BRANCH}"
