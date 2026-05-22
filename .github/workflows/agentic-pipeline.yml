@@ -156,23 +156,12 @@ jobs:
           gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
-          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
-          # session) can resolve the token from gh's config file rather than relying
-          # on GH_TOKEN propagating through Goose's subprocess environment — which
-          # is not guaranteed for all Goose/Claude Code versions.
-          # gh auth login --with-token refuses to write to config when GH_TOKEN is
-          # set in the environment ("first clear the value"), so we save and unset it.
-          _TOKEN="${GH_TOKEN}"
-          unset GH_TOKEN
-          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run feature-design recipe
         run: |
@@ -467,23 +456,12 @@ jobs:
           git push origin HEAD:${{ steps.branch.outputs.name }} --force-with-lease
 
       - name: Configure Goose
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
-          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
-          # session) can resolve the token from gh's config file rather than relying
-          # on GH_TOKEN propagating through Goose's subprocess environment — which
-          # is not guaranteed for all Goose/Claude Code versions.
-          # gh auth login --with-token refuses to write to config when GH_TOKEN is
-          # set in the environment ("first clear the value"), so we save and unset it.
-          _TOKEN="${GH_TOKEN}"
-          unset GH_TOKEN
-          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run dev-session recipe
         id: goose
@@ -508,7 +486,13 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ github.token }}
+          # Must use PIPELINE_PAT so go-gh (used by `gh agentic` inside the Goose
+          # session) can resolve the token from the environment — PIPELINE_PAT has
+          # the scopes needed to read Actions variables (AGENTIC_PROJECT_ID) and to
+          # apply trigger labels that fire downstream workflow runs. github.token is
+          # scope-restricted and does not reliably propagate through Goose's
+          # subprocess environment. Mirrors the same choice made in feature-design.
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
       - name: Push branch
         if: success()
@@ -658,23 +642,12 @@ jobs:
           gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
-          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
-          # session) can resolve the token from gh's config file rather than relying
-          # on GH_TOKEN propagating through Goose's subprocess environment — which
-          # is not guaranteed for all Goose/Claude Code versions.
-          # gh auth login --with-token refuses to write to config when GH_TOKEN is
-          # set in the environment ("first clear the value"), so we save and unset it.
-          _TOKEN="${GH_TOKEN}"
-          unset GH_TOKEN
-          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run compliance-verify recipe
         run: |
@@ -914,23 +887,12 @@ jobs:
           gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
-          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
-          # session) can resolve the token from gh's config file rather than relying
-          # on GH_TOKEN propagating through Goose's subprocess environment — which
-          # is not guaranteed for all Goose/Claude Code versions.
-          # gh auth login --with-token refuses to write to config when GH_TOKEN is
-          # set in the environment ("first clear the value"), so we save and unset it.
-          _TOKEN="${GH_TOKEN}"
-          unset GH_TOKEN
-          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run PR review recipe
         env:
@@ -941,7 +903,11 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ github.token }}
+          # Must use PIPELINE_PAT — mirrors the same choice as feature-design and
+          # dev-session. go-gh inside Goose needs a token with sufficient scope to
+          # read Actions variables (AGENTIC_PROJECT_ID); github.token propagation
+          # through Goose's subprocess environment is unreliable.
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
         run: |
           goose run \
             --recipe .agents/.goose/recipes/pr-review-session.yaml \
@@ -1037,23 +1003,12 @@ jobs:
           gh-token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Configure Goose
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.config/goose
           cat > ~/.config/goose/config.yaml <<GOOSEEOF
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSEEOF
-          # Persist gh auth so that go-gh (used by `gh agentic` inside the Goose
-          # session) can resolve the token from gh's config file rather than relying
-          # on GH_TOKEN propagating through Goose's subprocess environment — which
-          # is not guaranteed for all Goose/Claude Code versions.
-          # gh auth login --with-token refuses to write to config when GH_TOKEN is
-          # set in the environment ("first clear the value"), so we save and unset it.
-          _TOKEN="${GH_TOKEN}"
-          unset GH_TOKEN
-          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run issue session recipe
         run: |
@@ -1066,7 +1021,11 @@ jobs:
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
           GOOSE_DISABLE_SESSION_NAMING: "true"
-          GH_TOKEN: ${{ github.token }}
+          # Must use PIPELINE_PAT — mirrors the same choice as feature-design and
+          # dev-session. go-gh inside Goose needs a token with sufficient scope to
+          # read Actions variables (AGENTIC_PROJECT_ID); github.token propagation
+          # through Goose's subprocess environment is unreliable.
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
       - name: Push fix branch
         if: success()
