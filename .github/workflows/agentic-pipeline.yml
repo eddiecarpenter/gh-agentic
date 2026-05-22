@@ -823,6 +823,30 @@ jobs:
       actions: read
 
     steps:
+      # Checkout + setup-goose-env: required because (a) gh is invoked below
+      # and is not pre-installed on self-hosted runners, and (b) set-project-status
+      # is a local composite action that requires the .agents/ submodule on disk.
+      # Stage 7 does not run Goose itself but reuses the same setup primitive
+      # for consistency with every other stage.
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: main
+          fetch-depth: 1
+          submodules: recursive
+          token: ${{ github.token }}
+
+      - name: Setup Goose environment
+        uses: ./.agents/.github/actions/setup-goose-env
+        with:
+          agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+          goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
+          agent-provider: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
+          agent-model: ${{ vars.AGENT_MODEL || 'default' }}
+          pipeline-pat: ${{ secrets.PIPELINE_PAT }}
+          claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+
       - name: Extract feature issue number
         id: feature
         env:
