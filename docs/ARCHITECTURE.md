@@ -12,7 +12,7 @@ The extension serves two roles:
    credentials, and run health checks.
 2. **Framework source** — the canonical source for the AI-Native Delivery Framework
    files (`skills/`, `standards/`, `concepts/`, `recipes/`). Domain repos mount
-   these files at `.agents/` via `gh agentic mount`.
+   these files at `.agents/` via `gh agentic upgrade`.
 
 ---
 
@@ -183,8 +183,7 @@ available to CI runners without manual configuration.
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.agents/` |
-| `gh agentic upgrade` | Change the framework version for the whole federation (control plane only) |
+| `gh agentic upgrade [version]` | Install or change the framework version at `.agents/` (control plane only) |
 | `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
 | `gh agentic auth` | Manage Claude credentials used by the agent pipeline (login, refresh, check) |
