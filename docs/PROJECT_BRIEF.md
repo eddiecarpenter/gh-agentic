@@ -12,7 +12,7 @@ gh extension upgrade agentic
 
 `gh-agentic` is the **single source of truth** for both the CLI tooling and
 the AI-Native Delivery Framework files (`skills/`, `standards/`, `concepts/`,
-`recipes/`). Domain repos mount the framework at `.agents/` using `gh agentic mount`.
+`recipes/`). Domain repos mount the framework at `.agents/` using `gh agentic upgrade`.
 
 ## Why it exists
 
@@ -33,8 +33,7 @@ phases that genuinely require reasoning (requirements, design, development).
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.agents/` |
-| `gh agentic upgrade` | Change the framework version for the whole federation (control plane only) |
+| `gh agentic upgrade [version]` | Install or change the framework version at `.agents/` (control plane only) |
 | `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
 | `gh agentic auth login` | Force Claude Code login and push credentials to repo secret |
@@ -50,7 +49,7 @@ phases that genuinely require reasoning (requirements, design, development).
   and manages credentials. The same repository holds the framework files
   (`skills/`, `standards/`, `concepts/`, `recipes/`) that domain repos consume.
 - **Domain repos** — mount the framework via `.agents/` and run agent sessions.
-  Framework files are gitignored and populated by `gh agentic mount`.
+  Framework files are gitignored and populated by `gh agentic upgrade`.
 - **AI agent** — runs inside domain repos for Phases 1+. Invoked by the human
   or by GitHub Actions workflows, not by the extension itself.
 
@@ -120,7 +119,7 @@ Upgrade: `gh extension upgrade agentic`
 
 **In scope:**
 - `gh agentic init` — environment initialisation wizard
-- `gh agentic mount` — framework mount and version management
+- `gh agentic upgrade` — framework install and version management
 - `gh agentic auth` — credential management (login, refresh, check)
 - `gh agentic check` / `gh agentic repair` — health checks with grouped output and auto-repair
 
