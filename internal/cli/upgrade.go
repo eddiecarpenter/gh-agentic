@@ -30,7 +30,7 @@ downgrade or test a release candidate).
 
 Only valid on the control plane repo. On a federated setup, changing the version
 here broadcasts it to domain repos via AGENTIC_FRAMEWORK_VERSION — they pick it
-up on the next 'gh agentic mount' or 'gh agentic check'.
+up via 'gh agentic check'.
 
 Blocked on federated domain repos — version governance flows through the
 control plane only.

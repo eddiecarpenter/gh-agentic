@@ -77,7 +77,7 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 	// Block if .agents/ already exists (framework already mounted).
 	if _, err := os.Stat(filepath.Join(root, ".agents")); err == nil && !force {
 		fmt.Fprintf(w, "  %s  Framework already mounted at .agents/\n", ui.StatusWarning.Render("⚠"))
-		fmt.Fprintf(w, "       → Run 'gh agentic mount <version>' to upgrade, or 'gh agentic init --force' to reinitialise\n\n")
+		fmt.Fprintf(w, "       → Run 'gh agentic upgrade <version>' to upgrade, or 'gh agentic init --force' to reinitialise\n\n")
 		return ErrAlreadyInitialised
 	}
 
