@@ -386,7 +386,7 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 				version, verr := mount.ReadAIVersionFromGit(deps.Root)
 				if verr != nil || version == "" {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  Cannot scaffold workflows: framework version unknown — run 'gh agentic mount' first",
+						fmt.Sprintf("  %s  Cannot scaffold workflows: framework version unknown — run 'gh agentic init' first",
 							ui.StatusDanger.Render("✗")))
 					result.Unrepaired++
 					continue
