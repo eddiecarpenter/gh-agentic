@@ -37,10 +37,10 @@ name: Agentic Pipeline
 # Framework mount: `.agents/` is tracked as a git submodule pointing at
 # eddiecarpenter/gh-agentic. Checkout steps use `submodules: recursive` to
 # populate it. Composite actions are reached via `./.agents/.github/actions/...`
-# (resolves into the submodule on domain repos; via the `.ai -> .` symlink in
-# gh-agentic itself). Local actions under `./.github/actions/` are always at
-# the current workflow ref, not the pinned submodule version — authoritative
-# for anything that must track the workflow rather than the framework release.
+# (resolves into the submodule on domain repos; via the `.agents -> .` symlink
+# in gh-agentic itself). The new local composite actions (setup-goose-env,
+# set-project-status, resolve-feature-branch) live in .github/actions/ and are
+# reached as .agents/.github/actions/ via the same symlink/submodule mechanism.
 #
 # `workflow_dispatch` inputs (pr_number, branch_name) reach this workflow
 # two ways: directly from a dispatch event on gh-agentic (via
@@ -127,7 +127,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Setup Goose environment
-        uses: ./.github/actions/setup-goose-env
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
           agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
@@ -235,7 +235,7 @@ jobs:
       - name: Set project status to 'In Development'
         if: success() && steps.push.outputs.name != ''
         continue-on-error: true
-        uses: ./.github/actions/set-project-status
+        uses: ./.agents/.github/actions/set-project-status
         with:
           project-pat: ${{ secrets.PROJECT_PAT }}
           project-id: ${{ vars.AGENTIC_PROJECT_ID }}
@@ -268,7 +268,7 @@ jobs:
       # github.token is sufficient — this is a read-only branches list query.
       - name: Resolve feature branch
         id: branch
-        uses: ./.github/actions/resolve-feature-branch
+        uses: ./.agents/.github/actions/resolve-feature-branch
         with:
           gh-token: ${{ github.token }}
           repo: ${{ github.repository }}
@@ -283,7 +283,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Setup Goose environment
-        uses: ./.github/actions/setup-goose-env
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
           agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
@@ -367,7 +367,7 @@ jobs:
       - name: Set project status to 'In Verification'
         if: success() && steps.in_verification.outputs.skipped != 'true'
         continue-on-error: true
-        uses: ./.github/actions/set-project-status
+        uses: ./.agents/.github/actions/set-project-status
         with:
           project-pat: ${{ secrets.PROJECT_PAT }}
           project-id: ${{ vars.AGENTIC_PROJECT_ID }}
@@ -402,7 +402,7 @@ jobs:
     steps:
       - name: Resolve feature branch
         id: branch
-        uses: ./.github/actions/resolve-feature-branch
+        uses: ./.agents/.github/actions/resolve-feature-branch
         with:
           gh-token: ${{ github.token }}
           repo: ${{ github.repository }}
@@ -417,7 +417,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Setup Goose environment
-        uses: ./.github/actions/setup-goose-env
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
           agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
@@ -567,7 +567,7 @@ jobs:
       - name: Set project status to 'In Review'
         if: success() && steps.open_pr.outputs.opened == 'true'
         continue-on-error: true
-        uses: ./.github/actions/set-project-status
+        uses: ./.agents/.github/actions/set-project-status
         with:
           project-pat: ${{ secrets.PROJECT_PAT }}
           project-id: ${{ vars.AGENTIC_PROJECT_ID }}
@@ -608,7 +608,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Setup Goose environment
-        uses: ./.github/actions/setup-goose-env
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
           agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
@@ -682,7 +682,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Setup Goose environment
-        uses: ./.github/actions/setup-goose-env
+        uses: ./.agents/.github/actions/setup-goose-env
         with:
           agentic-framework-version: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
           goose-version: ${{ vars.GOOSE_VERSION || 'latest' }}
@@ -822,7 +822,7 @@ jobs:
       - name: Set project status to 'Done'
         if: success() && steps.doneclose.outputs.skipped != 'true'
         continue-on-error: true
-        uses: ./.github/actions/set-project-status
+        uses: ./.agents/.github/actions/set-project-status
         with:
           project-pat: ${{ secrets.PROJECT_PAT }}
           project-id: ${{ vars.AGENTIC_PROJECT_ID }}
@@ -905,7 +905,7 @@ jobs:
       - name: Set parent requirement project status to 'Done'
         if: success() && steps.autoclose.outputs.no_parent != 'true' && steps.autoclose.outputs.still_open != 'true'
         continue-on-error: true
-        uses: ./.github/actions/set-project-status
+        uses: ./.agents/.github/actions/set-project-status
         with:
           project-pat: ${{ secrets.PROJECT_PAT }}
           project-id: ${{ vars.AGENTIC_PROJECT_ID }}
