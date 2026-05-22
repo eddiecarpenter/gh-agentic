@@ -39,6 +39,59 @@ Never claim an implementation is complete without all four passing.
 
 ---
 
+## Verification Gate (build + test)
+
+The build+test pass is a **mandatory gate** at two specific points in
+the pipeline. The same two commands run in both places:
+
+```bash
+go build ./...
+go test ./...
+```
+
+Both must exit zero. Any non-zero exit — compilation failure,
+failing test, vet failure surfaced through `go test`, race-detector
+data race report under `go test -race`, etc. — fails the gate.
+
+### Dev Session — last step before exit
+
+After the final task commit and before the workflow applies
+`in-verification`, the dev session **MUST** run the gate. On failure
+the dev session does NOT exit cleanly — it loops back to fix the
+breakage and re-runs the gate until it passes. Pushing a broken
+build or a failing test suite to the feature branch and signalling
+completion is forbidden.
+
+The dev session's exit block must state whether the gate ran and
+what its result was. An exit block that omits the gate result is
+itself a protocol violation.
+
+### Compliance Verify — first step before any other check
+
+The compliance verifier **MUST** run the gate before evaluating
+acceptance criteria, static analysis, or any other check. On
+failure the verifier emits an immediate FAIL verdict and
+short-circuits — ACs cannot be PASS while the build is broken or
+the tests fail, regardless of what code inspection suggests.
+
+The gate's run-and-result is the first item in the compliance
+report. Subsequent sections (static analysis, AC table) appear only
+when the gate passed.
+
+### When the toolchain is unavailable
+
+If `go` is not on the runner's PATH, the only correct verdict is
+**BLOCKED**, never PASS. Compliance MUST NOT infer build/test
+correctness from diff inspection alone. A BLOCKED verdict leaves
+the Feature at `in-verification` with a clear remediation ("install
+Go toolchain on the runner") — the human resolves before re-running.
+
+A PR opened against work whose AC9 was marked PASS by inspection
+rather than by an actual gate run is a verification-process bug —
+the rule above closes it.
+
+---
+
 ## Coding Standards
 
 - **Context propagation**: Every I/O function (DB, HTTP, Kafka) accepts `context.Context` as first parameter and propagates it. Never use `context.Background()` inside business logic — only at entry points.
