@@ -168,7 +168,11 @@ jobs:
           # session) can resolve the token from gh's config file rather than relying
           # on GH_TOKEN propagating through Goose's subprocess environment — which
           # is not guaranteed for all Goose/Claude Code versions.
-          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
+          # gh auth login --with-token refuses to write to config when GH_TOKEN is
+          # set in the environment ("first clear the value"), so we save and unset it.
+          _TOKEN="${GH_TOKEN}"
+          unset GH_TOKEN
+          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run feature-design recipe
         run: |
@@ -475,7 +479,11 @@ jobs:
           # session) can resolve the token from gh's config file rather than relying
           # on GH_TOKEN propagating through Goose's subprocess environment — which
           # is not guaranteed for all Goose/Claude Code versions.
-          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
+          # gh auth login --with-token refuses to write to config when GH_TOKEN is
+          # set in the environment ("first clear the value"), so we save and unset it.
+          _TOKEN="${GH_TOKEN}"
+          unset GH_TOKEN
+          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run dev-session recipe
         id: goose
@@ -662,7 +670,11 @@ jobs:
           # session) can resolve the token from gh's config file rather than relying
           # on GH_TOKEN propagating through Goose's subprocess environment — which
           # is not guaranteed for all Goose/Claude Code versions.
-          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
+          # gh auth login --with-token refuses to write to config when GH_TOKEN is
+          # set in the environment ("first clear the value"), so we save and unset it.
+          _TOKEN="${GH_TOKEN}"
+          unset GH_TOKEN
+          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run compliance-verify recipe
         run: |
@@ -914,7 +926,11 @@ jobs:
           # session) can resolve the token from gh's config file rather than relying
           # on GH_TOKEN propagating through Goose's subprocess environment — which
           # is not guaranteed for all Goose/Claude Code versions.
-          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
+          # gh auth login --with-token refuses to write to config when GH_TOKEN is
+          # set in the environment ("first clear the value"), so we save and unset it.
+          _TOKEN="${GH_TOKEN}"
+          unset GH_TOKEN
+          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run PR review recipe
         env:
@@ -1033,7 +1049,11 @@ jobs:
           # session) can resolve the token from gh's config file rather than relying
           # on GH_TOKEN propagating through Goose's subprocess environment — which
           # is not guaranteed for all Goose/Claude Code versions.
-          echo "${GH_TOKEN}" | gh auth login --with-token --hostname github.com
+          # gh auth login --with-token refuses to write to config when GH_TOKEN is
+          # set in the environment ("first clear the value"), so we save and unset it.
+          _TOKEN="${GH_TOKEN}"
+          unset GH_TOKEN
+          echo "${_TOKEN}" | gh auth login --with-token --hostname github.com
 
       - name: Run issue session recipe
         run: |
