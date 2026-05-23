@@ -111,6 +111,18 @@ func RepairWithProgress(deps Deps, setLabel func(string)) RepairResult {
 				result.Lines = append(result.Lines, strings.TrimRight(buf.String(), "\n"))
 				result.Repaired++
 			}
+		case "orphan-issues":
+			if setLabel != nil {
+				setLabel("Repairing: adding orphan issues to project...")
+			}
+			var buf bytes.Buffer
+			if err := repairOrphanIssues(&buf, deps); err != nil {
+				result.Lines = append(result.Lines, fmt.Sprintf("  %s  Could not add orphan issues to project: %v", ui.StatusDanger.Render("✗"), err))
+				result.Unrepaired++
+			} else {
+				result.Lines = append(result.Lines, strings.TrimRight(buf.String(), "\n"))
+				result.Repaired++
+			}
 		default:
 			result.Lines = append(result.Lines, fmt.Sprintf("  %s  %s — %s",
 				ui.StatusDanger.Render("✗"),
@@ -324,5 +336,50 @@ func repairFramework(w io.Writer, deps Deps) error {
 		return fmt.Errorf("mounting framework: %w", err)
 	}
 	fmt.Fprintf(w, "  %s  Framework mounted at %s\n", ui.StatusOK.Render("✓"), latest)
+	return nil
+}
+
+// repairOrphanIssues adds every open issue carrying a type label
+// (feature / requirement / task) that is missing from the agentic
+// project. Idempotent — the `addProjectV2ItemById` mutation returns
+// the existing item ID for an already-member issue.
+func repairOrphanIssues(w io.Writer, deps Deps) error {
+	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
+	if err != nil || projectID == "" {
+		return fmt.Errorf("AGENTIC_PROJECT_ID not set")
+	}
+	if deps.FetchOrphanIssues == nil {
+		return fmt.Errorf("no FetchOrphanIssues function configured")
+	}
+	if deps.AddIssueToProject == nil {
+		return fmt.Errorf("no AddIssueToProject function configured")
+	}
+
+	orphans, err := deps.FetchOrphanIssues(deps.Owner, deps.RepoName, projectID)
+	if err != nil {
+		return fmt.Errorf("fetching orphan issues: %w", err)
+	}
+	if len(orphans) == 0 {
+		fmt.Fprintf(w, "  %s  No orphan issues to add\n", ui.StatusOK.Render("✓"))
+		return nil
+	}
+
+	var failures []string
+	added := 0
+	for _, o := range orphans {
+		if err := deps.AddIssueToProject(projectID, o.NodeID); err != nil {
+			failures = append(failures, fmt.Sprintf("#%d (%v)", o.Number, err))
+			continue
+		}
+		fmt.Fprintf(w, "  %s  Added #%d to project: %s\n",
+			ui.StatusOK.Render("✓"), o.Number, o.Title)
+		added++
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("added %d, failed %d: %s",
+			added, len(failures), strings.Join(failures, "; "))
+	}
+	fmt.Fprintf(w, "  %s  %d orphan issue(s) added to project\n",
+		ui.StatusOK.Render("✓"), added)
 	return nil
 }

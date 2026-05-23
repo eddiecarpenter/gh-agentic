@@ -85,6 +85,14 @@ func testDeps(owner, repo string) Deps {
 			}
 			return "", nil
 		},
+		// Orphan-issue check defaults: empty list (no orphans). Tests that
+		// want to exercise the orphan-detection path override these locally.
+		FetchOrphanIssues: func(owner, repo, projectID string) ([]OrphanIssue, error) {
+			return nil, nil
+		},
+		AddIssueToProject: func(projectID, issueNodeID string) error {
+			return nil
+		},
 	}
 }
 
