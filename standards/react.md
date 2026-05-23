@@ -18,6 +18,29 @@ Never claim an implementation is complete without all three passing.
 
 ---
 
+## Verification Gate (build + test)
+
+The Verification Gate for React projects is identical to TypeScript —
+React is a TypeScript-superset standard. See
+[`standards/typescript.md` → Verification Gate](typescript.md#verification-gate-build--test)
+for the full contract:
+
+- The same gate commands apply: `npx tsc --noEmit`, `npm test`,
+  `npm run build`.
+- The dev-session runs the gate as its last step before exit; on
+  failure it loops back and never claims completion.
+- The compliance verifier runs the gate as its first step before any
+  AC evaluation; FAIL short-circuits, BLOCKED applies when the
+  toolchain is absent.
+- No FAIL-by-inspection, no PASS-by-inspection — BLOCKED is the only
+  correct verdict when the gate cannot actually run.
+
+Skills loading the gate definition may load either `standards/react.md`
+or `standards/typescript.md` for a React project — the gate contract is
+the same.
+
+---
+
 ## Component Rules
 
 - **Functional components only** — class components are prohibited
