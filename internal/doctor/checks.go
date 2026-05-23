@@ -63,23 +63,70 @@ type LabelDef struct {
 }
 
 // requiredPipelineLabels is the authoritative set of lifecycle labels that
-// every agentic repo must have. It covers all labels referenced by the
-// framework skills that are NOT already created by GitHub's defaults or by
-// `gh agentic init`.
+// every agentic repo must have. It covers every label that
+// `agentic-pipeline.yml` or a framework skill reads, applies, or removes —
+// the doctor check verifies each one exists in the repo and the doctor
+// repair creates any that are missing.
 //
-// Source: skills/requirement-scoping/SKILL.md, skills/feature-design/SKILL.md,
-// skills/trigger-design/SKILL.md, skills/trigger-implementation/SKILL.md,
-// and the project-template.json README — see issue #686.
+// Sources audited:
+//   - .github/workflows/agentic-pipeline.yml (every `if:` label gate,
+//     every `gh issue edit --add-label / --remove-label`).
+//   - skills/*/SKILL.md (every `apply-label add=[…], remove=[…]` call).
+//   - skills/trigger-*/SKILL.md (the canonical lifecycle transitions).
+//
+// Drift between this list and the workflow / skills is caught by
+// TestRequiredLabelsCoverPipelineReferences in checks_test.go — adding a
+// new label trigger anywhere without updating this list fails the build.
+//
+// Colour conventions used by the framework:
+//
+//	0075ca (blue)   — completed / ready states (ready-to-implement, designed,
+//	                  compliance-verified, done)
+//	d93f0b (orange) — active states (in-design, in-development, in-verification,
+//	                  in-review) and concurrency beacons (*-in-progress)
+//	e4e669 (yellow) — human-input flags (interactive-design,
+//	                  needs-interactive-design, needs-human-review,
+//	                  assigned-to-agent, needs-scoping)
+//	a2eeef (light)  — type labels (requirement, feature, task)
+//	c5def5 (pale)   — initial / sorting states (backlog, scoping)
 var requiredPipelineLabels = []LabelDef{
+	// --- Type labels ---
+	{
+		Name:        "requirement",
+		Color:       "a2eeef",
+		Description: "A business need captured as a Requirement issue",
+	},
+	{
+		Name:        "feature",
+		Color:       "a2eeef",
+		Description: "A scoped unit of work the pipeline can deliver as a single PR",
+	},
+	{
+		Name:        "task",
+		Color:       "a2eeef",
+		Description: "An ordered Task sub-issue under a Feature — one commit per task",
+	},
+	// --- Requirement lifecycle ---
+	{
+		Name:        "backlog",
+		Color:       "c5def5",
+		Description: "Captured but not yet scoped — initial state for Requirements and Features",
+	},
+	{
+		Name:        "scoping",
+		Color:       "c5def5",
+		Description: "Requirement is being scoped into one or more Features",
+	},
 	{
 		Name:        "ready-to-implement",
 		Color:       "0075ca",
-		Description: "Scoped and queued — waiting for Feature Design",
+		Description: "Requirement is scoped — its child Features are waiting for design triggers",
 	},
+	// --- Feature design states ---
 	{
-		Name:        "designed",
-		Color:       "0075ca",
-		Description: "Design complete — parked awaiting trigger to implementation",
+		Name:        "in-design",
+		Color:       "d93f0b",
+		Description: "Triggers automated Feature Design (Stage 3)",
 	},
 	{
 		Name:        "interactive-design",
@@ -89,27 +136,70 @@ var requiredPipelineLabels = []LabelDef{
 	{
 		Name:        "needs-interactive-design",
 		Color:       "e4e669",
-		Description: "Feature requires interactive design before automation",
+		Description: "Feature requires interactive design before automation can run",
 	},
 	{
-		Name:        "design-in-progress",
-		Color:       "d93f0b",
-		Description: "Feature Design session active — concurrency beacon",
+		Name:        "designed",
+		Color:       "0075ca",
+		Description: "Design complete — parked awaiting trigger to implementation",
 	},
+	// --- Feature implementation/verification states ---
 	{
-		Name:        "development-in-progress",
+		Name:        "in-development",
 		Color:       "d93f0b",
-		Description: "Dev Session active — concurrency beacon",
+		Description: "Triggers Dev Session (Stage 4) — feature is being implemented",
 	},
 	{
 		Name:        "in-verification",
 		Color:       "d93f0b",
-		Description: "Compliance Verify session active — awaiting AC check",
+		Description: "Triggers Compliance Verify (Stage 5) — awaiting AC check",
 	},
 	{
 		Name:        "compliance-verified",
 		Color:       "0075ca",
 		Description: "All acceptance criteria verified — ready for PR",
+	},
+	{
+		Name:        "in-review",
+		Color:       "d93f0b",
+		Description: "PR open and awaiting human review",
+	},
+	{
+		Name:        "done",
+		Color:       "0075ca",
+		Description: "Feature merged and complete — applied by Stage 7",
+	},
+	// --- Concurrency beacons (in-progress markers) ---
+	{
+		Name:        "design-in-progress",
+		Color:       "d93f0b",
+		Description: "Feature Design session active — concurrency beacon (clear with foreground-recovery)",
+	},
+	{
+		Name:        "development-in-progress",
+		Color:       "d93f0b",
+		Description: "Dev Session active — concurrency beacon (clear with foreground-recovery)",
+	},
+	{
+		Name:        "issue-in-progress",
+		Color:       "d93f0b",
+		Description: "Issue Session active — concurrency beacon (clear with foreground-recovery)",
+	},
+	// --- Human-flag / escalation labels ---
+	{
+		Name:        "assigned-to-agent",
+		Color:       "e4e669",
+		Description: "Triggers Issue Session (Stage 4c) — agent handles the issue",
+	},
+	{
+		Name:        "needs-scoping",
+		Color:       "e4e669",
+		Description: "Issue is too large for issue-session — redirected to scoping",
+	},
+	{
+		Name:        "needs-human-review",
+		Color:       "e4e669",
+		Description: "Compliance cycle cap reached — human review required before pipeline can restart",
 	},
 }
 
