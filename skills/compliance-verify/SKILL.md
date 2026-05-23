@@ -300,9 +300,52 @@ The gate's outcome is the first line of the compliance report
 and failed, that is a protocol violation — the gate gates
 everything.
 
-**Compliance MUST NOT mark "build and tests pass" as PASS by code
-inspection.** If the gate could not run, the verdict for that AC
-is BLOCKED, recorded as such, and the cycle does not advance.
+#### The no-inspection rule (symmetric)
+
+Two failure modes both trace to the same root cause — the agent
+deciding it knows the gate result without having actually run it.
+Both are forbidden:
+
+- **Compliance MUST NOT mark "build and tests pass" as PASS by
+  code inspection.** Inferring success from a clean-looking diff is
+  the trap that lets broken code reach a PR.
+
+- **Compliance MUST NOT mark "build and tests pass" as FAIL by code
+  inspection either.** This includes citing a CI run from another
+  branch, a closed PR, or any commit other than the current HEAD of
+  the feature branch as evidence. The reverse trap escalates
+  correct work to `needs-human-review` based on stale data.
+
+If the gate could not run on the current branch HEAD, the verdict
+for AC-9 (build + test) is **BLOCKED**, recorded as such, and the
+cycle does not advance. Three valid evidence shapes for AC-9:
+
+- **PASS** — every gate command exited zero; evidence cites the
+  commands run plus the current commit SHA (e.g. `go build ./...
+  → exit 0 on abc1234`).
+- **FAIL** — at least one gate command exited non-zero; evidence
+  reproduces the failure output (test name, error line) plus the
+  current commit SHA.
+- **BLOCKED** — the gate did not run (toolchain absent, standards
+  file missing); evidence reads `BLOCKED — <reason>` with a
+  remediation pointer. No fabricated CI run IDs, no synthetic
+  commit references.
+
+#### No proxy evidence
+
+The compliance recipe MUST NOT cite `gh run view <id>`,
+`gh pr checks <pr>`, SonarCloud results, or any other external CI
+artefact as evidence for AC-9 (or any AC) — unless the cited run
+executed on the **current HEAD of the feature branch**. CI runs
+from closed PRs are stale by definition; runs from sibling
+branches are irrelevant. The agent verifies AC-9 by running the
+gate itself, not by reading what some other system once did.
+
+If the agent invents a run ID, fabricates a commit SHA, or
+references a CI artefact it did not directly query for the current
+branch HEAD, that is a protocol violation and the verdict must be
+reverted to BLOCKED with the agent's hallucinated evidence
+discarded.
 
 ---
 
