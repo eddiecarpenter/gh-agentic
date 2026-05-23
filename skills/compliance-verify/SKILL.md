@@ -57,6 +57,40 @@ The skill is headless — invoked by workflow automation when the
   `<!-- compliance-feedback:v1 -->` and the label transition
   `in-verification` → `in-development` (via `PIPELINE_PAT`). This
   triggers a new dev-session run.
+- **On BLOCKED only:** a compliance-blocked comment with marker
+  `<!-- compliance-blocked:v1 -->` surfacing what the runner could
+  not do (e.g. "Go toolchain absent on PATH") and what the human
+  must do to unblock (install the toolchain, then re-toggle
+  `in-verification`). The Feature stays at `in-verification` —
+  there is NO label transition on BLOCKED, and BLOCKED does NOT
+  advance the 3-cycle cap.
+
+### AC-9 evidence shapes
+
+The compliance report's AC-9 row (and any AC whose verification IS
+the build+test gate) takes one of three concrete shapes. The agent
+MUST use one of these — synthesised evidence or external CI
+citations are forbidden (see Section A.0).
+
+**PASS:**
+```
+| AC-9 | ✅ PASS | go build ./... → exit 0 on <commit-sha>; go test ./... → exit 0 (<N> packages OK) on <commit-sha> |
+```
+
+**FAIL:**
+```
+| AC-9 | ❌ FAIL | go test ./... → exit 1 on <commit-sha>; TestFoo_Bar in internal/foo FAIL — "expected X, got Y" |
+```
+
+**BLOCKED:**
+```
+| AC-9 | 🟡 BLOCKED | go toolchain not on runner PATH; cannot evaluate. Remediation: install Go on runner image, re-trigger by toggling in-verification. |
+```
+
+Note the explicit absence of any CI run ID, PR number, or branch
+reference other than the current feature branch HEAD. The
+compliance recipe verifies directly or marks BLOCKED — there is no
+proxy path.
 
 A return value at exit:
 ```
@@ -300,9 +334,52 @@ The gate's outcome is the first line of the compliance report
 and failed, that is a protocol violation — the gate gates
 everything.
 
-**Compliance MUST NOT mark "build and tests pass" as PASS by code
-inspection.** If the gate could not run, the verdict for that AC
-is BLOCKED, recorded as such, and the cycle does not advance.
+#### The no-inspection rule (symmetric)
+
+Two failure modes both trace to the same root cause — the agent
+deciding it knows the gate result without having actually run it.
+Both are forbidden:
+
+- **Compliance MUST NOT mark "build and tests pass" as PASS by
+  code inspection.** Inferring success from a clean-looking diff is
+  the trap that lets broken code reach a PR.
+
+- **Compliance MUST NOT mark "build and tests pass" as FAIL by code
+  inspection either.** This includes citing a CI run from another
+  branch, a closed PR, or any commit other than the current HEAD of
+  the feature branch as evidence. The reverse trap escalates
+  correct work to `needs-human-review` based on stale data.
+
+If the gate could not run on the current branch HEAD, the verdict
+for AC-9 (build + test) is **BLOCKED**, recorded as such, and the
+cycle does not advance. Three valid evidence shapes for AC-9:
+
+- **PASS** — every gate command exited zero; evidence cites the
+  commands run plus the current commit SHA (e.g. `go build ./...
+  → exit 0 on abc1234`).
+- **FAIL** — at least one gate command exited non-zero; evidence
+  reproduces the failure output (test name, error line) plus the
+  current commit SHA.
+- **BLOCKED** — the gate did not run (toolchain absent, standards
+  file missing); evidence reads `BLOCKED — <reason>` with a
+  remediation pointer. No fabricated CI run IDs, no synthetic
+  commit references.
+
+#### No proxy evidence
+
+The compliance recipe MUST NOT cite `gh run view <id>`,
+`gh pr checks <pr>`, SonarCloud results, or any other external CI
+artefact as evidence for AC-9 (or any AC) — unless the cited run
+executed on the **current HEAD of the feature branch**. CI runs
+from closed PRs are stale by definition; runs from sibling
+branches are irrelevant. The agent verifies AC-9 by running the
+gate itself, not by reading what some other system once did.
+
+If the agent invents a run ID, fabricates a commit SHA, or
+references a CI artefact it did not directly query for the current
+branch HEAD, that is a protocol violation and the verdict must be
+reverted to BLOCKED with the agent's hallucinated evidence
+discarded.
 
 ---
 
@@ -498,6 +575,22 @@ collapsible findings table only.
       part of the AC's stated condition.
     - `FAIL` — no implementation change relevant to the AC, or the
       change exists but is incorrect, or a test for the AC fails.
+    - `BLOCKED` — the AC's verification depends on tooling the
+      runner does not have, and no proxy evidence is acceptable per
+      the no-inspection rule in Section A.0. The canonical example
+      is AC-9 (`go build ./...` and `go test ./...` pass) when Go is
+      absent from the runner. BLOCKED is NOT a softer FAIL — it is
+      a qualitatively different state that signals "this verdict
+      could not be reached", not "this AC is unmet". A BLOCKED
+      verdict does not cycle the Feature back to in-development
+      (see Section D step 18a).
+
+    **AC-9 (and other gate-derived ACs) special case.** When the
+    Feature's AC list includes "build + test pass" or any AC whose
+    verification IS the gate run, the verdict for that AC mirrors
+    the Section A.0 gate outcome verbatim: `gate=PASS` → AC PASS,
+    `gate=FAIL` → AC FAIL, `gate=BLOCKED` → AC BLOCKED. The agent
+    MUST NOT independently re-derive the verdict by inspection.
 
     **Evidence requirement (verification-procedure rule):** For each
     verdict, record specific evidence: file path(s), function/struct
@@ -524,17 +617,34 @@ collapsible findings table only.
 
     ```
     ac-verdict:
-      PASS  — all AC verdicts are PASS (or PASS (no-acs warning))
-      FAIL  — any AC verdict is PARTIAL or FAIL
+      PASS    — all AC verdicts are PASS (or PASS (no-acs warning))
+      FAIL    — any AC verdict is PARTIAL or FAIL
+      BLOCKED — any AC verdict is BLOCKED and no AC verdict is FAIL/PARTIAL
+                (i.e. all evaluable ACs pass; the only un-evaluated
+                ACs are BLOCKED on environment)
 
     overall-verdict:
-      PASS  — ac-verdict = PASS  AND  sa-verdict ∈ {PASS, WARN}
-      FAIL  — ac-verdict = FAIL  OR   sa-verdict = FAIL
+      PASS    — ac-verdict = PASS    AND  sa-verdict ∈ {PASS, WARN}  AND  gate=PASS
+      FAIL    — ac-verdict = FAIL    OR   sa-verdict = FAIL          (regardless of gate)
+      BLOCKED — gate=BLOCKED         OR   ac-verdict = BLOCKED
     ```
 
     Note: `<sa-verdict>` = `WARN` does NOT cause an overall FAIL.
     WARN findings appear in the report for developer awareness but do
     not block the PR.
+
+    **BLOCKED precedence:** if the gate is BLOCKED (toolchain absent),
+    the overall verdict is BLOCKED — Section B (static analysis) and
+    Section C (AC evaluation) MAY still have run and produced findings,
+    but the overall result is dominated by the missing gate. Render
+    the available findings in the report, but the verdict line and
+    label transitions follow the BLOCKED path (step 18a), not the
+    FAIL path (step 18).
+
+    A BLOCKED verdict does NOT count toward the 3-cycle cap. The cap
+    is intended for "the implementation has FAIL'd verification three
+    times without converging" — environment failures are categorically
+    different and must not exhaust the budget.
 
     Hold as `<verdict>`.
 
@@ -761,6 +871,40 @@ collapsible findings table only.
     ```
     Must contain `in-development`; must not contain `in-verification`.
 
+18a. **On BLOCKED — post the blocked comment and stop cycling.**
+
+    A BLOCKED verdict means the gate could not run (toolchain absent
+    on the runner, standards file missing) — not that the
+    implementation is wrong. The Feature stays at `in-verification`
+    so the human can resolve the environment issue and re-trigger;
+    it does NOT cycle to `in-development` (which would advance the
+    cycle counter against a problem the dev session cannot fix).
+
+    Skip step 17 (`compliance-feedback:v1`) entirely — there is no
+    actionable code feedback to post. Instead, post a distinct
+    `<!-- compliance-blocked:v1 -->` comment:
+
+    ```markdown
+    <!-- compliance-blocked:v1 -->
+
+    # Compliance Verification — BLOCKED
+
+    Feature #<N> could not be verified in this environment.
+
+    **Reason:** <one-line summary, e.g. "Go toolchain not on PATH for runner">
+    **Standards file:** `standards/<stack>.md` → `## Verification Gate (build + test)`
+    **Required:** install the listed toolchain on the runner image, then re-trigger by toggling `in-verification`.
+
+    Notes:
+    - This run did not count toward the 3-cycle cap.
+    - The feature implementation is unchanged on this branch.
+    - The `compliance-verified` label was NOT applied; AC-9 verdict
+      is BLOCKED until the gate can run.
+    ```
+
+    Post via `post-issue-comment`. Do NOT swap labels (`in-verification`
+    stays). Emit **Output F** (step 19) and exit.
+
 ---
 
 ### Section E — Closeout
@@ -814,7 +958,7 @@ collapsible findings table only.
     Warning: add an ## Acceptance Criteria section to future Features.
     ```
 
-    **Output D — Blocked:**
+    **Output D — Blocked (catastrophic error):**
     ```
     === Compliance Verify — Blocked ===
 
@@ -824,6 +968,28 @@ collapsible findings table only.
     Reason: <specific diagnosis>
 
     Feature #<N> stays at in-verification. Human intervention needed.
+    ```
+
+    **Output F — Blocked (environment / toolchain absent):**
+    ```
+    === Compliance Verify — Blocked (toolchain absent) ===
+
+    Feature #<N> could not be verified in this runner environment.
+
+    Reason: <one-line — e.g. "Go toolchain absent from PATH; gate cannot run">
+    Standards file: standards/<stack>.md → ## Verification Gate (build + test)
+
+    Results:
+      - Section A.0 gate: BLOCKED (commands not executable)
+      - Section B static analysis: <ran | skipped> — findings recorded but not authoritative
+      - Section C AC evaluation: ACs other than AC-9 evaluated normally;
+        AC-9 verdict BLOCKED
+      - compliance-blocked:v1 comment posted on issue #<N>
+      - No label transition; Feature stays at in-verification
+      - This run did NOT count toward the 3-cycle cap
+
+    Next: install the required toolchain on the runner image, then
+    re-trigger by toggling the in-verification label.
     ```
 
     **Output E — Cycle Cap:**
