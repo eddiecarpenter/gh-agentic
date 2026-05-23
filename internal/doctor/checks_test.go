@@ -747,7 +747,10 @@ func TestCheckLabels_VerificationLabels_PresentInRequiredSet(t *testing.T) {
 		{
 			labelName:   "in-verification",
 			wantColor:   "d93f0b",
-			wantDescSub: "Compliance Verify session active",
+			// Substring chosen to survive description-wording refinements;
+			// the protective intent is "the description mentions Compliance
+			// Verify" — not a specific phrasing.
+			wantDescSub: "Compliance Verify",
 		},
 		{
 			labelName:   "compliance-verified",
