@@ -57,6 +57,40 @@ The skill is headless — invoked by workflow automation when the
   `<!-- compliance-feedback:v1 -->` and the label transition
   `in-verification` → `in-development` (via `PIPELINE_PAT`). This
   triggers a new dev-session run.
+- **On BLOCKED only:** a compliance-blocked comment with marker
+  `<!-- compliance-blocked:v1 -->` surfacing what the runner could
+  not do (e.g. "Go toolchain absent on PATH") and what the human
+  must do to unblock (install the toolchain, then re-toggle
+  `in-verification`). The Feature stays at `in-verification` —
+  there is NO label transition on BLOCKED, and BLOCKED does NOT
+  advance the 3-cycle cap.
+
+### AC-9 evidence shapes
+
+The compliance report's AC-9 row (and any AC whose verification IS
+the build+test gate) takes one of three concrete shapes. The agent
+MUST use one of these — synthesised evidence or external CI
+citations are forbidden (see Section A.0).
+
+**PASS:**
+```
+| AC-9 | ✅ PASS | go build ./... → exit 0 on <commit-sha>; go test ./... → exit 0 (<N> packages OK) on <commit-sha> |
+```
+
+**FAIL:**
+```
+| AC-9 | ❌ FAIL | go test ./... → exit 1 on <commit-sha>; TestFoo_Bar in internal/foo FAIL — "expected X, got Y" |
+```
+
+**BLOCKED:**
+```
+| AC-9 | 🟡 BLOCKED | go toolchain not on runner PATH; cannot evaluate. Remediation: install Go on runner image, re-trigger by toggling in-verification. |
+```
+
+Note the explicit absence of any CI run ID, PR number, or branch
+reference other than the current feature branch HEAD. The
+compliance recipe verifies directly or marks BLOCKED — there is no
+proxy path.
 
 A return value at exit:
 ```
@@ -924,7 +958,7 @@ collapsible findings table only.
     Warning: add an ## Acceptance Criteria section to future Features.
     ```
 
-    **Output D — Blocked:**
+    **Output D — Blocked (catastrophic error):**
     ```
     === Compliance Verify — Blocked ===
 
@@ -934,6 +968,28 @@ collapsible findings table only.
     Reason: <specific diagnosis>
 
     Feature #<N> stays at in-verification. Human intervention needed.
+    ```
+
+    **Output F — Blocked (environment / toolchain absent):**
+    ```
+    === Compliance Verify — Blocked (toolchain absent) ===
+
+    Feature #<N> could not be verified in this runner environment.
+
+    Reason: <one-line — e.g. "Go toolchain absent from PATH; gate cannot run">
+    Standards file: standards/<stack>.md → ## Verification Gate (build + test)
+
+    Results:
+      - Section A.0 gate: BLOCKED (commands not executable)
+      - Section B static analysis: <ran | skipped> — findings recorded but not authoritative
+      - Section C AC evaluation: ACs other than AC-9 evaluated normally;
+        AC-9 verdict BLOCKED
+      - compliance-blocked:v1 comment posted on issue #<N>
+      - No label transition; Feature stays at in-verification
+      - This run did NOT count toward the 3-cycle cap
+
+    Next: install the required toolchain on the runner image, then
+    re-trigger by toggling the in-verification label.
     ```
 
     **Output E — Cycle Cap:**
