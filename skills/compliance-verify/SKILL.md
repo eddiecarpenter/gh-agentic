@@ -289,13 +289,43 @@ first action after Section A setup completes and the diff +
 acceptance-criteria list have been loaded.
 
 The rule lives in `standards/<stack-lowercase>.md` →
-`## Verification Gate (build + test)`. Load that section, execute
-the listed commands verbatim, in order, from the repo root. The
-same commands will have been run by the dev session as its
-last step before exit; this is a fresh re-run that re-validates the
-pushed branch is consistent with the build and test contract.
+`## Verification Gate (build + test)`. Multi-stack Features run the
+gate for **every stack the Feature touched**, not a project-wide
+single stack — see Stack Detection below. The same commands will
+have been run by the dev session as its last step before exit;
+this is a fresh re-run that re-validates the pushed branch is
+consistent with the build and test contract.
 
-**Possible outcomes:**
+**Stack detection.** The skill enumerates which language standards
+apply by looking at the diff against `origin/main`:
+
+```bash
+git diff --name-only origin/main...HEAD
+```
+
+Classify each changed path against the stack markers below. The
+set of distinct matches is `<stacks>`:
+
+| Stack | Marker (any of these matches) |
+|---|---|
+| `go` | path ends in `.go`, OR `go.mod`/`go.sum` touched |
+| `typescript` | path under a directory containing `package.json`, AND ends in `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`, OR `package.json`/`package-lock.json`/`tsconfig*.json` touched |
+| `react` | as `typescript` PLUS a JSX file under a project that imports React. Gate is identical to `typescript` — see `standards/react.md` |
+| `java` | path ends in `.java`, OR `pom.xml`/`build.gradle*` touched |
+
+Documentation-only changes (`.md`, `docs/**`) and workflow files
+(`.github/workflows/**`) do not select any gate. A pure-docs
+Feature falls through to "gate not applicable — continue to
+Section B" (the AC table in Section C still applies).
+
+If `vars.PROJECT_STACK` is set, it overrides detection — use only
+that stack. Useful for single-stack repos.
+
+For each detected stack, load `standards/<stack>.md` →
+`## Verification Gate (build + test)`, execute the listed commands
+verbatim, in order, from the repo root.
+
+**Per-stack outcomes** (aggregate across all stacks):
 
 1. **All commands exit zero** → record `gate=PASS` plus the
    captured command output summary into working memory. Continue

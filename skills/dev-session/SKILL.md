@@ -472,38 +472,77 @@ discipline at task granularity:
 
 ### Section C — Closeout
 
-15pre. **Build + test gate.** Before any closeout work, load
-    `standards/<stack-lowercase>.md` (where `<stack>` is the
-    project's primary language — `go`, `java`, `typescript`, etc.,
-    matching `vars.PROJECT_STACK` or the value in the project
-    config). Read the `## Verification Gate (build + test)` section
-    and execute the listed commands verbatim, in order, from the
-    repo root.
+15pre. **Build + test gate.** Before any closeout work, run the
+    verification gate for every stack the feature touched.
 
-    Outcomes:
+    **Stack detection (multi-stack aware).** The skill enumerates
+    which language standards apply to *this Feature's* changes —
+    not a project-wide setting — by looking at the diff against
+    `origin/main`:
 
-    - **All commands exit zero** → record `gate=PASS` in working
-      memory; continue to step 15a.
+    ```bash
+    git diff --name-only origin/main...HEAD
+    ```
+
+    Classify each changed path against the stack markers below.
+    The set of distinct matches is `<stacks>`:
+
+    | Stack | Marker (any of these matches) |
+    |---|---|
+    | `go` | path ends in `.go`, OR any `go.mod`/`go.sum` touched |
+    | `typescript` | path under a directory containing `package.json`, AND ends in `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`, OR `package.json`/`package-lock.json`/`tsconfig*.json` touched |
+    | `react` | as `typescript` PLUS file contains JSX (`.tsx`/`.jsx`) under a project that imports React. The `typescript` gate covers React too — see `standards/react.md`; the gate is identical. |
+    | `java` | path ends in `.java`, OR any `pom.xml`/`build.gradle*` touched |
+
+    Documentation-only changes (`.md`, `docs/**`) and workflow
+    files (`.github/workflows/**`) do not select any gate — they
+    are not testable by the language toolchain. A diff that is
+    pure docs falls through to "no gate applies for this feature
+    — continue to step 15a" (still requires the AC coverage gate;
+    docs Features must still satisfy their ACs).
+
+    If `vars.PROJECT_STACK` is set, it overrides the detection —
+    use only that stack. Useful for single-stack repos where
+    detection adds no value, or for testing.
+
+    **For each stack in `<stacks>`:**
+
+    1. Load `standards/<stack>.md` and find the
+       `## Verification Gate (build + test)` section.
+    2. Execute the listed commands verbatim, in order, from the
+       repo root.
+    3. Record the per-stack outcome.
+
+    **Per-stack outcomes:**
+
+    - **All commands exit zero** → record `<stack>: PASS` in
+      working memory.
     - **Any command exits non-zero** → the dev session has produced
       broken code. Do NOT exit. Loop back: read the failure output,
       identify the offending change (most often the task most
       recently committed), and fix it. Commit the fix with the
       task-N-of-M format (a fix commit counts as a continuation of
-      the task whose work it corrects). Re-run the gate. Repeat
-      until `gate=PASS`. The dev session exits only on a clean gate.
-    - **Toolchain unavailable** (e.g. `go` not on PATH) → raise
-      `VERIFICATION_TOOLCHAIN_MISSING` (`ERROR`) and exit Output D.
-      The dev session never claims completion without an actual
-      gate run; downstream compliance will surface the same gap.
+      the task whose work it corrects). Re-run the gate (all
+      stacks). Repeat until every stack reports PASS. The dev
+      session exits only on a clean gate across every detected
+      stack.
+    - **Toolchain unavailable** (e.g. `go` not on PATH for the `go`
+      stack, `node` not on PATH for the `typescript` stack) →
+      raise `VERIFICATION_TOOLCHAIN_MISSING` (`ERROR`) and exit
+      Output D. The dev session never claims completion without an
+      actual gate run; downstream compliance will surface the same
+      gap.
 
-    No standards file exists for the active stack → raise
+    **No standards file** for a detected stack (no
+    `standards/<stack>.md` exists, or the file has no
+    `## Verification Gate` section) → raise
     `VERIFICATION_GATE_UNDEFINED` (`ERROR`) and exit Output D.
     Adding the language to `standards/` is a framework-level fix,
     not work the dev session can route around.
 
-    Record the gate's final outcome (`gate=PASS` plus the command
-    output line summary) in working memory for inclusion in the
-    exit block (step 18).
+    Record every per-stack outcome in working memory for inclusion
+    in the exit block (step 18). The exit block lists each stack
+    + its commands + its result.
 
 15a. **Acceptance-criteria coverage gate.** Before the closeout
     label flips, verify that every Feature acceptance criterion
@@ -591,9 +630,9 @@ discipline at task granularity:
       - <K> task issue(s) closed: #<T_a>, #<T_b>, ...
       - All <M> tasks for #<N> are closed
 
-    Verification gate: PASS
-      - go build ./... ✓
-      - go test ./... ✓ (or the stack-equivalent commands)
+    Verification gate: PASS (stacks: <stack-1>[, <stack-2>...])
+      - <stack-1>: <command-1> ✓ ; <command-2> ✓ ; ...
+      - <stack-2>: <command-1> ✓ ; <command-2> ✓ ; ...
 
     Blocked: none
 
@@ -603,7 +642,12 @@ discipline at task granularity:
     The "Verification gate" line is mandatory in Output A and
     Output B. Omitting it is a protocol violation per
     `standards/<stack>.md` → Verification Gate. The exact commands
-    shown match what was actually run in step 15pre.
+    shown match what was actually run in step 15pre, per stack.
+    For multi-stack Features (e.g. a feature touching both Go and
+    TypeScript), one line per stack appears. A Features that
+    touches only docs / workflow files may show "Verification
+    gate: NOT APPLICABLE (no stacks touched)" — but step 15pre's
+    AC coverage gate still ran.
 
     **Output B — Resumed and completed:**
     ```

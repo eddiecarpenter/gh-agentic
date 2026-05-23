@@ -49,6 +49,79 @@ npx prettier --write .
 
 ---
 
+## Verification Gate (build + test)
+
+The build+test pass is a **mandatory gate** at two specific points in
+the pipeline. The same three commands run in both places:
+
+```bash
+npx tsc --noEmit
+npm test
+npm run build
+```
+
+`tsc --noEmit` catches type errors without producing emitted files;
+`npm test` runs the project's test command (project must define a
+`test` script in `package.json`); `npm run build` exercises the
+actual production-build path (`vite build`, `tsc -b`, or whatever
+`scripts.build` resolves to) — a project that type-checks and tests
+clean but fails to bundle is not shippable.
+
+All three must exit zero. Any non-zero exit — type error, failing
+test, bundler error, missing `build`/`test` script — fails the gate.
+
+If `package.json` has no `test` script (genuinely no tests in the
+project — rare, but possible for a CLI wrapper or a fresh scaffold),
+the gate is satisfied when `tsc --noEmit` and `npm run build` exit
+zero AND the standards file's "Testing" section has confirmed the
+project's testing strategy with the human. An empty
+`scripts.test` left at the npm-init default (`"test": "echo \"Error:
+no test specified\" && exit 1"`) is NOT acceptable — it must be a
+real command or removed.
+
+### Dev Session — last step before exit
+
+After the final task commit and before the workflow applies
+`in-verification`, the dev session **MUST** run the gate. On failure
+the dev session does NOT exit cleanly — it loops back to fix the
+breakage and re-runs the gate until it passes. Pushing broken
+TypeScript, type errors, failing tests, or a build that doesn't
+bundle to the feature branch and signalling completion is forbidden.
+
+The dev session's exit block must state whether the gate ran and
+what its result was. An exit block that omits the gate result is
+itself a protocol violation.
+
+### Compliance Verify — first step before any other check
+
+The compliance verifier **MUST** run the gate before evaluating
+acceptance criteria, static analysis, or any other check. On
+failure the verifier emits an immediate FAIL verdict and
+short-circuits — ACs cannot be PASS while `tsc` errors, tests fail,
+or the bundle is broken, regardless of what code inspection
+suggests.
+
+The gate's run-and-result is the first item in the compliance
+report. Subsequent sections (static analysis, AC table) appear only
+when the gate passed.
+
+### When the toolchain is unavailable
+
+If `node`/`npm` is not on the runner's PATH (or `node_modules/` is
+not installed and `npm ci` fails), the only correct verdict is
+**BLOCKED**, never PASS or FAIL. Compliance MUST NOT infer
+build/test correctness from diff inspection alone — that is the
+same overconfidence trap whether the inspection concludes pass or
+fail. A BLOCKED verdict leaves the Feature at `in-verification`
+with a clear remediation ("install Node.js and run `npm ci`") —
+the human resolves before re-running.
+
+A PR opened against work whose build+test AC was marked PASS by
+inspection rather than by an actual gate run is a
+verification-process bug — the rule above closes it.
+
+---
+
 ## Dependency Management
 
 ```bash
