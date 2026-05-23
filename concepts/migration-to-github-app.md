@@ -65,7 +65,7 @@ Before starting the migration, confirm:
 
 The 8 steps below are the cutover. Run them in order. Each step has an
 exact command (where applicable) and a success criterion to tick off before
-moving on. **Do not** run `gh agentic mount <new-version>` until steps 1–3
+moving on. **Do not** run `gh agentic upgrade <new-version>` until steps 1–3
 are complete — doing so will break your pipeline on the next workflow run.
 
 ### 1. Install the agentic GitHub App on the target repo
@@ -136,7 +136,7 @@ With the App installed and credentials configured, mount the new framework
 version that contains the workflow changes:
 
 ```bash
-gh agentic mount <new-version>
+gh agentic upgrade <new-version>
 ```
 
 This overwrites `.agents/` in the domain repo with the new framework, including
@@ -284,7 +284,7 @@ release cycle after the App ships. During that window, a human operator
 can manually reinstate the PAT model on a domain repo by reversing steps
 5, 7, and 8 (re-adding the collaborator, re-creating the `GOOSE_AGENT_PAT`
 secret from a freshly generated PAT, and re-creating the `AGENT_USER`
-variable) and mounting the prior framework version with `gh agentic mount
+variable) and installing the prior framework version with `gh agentic upgrade
 <prior-version>`. This is a manual operation with no framework-side
 automation and is supported only for genuine emergencies.
 
@@ -310,7 +310,7 @@ issues, or PRs are produced. The failure is loud, not silent — which is
 the intended behaviour.
 
 Recovery: complete steps 1–3 (install the App, set the credentials, re-run
-`gh agentic mount` if needed to realign `.agents/` with the installed App) and
+`gh agentic upgrade` if needed to realign `.agents/` with the installed App) and
 re-trigger the failed workflow. No data is lost; the pipeline resumes
 from the failed run.
 

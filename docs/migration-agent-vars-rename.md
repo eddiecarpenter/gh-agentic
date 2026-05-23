@@ -36,7 +36,7 @@ old names is silently ignored.
 
 ## Required action — domain repos
 
-Run **before** running `gh agentic mount <new-version>`:
+Run **before** running `gh agentic upgrade <new-version>`:
 
 1. Read the current values you have set:
 
@@ -63,10 +63,10 @@ Run **before** running `gh agentic mount <new-version>`:
    gh variable set AGENT_MODEL    --org <org> --body "<value>"
    ```
 
-3. Mount the new framework version:
+3. Install the new framework version:
 
    ```bash
-   gh agentic mount <new-version>
+   gh agentic upgrade <new-version>
    ```
 
 4. Optionally remove the old variables once every consumer has been upgraded:

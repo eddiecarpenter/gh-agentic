@@ -159,9 +159,9 @@ func TestExtractFeatureIssueNumber(t *testing.T) {
 	script := scriptByName(t, "feature-complete", "Extract feature issue number")
 
 	cases := []struct {
-		name    string
-		branch  string
-		want    string
+		name   string
+		branch string
+		want   string
 	}{
 		{"simple", "feature/42-add-login", "42"},
 		{"multi-word", "feature/123-some-complex-description", "123"},
@@ -341,10 +341,10 @@ func TestParseParentRequirement(t *testing.T) {
 	script := scriptByName(t, "feature-complete", "Parse parent requirement")
 
 	cases := []struct {
-		name        string
-		issueBody   string
-		ghLabels    string // label list returned by `gh issue view PARENT --json labels`
-		wantParent  string
+		name       string
+		issueBody  string
+		ghLabels   string // label list returned by `gh issue view PARENT --json labels`
+		wantParent string
 	}{
 		{
 			name:       "closes-N",
@@ -374,7 +374,7 @@ func TestParseParentRequirement(t *testing.T) {
 			name:       "not-a-requirement-label",
 			issueBody:  "Closes #42",
 			ghLabels:   "bug\nfeature", // no "requirement" label on parent
-			wantParent: "",              // step exits cleanly without writing requirement_number
+			wantParent: "",             // step exits cleanly without writing requirement_number
 		},
 	}
 

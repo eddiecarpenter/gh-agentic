@@ -288,7 +288,7 @@ func checkFrameworkMounted(deps Deps) CheckResult {
 			Name:        "framework",
 			Status:      CheckFail,
 			Message:     "framework not mounted at .agents/",
-			Remediation: "run 'gh agentic mount <version>'",
+			Remediation: "run 'gh agentic init'",
 		}
 	}
 	return CheckResult{
@@ -554,7 +554,7 @@ func checkFrameworkVersionSync(deps Deps) CheckResult {
 			Name:        "framework-version-sync",
 			Status:      CheckFail,
 			Message:     fmt.Sprintf("framework out of sync — local: %s, control plane: %s", localVersion, cpVersion),
-			Remediation: "run 'gh agentic mount' to sync to the control plane version",
+			Remediation: "run 'gh agentic repair' to sync to the control plane version",
 		}
 	}
 

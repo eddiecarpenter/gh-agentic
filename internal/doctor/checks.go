@@ -15,16 +15,16 @@ import (
 
 // CheckDeps holds injectable dependencies for check functions.
 type CheckDeps struct {
-	Root         string
-	RepoFullName string
-	Owner        string
-	RepoName     string
-	OwnerType    string
-	Topology     string // "single", "federated-cp", "federated-domain", "" (unknown)
+	Root                string
+	RepoFullName        string
+	Owner               string
+	RepoName            string
+	OwnerType           string
+	Topology            string // "single", "federated-cp", "federated-domain", "" (unknown)
 	ProjectID           string // value of AGENTIC_PROJECT_ID if set
 	ProjectIDReadFailed bool   // true when AGENTIC_PROJECT_ID could not be read due to token permission error
-	Run          auth.RunCommandFunc
-	ReadCreds    auth.ReadCredentialsFunc
+	Run                 auth.RunCommandFunc
+	ReadCreds           auth.ReadCredentialsFunc
 	// FetchProjectTitle is used by checkProjectReachability to confirm the
 	// configured AGENTIC_PROJECT_ID resolves via the GraphQL API. Tests
 	// substitute a fake; production wires project.DefaultFetchProjectTitle.
@@ -338,7 +338,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "claude-md", Status: Fail,
 			Message:     "CLAUDE.md not found",
-			Remediation: "Run 'gh agentic mount'",
+			Remediation: "Run 'gh agentic repair'",
 		})
 	}
 
@@ -351,7 +351,7 @@ func checkAgentFiles(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name: "agents-md", Status: Fail,
 			Message:     "AGENTS.md not found",
-			Remediation: "Run 'gh agentic mount'",
+			Remediation: "Run 'gh agentic repair'",
 		})
 	}
 
@@ -426,7 +426,7 @@ func checkWorkflows(deps CheckDeps) Group {
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Fail,
 				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, mount.TrimVPrefix(version)),
-				Remediation: "Run 'gh agentic mount'",
+				Remediation: "Run 'gh agentic repair' to update workflow versions",
 			})
 		}
 	}

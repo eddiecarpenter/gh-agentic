@@ -284,7 +284,7 @@ mechanism mirrors the `.agents/` mount used by the framework itself.
 | Gitignored in domain repo | Yes | Yes |
 | Read-only in domain repo | Yes — never edit in place | Yes — never edit in place |
 | Source | `eddiecarpenter/gh-agentic` at a pinned version | The control plane repo, `main` branch |
-| Populated by | `gh agentic mount <version>` | `gh agentic project join` (initial) and `gh agentic project sync` (refresh) |
+| Populated by | `gh agentic upgrade <version>` | `gh agentic project join` (initial) and `gh agentic project sync` (refresh) |
 | Refresh cadence | Manual — deliberate upgrade | Automatic on session-init (`git pull`) |
 | Writes go where | PRs to `gh-agentic` | PRs to the control plane repo |
 | Reflects | A chosen framework version | Currently-reviewed CP state |

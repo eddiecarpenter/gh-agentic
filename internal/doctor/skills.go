@@ -55,7 +55,7 @@ var reservedSkillNames = map[string]bool{
 // can live. The first candidate that exists wins.
 var skillsDirCandidates = []string{
 	"skills",         // local skills (repo root skills/)
-	".agents/skills", // framework skills mounted via gh agentic mount
+	".agents/skills", // framework skills synced via gh agentic repair
 }
 
 // catalogueName is the canonical CATALOGUE.md filename at the repo root.

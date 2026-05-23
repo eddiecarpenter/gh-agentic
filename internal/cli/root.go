@@ -43,7 +43,7 @@ instruction files.
 steps.
 
 %s installs or changes the framework version for this repo (also handles
-first-time install and migration from the legacy gitignored mount).
+first-time install and migration from the legacy setup).
 
 %s manages ongoing project membership — create, join, switch, unlink.
 

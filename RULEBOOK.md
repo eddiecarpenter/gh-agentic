@@ -217,15 +217,15 @@ Opt-out is recorded the same way: `Reuse: opt-out — <reason>`.
 The framework files in this directory (RULEBOOK.md, `skills/`, `standards/`, `concepts/`,
 `recipes/`) are managed exclusively by the `eddiecarpenter/gh-agentic` repo.
 
-In domain repos, this framework is mounted as `.agents/` via `gh agentic mount <version>`.
+In domain repos, this framework is mounted as `.agents/` via `gh agentic upgrade <version>`.
 **Never modify any framework file directly in a domain repo** — they are read-only.
-The mount is gitignored and will be overwritten on the next `gh agentic mount`.
+The mount is gitignored and will be refreshed by `gh agentic repair` (to sync) or `gh agentic upgrade <version>` (to change version).
 
 If a change to the global protocol or standards is needed:
 1. Clone `eddiecarpenter/gh-agentic` locally
 2. Make and test the changes there
 3. Push and raise a PR for human review
-4. Once merged and tagged, run `gh agentic mount <new-version>` in domain repos to update
+4. Once merged and tagged, run `gh agentic upgrade <new-version>` in domain repos to update
 
 For project-specific overrides, add them to `LOCALRULES.md` at the domain repo root —
 that is what it is for. `LOCALRULES.md` is optional: if it does not exist, no local

@@ -12,7 +12,7 @@ The extension serves two roles:
    credentials, and run health checks.
 2. **Framework source** — the canonical source for the AI-Native Delivery Framework
    files (`skills/`, `standards/`, `concepts/`, `recipes/`). Domain repos mount
-   these files at `.agents/` via `gh agentic mount`.
+   these files at `.agents/` via `gh agentic upgrade`.
 
 ---
 
@@ -27,7 +27,7 @@ gh-agentic/
 │   ├── cli/
 │   │   ├── root.go              ← root command, version flag
 │   │   ├── init.go              ← `gh agentic init` subcommand
-│   │   ├── mount.go             ← `gh agentic mount` subcommand
+│   │   ├── mount.go             ← `gh agentic mount` subcommand (internal; superseded by upgrade/repair for user flows)
 │   │   ├── auth.go              ← `gh agentic auth` subcommand (login, refresh, check)
 │   │   ├── check.go             ← `gh agentic check` subcommand
 │   │   ├── repair.go            ← `gh agentic repair` subcommand
@@ -87,11 +87,12 @@ template files directly.
    single code path that answers "what version should I mount?".
 
 2. **`.agents/` directory** — The mounted framework. This directory is **gitignored**
-   and populated on demand by `gh agentic mount`. It is not committed. The
-   cloned framework's own `.git` metadata records the exact tag — that is
-   the local source of truth after the clone runs.
+   and populated on demand by `gh agentic upgrade` (to change version) or
+   `gh agentic repair` (to resync). It is not committed. The cloned framework's
+   own `.git` metadata records the exact tag — that is the local source of truth
+   after the clone runs.
 
-3. **Fetch mechanism** — `gh agentic mount` downloads the framework via
+3. **Fetch mechanism** — `gh agentic upgrade` downloads the framework via
    `git clone --depth 1 --branch <version>` against the `eddiecarpenter/gh-agentic`
    release at the pinned version. It extracts framework files (`skills/`,
    `standards/`, `concepts/`, `recipes/`, `RULEBOOK.md`) into `.agents/`.
@@ -183,8 +184,7 @@ available to CI runners without manual configuration.
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.agents/` |
-| `gh agentic upgrade` | Change the framework version for the whole federation (control plane only) |
+| `gh agentic upgrade [version]` | Install or change the framework version at `.agents/` (control plane only) |
 | `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
 | `gh agentic auth` | Manage Claude credentials used by the agent pipeline (login, refresh, check) |

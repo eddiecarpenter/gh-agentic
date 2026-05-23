@@ -333,6 +333,51 @@ func TestCheckAgentFiles_MissingOptional(t *testing.T) {
 	}
 }
 
+// TestCheckAgentFiles_MissingMandatory_NoStaleMount is the AC-8 regression guard
+// for the agent-files check. It verifies that when CLAUDE.md or AGENTS.md are
+// absent, the Remediation hint does not reference the legacy 'gh agentic mount'
+// command. The expected hint is 'gh agentic repair'.
+func TestCheckAgentFiles_MissingMandatory_NoStaleMount(t *testing.T) {
+	root := t.TempDir()
+	// Deliberately omit CLAUDE.md and AGENTS.md so both fail checks fire.
+
+	deps := CheckDeps{Root: root}
+	g := checkAgentFiles(deps)
+
+	for _, r := range g.Results {
+		if r.Status == Fail && strings.Contains(r.Remediation, "gh agentic mount") {
+			t.Errorf("check %q remediation contains stale 'gh agentic mount': %q", r.Name, r.Remediation)
+		}
+	}
+}
+
+// TestCheckWorkflows_VersionMismatch_NoStaleMount is the AC-8 regression guard
+// for the workflow-version-mismatch path. It verifies the Remediation hint
+// references 'gh agentic repair', not the legacy 'gh agentic mount'.
+func TestCheckWorkflows_VersionMismatch_NoStaleMount(t *testing.T) {
+	root := t.TempDir()
+	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.0.0")
+
+	workflowsDir := filepath.Join(root, ".github", "workflows")
+	_ = os.MkdirAll(workflowsDir, 0o755)
+	_ = os.WriteFile(filepath.Join(workflowsDir, "agentic-pipeline.yml"),
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v1.0.0"), 0o644)
+
+	deps := CheckDeps{Root: root}
+	g := checkWorkflows(deps)
+
+	for _, r := range g.Results {
+		if r.Status == Fail && strings.Contains(r.Message, "mismatch") {
+			if strings.Contains(r.Remediation, "gh agentic mount") {
+				t.Errorf("workflow version-mismatch remediation contains stale 'gh agentic mount': %q", r.Remediation)
+			}
+			if !strings.Contains(r.Remediation, "gh agentic repair") {
+				t.Errorf("workflow version-mismatch remediation should reference 'gh agentic repair', got: %q", r.Remediation)
+			}
+		}
+	}
+}
+
 func TestReport_Render_AllPass(t *testing.T) {
 	report := &Report{
 		Groups: []Group{

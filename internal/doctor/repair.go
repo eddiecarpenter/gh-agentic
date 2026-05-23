@@ -288,8 +288,8 @@ var pendingDescriptions = map[string]struct {
 	"RUNNER_LABEL":   {"GitHub Actions runner label", ""}, // resolved via select in cli layer
 	"AGENT_PROVIDER": {"The LLM provider the agent will use", "claude-code"},
 	"AGENT_MODEL":    {"Agent model override", "default"},
-	"PROJECT_PAT":   {"Personal Access Token for Projects v2 mutations (stored as a secret)", ""},
-	"PIPELINE_PAT":  {"Fine-grained PAT for pipeline trigger operations — Issues: write, Pull requests: write, Secrets: write (stored as a secret)", ""},
+	"PROJECT_PAT":    {"Personal Access Token for Projects v2 mutations (stored as a secret)", ""},
+	"PIPELINE_PAT":   {"Fine-grained PAT for pipeline trigger operations — Issues: write, Pull requests: write, Secrets: write (stored as a secret)", ""},
 }
 
 // workflowRepairNames is the set of CheckResult names produced by checkWorkflows
@@ -386,7 +386,7 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 				version, verr := mount.ReadAIVersionFromGit(deps.Root)
 				if verr != nil || version == "" {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  Cannot scaffold workflows: framework version unknown — run 'gh agentic mount' first",
+						fmt.Sprintf("  %s  Cannot scaffold workflows: framework version unknown — run 'gh agentic init' first",
 							ui.StatusDanger.Render("✗")))
 					result.Unrepaired++
 					continue

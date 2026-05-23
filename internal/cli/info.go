@@ -178,7 +178,7 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 		if data.localVersion == data.remoteVersion {
 			data.syncStatus = "  " + ui.StatusOK.Render("✓ in sync")
 		} else {
-			data.syncStatus = "  " + ui.StatusWarning.Render("⚠ run 'gh agentic mount' to sync")
+			data.syncStatus = "  " + ui.StatusWarning.Render("⚠ run 'gh agentic check' to inspect, then 'gh agentic repair' to sync")
 		}
 	}
 

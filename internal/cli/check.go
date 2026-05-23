@@ -111,7 +111,7 @@ func renderCheckSections(w io.Writer, isFrameworkSource bool, projectReport *pro
 	if pipelineSkipped {
 		fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Pipeline"))
 		fmt.Fprintln(w, "  "+ui.Divider(48))
-		fmt.Fprintf(w, "  %s  Skipped — framework mount is out of sync; run 'gh agentic mount' first\n", ui.StatusWarning.Render("⚠"))
+		fmt.Fprintf(w, "  %s  Skipped — framework is out of sync; run 'gh agentic repair' to sync\n", ui.StatusWarning.Render("⚠"))
 	} else if pipelineReport != nil {
 		for _, g := range pipelineReport.Groups {
 			doctor.RenderGroup(w, g)
@@ -190,7 +190,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 					// with the authoritative version, pipeline-side checks
 					// (skill frontmatter, catalogue, workflow versions) will
 					// generate noise against a stale `.agents/`. Stop here and
-					// direct the user to `gh agentic mount` first.
+					// direct the user to `gh agentic repair`.
 					if projectFrameworkOutOfSync(projectReport) {
 						pipelineSkipped = true
 						return nil
@@ -220,20 +220,20 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 				}
 
 				pipelineCheckDeps := doctor.CheckDeps{
-					Root:                root,
-					RepoFullName:        info.FullName,
-					Owner:               info.Owner,
-					RepoName:            info.RepoName,
-					OwnerType:           info.OwnerType,
-					Topology:            topology,
-					ProjectID:           projectID,
-					ProjectIDReadFailed: projectIDReadFailed,
-					Run:                 deps.run,
-					ReadCreds:           deps.readCreds,
+					Root:                     root,
+					RepoFullName:             info.FullName,
+					Owner:                    info.Owner,
+					RepoName:                 info.RepoName,
+					OwnerType:                info.OwnerType,
+					Topology:                 topology,
+					ProjectID:                projectID,
+					ProjectIDReadFailed:      projectIDReadFailed,
+					Run:                      deps.run,
+					ReadCreds:                deps.readCreds,
 					FetchProjectTitle:        project.DefaultFetchProjectTitle,
-					FetchProjectFields:        project.DefaultFetchProjectFields,
-					UpdateStatusFieldOptions:  project.DefaultUpdateStatusFieldOptions,
-					FrameworkSource:           isFrameworkSource,
+					FetchProjectFields:       project.DefaultFetchProjectFields,
+					UpdateStatusFieldOptions: project.DefaultUpdateStatusFieldOptions,
+					FrameworkSource:          isFrameworkSource,
 				}
 				pipelineReport = doctor.RunAllChecksWithProgress(pipelineCheckDeps, setLabel)
 				return nil

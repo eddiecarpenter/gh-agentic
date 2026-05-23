@@ -30,7 +30,6 @@ Template: eddiecarpenter/ai-native-delivery
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic mount [version]` | Mount the AI-Native Delivery Framework at `.agents/` |
 | `gh agentic upgrade` | Change the framework version (control plane only) |
 | `gh agentic project` | Manage project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
@@ -96,7 +95,7 @@ Update command:
 gh variable set AGENTIC_FRAMEWORK_VERSION --repo eddiecarpenter/gh-agentic --body "<new-version>"
 ```
 
-This applies to this repo only because `gh-agentic` is its own framework source — a circular dependency unique to the control-plane-of-itself arrangement. Other domain repos get the version from the control plane via `gh agentic mount` and do not need this step.
+This applies to this repo only because `gh-agentic` is its own framework source — a circular dependency unique to the control-plane-of-itself arrangement. Other domain repos get the version from the control plane via `gh agentic check` / `gh agentic repair` and do not need this step.
 
 ## Migration
 

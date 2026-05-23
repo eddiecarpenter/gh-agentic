@@ -58,43 +58,43 @@ type pipelineWorkflow struct {
 // universal commands present on every Linux runner — bare-image baseline.
 // Anything not in this set must be installed by a prior step.
 var universalCommands = map[string]bool{
-	"bash":  true,
-	"sh":    true,
-	"curl":  true,
-	"wget":  true,
-	"jq":    true,
-	"git":   true,
-	"sed":   true,
-	"grep":  true,
-	"awk":   true,
-	"tr":    true,
-	"cat":   true,
-	"echo":  true,
-	"head":  true,
-	"tail":  true,
-	"cut":   true,
-	"sort":  true,
-	"uniq":  true,
-	"mkdir": true,
-	"rm":    true,
-	"cp":    true,
-	"mv":    true,
-	"chmod": true,
+	"bash":   true,
+	"sh":     true,
+	"curl":   true,
+	"wget":   true,
+	"jq":     true,
+	"git":    true,
+	"sed":    true,
+	"grep":   true,
+	"awk":    true,
+	"tr":     true,
+	"cat":    true,
+	"echo":   true,
+	"head":   true,
+	"tail":   true,
+	"cut":    true,
+	"sort":   true,
+	"uniq":   true,
+	"mkdir":  true,
+	"rm":     true,
+	"cp":     true,
+	"mv":     true,
+	"chmod":  true,
 	"base64": true,
-	"date":  true,
-	"sleep": true,
-	"exit":  true,
-	"set":   true,
+	"date":   true,
+	"sleep":  true,
+	"exit":   true,
+	"set":    true,
 	"printf": true,
 }
 
 // Commands installed by install-ai-tools (which setup-goose-env wraps).
 var installedByAITools = map[string]bool{
-	"gh":      true, // installed via apt-get gh
-	"goose":   true, // installed via curl + tar to ~/.local/bin
-	"node":    true, // setup-node action
-	"npm":     true, // comes with node
-	"claude":  true, // npm install -g @anthropic-ai/claude-code
+	"gh":     true, // installed via apt-get gh
+	"goose":  true, // installed via curl + tar to ~/.local/bin
+	"node":   true, // setup-node action
+	"npm":    true, // comes with node
+	"claude": true, // npm install -g @anthropic-ai/claude-code
 }
 
 // Detects shell command invocations in a `run:` block. We deliberately
