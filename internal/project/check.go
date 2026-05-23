@@ -69,6 +69,7 @@ func allCheckSteps() []checkStep {
 		{"Checking project status options...", checkStatusFieldOptions},
 		{"Checking framework version sync...", checkFrameworkVersionSync},
 		{"Checking topology variables...", checkTopologyVars},
+		{"Checking issue membership in project...", checkOrphanProjectIssues},
 	}
 }
 
@@ -562,5 +563,75 @@ func checkFrameworkVersionSync(deps Deps) CheckResult {
 		Name:    "framework-version-sync",
 		Status:  CheckPass,
 		Message: fmt.Sprintf("framework version in sync (%s)", localVersion),
+	}
+}
+
+// checkOrphanProjectIssues detects open issues carrying a type
+// label (feature / requirement / task) that are NOT members of the
+// agentic ProjectV2. The pipeline cannot resolve such issues via
+// `gh agentic status …` — `gh agentic` only reports project members
+// — so a feature-design / dev-session triggered on an orphan halts
+// at "issue not found in project" without producing any artefacts.
+//
+// The gap surfaced on yapper: features #13–#19 were created with
+// the `feature` + `in-design` labels but never added to the
+// project. The feature-design recipe aborted on every one with the
+// same error. This check catches the condition at `gh agentic check`
+// time; `gh agentic repair` then adds the orphans to the project
+// via `addProjectV2ItemById`.
+func checkOrphanProjectIssues(deps Deps) CheckResult {
+	projectID, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
+	if err != nil || projectID == "" {
+		// No project set — earlier checks already report this; no
+		// orphan check is meaningful here.
+		return CheckResult{
+			Name:    "orphan-issues",
+			Status:  CheckWarn,
+			Message: "orphan-issue check skipped — " + ProjectVarName + " not set",
+		}
+	}
+
+	if deps.FetchOrphanIssues == nil {
+		return CheckResult{
+			Name:    "orphan-issues",
+			Status:  CheckWarn,
+			Message: "orphan-issue check skipped — no fetcher configured",
+		}
+	}
+
+	orphans, err := deps.FetchOrphanIssues(deps.Owner, deps.RepoName, projectID)
+	if err != nil {
+		return CheckResult{
+			Name:    "orphan-issues",
+			Status:  CheckWarn,
+			Message: fmt.Sprintf("orphan-issue check failed — %v", err),
+		}
+	}
+
+	if len(orphans) == 0 {
+		return CheckResult{
+			Name:    "orphan-issues",
+			Status:  CheckPass,
+			Message: "all type-labelled open issues are project members",
+		}
+	}
+
+	// Build a compact summary: "#13, #14, #15 (3 orphan issue(s))"
+	parts := make([]string, 0, len(orphans))
+	for _, o := range orphans {
+		parts = append(parts, fmt.Sprintf("#%d", o.Number))
+	}
+	noun := "issue"
+	if len(orphans) > 1 {
+		noun = "issues"
+	}
+	return CheckResult{
+		Name:   "orphan-issues",
+		Status: CheckFail,
+		Message: fmt.Sprintf(
+			"%d open %s carrying a type label but missing from the project: %s",
+			len(orphans), noun, strings.Join(parts, ", "),
+		),
+		Remediation: "run 'gh agentic repair' to add each orphan to the agentic project",
 	}
 }

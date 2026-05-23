@@ -41,6 +41,8 @@ type Deps struct {
 	FetchProjectsForOwner    FetchProjectsForOwnerFunc
 	FetchProjectTitle        FetchProjectTitleFunc
 	FetchProjectOwner        FetchProjectOwnerFunc
+	FetchOrphanIssues        FetchOrphanIssuesFunc
+	AddIssueToProject        AddIssueToProjectFunc
 	Run                      auth.RunCommandFunc
 }
 
@@ -73,6 +75,8 @@ func DefaultDeps(owner, repoName, root string) Deps {
 		FetchProjectsForOwner:    DefaultFetchProjectsForOwner,
 		FetchProjectTitle:        DefaultFetchProjectTitle,
 		FetchProjectOwner:        DefaultFetchProjectOwner,
+		FetchOrphanIssues:        DefaultFetchOrphanIssues,
+		AddIssueToProject:        DefaultAddIssueToProject,
 		Run:                      auth.DefaultRunCommand,
 	}
 }
