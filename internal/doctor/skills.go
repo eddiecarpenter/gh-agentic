@@ -58,9 +58,6 @@ var skillsDirCandidates = []string{
 	".agents/skills", // framework skills synced via gh agentic repair
 }
 
-// catalogueName is the canonical CATALOGUE.md filename at the repo root.
-const catalogueName = "CATALOGUE.md"
-
 // --- frontmatter parsing ---
 
 // frontmatterResult carries the parsed frontmatter and any validation errors.
@@ -81,7 +78,9 @@ func findSkillsDir(root string) string {
 	return ""
 }
 
-// enumerateSkillFiles returns the sorted list of `*.md` files in skillsDir.
+// enumerateSkillFiles returns the sorted list of skill files under skillsDir.
+// Skills follow the canonical `<name>/SKILL.md` subdirectory layout; any
+// top-level `*.md` files are also included for compatibility with the flat layout.
 func enumerateSkillFiles(skillsDir string) ([]string, error) {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
@@ -90,12 +89,17 @@ func enumerateSkillFiles(skillsDir string) ([]string, error) {
 	var out []string
 	for _, e := range entries {
 		if e.IsDir() {
+			// Look for SKILL.md inside the subdirectory (canonical layout).
+			candidate := filepath.Join(skillsDir, e.Name(), "SKILL.md")
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				out = append(out, candidate)
+			}
 			continue
 		}
-		if !strings.HasSuffix(e.Name(), ".md") {
-			continue
+		// Top-level .md files (flat layout, kept for compatibility).
+		if strings.HasSuffix(e.Name(), ".md") {
+			out = append(out, filepath.Join(skillsDir, e.Name()))
 		}
-		out = append(out, filepath.Join(skillsDir, e.Name()))
 	}
 	sort.Strings(out)
 	return out, nil
@@ -298,6 +302,10 @@ func isNilOrStringList(v interface{}) bool {
 // Skills are looked up under deps.Root via findSkillsDir. If no skills
 // directory exists at all, the check emits a single Warning — downstream repos
 // without skills are allowed.
+//
+// When the resolved skills directory is inside .agents/ (framework files synced
+// by gh agentic repair), validation is skipped entirely. Framework files are
+// read-only and trusted; validating them in domain repos adds noise without value.
 func checkSkillFrontmatter(deps CheckDeps) Group {
 	g := Group{Name: "Skills"}
 
@@ -307,8 +315,18 @@ func checkSkillFrontmatter(deps CheckDeps) Group {
 			Name: "skills-frontmatter", Status: Warning,
 			Message: "skills/ not found — no frontmatter to validate",
 		})
-		// If there's no skills dir there's no catalogue to check either.
-		g.Results = append(g.Results, checkCatalogueStatus(deps, ""))
+		return g
+	}
+
+	// Framework skills (.agents/skills) are managed by the framework and trusted
+	// as-is — skip per-file validation so domain repos don't see spurious warnings.
+	if rel, err := filepath.Rel(deps.Root, skillsDir); err == nil &&
+		strings.HasPrefix(rel, ".agents") {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "skills-frontmatter",
+			Status:  Pass,
+			Message: fmt.Sprintf("framework skills (%s) — validation skipped (read-only framework files)", rel),
+		})
 		return g
 	}
 
@@ -326,7 +344,6 @@ func checkSkillFrontmatter(deps CheckDeps) Group {
 			Name: "skills-frontmatter", Status: Warning,
 			Message: fmt.Sprintf("%s is empty — no skills to validate", relDisplay(deps.Root, skillsDir)),
 		})
-		g.Results = append(g.Results, checkCatalogueStatus(deps, skillsDir))
 		return g
 	}
 
@@ -357,63 +374,8 @@ func checkSkillFrontmatter(deps CheckDeps) Group {
 		}
 	}
 
-	// Catalogue status is informational and appended to the same Skills group.
-	g.Results = append(g.Results, checkCatalogueStatus(deps, skillsDir))
-
 	_ = totalViolations // counted via Fail results in the Report
 	return g
-}
-
-// checkCatalogueStatus evaluates whether CATALOGUE.md is missing, stale, or
-// up to date. It is informational only — Pass on valid, Warning otherwise —
-// and does not rebuild anything. The check is skipped (Pass with explanatory
-// message) if no skills directory exists.
-func checkCatalogueStatus(deps CheckDeps, skillsDir string) CheckResult {
-	cataloguePath := filepath.Join(deps.Root, catalogueName)
-
-	cInfo, cErr := os.Stat(cataloguePath)
-	if os.IsNotExist(cErr) {
-		return CheckResult{
-			Name: "catalogue", Status: Warning,
-			Message: fmt.Sprintf("%s missing — will be regenerated on next session-init", catalogueName),
-		}
-	}
-	if cErr != nil {
-		return CheckResult{
-			Name: "catalogue", Status: Fail,
-			Message:     fmt.Sprintf("%s stat error: %v", catalogueName, cErr),
-			Remediation: "Verify the repo root is readable",
-		}
-	}
-	if skillsDir == "" {
-		return CheckResult{
-			Name: "catalogue", Status: Pass,
-			Message: fmt.Sprintf("%s present (no skills to compare against)", catalogueName),
-		}
-	}
-	files, err := enumerateSkillFiles(skillsDir)
-	if err != nil {
-		return CheckResult{
-			Name: "catalogue", Status: Warning,
-			Message: fmt.Sprintf("unable to compare skill mtimes: %v", err),
-		}
-	}
-	catMtime := cInfo.ModTime()
-	for _, f := range files {
-		if info, err := os.Stat(f); err == nil {
-			if info.ModTime().After(catMtime) {
-				return CheckResult{
-					Name: "catalogue", Status: Warning,
-					Message: fmt.Sprintf("%s stale (%s is newer) — will be regenerated on next session-init",
-						catalogueName, relDisplay(deps.Root, f)),
-				}
-			}
-		}
-	}
-	return CheckResult{
-		Name: "catalogue", Status: Pass,
-		Message: fmt.Sprintf("%s up to date", catalogueName),
-	}
 }
 
 // relDisplay returns a path relative to root for user-facing messages,
