@@ -27,17 +27,19 @@ for the full contract:
 
 - The same gate commands apply: `npx tsc --noEmit`, `npm test`,
   `npm run build`.
-- The dev-session runs the gate as its last step before exit; on
-  failure it loops back and never claims completion.
-- The compliance verifier runs the gate as its first step before any
-  AC evaluation; FAIL short-circuits, BLOCKED applies when the
-  toolchain is absent.
-- No FAIL-by-inspection, no PASS-by-inspection — BLOCKED is the only
-  correct verdict when the gate cannot actually run.
+- The same manifest-presence pre-check applies (`package.json`).
+- The dev-session runs the gate as its last step before exit when
+  the gate is eligible; on FAIL it loops back and never claims
+  completion.
+- The compliance verifier runs the gate as its first step before
+  any AC evaluation when the gate is eligible; FAIL short-circuits.
+- When the toolchain is absent on the runner, the gate is treated
+  as **SKIPPED with a WARN** — not PASS, not FAIL, not BLOCKED.
+  PASS-by-inspection and FAIL-by-inspection both remain forbidden.
 
 Skills loading the gate definition may load either `standards/react.md`
-or `standards/typescript.md` for a React project — the gate contract is
-the same.
+or `standards/typescript.md` for a React project — the gate contract
+is the same.
 
 ---
 

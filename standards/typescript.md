@@ -51,8 +51,8 @@ npx prettier --write .
 
 ## Verification Gate (build + test)
 
-The build+test pass is a **mandatory gate** at two specific points in
-the pipeline. The same three commands run in both places:
+The build+test pass is the **mandatory gate** at two specific
+points in the pipeline. The same three commands run in both places:
 
 ```bash
 npx tsc --noEmit
@@ -68,7 +68,8 @@ actual production-build path (`vite build`, `tsc -b`, or whatever
 clean but fails to bundle is not shippable.
 
 All three must exit zero. Any non-zero exit — type error, failing
-test, bundler error, missing `build`/`test` script — fails the gate.
+test, bundler error, missing `build`/`test` script — **fails** the
+gate.
 
 If `package.json` has no `test` script (genuinely no tests in the
 project — rare, but possible for a CLI wrapper or a fresh scaffold),
@@ -79,46 +80,82 @@ project's testing strategy with the human. An empty
 no test specified\" && exit 1"`) is NOT acceptable — it must be a
 real command or removed.
 
+### Stack-eligibility pre-check (manifest presence)
+
+The TypeScript gate only applies to a directory that **contains a
+`package.json`**:
+
+```bash
+test -f package.json   # at the repo root, or in the closest
+                       # ancestor of every changed TS/JS file
+```
+
+If no `package.json` is present (the repo isn't an npm project, or
+the changed files live outside any npm-rooted subtree), the
+TypeScript gate is **not eligible**. Compliance and the dev session
+SKIP it with a WARN ("TypeScript manifest `package.json` not present
+— TypeScript gate not applicable to this scope"); the verdict is
+**not a fail**.
+
+For monorepos with multiple `package.json` files, each gate run is
+scoped to the directory containing the closest enclosing
+`package.json` of the changed files.
+
 ### Dev Session — last step before exit
 
 After the final task commit and before the workflow applies
-`in-verification`, the dev session **MUST** run the gate. On failure
-the dev session does NOT exit cleanly — it loops back to fix the
-breakage and re-runs the gate until it passes. Pushing broken
-TypeScript, type errors, failing tests, or a build that doesn't
-bundle to the feature branch and signalling completion is forbidden.
+`in-verification`, the dev session **MUST** run the gate when
+eligible. On failure the dev session does NOT exit cleanly — it
+loops back to fix the breakage and re-runs the gate until it
+passes. Pushing broken TypeScript, type errors, failing tests, or
+a build that doesn't bundle and signalling completion is forbidden.
 
-The dev session's exit block must state whether the gate ran and
-what its result was. An exit block that omits the gate result is
-itself a protocol violation.
+The dev session's exit block must state, for each touched stack,
+whether the gate ran and what its result was (PASS / FAIL / SKIPPED).
+An exit block that omits the gate result is itself a protocol
+violation.
 
 ### Compliance Verify — first step before any other check
 
-The compliance verifier **MUST** run the gate before evaluating
-acceptance criteria, static analysis, or any other check. On
-failure the verifier emits an immediate FAIL verdict and
-short-circuits — ACs cannot be PASS while `tsc` errors, tests fail,
-or the bundle is broken, regardless of what code inspection
-suggests.
+The compliance verifier **MUST** run the gate (when eligible)
+before evaluating acceptance criteria, static analysis, or any
+other check. On gate failure the verifier emits an immediate FAIL
+verdict and short-circuits.
 
 The gate's run-and-result is the first item in the compliance
 report. Subsequent sections (static analysis, AC table) appear only
-when the gate passed.
+when the gate passed or was skipped per the rules below.
 
 ### When the toolchain is unavailable
 
-If `node`/`npm` is not on the runner's PATH (or `node_modules/` is
-not installed and `npm ci` fails), the only correct verdict is
-**BLOCKED**, never PASS or FAIL. Compliance MUST NOT infer
-build/test correctness from diff inspection alone — that is the
-same overconfidence trap whether the inspection concludes pass or
-fail. A BLOCKED verdict leaves the Feature at `in-verification`
-with a clear remediation ("install Node.js and run `npm ci`") —
-the human resolves before re-running.
+If `package.json` IS present but `node` or `npm` is **not** on the
+runner's PATH (or `node_modules/` is missing and `npm ci` fails to
+install), the gate is treated as **SKIPPED with a WARN** — not as
+PASS, not as FAIL, not as BLOCKED. The recipe records:
 
-A PR opened against work whose build+test AC was marked PASS by
-inspection rather than by an actual gate run is a
-verification-process bug — the rule above closes it.
+- a `compliance-warn:v1` comment noting that the TypeScript gate
+  was skipped because the toolchain isn't installed on the runner,
+  with the exact `which node` / `which npm` probe output
+- a recommendation to install Node.js on the runner image (via
+  `actions/setup-node@v4` or an apt step) so the gate can actually
+  run on the next cycle
+- AC verdicts for build / test fields are marked **WARN — skipped**
+  rather than PASS or FAIL
+
+Compliance still produces an overall verdict, runs the static
+analysis section, and evaluates the AC table. The PR is permitted
+to open. CI is the authoritative backstop for actually running the
+tests once the PR is open.
+
+### What is still forbidden
+
+- **PASS-by-inspection is still forbidden.** The gate is either
+  PASS (commands ran and exited zero), FAIL (commands ran and
+  exited non-zero), or SKIPPED-with-WARN (commands could not run).
+  No fourth state.
+- **FAIL-by-inspection is still forbidden.** Compliance MUST NOT
+  emit FAIL based on a CI run from a closed PR, sibling branch, or
+  any commit other than the current branch HEAD.
 
 ---
 

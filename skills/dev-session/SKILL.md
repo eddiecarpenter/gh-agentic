@@ -507,14 +507,30 @@ discipline at task granularity:
 
     **For each stack in `<stacks>`:**
 
-    1. Load `standards/<stack>.md` and find the
+    1. **Manifest pre-check** — confirm the stack's manifest is
+       present in the repo before attempting any gate commands:
+
+       | Stack | Probe |
+       |---|---|
+       | `go` | `test -f go.mod` |
+       | `typescript` / `react` | `test -f package.json` (root, or in the closest enclosing directory of every changed JS/TS file) |
+       | `java` | `test -f pom.xml` OR `test -f build.gradle` OR `test -f build.gradle.kts` |
+
+       If the manifest is absent, record `<stack>: SKIPPED — no
+       manifest` and move on to the next stack. This is not a
+       failure; the change is not within a project of that stack.
+
+    2. Load `standards/<stack>.md` and find the
        `## Verification Gate (build + test)` section.
-    2. Execute the listed commands verbatim, in order, from the
-       repo root.
-    3. Record the per-stack outcome.
+    3. Execute the listed commands verbatim, in order, from the
+       repo root (or the directory containing the manifest, for
+       monorepo-nested projects).
+    4. Record the per-stack outcome.
 
     **Per-stack outcomes:**
 
+    - **Manifest absent** → record `<stack>: SKIPPED — no manifest`
+      and continue. Not a failure.
     - **All commands exit zero** → record `<stack>: PASS` in
       working memory.
     - **Any command exits non-zero** → the dev session has produced
@@ -523,15 +539,18 @@ discipline at task granularity:
       recently committed), and fix it. Commit the fix with the
       task-N-of-M format (a fix commit counts as a continuation of
       the task whose work it corrects). Re-run the gate (all
-      stacks). Repeat until every stack reports PASS. The dev
-      session exits only on a clean gate across every detected
-      stack.
-    - **Toolchain unavailable** (e.g. `go` not on PATH for the `go`
-      stack, `node` not on PATH for the `typescript` stack) →
-      raise `VERIFICATION_TOOLCHAIN_MISSING` (`ERROR`) and exit
-      Output D. The dev session never claims completion without an
-      actual gate run; downstream compliance will surface the same
-      gap.
+      stacks). Repeat until every stack reports PASS or SKIPPED.
+      The dev session exits only on a clean gate across every
+      detected stack.
+    - **Toolchain unavailable** — manifest IS present but the
+      toolchain isn't on PATH (e.g. `go.mod` exists but `which go`
+      exits non-zero) → record `<stack>: SKIPPED —
+      <toolchain> not installed on runner; install via
+      <remediation>; CI is the backstop`. Continue to the next
+      stack. This is NOT a fail and the dev session is permitted
+      to exit (downstream compliance will run the same gate
+      against the same runner and emit a matching warning;
+      the PR-time CI is the authoritative backstop).
 
     **No standards file** for a detected stack (no
     `standards/<stack>.md` exists, or the file has no
@@ -542,7 +561,8 @@ discipline at task granularity:
 
     Record every per-stack outcome in working memory for inclusion
     in the exit block (step 18). The exit block lists each stack
-    + its commands + its result.
+    + its commands + its result (PASS / FAIL / SKIPPED with
+    reason).
 
 15a. **Acceptance-criteria coverage gate.** Before the closeout
     label flips, verify that every Feature acceptance criterion
