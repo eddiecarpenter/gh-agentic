@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // validFrontmatter returns a minimal-but-conformant skill file body with
@@ -29,15 +28,16 @@ func validFrontmatter(name, category string, emits bool) string {
 		"---\n\n# " + name + "\n\nBody.\n"
 }
 
-// writeSkill creates a skill file under root/skills with the given name.
-func writeSkill(t *testing.T, root, filename, body string) {
+// writeSkill creates a skill file under root/skills/<name>/SKILL.md (the
+// canonical subdirectory layout).
+func writeSkill(t *testing.T, root, name, body string) {
 	t.Helper()
-	skillsDir := filepath.Join(root, "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		t.Fatalf("mkdir skills: %v", err)
+	skillDir := filepath.Join(root, "skills", name)
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills/%s: %v", name, err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, filename), []byte(body), 0o644); err != nil {
-		t.Fatalf("write %s: %v", filename, err)
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s/SKILL.md: %v", name, err)
 	}
 }
 
@@ -54,7 +54,7 @@ func findResult(g Group, needle string) *CheckResult {
 
 func TestCheckSkillFrontmatter_Valid(t *testing.T) {
 	root := t.TempDir()
-	writeSkill(t, root, "valid-skill.md", validFrontmatter("valid-skill", "Reference", false))
+	writeSkill(t, root, "valid-skill", validFrontmatter("valid-skill", "Reference", false))
 
 	g := checkSkillFrontmatter(CheckDeps{Root: root})
 
@@ -63,9 +63,9 @@ func TestCheckSkillFrontmatter_Valid(t *testing.T) {
 			t.Errorf("expected no failures for valid frontmatter; got fail: %s", r.Message)
 		}
 	}
-	r := findResult(g, "valid-skill.md frontmatter valid")
+	r := findResult(g, "valid-skill/SKILL.md frontmatter valid")
 	if r == nil || r.Status != Pass {
-		t.Errorf("expected valid-skill.md to pass; got %+v", r)
+		t.Errorf("expected valid-skill/SKILL.md to pass; got %+v", r)
 	}
 }
 
@@ -79,7 +79,7 @@ func TestCheckSkillFrontmatter_MissingCategory(t *testing.T) {
 		"emits-exit-block: false\n" +
 		"exit-hands-to: null\n" +
 		"---\n\n# broken-skill\n\nBody.\n"
-	writeSkill(t, root, "broken-skill.md", body)
+	writeSkill(t, root, "broken-skill", body)
 
 	g := checkSkillFrontmatter(CheckDeps{Root: root})
 
@@ -90,8 +90,8 @@ func TestCheckSkillFrontmatter_MissingCategory(t *testing.T) {
 	if r.Status != Fail {
 		t.Errorf("expected Fail, got status %d", r.Status)
 	}
-	if !strings.Contains(r.Message, "broken-skill.md") {
-		t.Errorf("expected message to name the file, got: %s", r.Message)
+	if !strings.Contains(r.Message, "broken-skill") {
+		t.Errorf("expected message to name the skill, got: %s", r.Message)
 	}
 	if !strings.Contains(r.Message, "skills/skill-categories.md") {
 		t.Errorf("expected message to include 'see:' pointer to schema, got: %s", r.Message)
@@ -109,7 +109,7 @@ func TestCheckSkillFrontmatter_InvalidCategory(t *testing.T) {
 		"emits-exit-block: false\n" +
 		"exit-hands-to: null\n" +
 		"---\n\n# weird-skill\n\nBody.\n"
-	writeSkill(t, root, "weird-skill.md", body)
+	writeSkill(t, root, "weird-skill", body)
 
 	g := checkSkillFrontmatter(CheckDeps{Root: root})
 
@@ -128,7 +128,7 @@ func TestCheckSkillFrontmatter_InvalidCategory(t *testing.T) {
 func TestCheckSkillFrontmatter_MalformedYAML(t *testing.T) {
 	root := t.TempDir()
 	body := "---\nname: bad-yaml\ndescription: [not\nproperly\nclosed\n---\n# bad-yaml\n"
-	writeSkill(t, root, "bad-yaml.md", body)
+	writeSkill(t, root, "bad-yaml", body)
 
 	g := checkSkillFrontmatter(CheckDeps{Root: root})
 
@@ -144,7 +144,7 @@ func TestCheckSkillFrontmatter_MalformedYAML(t *testing.T) {
 func TestCheckSkillFrontmatter_NoFence(t *testing.T) {
 	root := t.TempDir()
 	body := "# no-frontmatter-skill\n\nBody.\n"
-	writeSkill(t, root, "no-fence.md", body)
+	writeSkill(t, root, "no-fence", body)
 
 	g := checkSkillFrontmatter(CheckDeps{Root: root})
 
@@ -169,7 +169,7 @@ func TestCheckSkillFrontmatter_InconsistentEmitsExitBlock(t *testing.T) {
 		"emits-exit-block: true\n" +
 		"exit-hands-to: \"automation: next\"\n" +
 		"---\n\n# inconsistent\n"
-	writeSkill(t, root, "inconsistent.md", body)
+	writeSkill(t, root, "inconsistent", body)
 
 	g := checkSkillFrontmatter(CheckDeps{Root: root})
 
@@ -194,7 +194,7 @@ func TestCheckSkillFrontmatter_UnknownField(t *testing.T) {
 		"exit-hands-to: null\n" +
 		"version: 1.2.3\n" +
 		"---\n\n# extra-field\n"
-	writeSkill(t, root, "extra-field.md", body)
+	writeSkill(t, root, "extra-field", body)
 
 	g := checkSkillFrontmatter(CheckDeps{Root: root})
 
@@ -204,80 +204,6 @@ func TestCheckSkillFrontmatter_UnknownField(t *testing.T) {
 	}
 	if r.Status != Fail {
 		t.Errorf("expected Fail status")
-	}
-}
-
-func TestCheckCatalogue_Missing(t *testing.T) {
-	root := t.TempDir()
-	writeSkill(t, root, "one.md", validFrontmatter("one", "Reference", false))
-	// No CATALOGUE.md at root.
-
-	g := checkSkillFrontmatter(CheckDeps{Root: root})
-
-	r := findResult(g, "CATALOGUE.md missing")
-	if r == nil {
-		t.Fatal("expected a warning about the missing catalogue")
-	}
-	if r.Status != Warning {
-		t.Errorf("expected Warning status, got %d", r.Status)
-	}
-}
-
-func TestCheckCatalogue_Stale(t *testing.T) {
-	root := t.TempDir()
-	// Create CATALOGUE.md first (old mtime), then a skill later so the skill
-	// mtime is strictly newer.
-	cataloguePath := filepath.Join(root, "CATALOGUE.md")
-	if err := os.WriteFile(cataloguePath, []byte("# Skill Catalogue\n"), 0o644); err != nil {
-		t.Fatalf("write catalogue: %v", err)
-	}
-	older := time.Now().Add(-1 * time.Hour)
-	if err := os.Chtimes(cataloguePath, older, older); err != nil {
-		t.Fatalf("chtimes: %v", err)
-	}
-
-	writeSkill(t, root, "newer-skill.md", validFrontmatter("newer-skill", "Reference", false))
-	newer := time.Now()
-	if err := os.Chtimes(filepath.Join(root, "skills", "newer-skill.md"), newer, newer); err != nil {
-		t.Fatalf("chtimes skill: %v", err)
-	}
-
-	g := checkSkillFrontmatter(CheckDeps{Root: root})
-
-	r := findResult(g, "CATALOGUE.md stale")
-	if r == nil {
-		t.Fatal("expected a warning about a stale catalogue")
-	}
-	if r.Status != Warning {
-		t.Errorf("expected Warning status, got %d", r.Status)
-	}
-	if !strings.Contains(r.Message, "newer-skill.md") {
-		t.Errorf("expected stale message to name the newer file; got: %s", r.Message)
-	}
-}
-
-func TestCheckCatalogue_UpToDate(t *testing.T) {
-	root := t.TempDir()
-	writeSkill(t, root, "stable.md", validFrontmatter("stable", "Reference", false))
-	older := time.Now().Add(-1 * time.Hour)
-	if err := os.Chtimes(filepath.Join(root, "skills", "stable.md"), older, older); err != nil {
-		t.Fatalf("chtimes skill: %v", err)
-	}
-
-	cataloguePath := filepath.Join(root, "CATALOGUE.md")
-	if err := os.WriteFile(cataloguePath, []byte("# Skill Catalogue\n"), 0o644); err != nil {
-		t.Fatalf("write catalogue: %v", err)
-	}
-	// Catalogue mtime is "now", skill is older — catalogue fresh.
-
-	g := checkSkillFrontmatter(CheckDeps{Root: root})
-
-	r := findResult(g, "CATALOGUE.md up to date")
-	if r == nil {
-		t.Fatal("expected a pass for an up-to-date catalogue")
-	}
-	if r.Status != Pass {
-		t.Errorf("expected Pass status, got %d", r.Status)
 	}
 }
 
@@ -297,25 +223,31 @@ func TestCheckSkillFrontmatter_NoSkillsDir(t *testing.T) {
 }
 
 func TestCheckSkillFrontmatter_FederatedMount(t *testing.T) {
-	// Domain repo where skills live under .agents/skills — the check should find them there.
+	// Domain repo where skills live under .agents/skills — validation must be
+	// skipped entirely (framework files are read-only and trusted).
 	root := t.TempDir()
-	aiSkills := filepath.Join(root, ".agents", "skills")
-	if err := os.MkdirAll(aiSkills, 0o755); err != nil {
-		t.Fatalf("mkdir .agents/skills: %v", err)
+	aiSkillDir := filepath.Join(root, ".agents", "skills", "framework-skill")
+	if err := os.MkdirAll(aiSkillDir, 0o755); err != nil {
+		t.Fatalf("mkdir .agents/skills/framework-skill: %v", err)
 	}
 	body := validFrontmatter("framework-skill", "Reference", false)
-	if err := os.WriteFile(filepath.Join(aiSkills, "framework-skill.md"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(aiSkillDir, "SKILL.md"), []byte(body), 0o644); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
 	g := checkSkillFrontmatter(CheckDeps{Root: root})
 
-	r := findResult(g, "framework-skill.md frontmatter valid")
+	// Should emit a single pass-through result, not per-file validation results.
+	r := findResult(g, "framework skills")
 	if r == nil {
-		t.Fatal("expected the .agents/skills/ skill to be discovered")
+		t.Fatal("expected a pass-through result for .agents/skills")
 	}
 	if r.Status != Pass {
-		t.Errorf("expected Pass, got status %d", r.Status)
+		t.Errorf("expected Pass for framework bypass, got status %d", r.Status)
+	}
+	// Must NOT attempt to validate individual skill files.
+	if findResult(g, "framework-skill/SKILL.md") != nil {
+		t.Error("expected no per-file validation for .agents/ skills")
 	}
 }
 
