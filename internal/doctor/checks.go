@@ -226,7 +226,7 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		{"Checking repository...", checkRepository},
 		{"Checking framework mount...", checkFramework},
 		{"Checking agent files...", checkAgentFiles},
-		{"Checking skill frontmatter and catalogue...", checkSkillFrontmatter},
+		{"Checking skill frontmatter...", checkSkillFrontmatter},
 	}
 	if deps.Topology == "federated-domain" {
 		base = append(base, checkGroupStep{"Checking agentic project membership...", checkProjectAffiliation})

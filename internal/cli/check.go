@@ -35,7 +35,7 @@ type checkDeps struct {
 
 // projectFrameworkOutOfSync returns true when the project-side
 // framework-version-sync check reports a Fail status. Pipeline-scope
-// checks (skill frontmatter, catalogue, workflow versions) operate on
+// checks (skill frontmatter, workflow versions) operate on
 // `.agents/` and produce noise against a stale mount, so both `check` and
 // `repair` short-circuit on this signal.
 func projectFrameworkOutOfSync(report *project.CheckReport) bool {
@@ -188,9 +188,9 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 
 					// Short-circuit: if the mounted framework is out of sync
 					// with the authoritative version, pipeline-side checks
-					// (skill frontmatter, catalogue, workflow versions) will
-					// generate noise against a stale `.agents/`. Stop here and
-					// direct the user to `gh agentic repair`.
+					// (skill frontmatter, workflow versions) will generate
+					// noise against a stale `.agents/`. Stop here and direct
+					// the user to `gh agentic repair`.
 					if projectFrameworkOutOfSync(projectReport) {
 						pipelineSkipped = true
 						return nil
