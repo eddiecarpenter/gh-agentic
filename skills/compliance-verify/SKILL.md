@@ -325,14 +325,34 @@ For each detected stack, load `standards/<stack>.md` →
 `## Verification Gate (build + test)`, execute the listed commands
 verbatim, in order, from the repo root.
 
+**Per-stack pre-check — manifest eligibility.** Before attempting
+to run any gate commands, check whether the stack's **manifest
+file** is present in the repo:
+
+| Stack | Manifest probe |
+|---|---|
+| `go` | `test -f go.mod` |
+| `typescript` / `react` | `test -f package.json` (at repo root, or in the closest enclosing directory of every changed JS/TS file) |
+| `java` | `test -f pom.xml` OR `test -f build.gradle` OR `test -f build.gradle.kts` |
+
+If the manifest is **not present** for a detected stack, record
+`gate=SKIPPED-no-manifest` for that stack and continue without
+running the gate commands. This is **not a fail**. The compliance
+report's gate section lists the stack as `SKIPPED — manifest
+<name> not present` and proceeds to the next stack (or to Section
+B if every detected stack is SKIPPED).
+
 **Per-stack outcomes** (aggregate across all stacks):
 
-1. **All commands exit zero** → record `gate=PASS` plus the
-   captured command output summary into working memory. Continue
-   to Section B. The compliance report's first section reflects
-   the PASS.
+1. **Manifest absent** → `gate=SKIPPED-no-manifest`. Recorded in
+   the gate section of the report; not counted as a failure.
+   Continue to the next stack.
 
-2. **Any command exits non-zero** → record `gate=FAIL` plus the
+2. **All commands exit zero** → record `gate=PASS` plus the
+   captured command output summary. Continue to the next stack
+   (then to Section B).
+
+3. **Any command exits non-zero** → record `gate=FAIL` plus the
    captured failure output. Skip Section B (static analysis) and
    Section C (AC evaluation) entirely — ACs cannot be PASS while
    the build is broken. Jump directly to Section D with
@@ -340,18 +360,22 @@ verbatim, in order, from the repo root.
    failed". The overall verdict is FAIL with the gate-failure
    output as the structured violation list.
 
-3. **Toolchain unavailable** (e.g. `go` not on PATH, the standards
-   file lists tools the runner does not have) → record
-   `gate=BLOCKED`. Do NOT post a FAIL verdict — a BLOCKED verdict
-   is qualitatively different. Apply the `needs-human-review`
-   label (this is not part of the FAIL cycle; it is a runner
-   environment failure the human must resolve). Post a
-   `<!-- compliance-blocked:v1 -->` comment surfacing the missing
-   tool and the standards-file requirement. Exit with Output D.
-   Subsequent runs on the same Feature pick up only when the
-   human has installed the toolchain and re-toggled the label.
+4. **Toolchain unavailable** — manifest IS present but the
+   toolchain isn't on PATH (e.g. `go.mod` exists but `which go`
+   exits non-zero; `package.json` exists but `which node` exits
+   non-zero) → record `gate=SKIPPED-toolchain-absent`. Do NOT
+   post a FAIL verdict, do NOT post a BLOCKED verdict, do NOT
+   apply `needs-human-review`. Post a
+   `<!-- compliance-warn:v1 -->` comment surfacing the missing
+   tool, the manifest that triggered the eligibility check, and
+   the recommendation to install the toolchain on the runner
+   image (`actions/setup-go@v5`, `actions/setup-node@v4`, etc.).
+   Continue to Section B; the AC table proceeds based on what
+   CAN be verified. CI (`build-and-test.yml` or equivalent) is
+   the authoritative backstop for actually running the gate
+   commands once the PR is open.
 
-4. **No standards file** for the active stack (no
+5. **No standards file** for the active stack (no
    `standards/<stack>.md` exists, or the file has no
    `## Verification Gate` section) → raise
    `STACK_GATE_UNDEFINED` (`ERROR`). The compliance verifier
@@ -359,30 +383,30 @@ verbatim, in order, from the repo root.
    Surface the missing file to the human as a framework-level fix
    needed; exit with Output D.
 
-The gate's outcome is the first line of the compliance report
-(see step 14). When the report shows AC PASS but the gate ran
-and failed, that is a protocol violation — the gate gates
-everything.
+The gate's outcomes (one line per detected stack) form the first
+section of the compliance report. When any stack reports PASS or
+FAIL, those verdicts gate Section B / C as described. When every
+stack reports SKIPPED (either no-manifest or toolchain-absent),
+the report notes "no executable gate ran; CI is the backstop"
+and proceeds to Section B with that caveat recorded.
 
-#### The no-inspection rule (symmetric)
+#### The no-inspection rule (preserved)
 
-Two failure modes both trace to the same root cause — the agent
-deciding it knows the gate result without having actually run it.
-Both are forbidden:
+The softening above relaxes the verdict on toolchain-absent — it
+does NOT relax the principle that drove v2.8.15. Both inspection
+traps remain forbidden:
 
 - **Compliance MUST NOT mark "build and tests pass" as PASS by
-  code inspection.** Inferring success from a clean-looking diff is
-  the trap that lets broken code reach a PR.
+  code inspection.** Inferring success from a clean-looking diff
+  is the trap that lets broken code reach a PR. SKIPPED is the
+  correct verdict, not PASS.
 
-- **Compliance MUST NOT mark "build and tests pass" as FAIL by code
-  inspection either.** This includes citing a CI run from another
-  branch, a closed PR, or any commit other than the current HEAD of
-  the feature branch as evidence. The reverse trap escalates
-  correct work to `needs-human-review` based on stale data.
+- **Compliance MUST NOT mark "build and tests pass" as FAIL by
+  code inspection either.** This includes citing a CI run from
+  another branch, a closed PR, or any commit other than the
+  current HEAD of the feature branch as evidence.
 
-If the gate could not run on the current branch HEAD, the verdict
-for AC-9 (build + test) is **BLOCKED**, recorded as such, and the
-cycle does not advance. Three valid evidence shapes for AC-9:
+The valid evidence shapes for the build+test AC are now:
 
 - **PASS** — every gate command exited zero; evidence cites the
   commands run plus the current commit SHA (e.g. `go build ./...
@@ -390,10 +414,13 @@ cycle does not advance. Three valid evidence shapes for AC-9:
 - **FAIL** — at least one gate command exited non-zero; evidence
   reproduces the failure output (test name, error line) plus the
   current commit SHA.
-- **BLOCKED** — the gate did not run (toolchain absent, standards
-  file missing); evidence reads `BLOCKED — <reason>` with a
-  remediation pointer. No fabricated CI run IDs, no synthetic
-  commit references.
+- **SKIPPED-no-manifest** — the stack's manifest isn't present;
+  this scope is not a project of that stack.
+- **SKIPPED-toolchain-absent** — manifest IS present but the
+  toolchain isn't on the runner; evidence reads `SKIPPED —
+  <toolchain> not installed on runner; install via
+  <remediation>; CI is the backstop`. No fabricated CI run IDs,
+  no synthetic commit references.
 
 #### No proxy evidence
 
