@@ -56,7 +56,7 @@ Phase transitions are driven by GitHub labels on the issue, but humans don't app
 | `backlog` → `interactive-design` (via `trigger-design` when `needs-interactive-design` is set) | none (interactive) | A human runs `/feature-design <N>` for Features that need foreground attention (UX, novel architecture); at end-of-design the human chooses whether to trigger implementation, park at `designed`, or cancel |
 | `in-design` → `in-development` (autonomous) | `agentic-pipeline.yml` (Stage 4) | Walks each Task in order, writes code, runs tests, commits per task, pushes |
 | `designed` → `in-development` (via `trigger-implementation`) | `agentic-pipeline.yml` (Stage 4) | Same as above; this is the path for Features that were parked at `designed` after interactive design |
-| `in-development` → `in-verification` | `agentic-pipeline.yml` (Stage 5) | Runs the compliance-verify skill: AI code review + native static analysis against the diff; evaluates every AC; loops back to `in-development` with a structured feedback comment on any failure |
+| `in-development` → `in-verification` | `agentic-pipeline.yml` (Stage 5) | Runs the compliance-verify skill: mandatory build+test gate first (PASS/FAIL/SKIP-with-WARN), then AI code review + native static analysis against the diff, then AC evaluation; loops back to `in-development` with structured feedback on any failure |
 | `in-verification` → `compliance-verified` | `agentic-pipeline.yml` (Stage 5) | All checks pass; compliance-verify posts a structured PR body and applies `compliance-verified`; the workflow opens the PR and transitions to `in-review` |
 | PR review submitted (changes requested) | `agentic-pipeline.yml` (Stage 6) | Reads the review, implements requested changes, commits, pushes |
 | PR merged | `agentic-pipeline.yml` (Stage 7) | Closes the Feature; transitions parent Requirement to `done` if all child Features are complete |
@@ -65,7 +65,11 @@ Phase transitions are driven by GitHub labels on the issue, but humans don't app
 
 Compliance Verify is the quality gate that sits between implementation and the human PR reviewer. It runs headlessly on the feature branch after the dev-session completes and before any PR is opened. Nothing reaches `in-review` that has not passed this stage.
 
-**Two independent checks run on every feature:**
+**Three checks run on every feature, in order:**
+
+**0. Build + test gate.** Before any AI-driven analysis, the mandatory verification gate runs the stack's build and test commands (`go build ./... && go test ./...` for Go; `npx tsc --noEmit && npm test && npm run build` for TypeScript/React). The gate is **stack-eligible only when the manifest file is present** (`go.mod`, `package.json`, `pom.xml`/`build.gradle`). If the manifest is absent the gate is skipped with a WARN — not a failure. If the toolchain is unavailable on the runner the gate is also treated as **SKIP-with-WARN** rather than FAIL or BLOCKED, and the PR is permitted to open with CI as the authoritative backstop. PASS-by-inspection is never permitted — the gate is either ran-and-passed, ran-and-failed, or skipped. A FAIL short-circuits the stage immediately; AC evaluation and static analysis do not run on a broken build.
+
+The dev-session also runs this gate as its **last step before signalling completion** — so by the time compliance-verify fires, the build is already known to pass on a properly configured runner.
 
 **1. Static analysis.** Native tooling (stack-dependent — `go vet`, `golangci-lint`, `govulncheck` for Go; `tsc`, `eslint`, `npm audit` for TypeScript/React; SpotBugs, Checkstyle, OWASP Dependency Check for Java) is run where available on the runner. An **AI-driven code review** always runs regardless of tooling — it examines the diff and every changed file against a 10-category checklist:
 

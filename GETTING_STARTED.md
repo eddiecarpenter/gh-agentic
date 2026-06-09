@@ -28,6 +28,8 @@ The recommended setup for any non-trivial agentic project is **[Actions Runner C
 
 **Hard requirement for local models.** If you want to run agent sessions against a local LLM (Ollama, vLLM, llama.cpp, an in-cluster model service), you **must** have a self-hosted runner — GitHub-hosted runners cannot reach into your network to talk to a local model server. ARC + an in-cluster model deployment is the standard topology.
 
+**Toolchain installation — no pre-baked image required for Go and Java.** The pipeline's `setup-goose-env` composite action now detects the project's language manifest and installs the toolchain automatically at run time: Go is installed when `go.mod` is present; Java is installed when `pom.xml` or a `build.gradle*` file is present. For these stacks, you do not need a custom runner image with a pre-installed toolchain — a plain `ubuntu-latest` (GitHub-hosted) or a minimal ARC image will work. For other stacks (TypeScript/React, Python, etc.) you still need the toolchain available on the runner.
+
 **Configuration knob.** During `gh agentic init` the wizard collects a `RUNNER_LABEL` value (e.g. `ubuntu-latest` for GitHub-hosted, or a custom label like `arc-runners` matching your runner-set). The reusable workflows pin every job to that label — so you can switch your repo from GitHub-hosted to ARC by changing one repo variable, no workflow edit required.
 
 ---
