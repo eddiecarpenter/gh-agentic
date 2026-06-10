@@ -54,24 +54,18 @@ func warnIfFederatedControlPlane(w interface{ Write([]byte) (int, error) }) {
 	}
 }
 
-// isFederatedControlPlane returns true only if this repo is the control plane
-// of a federated setup.
+// isFederatedControlPlane returns true when this repo is a federation
+// controller — i.e. FEDERATION.md is present at the repo root.
 //
-// Single-topology repos are also "control planes" structurally, but they do run
-// agents (the repo is CP + code combined), so they should not be flagged.
-//
-// Routes through project.Resolve so topology detection stays on the single
-// canonical code path — no direct AGENTIC_* reads here.
+// Federation repos typically do not run Claude agents directly (the agents
+// run on the domain repos the manifest lists). The check informs rather than
+// blocks — single-topology repos are never flagged.
 func isFederatedControlPlane() bool {
 	deps, err := resolveProjectDeps()
 	if err != nil {
 		return false
 	}
-	ctx, err := project.Resolve(deps)
-	if err != nil || ctx == nil {
-		return false
-	}
-	return ctx.IsFederatedControlPlane()
+	return project.IsFederationRepo(deps.Root)
 }
 
 // newAuthCmdWithDeps constructs the auth command with injectable dependencies.

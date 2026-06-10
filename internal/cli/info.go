@@ -154,17 +154,12 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 	} else {
 		data.projectLine = ctx.ProjectName + " (" + ctx.ProjectID + ")"
 	}
-	// The info UI uses the legacy Topology enum string for display ("Single"
-	// vs "Federated"). Derive it from the graph — RoleDomain is the only
-	// case where the CP is a different repo.
-	if ctx.Role == project.RoleDomain {
-		data.topology = string(project.TopologyFederated)
-	} else {
-		data.topology = string(project.TopologySingle)
-	}
-	if ctx.Role == project.RoleDomain && ctx.ControlPlane.NameWithOwner != "" {
-		data.controlPlane = ctx.ControlPlane.NameWithOwner
-	}
+	// Topology is now a plain string ("single" or "federation") derived
+	// from FEDERATION.md presence at the repo root. Display it directly.
+	data.topology = ctx.Topology
+	// Control-plane display has been removed in Feature #824: the
+	// three-way split (single/federated-cp/federated-domain) is gone.
+	// Task 6 (#833) will add a FEDERATION.md entries display here.
 
 	// Framework versions.
 	data.localVersion = ctx.LocalAIVersion

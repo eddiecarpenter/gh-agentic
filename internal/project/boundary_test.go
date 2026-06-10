@@ -19,7 +19,6 @@ import (
 // gate targets value-consumer patterns, not display strings.
 var forbiddenIdentifiers = []string{
 	"project.ProjectVarName",
-	"project.TopologyVarName",
 	"project.FrameworkVersionVarName",
 	"project.DefaultGetRepoVariable",
 }
@@ -192,13 +191,13 @@ func TestBoundary_ScannerDetectsSyntheticViolation(t *testing.T) {
 			wantViolation: true,
 		},
 		{
-			name:          "reference to project.TopologyVarName in a read context is flagged",
-			line:          `val, _ := deps.GetRepoVariable(o, r, project.TopologyVarName)`,
+			name:          "reference to project.FrameworkVersionVarName in a read context is flagged",
+			line:          `val, _ := deps.GetRepoVariable(o, r, project.FrameworkVersionVarName)`,
 			wantViolation: true,
 		},
 		{
 			name:          "allow-list comment opts the line out",
-			line:          `_ = deps.SetRepoVariable(o, r, project.TopologyVarName, "single") // boundary-allow: write path`,
+			line:          `_ = deps.SetRepoVariable(o, r, project.FrameworkVersionVarName, "v2.0") // boundary-allow: write path`,
 			wantViolation: false,
 		},
 		{
