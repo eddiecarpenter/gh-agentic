@@ -365,6 +365,49 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 					result.Repaired++
 				}
 
+			case strings.HasPrefix(r.Name, "federation-sync:not-linked:"):
+				// Manifest repo not linked to the federation project — link it
+				// automatically using the repo node ID stored in r.Data at check time.
+				if setLabel != nil {
+					setLabel("Repairing: federation project sync...")
+				}
+				repoID, ok := r.Data.(string)
+				if deps.LinkRepoToProject == nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot repair federation link for %s — no GraphQL client available",
+							ui.StatusDanger.Render("✗"), r.Name))
+					result.Unrepaired++
+					continue
+				}
+				if deps.ProjectID == "" {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot repair federation link for %s — AGENTIC_PROJECT_ID not configured",
+							ui.StatusDanger.Render("✗"), r.Name))
+					result.Unrepaired++
+					continue
+				}
+				if !ok || repoID == "" {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot repair federation link for %s — repo node ID missing from check result",
+							ui.StatusDanger.Render("✗"), r.Name))
+					result.Unrepaired++
+					continue
+				}
+				if err := deps.LinkRepoToProject(deps.ProjectID, repoID); err != nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Could not link repo to project (%s): %v",
+							ui.StatusDanger.Render("✗"), r.Name, err))
+					result.Unrepaired++
+				} else {
+					// Extract the owner/repo slug from the check-result name for the
+					// success message: "federation-sync:not-linked:<owner/repo>"
+					slug := strings.TrimPrefix(r.Name, "federation-sync:not-linked:")
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Linked %s to the federation project",
+							ui.StatusOK.Render("✓"), slug))
+					result.Repaired++
+				}
+
 			default:
 				// Variable / secret failures: defer to interactive prompts so
 				// the CLI layer can collect values after the spinner phase.
