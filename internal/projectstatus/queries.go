@@ -89,34 +89,48 @@ func FetchRequirement(deps Deps, projectID string, number int) (*Requirement, er
 	}
 	populateBlocked(deps, &req.Blocked, found.OwningRepo, found.Number, found.Body)
 
-	// Build linked features — scan feature issues for a `Closes #<number>` marker.
+	// Build linked features — use native sub-issue relationship.
+	// NOTE: deps.FetchSubIssues queries subIssues(first: 100); requirements with
+	// more than 100 linked features will be silently truncated at that limit.
+	// A paginated approach can be introduced if the scale requires it.
 	linked := make([]FeatureSummary, 0)
-	for _, issue := range issues {
-		if issue.Type != "feature" {
-			continue
+	reqOwner, reqRepo := splitOwnerRepo(found.OwningRepo)
+	if reqOwner != "" && reqRepo != "" && deps.FetchSubIssues != nil {
+		subRefs, err := deps.FetchSubIssues(reqOwner, reqRepo, number)
+		if err != nil {
+			// Partial failure — populate the error field and continue with an
+			// empty linked-features list rather than aborting the whole render.
+			req.LinkedFeaturesError = fmt.Sprintf("%s: %v", found.OwningRepo, err)
 		}
-		if !bodyReferencesRequirement(issue.Body, number, issue.OwningRepo, found.OwningRepo) {
-			continue
-		}
-		summary := FeatureSummary{
-			Number:     issue.Number,
-			Title:      issue.Title,
-			Stage:      issue.Stage,
-			OwningRepo: issue.OwningRepo,
-		}
-		owner, repo := splitOwnerRepo(issue.OwningRepo)
-		branchName := fmt.Sprintf("%s%d", featureBranchPrefix, issue.Number)
-		if owner != "" && repo != "" && deps.FetchBranch != nil {
-			if br, err := deps.FetchBranch(owner, repo, branchName); err == nil && br != nil {
-				summary.BranchOneLiner = renderBranchOneLiner(br)
+		for _, sub := range subRefs {
+			// Cross-reference with the project board. Features that are native
+			// sub-issues of the requirement but were manually removed from the
+			// project board are silently skipped — without project-board context
+			// (stage, owning repo) they cannot be rendered consistently.
+			issue := findByNumber(issues, sub.Number)
+			if issue == nil || issue.Type != "feature" {
+				continue
 			}
-		}
-		if owner != "" && repo != "" && deps.FetchPR != nil {
-			if pr, err := deps.FetchPR(owner, repo, branchName); err == nil {
-				summary.PR = pr
+			summary := FeatureSummary{
+				Number:     issue.Number,
+				Title:      issue.Title,
+				Stage:      issue.Stage,
+				OwningRepo: issue.OwningRepo,
 			}
+			owner, repo := splitOwnerRepo(issue.OwningRepo)
+			branchName := fmt.Sprintf("%s%d", featureBranchPrefix, issue.Number)
+			if owner != "" && repo != "" && deps.FetchBranch != nil {
+				if br, err := deps.FetchBranch(owner, repo, branchName); err == nil && br != nil {
+					summary.BranchOneLiner = renderBranchOneLiner(br)
+				}
+			}
+			if owner != "" && repo != "" && deps.FetchPR != nil {
+				if pr, err := deps.FetchPR(owner, repo, branchName); err == nil {
+					summary.PR = pr
+				}
+			}
+			linked = append(linked, summary)
 		}
-		linked = append(linked, summary)
 	}
 	sort.Slice(linked, func(i, j int) bool { return linked[i].Number < linked[j].Number })
 	req.LinkedFeatures = linked
@@ -168,10 +182,11 @@ func FetchFeatures(deps Deps, projectID string, includeDone bool) ([]Feature, er
 }
 
 // populateTaskCounts writes TasksTotal and TasksDone on f using deps.FetchSubIssues.
-// When the dependency is not wired, when the owning repo cannot be parsed,
-// or when the sub-issue fetch fails, both counts remain zero — the
-// rendering layer treats that as "no task info available" rather than
-// breaking the list view.
+// When the dependency is not wired or the owning repo cannot be parsed, both
+// counts remain zero — the rendering layer treats that as "no task info
+// available". When the fetch fails, the error is surfaced as OwningRepoError
+// on the Feature rather than silently ignored, allowing renderers to emit a
+// per-repo warning rather than showing empty counts without explanation.
 func populateTaskCounts(deps Deps, f *Feature) {
 	if f == nil || deps.FetchSubIssues == nil {
 		return
@@ -182,6 +197,7 @@ func populateTaskCounts(deps Deps, f *Feature) {
 	}
 	tasks, err := deps.FetchSubIssues(owner, repo, f.Number)
 	if err != nil {
+		f.OwningRepoError = fmt.Sprintf("%s: %v", f.OwningRepo, err)
 		return
 	}
 	f.TasksTotal = len(tasks)
@@ -249,21 +265,28 @@ func FetchFeature(deps Deps, projectID string, number int) (*Feature, error) {
 	}
 	feature.ParentRequirement = parent
 
-	// Branch + PR state.
+	// Branch + PR state. Errors here indicate the owning repo is unreachable
+	// (permissions, deleted repo, network). Rather than aborting the whole
+	// render, populate OwningRepoError and continue — the feature still
+	// renders with its other fields intact.
 	branchName := fmt.Sprintf("%s%d", featureBranchPrefix, number)
 	if deps.FetchBranch != nil && owner != "" && repo != "" {
 		br, err := deps.FetchBranch(owner, repo, branchName)
 		if err != nil {
-			return nil, fmt.Errorf("fetching branch state for feature %d: %w", number, err)
+			feature.OwningRepoError = fmt.Sprintf("%s: %v", found.OwningRepo, err)
+		} else {
+			feature.Branch = br
 		}
-		feature.Branch = br
 	}
 	if deps.FetchPR != nil && owner != "" && repo != "" {
 		pr, err := deps.FetchPR(owner, repo, branchName)
 		if err != nil {
-			return nil, fmt.Errorf("fetching PR state for feature %d: %w", number, err)
+			if feature.OwningRepoError == "" {
+				feature.OwningRepoError = fmt.Sprintf("%s: %v", found.OwningRepo, err)
+			}
+		} else {
+			feature.PR = pr
 		}
-		feature.PR = pr
 	}
 
 	return feature, nil

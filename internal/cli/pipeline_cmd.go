@@ -281,6 +281,18 @@ func writePipelineHuman(w io.Writer, reqs []projectstatus.Requirement, features 
 	case includeFeats:
 		fmt.Fprintln(w, featuresTotalsLine(len(features), blockedCountFeatures(features)))
 	}
+	// Emit repo-error warnings collected across both lists so the user can see
+	// which repos were unreachable without inspecting individual items.
+	for _, r := range reqs {
+		if r.LinkedFeaturesError != "" {
+			fmt.Fprintf(w, "⚠ %s\n", r.LinkedFeaturesError)
+		}
+	}
+	for _, f := range features {
+		if f.OwningRepoError != "" {
+			fmt.Fprintf(w, "⚠ %s\n", f.OwningRepoError)
+		}
+	}
 	return nil
 }
 

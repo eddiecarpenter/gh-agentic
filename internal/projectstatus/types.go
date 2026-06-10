@@ -84,6 +84,12 @@ type Requirement struct {
 	OwningRepo         string           `json:"owning_repo"`
 	Blocked            *BlockedInfo     `json:"blocked"`
 	LinkedFeatures     []FeatureSummary `json:"linked_features"`
+
+	// LinkedFeaturesError is populated (non-empty) when the FetchSubIssues
+	// call for this requirement's repo fails. The value is a human-readable
+	// "<repo>: <reason>" string. Tagged json:"-" so it never reaches any
+	// downstream JSON consumer — it is a rendering-only hint.
+	LinkedFeaturesError string `json:"-"`
 }
 
 // Feature is a single feature issue with its pipeline state, parent
@@ -111,6 +117,12 @@ type Feature struct {
 	// Internal — used by list/pipeline renderers only; never serialised.
 	TasksTotal int `json:"-"`
 	TasksDone  int `json:"-"`
+
+	// OwningRepoError is populated (non-empty) when a sub-issue, branch, or
+	// PR fetch for this feature's owning repo fails. The value is a human-
+	// readable "<repo>: <reason>" string. Tagged json:"-" so it never reaches
+	// any downstream JSON consumer — it is a rendering-only hint.
+	OwningRepoError string `json:"-"`
 }
 
 // RequirementSummary is the compact embedded form used when a feature

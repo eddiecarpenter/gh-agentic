@@ -121,6 +121,13 @@ func writeFeaturesTable(w io.Writer, features []projectstatus.Feature, currentRe
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, featuresTotalsLine(len(features), blocked))
+	// Emit per-repo warnings for any features whose owning repo was unreachable
+	// (sub-issue, branch, or PR fetch failed). One line per warning.
+	for _, f := range features {
+		if f.OwningRepoError != "" {
+			fmt.Fprintf(w, "⚠ %s\n", f.OwningRepoError)
+		}
+	}
 	return nil
 }
 
@@ -158,6 +165,23 @@ func writeFeaturesRaw(w io.Writer, features []projectstatus.Feature, verbose boo
 		}
 		if _, err := fmt.Fprintln(w, strings.Join(row, rawListSeparator)); err != nil {
 			return fmt.Errorf("writing raw row: %w", err)
+		}
+	}
+	// Emit a # warnings section when any feature has a repo-fetch error.
+	var featWarnings []string
+	for _, f := range features {
+		if f.OwningRepoError != "" {
+			featWarnings = append(featWarnings, f.OwningRepoError)
+		}
+	}
+	if len(featWarnings) > 0 {
+		if _, err := fmt.Fprintln(w, "# warnings"); err != nil {
+			return fmt.Errorf("writing raw warnings header: %w", err)
+		}
+		for _, warn := range featWarnings {
+			if _, err := fmt.Fprintln(w, warn); err != nil {
+				return fmt.Errorf("writing raw warning: %w", err)
+			}
 		}
 	}
 	return nil

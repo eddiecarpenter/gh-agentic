@@ -3,6 +3,7 @@ package projectstatus
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -312,12 +313,16 @@ func TestFetchRequirement_WrongType(t *testing.T) {
 	}
 }
 
-// TestFetchRequirement_LinkedFeaturesViaClosesMarker verifies that linked
-// features are discovered by scanning feature bodies for `Closes #N` and
-// that branch / PR state is embedded.
-func TestFetchRequirement_LinkedFeaturesViaClosesMarker(t *testing.T) {
+// TestFetchRequirement_LinkedFeaturesViaSubIssues verifies that linked
+// features are discovered via the native sub-issue relationship and that
+// branch / PR state is embedded.
+func TestFetchRequirement_LinkedFeaturesViaSubIssues(t *testing.T) {
 	f := fakeDeps{
 		issues: sampleIssues(),
+		subIssues: map[int][]TaskRef{
+			// Requirement #457 has feature #492 as a native sub-issue.
+			457: {{Number: 492, Title: "feat: status", Closed: false}},
+		},
 		branches: map[string]*BranchState{
 			"feature/492": {Name: "feature/492", Exists: true, Merged: false},
 		},
@@ -341,6 +346,48 @@ func TestFetchRequirement_LinkedFeaturesViaClosesMarker(t *testing.T) {
 	}
 	if lf.PR == nil || lf.PR.Number != 555 {
 		t.Errorf("PR = %+v, want 555", lf.PR)
+	}
+}
+
+// TestFetchRequirement_SubIssueAbsentFromProjectBoard verifies that sub-issues
+// returned by FetchSubIssues but absent from the project board (or not of type
+// "feature") are silently skipped — they cannot be rendered without
+// project-board context.
+func TestFetchRequirement_SubIssueAbsentFromProjectBoard(t *testing.T) {
+	f := fakeDeps{
+		issues: sampleIssues(),
+		subIssues: map[int][]TaskRef{
+			// #9999 does not appear in sampleIssues → silently skipped.
+			// #999 appears but is a "task" type → silently skipped.
+			457: {
+				{Number: 9999, Title: "ghost feature", Closed: false},
+				{Number: 999, Title: "task: example", Closed: false},
+			},
+		},
+	}
+	req, err := FetchRequirement(f.Deps(), "PROJ", 457)
+	if err != nil {
+		t.Fatalf("FetchRequirement: %v", err)
+	}
+	if len(req.LinkedFeatures) != 0 {
+		t.Errorf("expected 0 linked features when sub-issues absent/wrong-type, got %d: %+v",
+			len(req.LinkedFeatures), req.LinkedFeatures)
+	}
+}
+
+// TestFetchRequirement_SubIssuesDepNotWired verifies graceful degradation when
+// FetchSubIssues is not wired — linked features are empty but no error is returned.
+func TestFetchRequirement_SubIssuesDepNotWired(t *testing.T) {
+	deps := Deps{
+		FetchProjectIssues: func(string) ([]ProjectIssue, error) { return sampleIssues(), nil },
+		// FetchSubIssues intentionally absent.
+	}
+	req, err := FetchRequirement(deps, "PROJ", 457)
+	if err != nil {
+		t.Fatalf("FetchRequirement with no FetchSubIssues: %v", err)
+	}
+	if len(req.LinkedFeatures) != 0 {
+		t.Errorf("expected 0 linked features when FetchSubIssues not wired, got %d", len(req.LinkedFeatures))
 	}
 }
 
@@ -537,6 +584,84 @@ func TestFetchProjectIssuesError_PropagatesFromFetchRequirements(t *testing.T) {
 		t.Fatal("expected error from FetchRequirements, got nil")
 	}
 }
+
+// TestFetchRequirement_SubIssuesErrorPopulatesLinkedFeaturesError verifies that
+// when FetchSubIssues returns an error the requirement is still returned (not
+// an error) and LinkedFeaturesError is non-empty with the owning repo and
+// reason. LinkedFeatures must be empty because the fetch failed.
+func TestFetchRequirement_SubIssuesErrorPopulatesLinkedFeaturesError(t *testing.T) {
+	boom := fmt.Errorf("connection refused")
+	deps := Deps{
+		FetchProjectIssues: func(string) ([]ProjectIssue, error) { return sampleIssues(), nil },
+		FetchSubIssues:     func(owner, repo string, number int) ([]TaskRef, error) { return nil, boom },
+	}
+	req, err := FetchRequirement(deps, "PROJ", 457)
+	if err != nil {
+		t.Fatalf("FetchRequirement should not return an error on partial fetch failure; got: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("req is nil; expected a requirement with LinkedFeaturesError set")
+	}
+	if req.LinkedFeaturesError == "" {
+		t.Errorf("LinkedFeaturesError should be non-empty when FetchSubIssues fails; got empty string")
+	}
+	if len(req.LinkedFeatures) != 0 {
+		t.Errorf("LinkedFeatures should be empty on fetch error; got %d items", len(req.LinkedFeatures))
+	}
+	// The error field must identify the owning repo.
+	if !containsString(req.LinkedFeaturesError, "eddiecarpenter/gh-agentic") {
+		t.Errorf("LinkedFeaturesError should name the owning repo; got %q", req.LinkedFeaturesError)
+	}
+}
+
+// TestFetchFeature_BranchErrorPopulatesOwningRepoError verifies that when
+// FetchBranch returns an error the feature is still returned (not an error),
+// OwningRepoError is non-empty, and Branch is nil.
+func TestFetchFeature_BranchErrorPopulatesOwningRepoError(t *testing.T) {
+	boom := fmt.Errorf("permission denied")
+	deps := Deps{
+		FetchProjectIssues: func(string) ([]ProjectIssue, error) { return sampleIssues(), nil },
+		FetchSubIssues:     func(string, string, int) ([]TaskRef, error) { return nil, nil },
+		FetchBranch:        func(owner, repo, name string) (*BranchState, error) { return nil, boom },
+	}
+	feature, err := FetchFeature(deps, "PROJ", 492)
+	if err != nil {
+		t.Fatalf("FetchFeature should not return an error on branch fetch failure; got: %v", err)
+	}
+	if feature == nil {
+		t.Fatalf("feature is nil; expected a feature with OwningRepoError set")
+	}
+	if feature.OwningRepoError == "" {
+		t.Errorf("OwningRepoError should be non-empty when FetchBranch fails; got empty string")
+	}
+	if feature.Branch != nil {
+		t.Errorf("Branch should be nil on fetch error; got %+v", feature.Branch)
+	}
+}
+
+// TestPopulateTaskCounts_ErrorPopulatesOwningRepoError verifies that when
+// FetchSubIssues returns an error populateTaskCounts records the failure in
+// OwningRepoError rather than silently ignoring it.
+func TestPopulateTaskCounts_ErrorPopulatesOwningRepoError(t *testing.T) {
+	boom := fmt.Errorf("timeout")
+	deps := Deps{
+		FetchSubIssues: func(string, string, int) ([]TaskRef, error) { return nil, boom },
+	}
+	f := &Feature{
+		Number:    492,
+		OwningRepo: "eddiecarpenter/gh-agentic",
+	}
+	populateTaskCounts(deps, f)
+	if f.OwningRepoError == "" {
+		t.Errorf("OwningRepoError should be set on FetchSubIssues failure; got empty string")
+	}
+	if f.TasksTotal != 0 || f.TasksDone != 0 {
+		t.Errorf("TasksTotal/Done should remain zero on error; got %d/%d", f.TasksDone, f.TasksTotal)
+	}
+}
+
+// containsString is a tiny helper used in a few package tests.
+func containsString(s, sub string) bool { return strings.Contains(s, sub) }
 
 // TestBodyReferencesRequirement_CrossRepoGuard verifies a bare `Closes #N`
 // only matches within the same owning repo — protects against cross-repo
