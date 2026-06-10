@@ -121,22 +121,6 @@ Those failures are surfaced with the exact 'gh' command to run.`,
 				}
 			}
 
-			// Phase 4: shadow-vars batch confirm + delete. The prompt must
-			// live outside the spinner phase so huh.NewConfirm can own the
-			// terminal. One confirmation covers the whole batch.
-			if !pipelineSkipped && pdepsErr == nil && pipelineResult.ShadowBatch != nil {
-				shadowRes := doctor.RepairShadowValues(
-					pipelineResult.ShadowBatch.Items,
-					pipelineDeps.Run,
-					huhConfirm,
-				)
-				for _, line := range shadowRes.Lines {
-					fmt.Fprintln(w, line)
-				}
-				pipelineResult.Repaired += shadowRes.Repaired
-				pipelineResult.Unrepaired += shadowRes.Unrepaired
-			}
-
 			totalRepaired := projectResult.Repaired + pipelineResult.Repaired
 			totalUnrepaired := projectResult.Unrepaired + pipelineResult.Unrepaired
 

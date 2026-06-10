@@ -174,10 +174,6 @@ change membership, or --force to re-run setup from scratch.`,
 				return fmt.Errorf("configuration: %w", err)
 			}
 
-			// Wire the production Confirm for the org-visibility gate in
-			// initpkg.ConfigureRepo. Tests inject their own ConfirmFunc.
-			initCfg.Confirm = initpkg.HuhConfirm
-
 			if err := project.InitRepo(w, deps, project.InitRepoConfig{
 				Mode:      project.InitModeFederated,
 				ProjectID: projectID,

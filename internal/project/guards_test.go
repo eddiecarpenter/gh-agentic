@@ -13,7 +13,7 @@ import (
 // --- EnsureFederatedOwnerIsOrg ---
 
 func TestEnsureFederatedOwnerIsOrg_OrgOwner_AllTopologies_ReturnsNil(t *testing.T) {
-	for _, topo := range []string{"", "single", "federated", "federated-cp", "federated-domain", "Federated"} {
+	for _, topo := range []string{"", "single", "federation", "Federation"} {
 		t.Run(topo, func(t *testing.T) {
 			if err := EnsureFederatedOwnerIsOrg(topo, "acme", auth.OwnerTypeOrg); err != nil {
 				t.Fatalf("expected nil for org owner under topology %q, got %v", topo, err)
@@ -33,8 +33,10 @@ func TestEnsureFederatedOwnerIsOrg_UserOwner_SingleOrEmpty_ReturnsNil(t *testing
 }
 
 func TestEnsureFederatedOwnerIsOrg_UserOwner_FederatedVariants_ReturnsVerbatimError(t *testing.T) {
+	// Feature #824: topology is now binary — "single" or "federation".
+	// Only "federation" (and case variants) triggers the user-owner guard.
 	want := fmt.Sprintf(FederatedRequiresOrgMessage, "eddie")
-	for _, topo := range []string{"federated", "federated-cp", "federated-domain", "Federated", "FEDERATED"} {
+	for _, topo := range []string{"federation", "Federation", "FEDERATION"} {
 		t.Run(topo, func(t *testing.T) {
 			err := EnsureFederatedOwnerIsOrg(topo, "eddie", auth.OwnerTypeUser)
 			if err == nil {
@@ -53,7 +55,7 @@ func TestEnsureFederatedOwnerIsOrg_VerbatimMessageWording(t *testing.T) {
 	// will also fail. Keep the expected string as a single literal so the
 	// diff is obvious.
 	want := "Federated topology requires a GitHub Organization. The owner 'eddie' is a user account, which cannot host org-scoped variables and secrets. Either move this repo under an organisation, or use `--topology single`."
-	got := EnsureFederatedOwnerIsOrg("federated", "eddie", auth.OwnerTypeUser).Error()
+	got := EnsureFederatedOwnerIsOrg("federation", "eddie", auth.OwnerTypeUser).Error()
 	if got != want {
 		t.Fatalf("error message mismatch:\ngot:  %q\nwant: %q", got, want)
 	}
