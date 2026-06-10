@@ -255,11 +255,18 @@ jobs:
   # ---------------------------------------------------------------------------
   dev-session:
     name: Dev Session (Stage 4)
+    # The needs-interactive-design exclusion is a guarded cliff: Features flagged
+    # for interactive-only work (e.g. skill-tree edits, forbidden to automated
+    # agents by RULEBOOK "Skill Editing Authority") must never trigger a headless
+    # dev session, even if their label is moved to in-development. The
+    # interactive-dev-guard job below posts a human-facing notice when this skip
+    # fires, so the silent no-op is not mistaken for a stuck pipeline.
     if: |
       github.event_name == 'issues' &&
       github.event.action == 'labeled' &&
       contains(github.event.issue.labels.*.name, 'feature') &&
-      github.event.label.name == 'in-development'
+      github.event.label.name == 'in-development' &&
+      !contains(github.event.issue.labels.*.name, 'needs-interactive-design')
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
       contents: write
@@ -402,6 +409,59 @@ jobs:
           status: 'In Verification'
 
   # ---------------------------------------------------------------------------
+  # Stage 4 guard — Interactive-only feature reached in-development
+  # Trigger: feature issue labelled 'in-development' that ALSO carries
+  #   'needs-interactive-design' (interactive-only work).
+  # The dev-session job (Stage 4) deliberately skips these via its if: guard —
+  # headless agents must not perform interactive-only work (RULEBOOK "Skill
+  # Editing Authority"). A skipped job is invisible on the issue, which reads as
+  # a stuck pipeline. This job turns the silent skip into an explicit, one-time
+  # human-facing notice. github.token suffices — it only posts a comment and
+  # must not trigger any downstream workflow run.
+  # ---------------------------------------------------------------------------
+  interactive-dev-guard:
+    name: Interactive-only Guard (Stage 4)
+    if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      contains(github.event.issue.labels.*.name, 'feature') &&
+      github.event.label.name == 'in-development' &&
+      contains(github.event.issue.labels.*.name, 'needs-interactive-design')
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    permissions:
+      issues: write
+
+    steps:
+      - name: Post interactive-only notice
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          MARKER="<!-- interactive-only-guard:v1 -->"
+          EXISTING=$(gh issue view "${ISSUE}" --repo "${REPO}" --json comments \
+            --jq "[.comments[] | select(.body | startswith(\"${MARKER}\"))] | length")
+          if [ "${EXISTING}" -gt 0 ]; then
+            echo "Interactive-only notice already present on #${ISSUE} — skipping."
+            exit 0
+          fi
+          BODY=$(printf '%s\n' \
+            "${MARKER}" \
+            '## ⚠️ Interactive-only feature — implement in foreground' \
+            '' \
+            'This Feature carries `needs-interactive-design`, marking it as' \
+            'interactive-only (e.g. skill-tree edits, which RULEBOOK "Skill Editing' \
+            'Authority" forbids automated agents from performing).' \
+            '' \
+            'The headless **Dev Session (Stage 4)** was skipped deliberately and will' \
+            'not run against this Feature. Implement it in a foreground (interactive)' \
+            'session, then open the PR manually.' \
+            '' \
+            '_No pipeline action is pending — this is a guarded skip, not a stuck state._')
+          gh issue comment "${ISSUE}" --repo "${REPO}" --body "${BODY}"
+          echo "✓ Posted interactive-only notice on #${ISSUE}."
+
+  # ---------------------------------------------------------------------------
   # Stage 5 — Compliance Verify
   # Trigger: feature issue labelled 'in-verification'
   # Produces: compliance-verified label + open PR (PASS), or cycling back to
@@ -411,12 +471,17 @@ jobs:
   # ---------------------------------------------------------------------------
   compliance-verify:
     name: Compliance Verify (Stage 5)
+    # The needs-interactive-design exclusion mirrors the dev-session guard:
+    # an interactive-only Feature must not be verified headlessly even if a human
+    # drags it to in-verification. workflow_dispatch is left ungated — that path
+    # is an explicit human override and carries no issue-label context.
     if: |
       github.event_name == 'workflow_dispatch' || (
         github.event_name == 'issues' &&
         github.event.action == 'labeled' &&
         contains(github.event.issue.labels.*.name, 'feature') &&
-        github.event.label.name == 'in-verification'
+        github.event.label.name == 'in-verification' &&
+        !contains(github.event.issue.labels.*.name, 'needs-interactive-design')
       )
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
