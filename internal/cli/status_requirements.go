@@ -199,6 +199,14 @@ func writeRequirementsTable(w io.Writer, reqs []projectstatus.Requirement, curre
 	}
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, requirementsTotalsLine(len(reqs), blocked))
+	// Emit per-repo warnings for any requirements whose linked-feature fetch
+	// failed (e.g. an unreachable cross-repo). One line per warning so the
+	// user can identify which repo is unavailable without losing the rest.
+	for _, r := range reqs {
+		if r.LinkedFeaturesError != "" {
+			fmt.Fprintf(w, "⚠ %s\n", r.LinkedFeaturesError)
+		}
+	}
 	return nil
 }
 
@@ -268,6 +276,24 @@ func writeRequirementsRaw(w io.Writer, reqs []projectstatus.Requirement, verbose
 		}
 		if _, err := fmt.Fprintln(w, strings.Join(row, rawListSeparator)); err != nil {
 			return fmt.Errorf("writing raw row: %w", err)
+		}
+	}
+	// Emit a # warnings section when any requirement has a repo-fetch error.
+	// Agents test for the section's presence to detect partial-failure renders.
+	var reqWarnings []string
+	for _, r := range reqs {
+		if r.LinkedFeaturesError != "" {
+			reqWarnings = append(reqWarnings, r.LinkedFeaturesError)
+		}
+	}
+	if len(reqWarnings) > 0 {
+		if _, err := fmt.Fprintln(w, "# warnings"); err != nil {
+			return fmt.Errorf("writing raw warnings header: %w", err)
+		}
+		for _, warn := range reqWarnings {
+			if _, err := fmt.Fprintln(w, warn); err != nil {
+				return fmt.Errorf("writing raw warning: %w", err)
+			}
 		}
 	}
 	return nil

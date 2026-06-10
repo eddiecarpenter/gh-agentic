@@ -59,7 +59,7 @@ func TestRunStatusRequirement_InvokesBusyWrapper(t *testing.T) {
 	issues := []projectstatus.ProjectIssue{
 		{Number: 466, Title: "r", Stage: projectstatus.StageDone, Type: "requirement", State: "closed", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
-	sd := requirementDetailFixture(issues, nil, nil)
+	sd := requirementDetailFixture(issues, nil, nil, nil)
 	sd.busy = rec.Run
 
 	if err := runStatusRequirement(&bytes.Buffer{}, io.Discard, 466, statusDetailFlags{}, sd); err != nil {

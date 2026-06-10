@@ -109,6 +109,12 @@ func writeFeatureDetail(w io.Writer, f *projectstatus.Feature, utf8 bool) error 
 		}
 		fmt.Fprintf(w, "  %s  #%d  %s\n", glyph, t.Number, t.Title)
 	}
+	// Emit a warning when the owning repo was unreachable (branch, PR, or
+	// sub-issue fetch failed). The feature itself still renders; only the
+	// branch/PR/task sections may be incomplete.
+	if f.OwningRepoError != "" {
+		fmt.Fprintf(w, "⚠ %s\n", f.OwningRepoError)
+	}
 	return nil
 }
 

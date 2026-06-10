@@ -15,11 +15,16 @@ import (
 
 // requirementDetailFixture builds a fake projectstatus.Deps that returns the
 // given issues slice for any project ID, so FetchRequirement walks the same
-// composer path that production does.
-func requirementDetailFixture(issues []projectstatus.ProjectIssue, branches map[string]*projectstatus.BranchState, prs map[string]*projectstatus.PRState) statusDeps {
+// composer path that production does. subIssues is keyed by parent issue
+// number and provides the native sub-issue relationship used to discover
+// linked features (nil means no sub-issues for any requirement).
+func requirementDetailFixture(issues []projectstatus.ProjectIssue, branches map[string]*projectstatus.BranchState, prs map[string]*projectstatus.PRState, subIssues map[int][]projectstatus.TaskRef) statusDeps {
 	ps := projectstatus.Deps{
 		FetchProjectIssues: func(projectID string) ([]projectstatus.ProjectIssue, error) {
 			return issues, nil
+		},
+		FetchSubIssues: func(owner, repo string, number int) ([]projectstatus.TaskRef, error) {
+			return subIssues[number], nil
 		},
 		FetchBranch: func(owner, repo, name string) (*projectstatus.BranchState, error) {
 			if b, ok := branches[name]; ok {
@@ -45,7 +50,7 @@ func TestRunStatusRequirement_DefaultDetailOutput(t *testing.T) {
 	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
 	issues := []projectstatus.ProjectIssue{
 		{Number: 466, Title: "requirement-title", Body: "## Business need\n\nBody content", Stage: projectstatus.StageDone, Type: "requirement", State: "closed", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
-		{Number: 483, Title: "feat: ask-user", Body: "Closes #466", Stage: projectstatus.StageDone, Type: "feature", State: "closed", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 483, Title: "feat: ask-user", Stage: projectstatus.StageDone, Type: "feature", State: "closed", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
 	branches := map[string]*projectstatus.BranchState{
 		"feature/483": {Name: "feature/483", Exists: true, Merged: true},
@@ -53,7 +58,10 @@ func TestRunStatusRequirement_DefaultDetailOutput(t *testing.T) {
 	prs := map[string]*projectstatus.PRState{
 		"feature/483": {Number: 491, State: "merged", Reviewers: []string{"eddie"}},
 	}
-	sd := requirementDetailFixture(issues, branches, prs)
+	subs := map[int][]projectstatus.TaskRef{
+		466: {{Number: 483, Title: "feat: ask-user", Closed: true}},
+	}
+	sd := requirementDetailFixture(issues, branches, prs, subs)
 
 	buf := &bytes.Buffer{}
 	err := runStatusRequirement(buf, io.Discard, 466, statusDetailFlags{}, sd)
@@ -86,7 +94,7 @@ func TestRunStatusRequirement_NoLinkedFeaturesShowsNone(t *testing.T) {
 	issues := []projectstatus.ProjectIssue{
 		{Number: 467, Title: "lonely", Stage: projectstatus.StageBacklog, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
-	sd := requirementDetailFixture(issues, nil, nil)
+	sd := requirementDetailFixture(issues, nil, nil, nil)
 
 	buf := &bytes.Buffer{}
 	err := runStatusRequirement(buf, io.Discard, 467, statusDetailFlags{}, sd)
@@ -101,7 +109,7 @@ func TestRunStatusRequirement_NoLinkedFeaturesShowsNone(t *testing.T) {
 // TestRunStatusRequirement_NotFound verifies a non-existent number surfaces
 // a clear error and wraps ErrIssueNotFound.
 func TestRunStatusRequirement_NotFound(t *testing.T) {
-	sd := requirementDetailFixture(nil, nil, nil)
+	sd := requirementDetailFixture(nil, nil, nil, nil)
 	err := runStatusRequirement(&bytes.Buffer{}, io.Discard, 9999, statusDetailFlags{}, sd)
 	if err == nil {
 		t.Fatalf("expected error for missing requirement, got nil")
@@ -121,7 +129,7 @@ func TestRunStatusRequirement_WrongType(t *testing.T) {
 	issues := []projectstatus.ProjectIssue{
 		{Number: 492, Title: "feat: status", Type: "feature", Stage: projectstatus.StageInDevelopment, State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
-	sd := requirementDetailFixture(issues, nil, nil)
+	sd := requirementDetailFixture(issues, nil, nil, nil)
 	err := runStatusRequirement(&bytes.Buffer{}, io.Discard, 492, statusDetailFlags{}, sd)
 
 	var wt *projectstatus.ErrWrongType
@@ -226,11 +234,17 @@ func TestRunStatusRequirement_RawVerbatimBody(t *testing.T) {
 		"Steps: scope → design → develop → review."
 	issues := []projectstatus.ProjectIssue{
 		{Number: 569, Title: "Centralised project context resolution", Body: body, Stage: projectstatus.StageReadyToImplement, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
-		// Two linked features so the linked_features header field is non-empty.
-		{Number: 571, Title: "feat: a", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
-		{Number: 572, Title: "feat: b", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
+		// Two linked features (on the project board so cross-ref finds them).
+		{Number: 571, Title: "feat: a", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 572, Title: "feat: b", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
-	sd := requirementDetailFixture(issues, nil, nil)
+	subs := map[int][]projectstatus.TaskRef{
+		569: {
+			{Number: 571, Title: "feat: a", Closed: false},
+			{Number: 572, Title: "feat: b", Closed: false},
+		},
+	}
+	sd := requirementDetailFixture(issues, nil, nil, subs)
 
 	buf := &bytes.Buffer{}
 	if err := runStatusRequirement(buf, io.Discard, 569, statusDetailFlags{raw: true}, sd); err != nil {
@@ -274,7 +288,7 @@ func TestRunStatusRequirement_RawSeparatorAlwaysPresent(t *testing.T) {
 	issues := []projectstatus.ProjectIssue{
 		{Number: 600, Title: "empty body", Body: "", Stage: projectstatus.StageBacklog, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
-	sd := requirementDetailFixture(issues, nil, nil)
+	sd := requirementDetailFixture(issues, nil, nil, nil)
 	buf := &bytes.Buffer{}
 	if err := runStatusRequirement(buf, io.Discard, 600, statusDetailFlags{raw: true}, sd); err != nil {
 		t.Fatalf("runStatusRequirement --raw: %v", err)
@@ -297,10 +311,16 @@ func TestRunStatusRequirement_RawVerboseInsertsTimestamps(t *testing.T) {
 		"Steps: scope → design → develop → review."
 	issues := []projectstatus.ProjectIssue{
 		{Number: 569, Title: "Centralised project context resolution", Body: body, Stage: projectstatus.StageReadyToImplement, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
-		{Number: 571, Title: "feat: a", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
-		{Number: 572, Title: "feat: b", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", Body: "Closes #569", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 571, Title: "feat: a", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		{Number: 572, Title: "feat: b", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
-	sd := requirementDetailFixture(issues, nil, nil)
+	subs := map[int][]projectstatus.TaskRef{
+		569: {
+			{Number: 571, Title: "feat: a", Closed: false},
+			{Number: 572, Title: "feat: b", Closed: false},
+		},
+	}
+	sd := requirementDetailFixture(issues, nil, nil, subs)
 
 	buf := &bytes.Buffer{}
 	if err := runStatusRequirement(buf, io.Discard, 569, statusDetailFlags{raw: true, verbose: true}, sd); err != nil {
@@ -331,7 +351,7 @@ func TestRunStatusRequirement_VerboseWithoutRawIsNoOp(t *testing.T) {
 	issues := []projectstatus.ProjectIssue{
 		{Number: 569, Title: "t", Stage: projectstatus.StageReadyToImplement, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
 	}
-	sd := requirementDetailFixture(issues, nil, nil)
+	sd := requirementDetailFixture(issues, nil, nil, nil)
 	bare := &bytes.Buffer{}
 	if err := runStatusRequirement(bare, io.Discard, 569, statusDetailFlags{}, sd); err != nil {
 		t.Fatalf("baseline: %v", err)
@@ -342,6 +362,65 @@ func TestRunStatusRequirement_VerboseWithoutRawIsNoOp(t *testing.T) {
 	}
 	if !bytes.Equal(bare.Bytes(), verbose.Bytes()) {
 		t.Errorf("--verbose without --raw must not change detail output")
+	}
+}
+
+// TestRunStatusRequirement_SubIssuesErrorRendersWarning verifies that when
+// FetchSubIssues returns an error the requirement still renders (the handler
+// does not return an error) and the output contains a ⚠ warning line naming
+// the owning repo.
+func TestRunStatusRequirement_SubIssuesErrorRendersWarning(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	boom := errors.New("connection refused")
+	issues := []projectstatus.ProjectIssue{
+		{Number: 457, Title: "req", Stage: projectstatus.StageBacklog, Type: "requirement", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+	}
+	// Wire FetchSubIssues to always fail for this test.
+	ps := projectstatus.Deps{
+		FetchProjectIssues: func(string) ([]projectstatus.ProjectIssue, error) { return issues, nil },
+		FetchSubIssues:     func(string, string, int) ([]projectstatus.TaskRef, error) { return nil, boom },
+	}
+	sd := statusDeps{
+		currentRepo:      func() (string, error) { return "eddiecarpenter/gh-agentic", nil },
+		resolveProjectID: func(string) (string, error) { return "PROJ_ID", nil },
+		psDeps:           ps,
+		busy:             testutil.NoopBusy,
+	}
+	buf := &bytes.Buffer{}
+	err := runStatusRequirement(buf, io.Discard, 457, statusDetailFlags{}, sd)
+	if err != nil {
+		t.Fatalf("runStatusRequirement should succeed even when FetchSubIssues fails; got: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "req") {
+		t.Errorf("requirement title missing from output; got:\n%s", out)
+	}
+	if !strings.Contains(out, "⚠") {
+		t.Errorf("expected ⚠ warning in output when FetchSubIssues fails; got:\n%s", out)
+	}
+	if !strings.Contains(out, "eddiecarpenter/gh-agentic") {
+		t.Errorf("expected owning repo in warning output; got:\n%s", out)
+	}
+}
+
+// TestWriteRequirementsTable_LinkedFeaturesErrorShowsWarning verifies that
+// requirements carrying LinkedFeaturesError emit a ⚠ footer line after the
+// totals.
+func TestWriteRequirementsTable_LinkedFeaturesErrorShowsWarning(t *testing.T) {
+	reqs := []projectstatus.Requirement{
+		{Number: 457, Title: "req", Stage: projectstatus.StageBacklog, OwningRepo: "o/r",
+			LinkedFeaturesError: "cross-repo/thing: permission denied"},
+	}
+	buf := &bytes.Buffer{}
+	if err := writeRequirementsTable(buf, reqs, "o/r"); err != nil {
+		t.Fatalf("writeRequirementsTable: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "⚠") {
+		t.Errorf("expected ⚠ in output; got:\n%s", out)
+	}
+	if !strings.Contains(out, "cross-repo/thing: permission denied") {
+		t.Errorf("expected warning text in output; got:\n%s", out)
 	}
 }
 

@@ -95,16 +95,22 @@ func writeRequirementDetail(w io.Writer, r *projectstatus.Requirement) error {
 	fmt.Fprintln(w, "Linked features:")
 	if len(r.LinkedFeatures) == 0 {
 		fmt.Fprintln(w, "  (none)")
-		return nil
+	} else {
+		for _, f := range r.LinkedFeatures {
+			fmt.Fprintf(w, "  #%-4d %-14s %s\n", f.Number, stageDisplay(f.Stage), f.Title)
+			if f.BranchOneLiner != "" {
+				fmt.Fprintf(w, "        branch: %s\n", f.BranchOneLiner)
+			}
+			if f.PR != nil {
+				fmt.Fprintln(w, "        pr: "+formatPROneLiner(f.PR))
+			}
+		}
 	}
-	for _, f := range r.LinkedFeatures {
-		fmt.Fprintf(w, "  #%-4d %-14s %s\n", f.Number, stageDisplay(f.Stage), f.Title)
-		if f.BranchOneLiner != "" {
-			fmt.Fprintf(w, "        branch: %s\n", f.BranchOneLiner)
-		}
-		if f.PR != nil {
-			fmt.Fprintln(w, "        pr: "+formatPROneLiner(f.PR))
-		}
+	// Emit a warning when the linked-features fetch failed for the requirement's
+	// owning repo. The requirement itself still renders; only the linked-features
+	// list may be incomplete.
+	if r.LinkedFeaturesError != "" {
+		fmt.Fprintf(w, "⚠ %s\n", r.LinkedFeaturesError)
 	}
 	return nil
 }

@@ -335,3 +335,45 @@ func TestFeaturesTotalsLine(t *testing.T) {
 		}
 	}
 }
+
+// TestWriteFeaturesTable_OwningRepoErrorShowsWarning verifies that when a
+// feature carries a non-empty OwningRepoError (set by populateTaskCounts when
+// FetchSubIssues fails), writeFeaturesTable emits a ⚠ warning line after the
+// totals footer.
+func TestWriteFeaturesTable_OwningRepoErrorShowsWarning(t *testing.T) {
+	features := []projectstatus.Feature{
+		{
+			Number:          492,
+			Title:           "feat: status",
+			Stage:           projectstatus.StageInDevelopment,
+			OwningRepo:      "eddiecarpenter/gh-agentic",
+			OwningRepoError: "eddiecarpenter/gh-agentic: repository not found",
+		},
+	}
+	buf := &bytes.Buffer{}
+	if err := writeFeaturesTable(buf, features, "eddiecarpenter/gh-agentic"); err != nil {
+		t.Fatalf("writeFeaturesTable: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "⚠ eddiecarpenter/gh-agentic: repository not found") {
+		t.Errorf("expected warning line; got:\n%s", out)
+	}
+}
+
+// TestRunStatusFeatures_OwningRepoErrorRendersWarning is an integration test:
+// when FetchSubIssues returns an error for a feature, FetchFeatures populates
+// OwningRepoError and the table renderer emits the ⚠ warning line.
+func TestRunStatusFeatures_OwningRepoErrorRendersWarning(t *testing.T) {
+	sd := fakeFeaturesDeps(sampleFeatureIssues(), nil)
+	sd.psDeps.FetchSubIssues = func(_, repo string, _ int) ([]projectstatus.TaskRef, error) {
+		return nil, errors.New("repository not found")
+	}
+	buf := &bytes.Buffer{}
+	if err := runStatusFeatures(buf, io.Discard, statusListFlags{}, sd); err != nil {
+		t.Fatalf("runStatusFeatures: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "⚠") {
+		t.Errorf("expected at least one ⚠ warning line; got:\n%s", out)
+	}
+}
