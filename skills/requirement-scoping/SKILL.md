@@ -7,6 +7,7 @@ loads:
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
   - skills/definitions/state-model-pattern.md
+  - skills/definitions/render-before-confirm.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
   - skills/apply-label/SKILL.md
@@ -93,6 +94,10 @@ body as a `## Parking Lot` section, not as separate artefacts.
 - `skills/definitions/step-skip-rule.md` — articulation-as-enforcement
   rule preventing silent skipping. Conditional-step carve-out
   applies to artefacts 7 (UX triage downstream) and revision loops.
+- `skills/definitions/render-before-confirm.md` — the turn-boundary
+  rule for every artefact gate: rendered content is the final output
+  of its turn; the `prompt-user` Confirm/Revise/Cancel call comes on
+  the next turn, so the human always sees what they are approving.
 
 ## Dependencies
 
@@ -170,7 +175,12 @@ artefact walk (steps in section C):
 - **Confirm-or-revise gate per artefact.** Each of the 9 artefacts
   has an explicit `prompt-user` gate before the skill moves to the
   next artefact. Options: Confirm / Revise / Cancel. No artefact
-  is silently accepted.
+  is silently accepted. Per
+  `skills/definitions/render-before-confirm.md`, the artefact is
+  rendered as the final output of its turn and the `prompt-user`
+  gate is invoked on the *next* turn — never render the artefact and
+  prompt for its approval in the same turn, or the human is asked to
+  confirm content they cannot see.
 - **Per-revision diff (mandatory).** When an artefact is revised,
   before re-rendering it for confirmation the agent must emit — in
   its response stream — a per-field diff showing only the changed
