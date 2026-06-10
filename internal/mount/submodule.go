@@ -308,6 +308,18 @@ func removeFromGitignore(root, entry string) error {
 	return os.WriteFile(gitignorePath, []byte(strings.Join(out, "\n")), 0o644)
 }
 
+// runGit runs a git command in dir, returning an error that includes both the
+// exit status and the combined stdout/stderr output. Moved here from the
+// deleted controlplane.go (Feature #824 dead-code cleanup).
+func runGit(dir string, args ...string) error {
+	full := append([]string{"-C", dir}, args...)
+	cmd := exec.Command("git", full...) //nolint:gosec
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git %s failed: %w\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // resolveGitDir returns the absolute path to the `.git` directory for
 // the working tree at root. Handles both the regular case (`.git` is a
 // directory) and the worktree case (`.git` is a file that contains
