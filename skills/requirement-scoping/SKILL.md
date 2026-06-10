@@ -965,6 +965,36 @@ prompt-user(
     Part of #<parent-N> (when multiple Features share the parent)
     ```
 
+    **Pre-flight label check (only when `<federation>` is held).**
+    Before the point-of-no-return confirmation, verify that every
+    distinct `<target-repo>` across the Features about to be created
+    carries the labels issue creation needs. For each distinct target
+    repo, query its labels once:
+
+    ```bash
+    gh label list --repo "<target-repo>" --json name --jq '[.[].name]'
+    ```
+
+    The required set is `feature` and `backlog`, plus
+    `needs-interactive-design` for any Feature targeting that repo
+    whose artefact 7 answer was "Yes". If any required label is
+    missing in any target repo, ABORT before creating a single issue
+    — a cross-repo partial is worse than a same-repo one because
+    cleanup spans repos. Surface:
+
+    ```
+    Cannot create Features — missing pipeline labels:
+      - <target-repo-X>: missing <label>, <label>
+      - <target-repo-Y>: missing <label>
+    Run `gh agentic repair` in each repo above, then re-run scoping.
+    No Feature issues were created.
+    ```
+
+    Raise `ISSUE_CREATION_FAILED` (`ERROR`) and exit. When
+    `<federation>` is unset, the single target is `<active-repo>`;
+    `gh agentic check` already guarantees its labels, so this
+    pre-flight is a no-op (skip it — conditional-step carve-out).
+
     Then surface the **point-of-no-return warning** to the human as
     plain conversation BEFORE the prompt-user call (see "State model
     & cancel semantics" in the Steps preamble for the full rules):
@@ -1004,11 +1034,13 @@ prompt-user(
     Write the Feature body from step 17 to a temporary file using
     the agent's `Write` tool — never via shell `echo` or heredoc, as
     user-supplied content may contain shell metacharacters (backticks,
-    dollar signs, quotes) that would corrupt the file. Then invoke:
+    dollar signs, quotes) that would corrupt the file. Then invoke,
+    creating the Feature in its own `<target-repo>` (which is
+    `<active-repo>` when `<federation>` is unset):
 
     ```bash
     gh issue create \
-      --repo "<active-repo>" \
+      --repo "<target-repo>" \
       --title "<Feature title>" \
       --label "<labels>" \
       --body-file <path-to-temp-file>
@@ -1016,7 +1048,7 @@ prompt-user(
 
     Capture the resulting issue number `<F>` and URL from the
     command's stdout. The output is the full URL
-    (`https://github.com/<active-repo>/issues/<F>`); parse `<F>`
+    (`https://github.com/<target-repo>/issues/<F>`); parse `<F>`
     from the trailing path segment.
 
     **Feature title rule.** ≤70 characters. Noun-phrase summary of
@@ -1025,32 +1057,38 @@ prompt-user(
     managers"*, *"Idempotent webhook processing"*. If no concise
     title fits, ask the human directly rather than truncating.
 
-    **Verification gate.** After each create, query the issue back:
+    **Verification gate.** After each create, query the issue back
+    in the repo it was created in:
 
     ```bash
-    gh agentic status feature <F> --raw
+    gh issue view <F> --repo "<target-repo>" --json number,labels --jq '{n:.number, labels:[.labels[].name]}'
     ```
 
     Verify the issue exists with the expected labels. If missing
     or inconsistent, raise `ISSUE_CREATION_FAILED` (`ERROR`).
+    (`gh agentic status feature <F>` aggregates across the
+    federation and also works, but a direct `--repo` query is the
+    unambiguous per-repo check.)
 
     **Partial-creation handling.** If Feature K of N fails (Features
     1..K-1 already exist on GitHub), STOP — do not continue creating
     Features K+1..N, and DO NOT proceed to step 19, 20, or beyond.
     Per "State model & cancel semantics", T1→T2 partial leaves the
-    framework in a state the skill cannot auto-recover from. Surface:
+    framework in a state the skill cannot auto-recover from. Name the
+    repo each Feature landed in (or failed in), since in a federation
+    they differ:
 
     ```
     Partial Feature creation:
-      - #<F1> created successfully (labels: ...)
+      - #<F1> (<target-repo>) created successfully (labels: ...)
       - ...
-      - Feature K (<title>) failed: <gh stderr>
+      - Feature K "<title>" (<target-repo>) failed: <gh stderr>
       - Features K+1..N not attempted
 
     The Requirement remains at Scoping. The successfully-created
     Features are valid pipeline artefacts; the failed one needs
     investigation. Recommended:
-      - Run `gh agentic repair`
+      - Run `gh agentic repair` in <target-repo> for the failed Feature
       - Re-invoke requirement-scoping; the orphan re-entry flow will
         detect the existing Features and surface them. From there,
         either close them and start over, or complete the work
@@ -1063,12 +1101,15 @@ prompt-user(
     Feature `<F>`, add it to the project board so it appears in
     pipeline / kanban views. The project ID lives in
     `AGENTIC_PROJECT_ID`; the project number is the trailing
-    integer of the project URL.
+    integer of the project URL. There is one project for the whole
+    federation, and it accepts items from any same-owner repo, so
+    the add uses the Feature's `<target-repo>` issue URL — NOT
+    `<active-repo>`:
 
     ```bash
     gh project item-add <project-number> \
-      --owner "${active_repo%/*}" \
-      --url "https://github.com/<active-repo>/issues/<F>"
+      --owner "${target_repo%/*}" \
+      --url "https://github.com/<target-repo>/issues/<F>"
     ```
 
     On failure → surface as `WARN`; do NOT block scoping. The
