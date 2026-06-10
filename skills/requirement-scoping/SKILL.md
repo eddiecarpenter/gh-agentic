@@ -304,6 +304,37 @@ on it:
    Hold the contents available for reference; do NOT quote them
    verbatim into Feature bodies (they're context, not source).
 
+   **Federation manifest detection.** Check whether the active repo
+   is a federation requirements repo by testing for `FEDERATION.md`
+   at the repo root:
+
+   - **Present** → read it with the `Read` tool (NOT shell parsing)
+     and hold the parsed repos-and-purposes list as `<federation>`.
+     The manifest is YAML of the shape:
+     ```yaml
+     repos:
+       - name: owner/repo-a
+         purpose: <what work lives in this repo>
+       - name: owner/repo-b
+         purpose: <…>
+     ```
+     `<federation>.repos` is the candidate target set for feature
+     placement (artefact 3). Do NOT re-validate the manifest here —
+     `gh agentic check` (#824/#827) owns manifest integrity. If the
+     file is present but unreadable or obviously malformed, surface
+     a one-line warning and point the human at `gh agentic check`,
+     then proceed treating `<federation>` as unset (single-repo
+     behaviour) rather than guessing target repos.
+   - **Absent** → leave `<federation>` unset. The repo is single
+     topology: every Feature is created in `<active-repo>` and no
+     target-repo question is ever asked. The entire artefact walk
+     below is textually unchanged from the single-repo flow.
+
+   Throughout the steps below, behaviour gated on "`<federation>` is
+   held" applies ONLY when the manifest was present; when unset, the
+   gated prose is not applicable (no skip-justification needed — it
+   is a conditional-step carve-out).
+
 2. **Pick the parent Requirement.** Query the active repo's
    Requirements:
 
@@ -546,6 +577,15 @@ whether the Requirement spawns 1 or N Features. Everything before
 the pivot is Requirement-level; everything between the pivot and
 artefact 9 is per-Feature.
 
+**Per-Feature header threading (only when `<federation>` is held).**
+Once artefact 3 has assigned a `<target-repo>` to each Feature, every
+per-Feature artefact gate (4–8) for that Feature MUST show the target
+repo in its header, so the human always sees where the Feature they
+are shaping will be created — e.g. `Artefact 4 — <Feature name>
+(→ owner/repo)`. The same `(→ owner/repo)` annotation appears in the
+step-17 creation render. When `<federation>` is unset, headers carry
+no repo annotation (single-repo flow, unchanged).
+
 **Each artefact follows the same gate pattern.** The agent proposes
 content, surfaces it to the human, and invokes `prompt-user`:
 
@@ -628,6 +668,57 @@ prompt-user(
       Feature name (e.g., `Artefact 4 — <Feature name>`). After all
       Features have walked through 4–8, run artefact 9 once.
     - **Cancel** → revert to backlog, raise `USER_CANCELLED`, exit.
+
+    **One-repo rule and target-repo assignment (only when
+    `<federation>` is held).** In a federation requirements repo,
+    every Feature must land in exactly one implementation repo —
+    requirements live with domain knowledge, features live with
+    code. Two sub-rules apply at this checkpoint, BEFORE any
+    per-Feature artefact (4–8) runs:
+
+    1. **One-repo rule (split).** A Feature whose work spans two
+       repos must be split into one Feature per repo, each
+       describing what it does in that repo. When the human names a
+       Feature (or the single-Feature framing) that clearly straddles
+       two manifest repos, surface the split and propose the
+       per-repo Features:
+       ```
+       Feature "<name>" spans <repo-A> and <repo-B>. A Feature must
+       fit one repo, so I'll split it into:
+         - <name> (<repo-A>): <what it does there>
+         - <name> (<repo-B>): <what it does there>
+       ```
+       Confirm the split with the human before proceeding. The split
+       Features then each walk artefacts 4–8 independently.
+
+    2. **Target-repo assignment (propose / confirm / override).**
+       For each Feature (after any split), propose a target repo
+       drawn from `<federation>.repos`, citing the manifest purpose
+       that justifies it, then let the human confirm or override:
+       ```
+       prompt-user(
+         question: "Which repo should Feature \"<name>\" land in? I propose <owner/repo> — <manifest purpose>.",
+         header: "Target repo — <name>",
+         options: [
+           {label: "<owner/repo> (proposed)",
+            description: "<manifest purpose for the proposed repo>"},
+           ...one option per other manifest repo, label "<owner/repo>"...,
+           {label: "Cancel scoping",
+            description: "End the session."}
+         ]
+       )
+       ```
+       If the manifest has more than four repos, render the
+       candidate list as plain conversation (one `owner/repo —
+       purpose` per line) and ask the human to reply with the target,
+       per the >4-option convention used elsewhere in this skill.
+       Capture the confirmed target as `<target-repo>` for that
+       Feature and hold it through the rest of the walk.
+
+    When `<federation>` is unset (single topology), neither sub-rule
+    applies: there is no target-repo question, every Feature's
+    `<target-repo>` is implicitly `<active-repo>`, and the per-Feature
+    headers below carry no repo annotation.
 
 11. **Artefact 4 — Feature definition + User Story (per-Feature).**
     A short paragraph describing what the Feature delivers, plus a
@@ -821,6 +912,12 @@ prompt-user(
     a fenced markdown block prefaced by:
     ```
     Here is Feature <name> as it would be filed:
+    ```
+
+    When `<federation>` is held, the preface MUST name the target
+    repo so placement is explicit before the point of no return:
+    ```
+    Here is Feature <name> (→ <target-repo>) as it would be filed:
     ```
 
     The body shape is:
