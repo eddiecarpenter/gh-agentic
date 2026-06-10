@@ -233,7 +233,11 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 					FetchProjectTitle:        project.DefaultFetchProjectTitle,
 					FetchProjectFields:       project.DefaultFetchProjectFields,
 					UpdateStatusFieldOptions: project.DefaultUpdateStatusFieldOptions,
-					FrameworkSource:          isFrameworkSource,
+					FetchLinkedRepos:         project.DefaultFetchLinkedRepos,
+					FetchOwnerAndRepoIDs:     project.DefaultFetchOwnerAndRepoIDs,
+					// LinkRepoToProject intentionally omitted — check reads only;
+					// repair wires it via buildPipelineCheckDeps.
+					FrameworkSource: isFrameworkSource,
 				}
 				pipelineReport = doctor.RunAllChecksWithProgress(pipelineCheckDeps, setLabel)
 				return nil
