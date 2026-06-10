@@ -1092,3 +1092,243 @@ func TestCheckVariable_PermissionError_Warns(t *testing.T) {
 	}
 }
 
+// --- checkFederationManifest tests ---
+
+func TestCheckFederationManifest_NoFile_Pass(t *testing.T) {
+	root := t.TempDir() // no FEDERATION.md written
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	r := g.Results[0]
+	if r.Status != Pass {
+		t.Errorf("status: got %v, want Pass", r.Status)
+	}
+	if !strings.Contains(r.Message, "not present") {
+		t.Errorf("message: got %q, expected 'not present'", r.Message)
+	}
+}
+
+func TestCheckFederationManifest_ValidFile_Pass(t *testing.T) {
+	root := t.TempDir()
+	manifest := "repos:\n  - name: acme/domain\n    purpose: Domain repo\n"
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	r := g.Results[0]
+	if r.Status != Pass {
+		t.Errorf("status: got %v, want Pass; message: %q", r.Status, r.Message)
+	}
+}
+
+func TestCheckFederationManifest_EmptyFile_Fail(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("   \n"), 0o644)
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	r := g.Results[0]
+	if r.Status != Fail {
+		t.Errorf("status: got %v, want Fail", r.Status)
+	}
+	if !strings.Contains(r.Message, "file is empty") {
+		t.Errorf("message: got %q, expected 'file is empty'", r.Message)
+	}
+}
+
+func TestCheckFederationManifest_MalformedYAML_Fail(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("repos: [not: valid: yaml\n"), 0o644)
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	r := g.Results[0]
+	if r.Status != Fail {
+		t.Errorf("status: got %v, want Fail", r.Status)
+	}
+	if !strings.Contains(r.Message, "FEDERATION.md") {
+		t.Errorf("message: got %q, expected 'FEDERATION.md' prefix", r.Message)
+	}
+}
+
+func TestCheckFederationManifest_EmptyReposList_Fail(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("repos: []\n"), 0o644)
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	r := g.Results[0]
+	if r.Status != Fail {
+		t.Errorf("status: got %v, want Fail", r.Status)
+	}
+	if !strings.Contains(r.Message, "repos list is empty") {
+		t.Errorf("message: got %q, expected 'repos list is empty'", r.Message)
+	}
+}
+
+// --- checkLegacyFederationConfig tests ---
+
+func TestCheckLegacyFederationConfig_NoLegacy_Pass(t *testing.T) {
+	root := t.TempDir() // no .cp/ dir
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			// All variable gets return error (not set).
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result (pass), got %d: %+v", len(g.Results), g.Results)
+	}
+	if g.Results[0].Status != Pass {
+		t.Errorf("status: got %v, want Pass; message: %q", g.Results[0].Status, g.Results[0].Message)
+	}
+}
+
+func TestCheckLegacyFederationConfig_AgenticTopologySet_Warns(t *testing.T) {
+	root := t.TempDir()
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			// AGENTIC_TOPOLOGY is set; AGENTIC_CONTROL_PLANE is not.
+			if len(args) >= 3 && args[0] == "variable" && args[2] == "AGENTIC_TOPOLOGY" {
+				return "federation", nil
+			}
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	// Should emit exactly one warning for AGENTIC_TOPOLOGY.
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Warning {
+		t.Errorf("status: got %v, want Warning", r.Status)
+	}
+	if !strings.Contains(r.Message, "AGENTIC_TOPOLOGY") {
+		t.Errorf("message: got %q, expected 'AGENTIC_TOPOLOGY'", r.Message)
+	}
+	if !strings.Contains(r.Remediation, "gh variable delete AGENTIC_TOPOLOGY") {
+		t.Errorf("remediation: got %q, expected gh variable delete command", r.Remediation)
+	}
+	if !strings.Contains(r.Remediation, "acme/repo") {
+		t.Errorf("remediation: got %q, expected repo name 'acme/repo'", r.Remediation)
+	}
+}
+
+func TestCheckLegacyFederationConfig_AgenticControlPlaneSet_Warns(t *testing.T) {
+	root := t.TempDir()
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			// AGENTIC_CONTROL_PLANE is set; AGENTIC_TOPOLOGY is not.
+			if len(args) >= 3 && args[0] == "variable" && args[2] == "AGENTIC_CONTROL_PLANE" {
+				return "acme/cp", nil
+			}
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Warning {
+		t.Errorf("status: got %v, want Warning", r.Status)
+	}
+	if !strings.Contains(r.Message, "AGENTIC_CONTROL_PLANE") {
+		t.Errorf("message: got %q, expected 'AGENTIC_CONTROL_PLANE'", r.Message)
+	}
+	if !strings.Contains(r.Remediation, "gh variable delete AGENTIC_CONTROL_PLANE") {
+		t.Errorf("remediation: got %q", r.Remediation)
+	}
+}
+
+func TestCheckLegacyFederationConfig_CpDirPresent_Warns(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".cp"), 0o755)
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Warning {
+		t.Errorf("status: got %v, want Warning", r.Status)
+	}
+	if !strings.Contains(r.Message, ".cp/") {
+		t.Errorf("message: got %q, expected '.cp/'", r.Message)
+	}
+	if !strings.Contains(r.Remediation, "rm -rf .cp/") {
+		t.Errorf("remediation: got %q, expected rm -rf command", r.Remediation)
+	}
+}
+
+func TestCheckLegacyFederationConfig_MultipleItems_MultipleWarnings(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".cp"), 0o755)
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			// Both legacy variables are set.
+			if len(args) >= 3 && args[0] == "variable" &&
+				(args[2] == "AGENTIC_TOPOLOGY" || args[2] == "AGENTIC_CONTROL_PLANE") {
+				return "some-value", nil
+			}
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	// Expect 3 warnings: AGENTIC_TOPOLOGY, AGENTIC_CONTROL_PLANE, .cp/
+	if len(g.Results) != 3 {
+		t.Fatalf("expected 3 warnings, got %d: %+v", len(g.Results), g.Results)
+	}
+	for _, r := range g.Results {
+		if r.Status != Warning {
+			t.Errorf("result %q: status got %v, want Warning", r.Name, r.Status)
+		}
+	}
+}
+

@@ -241,6 +241,12 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		// Project status options run after reachability — no point checking options
 		// on a project that isn't reachable.
 		{"Checking project status options...", checkProjectStatusOptions},
+		// Federation manifest: validates FEDERATION.md when present; passes silently
+		// when absent (single topology).
+		{"Checking federation manifest...", checkFederationManifest},
+		// Legacy federation config: warns when pre-#824 topology variables or .cp/
+		// directory are still present so operators know to clean them up.
+		{"Checking legacy federation config...", checkLegacyFederationConfig},
 	}
 	return base
 }
@@ -694,6 +700,103 @@ func checkProjectStatusOptions(deps CheckDeps) Group {
 		Name: "status-options", Status: Pass,
 		Message: fmt.Sprintf("project status options OK (%d options)", len(existing)),
 	})
+	return g
+}
+
+// checkFederationManifest validates the FEDERATION.md manifest when it is
+// present at deps.Root. When absent, the repo is single-topology and the
+// check passes unconditionally. When present but invalid, each error from
+// project.ReadFederation is surfaced as a Fail result with the exact error
+// text so the operator knows exactly what to fix.
+func checkFederationManifest(deps CheckDeps) Group {
+	g := Group{Name: "Federation manifest"}
+
+	if !project.IsFederationRepo(deps.Root) {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-manifest",
+			Status:  Pass,
+			Message: "FEDERATION.md not present (single topology)",
+		})
+		return g
+	}
+
+	_, err := project.ReadFederation(deps.Root)
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-manifest",
+			Status:  Fail,
+			Message: err.Error(),
+		})
+		return g
+	}
+
+	g.Results = append(g.Results, CheckResult{
+		Name:    "federation-manifest",
+		Status:  Pass,
+		Message: "FEDERATION.md is valid",
+	})
+	return g
+}
+
+// checkLegacyFederationConfig detects remnants of the pre-#824 topology model.
+// It runs unconditionally regardless of topology so repos that still carry
+// the old variables or directory layout are flagged even when they have
+// already adopted FEDERATION.md. Each legacy artefact becomes a Warning with
+// a remediation command.
+func checkLegacyFederationConfig(deps CheckDeps) Group {
+	g := Group{Name: "Legacy federation config"}
+	found := 0
+
+	// AGENTIC_TOPOLOGY variable — was the old topology marker; replaced by
+	// FEDERATION.md presence detection in Feature #824.
+	if deps.Run != nil {
+		out, err := deps.Run("gh", "variable", "get", "AGENTIC_TOPOLOGY", "--repo", deps.RepoFullName)
+		if err == nil && strings.TrimSpace(out) != "" {
+			g.Results = append(g.Results, CheckResult{
+				Name:        "legacy-topology",
+				Status:      Warning,
+				Message:     "AGENTIC_TOPOLOGY is set — no longer used; topology is now inferred from FEDERATION.md presence",
+				Remediation: "gh variable delete AGENTIC_TOPOLOGY --repo " + deps.RepoFullName,
+			})
+			found++
+		}
+	}
+
+	// AGENTIC_CONTROL_PLANE variable — was written by the old federated init
+	// flow; the FEDERATION.md manifest supersedes it.
+	if deps.Run != nil {
+		out, err := deps.Run("gh", "variable", "get", "AGENTIC_CONTROL_PLANE", "--repo", deps.RepoFullName)
+		if err == nil && strings.TrimSpace(out) != "" {
+			g.Results = append(g.Results, CheckResult{
+				Name:        "legacy-control-plane",
+				Status:      Warning,
+				Message:     "AGENTIC_CONTROL_PLANE is set — no longer used; remove it to keep the repo config clean",
+				Remediation: "gh variable delete AGENTIC_CONTROL_PLANE --repo " + deps.RepoFullName,
+			})
+			found++
+		}
+	}
+
+	// .cp/ directory — was created by the old federated domain init; no longer
+	// needed and should be removed.
+	if _, err := os.Stat(filepath.Join(deps.Root, ".cp")); err == nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:        "legacy-cp-dir",
+			Status:      Warning,
+			Message:     ".cp/ directory found — no longer used by the framework",
+			Remediation: "rm -rf .cp/ && git rm -r --cached .cp/ 2>/dev/null || true",
+		})
+		found++
+	}
+
+	if found == 0 {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "legacy-config",
+			Status:  Pass,
+			Message: "No legacy federation config found",
+		})
+	}
+
 	return g
 }
 
