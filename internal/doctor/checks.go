@@ -894,8 +894,7 @@ func checkLegacyFederationConfig(deps CheckDeps) Group {
 	// AGENTIC_TOPOLOGY variable — was the old topology marker; replaced by
 	// FEDERATION.md presence detection in Feature #824.
 	if deps.Run != nil {
-		out, err := deps.Run("gh", "variable", "get", "AGENTIC_TOPOLOGY", "--repo", deps.RepoFullName)
-		if err == nil && strings.TrimSpace(out) != "" {
+		if hit, _, _ := getRepoVariable(deps, "AGENTIC_TOPOLOGY"); hit {
 			g.Results = append(g.Results, CheckResult{
 				Name:        "legacy-topology",
 				Status:      Warning,
@@ -909,8 +908,7 @@ func checkLegacyFederationConfig(deps CheckDeps) Group {
 	// AGENTIC_CONTROL_PLANE variable — was written by the old federated init
 	// flow; the FEDERATION.md manifest supersedes it.
 	if deps.Run != nil {
-		out, err := deps.Run("gh", "variable", "get", "AGENTIC_CONTROL_PLANE", "--repo", deps.RepoFullName)
-		if err == nil && strings.TrimSpace(out) != "" {
+		if hit, _, _ := getRepoVariable(deps, "AGENTIC_CONTROL_PLANE"); hit {
 			g.Results = append(g.Results, CheckResult{
 				Name:        "legacy-control-plane",
 				Status:      Warning,
@@ -944,17 +942,35 @@ func checkLegacyFederationConfig(deps CheckDeps) Group {
 	return g
 }
 
+// getRepoVariable reads a repo-scoped Actions variable via `gh api`. It
+// returns found=true when the variable exists, along with the raw gh output
+// and error for the caller's failure-mode analysis.
+//
+// `gh api` is used instead of `gh variable get` deliberately (#844): the
+// `gh variable` command group only shipped in gh 2.31, and distro-packaged
+// gh on self-hosted runners can predate it. On such versions `gh variable
+// get` fails with "unknown command" — an error that must not be mistaken
+// for "variable missing". The api command exists in every gh version.
+func getRepoVariable(deps CheckDeps, name string) (bool, string, error) {
+	out, err := deps.Run("gh", "api", "repos/"+deps.RepoFullName+"/actions/variables/"+name)
+	return err == nil && strings.TrimSpace(out) != "", out, err
+}
+
 // checkVariable checks if a GitHub variable exists at --repo scope.
 //
 // Feature #824: all variables are --repo scoped. The old org-scope fallback
 // for shared names under federated topology has been removed.
+//
+// Failure-mode discipline (#844): only a clean HTTP 404 proves the variable
+// is missing. A permission error or any other failure (network, unexpected
+// gh error) is inconclusive and reported as "unable to check" — never as
+// "not configured".
 func checkVariable(deps CheckDeps, name string) CheckResult {
 	if deps.Run == nil {
 		return CheckResult{Name: name, Status: Warning, Message: name + " — unable to check (no run func)"}
 	}
 
-	out, err := deps.Run("gh", "variable", "get", name, "--repo", deps.RepoFullName)
-	hit := err == nil && strings.TrimSpace(out) != ""
+	hit, out, err := getRepoVariable(deps, name)
 
 	// Distinguish an auth/permission failure from a genuine missing variable.
 	// GitHub App tokens used in CI often lack the Actions:Read permission
@@ -965,6 +981,14 @@ func checkVariable(deps CheckDeps, name string) CheckResult {
 		return CheckResult{
 			Name: name, Status: Warning,
 			Message: name + " — unable to check (token lacks variable-read permission)",
+		}
+	}
+
+	// Any other non-404 failure is equally inconclusive.
+	if !hit && err != nil && !isNotFoundError(out) {
+		return CheckResult{
+			Name: name, Status: Warning,
+			Message: name + " — unable to check (gh api call failed)",
 		}
 	}
 
@@ -1034,6 +1058,13 @@ func isPermissionError(out string) bool {
 		strings.Contains(lower, "insufficient scopes") ||
 		strings.Contains(lower, "must have admin rights") ||
 		strings.Contains(lower, "forbidden")
+}
+
+// isNotFoundError returns true when gh CLI output indicates HTTP 404 — the
+// only failure mode that proves a queried resource genuinely does not exist.
+func isNotFoundError(out string) bool {
+	lower := strings.ToLower(out)
+	return strings.Contains(lower, "404") || strings.Contains(lower, "not found")
 }
 
 // containsVariableName returns true if the gh output from
