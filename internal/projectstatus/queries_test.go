@@ -312,12 +312,16 @@ func TestFetchRequirement_WrongType(t *testing.T) {
 	}
 }
 
-// TestFetchRequirement_LinkedFeaturesViaClosesMarker verifies that linked
-// features are discovered by scanning feature bodies for `Closes #N` and
-// that branch / PR state is embedded.
-func TestFetchRequirement_LinkedFeaturesViaClosesMarker(t *testing.T) {
+// TestFetchRequirement_LinkedFeaturesViaSubIssues verifies that linked
+// features are discovered via the native sub-issue relationship and that
+// branch / PR state is embedded.
+func TestFetchRequirement_LinkedFeaturesViaSubIssues(t *testing.T) {
 	f := fakeDeps{
 		issues: sampleIssues(),
+		subIssues: map[int][]TaskRef{
+			// Requirement #457 has feature #492 as a native sub-issue.
+			457: {{Number: 492, Title: "feat: status", Closed: false}},
+		},
 		branches: map[string]*BranchState{
 			"feature/492": {Name: "feature/492", Exists: true, Merged: false},
 		},
@@ -341,6 +345,48 @@ func TestFetchRequirement_LinkedFeaturesViaClosesMarker(t *testing.T) {
 	}
 	if lf.PR == nil || lf.PR.Number != 555 {
 		t.Errorf("PR = %+v, want 555", lf.PR)
+	}
+}
+
+// TestFetchRequirement_SubIssueAbsentFromProjectBoard verifies that sub-issues
+// returned by FetchSubIssues but absent from the project board (or not of type
+// "feature") are silently skipped — they cannot be rendered without
+// project-board context.
+func TestFetchRequirement_SubIssueAbsentFromProjectBoard(t *testing.T) {
+	f := fakeDeps{
+		issues: sampleIssues(),
+		subIssues: map[int][]TaskRef{
+			// #9999 does not appear in sampleIssues → silently skipped.
+			// #999 appears but is a "task" type → silently skipped.
+			457: {
+				{Number: 9999, Title: "ghost feature", Closed: false},
+				{Number: 999, Title: "task: example", Closed: false},
+			},
+		},
+	}
+	req, err := FetchRequirement(f.Deps(), "PROJ", 457)
+	if err != nil {
+		t.Fatalf("FetchRequirement: %v", err)
+	}
+	if len(req.LinkedFeatures) != 0 {
+		t.Errorf("expected 0 linked features when sub-issues absent/wrong-type, got %d: %+v",
+			len(req.LinkedFeatures), req.LinkedFeatures)
+	}
+}
+
+// TestFetchRequirement_SubIssuesDepNotWired verifies graceful degradation when
+// FetchSubIssues is not wired — linked features are empty but no error is returned.
+func TestFetchRequirement_SubIssuesDepNotWired(t *testing.T) {
+	deps := Deps{
+		FetchProjectIssues: func(string) ([]ProjectIssue, error) { return sampleIssues(), nil },
+		// FetchSubIssues intentionally absent.
+	}
+	req, err := FetchRequirement(deps, "PROJ", 457)
+	if err != nil {
+		t.Fatalf("FetchRequirement with no FetchSubIssues: %v", err)
+	}
+	if len(req.LinkedFeatures) != 0 {
+		t.Errorf("expected 0 linked features when FetchSubIssues not wired, got %d", len(req.LinkedFeatures))
 	}
 }
 

@@ -89,34 +89,46 @@ func FetchRequirement(deps Deps, projectID string, number int) (*Requirement, er
 	}
 	populateBlocked(deps, &req.Blocked, found.OwningRepo, found.Number, found.Body)
 
-	// Build linked features — scan feature issues for a `Closes #<number>` marker.
+	// Build linked features — use native sub-issue relationship.
+	// NOTE: deps.FetchSubIssues queries subIssues(first: 100); requirements with
+	// more than 100 linked features will be silently truncated at that limit.
+	// A paginated approach can be introduced if the scale requires it.
 	linked := make([]FeatureSummary, 0)
-	for _, issue := range issues {
-		if issue.Type != "feature" {
-			continue
+	reqOwner, reqRepo := splitOwnerRepo(found.OwningRepo)
+	if reqOwner != "" && reqRepo != "" && deps.FetchSubIssues != nil {
+		subRefs, err := deps.FetchSubIssues(reqOwner, reqRepo, number)
+		if err != nil {
+			return nil, fmt.Errorf("fetching sub-issues for requirement %d: %w", number, err)
 		}
-		if !bodyReferencesRequirement(issue.Body, number, issue.OwningRepo, found.OwningRepo) {
-			continue
-		}
-		summary := FeatureSummary{
-			Number:     issue.Number,
-			Title:      issue.Title,
-			Stage:      issue.Stage,
-			OwningRepo: issue.OwningRepo,
-		}
-		owner, repo := splitOwnerRepo(issue.OwningRepo)
-		branchName := fmt.Sprintf("%s%d", featureBranchPrefix, issue.Number)
-		if owner != "" && repo != "" && deps.FetchBranch != nil {
-			if br, err := deps.FetchBranch(owner, repo, branchName); err == nil && br != nil {
-				summary.BranchOneLiner = renderBranchOneLiner(br)
+		for _, sub := range subRefs {
+			// Cross-reference with the project board. Features that are native
+			// sub-issues of the requirement but were manually removed from the
+			// project board are silently skipped — without project-board context
+			// (stage, owning repo) they cannot be rendered consistently.
+			issue := findByNumber(issues, sub.Number)
+			if issue == nil || issue.Type != "feature" {
+				continue
 			}
-		}
-		if owner != "" && repo != "" && deps.FetchPR != nil {
-			if pr, err := deps.FetchPR(owner, repo, branchName); err == nil {
-				summary.PR = pr
+			summary := FeatureSummary{
+				Number:     issue.Number,
+				Title:      issue.Title,
+				Stage:      issue.Stage,
+				OwningRepo: issue.OwningRepo,
 			}
+			owner, repo := splitOwnerRepo(issue.OwningRepo)
+			branchName := fmt.Sprintf("%s%d", featureBranchPrefix, issue.Number)
+			if owner != "" && repo != "" && deps.FetchBranch != nil {
+				if br, err := deps.FetchBranch(owner, repo, branchName); err == nil && br != nil {
+					summary.BranchOneLiner = renderBranchOneLiner(br)
+				}
+			}
+			if owner != "" && repo != "" && deps.FetchPR != nil {
+				if pr, err := deps.FetchPR(owner, repo, branchName); err == nil {
+					summary.PR = pr
+				}
+			}
+			linked = append(linked, summary)
 		}
-		linked = append(linked, summary)
 	}
 	sort.Slice(linked, func(i, j int) bool { return linked[i].Number < linked[j].Number })
 	req.LinkedFeatures = linked
