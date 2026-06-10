@@ -29,7 +29,7 @@ system-level orientation. The rule is:
 
 The knowledge plane takes two shapes, matching the two topologies.
 
-### Single topology (embedded control plane)
+### Single topology
 
 The repo is its own control plane. All knowledge is local.
 
@@ -46,18 +46,30 @@ repo/
 In single topology `docs/BRIEF.md` and `docs/ARCHITECTURE.md` carry both
 system-level and repo-level scope — the repo *is* the project.
 
-### Federated topology
+Domain repos in a federation are single-topology repos. They carry their own
+`docs/BRIEF.md` and `docs/ARCHITECTURE.md` describing their scope within the
+federation. No special mount or marker variable is required on a domain repo.
 
-Each domain repo owns its own knowledge. The control plane owns only
-system-level knowledge.
+### Federation topology
 
-**Domain repo:**
+A federation requirements repo declares its target domain repos via `FEDERATION.md`
+at the repo root. The control plane owns system-level knowledge; domain repos own
+their own.
+
+**Federation requirements (control plane) repo:**
+```
+control-plane-repo/
+├── .agents/
+├── FEDERATION.md                     # declares all domain repos + their purpose
+└── docs/
+    ├── SYSTEM_BRIEF.md               # system orientation
+    └── SYSTEM_ARCHITECTURE.md        # seams between repos
+```
+
+**Domain repo (single topology):**
 ```
 domain-repo/
-├── .agents/                              # framework mount, read-only, gitignored
-├── .cp/                              # control plane knowledge mount, read-only, gitignored
-│   ├── SYSTEM_BRIEF.md
-│   └── SYSTEM_ARCHITECTURE.md
+├── .agents/                              # framework mount, read-only
 ├── docs/
 │   ├── BRIEF.md                      # this domain's scope
 │   ├── ARCHITECTURE.md               # this domain's internals
@@ -65,17 +77,9 @@ domain-repo/
 └── (code)
 ```
 
-**Control plane repo:**
-```
-control-plane-repo/
-├── .agents/
-└── docs/
-    ├── SYSTEM_BRIEF.md               # system orientation
-    └── SYSTEM_ARCHITECTURE.md        # seams between repos
-```
-
-The control plane holds no application code. Its job is orchestration and
-system-level knowledge.
+Domain repos are plain single-topology repos. They do not carry any special
+filesystem mount or marker variable. The federation is declared from the control plane
+outward, not from domain repos inward.
 
 ---
 
@@ -85,17 +89,17 @@ Different names at different scopes make the rule unambiguous:
 
 > **Domain knowledge = `SYSTEM_BRIEF` + `SYSTEM_ARCHITECTURE` + `BRIEF` + `ARCHITECTURE`**
 
-A skill in a domain repo loads four files in federated mode. An AI loading
-`.cp/SYSTEM_BRIEF.md` knows immediately it is reading system-level context; an
-AI loading `docs/BRIEF.md` knows it is reading repo-scoped context. In single
+A skill in a domain repo loads up to four files. In federation mode the agent
+reads the control plane's `docs/SYSTEM_BRIEF.md` and `docs/SYSTEM_ARCHITECTURE.md`
+via the GitHub API on demand (no mount required — these reads are rare). In single
 topology only the two unqualified files exist.
 
 ### What each file holds
 
 | File | Answers | Scope |
 |---|---|---|
-| `SYSTEM_BRIEF.md` | Why the system as a whole exists | System |
-| `SYSTEM_ARCHITECTURE.md` | The seams between repos, cross-cutting concerns | System |
+| `SYSTEM_BRIEF.md` | Why the system as a whole exists | System (CP only) |
+| `SYSTEM_ARCHITECTURE.md` | The seams between repos, cross-cutting concerns | System (CP only) |
 | `BRIEF.md` | Why this repo exists within the system | Repo |
 | `ARCHITECTURE.md` | How this repo works internally | Repo |
 
@@ -107,20 +111,14 @@ describe seams owned by another repo.
 
 ## Membership
 
-In federated topology, **every member repo is linked to the GitHub Project**.
-A repo-level variable marks the control plane:
-
-```
-AGENTIC_CONTROL_PLANE=true
-```
-
-Set on exactly one repo per federation (the CP). All other members have
-`AGENTIC_PROJECT_ID` set but not `AGENTIC_CONTROL_PLANE`.
+In federation topology, **every member repo is linked to the GitHub Project**.
+The control plane repo is identified by `FEDERATION.md` at its root — no
+marker variable is required.
 
 Discovery:
 1. Query the Project's linked repositories — returns all N members
-2. Filter for the repo whose `AGENTIC_CONTROL_PLANE` variable is `true`
-3. The rest are domain repos
+2. Find the repo whose root contains `FEDERATION.md` — that is the control plane
+3. The rest are domain repos (single topology)
 
 The GitHub Project is the single source of truth for membership. A deleted
 repo is automatically absent from the query; a newly-added repo is automatically
@@ -277,48 +275,20 @@ discipline.
 Skills that shape design or code load knowledge at session start. The
 mechanism mirrors the `.agents/` mount used by the framework itself.
 
-### `.cp/` — the control plane knowledge mount
-
-| Property | `.agents/` | `.cp/` |
-|---|---|---|
-| Gitignored in domain repo | Yes | Yes |
-| Read-only in domain repo | Yes — never edit in place | Yes — never edit in place |
-| Source | `eddiecarpenter/gh-agentic` at a pinned version | The control plane repo, `main` branch |
-| Populated by | `gh agentic upgrade <version>` | `gh agentic project join` (initial) and `gh agentic project sync` (refresh) |
-| Refresh cadence | Manual — deliberate upgrade | Automatic on session-init (`git pull`) |
-| Writes go where | PRs to `gh-agentic` | PRs to the control plane repo |
-| Reflects | A chosen framework version | Currently-reviewed CP state |
-
-`.agents/` is pinned because framework upgrades are a decision. `.cp/` tracks CP
-main because knowledge updates should propagate everywhere as soon as reviewed.
-
-### Contents of `.cp/`
-
-A sparse checkout of the CP repo containing only `docs/`:
-
-```
-.cp/
-├── SYSTEM_BRIEF.md
-└── SYSTEM_ARCHITECTURE.md
-```
-
-The sparse checkout keeps the mount small and the refresh fast regardless of
-what else the CP repo accumulates over time.
-
 ### Session-init behaviour
 
-For every federated-topology session, session-init:
+For every session, session-init:
 
-1. Detects topology (federated or single).
-2. In federated mode, checks that `.cp/` exists. Missing `.cp/` is a hard
-   failure — `gh agentic project join` should have established it.
-3. Runs `git pull origin main` inside `.cp/`.
-   - Success → continue.
-   - Network failure → warn, proceed with the existing `.cp/` state. Sessions
-     remain usable offline with slightly-stale CP knowledge.
-   - Merge conflict (unexpected under the read-only discipline) → hard fail
-     and surface for repair.
-4. Proceeds with the session.
+1. Detects topology from `FEDERATION.md` presence (single or federation).
+2. In federation mode, reads `FEDERATION.md` to identify target domain repos.
+3. Loads `docs/BRIEF.md` and `docs/ARCHITECTURE.md` from the local repo.
+4. For federation topology: reads `docs/SYSTEM_BRIEF.md` and
+   `docs/SYSTEM_ARCHITECTURE.md` from the control plane repo via the GitHub
+   API on demand (no local mount required).
+5. Proceeds with the session.
+
+Domain repos (single topology) load only their own `docs/` — no cross-repo
+knowledge reads are required for ordinary single-topology sessions.
 
 ### Cross-reads — the rare direction
 
@@ -333,9 +303,8 @@ demand.
 
 ## Branch protection on the control plane
 
-Branch protection on CP `main` is the safeguard that makes "always mount main"
-safe. Without it, any direct push to CP main would propagate unreviewed content
-to every domain repo on the next sync.
+Branch protection on CP `main` prevents unreviewed content from reaching
+domain agents via session-init reads.
 
 - `gh agentic project check` flags CP main without branch protection as a
   warning.
@@ -390,18 +359,21 @@ No `docs/decisions/` directory exists in either the CP or domain repos.
 
 ## Legacy relics
 
-Two artefacts from the framework's file-based era have been removed from the
-knowledge plane:
+Three artefacts from the framework's previous federation model have been removed:
 
-- **`docs/federation.yaml`** — replaced by GitHub Project linkage and the
-  `AGENTIC_CONTROL_PLANE` marker variable. Membership is now a GitHub-enforced
-  property, not a synced file.
+- **`docs/federation.yaml`** — replaced by GitHub Project linkage and later by
+  `FEDERATION.md`. Membership is now declared in `FEDERATION.md` at the control
+  plane repo root.
 - **`docs/requirements/`** — replaced by GitHub Issues. Requirements are
   Issues; there is no parallel filesystem artefact.
+- **Control plane knowledge mount** — the sparse-checkout of `docs/` from the
+  control plane repo, previously installed by `project join` and refreshed by
+  `project sync`. Domain repos are now plain single-topology repos; system-level
+  knowledge is read on demand via the GitHub API rather than through a local
+  filesystem mount.
 
-A reader encountering either in old documentation or a legacy repo should
-treat them as obsolete and remove them when touching the surrounding
-content.
+A reader encountering any of these in old documentation or a legacy repo should
+treat them as obsolete and remove them when touching the surrounding content.
 
 ---
 
