@@ -432,6 +432,11 @@ jobs:
       issues: write
 
     steps:
+      # Uses curl+jq (not gh) because this job does not run setup-goose-env —
+      # gh is not pre-installed on self-hosted runners (it is installed via
+      # apt-get by install-ai-tools inside setup-goose-env). A lone comment-post
+      # does not warrant the full agent environment, so we hit the REST API
+      # directly with github.token.
       - name: Post interactive-only notice
         env:
           GH_TOKEN: ${{ github.token }}
@@ -439,8 +444,11 @@ jobs:
           ISSUE: ${{ github.event.issue.number }}
         run: |
           MARKER="<!-- interactive-only-guard:v1 -->"
-          EXISTING=$(gh issue view "${ISSUE}" --repo "${REPO}" --json comments \
-            --jq "[.comments[] | select(.body | startswith(\"${MARKER}\"))] | length")
+          EXISTING=$(curl --proto '=https' --tlsv1.2 -fsSL \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/issues/${ISSUE}/comments?per_page=100" \
+            | jq "[.[] | select(.body | startswith(\"${MARKER}\"))] | length")
           if [ "${EXISTING}" -gt 0 ]; then
             echo "Interactive-only notice already present on #${ISSUE} — skipping."
             exit 0
@@ -458,7 +466,12 @@ jobs:
             'session, then open the PR manually.' \
             '' \
             '_No pipeline action is pending — this is a guarded skip, not a stuck state._')
-          gh issue comment "${ISSUE}" --repo "${REPO}" --body "${BODY}"
+          # POST the comment, passing the body as a JSON-encoded field via jq.
+          curl --proto '=https' --tlsv1.2 -fsSL -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/issues/${ISSUE}/comments" \
+            -d "$(jq -nc --arg b "${BODY}" '{body: $b}')"
           echo "✓ Posted interactive-only notice on #${ISSUE}."
 
   # ---------------------------------------------------------------------------
