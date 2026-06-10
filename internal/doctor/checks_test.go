@@ -92,8 +92,11 @@ func TestRunAllChecks_HealthyRepo(t *testing.T) {
 		Run: func(name string, args ...string) (string, error) {
 			// Fake variable/secret/label checks.
 			if name == "gh" && len(args) > 0 {
-				if args[0] == "variable" && args[1] == "get" {
-					return "some-value", nil
+				if isVarAPICall(args) {
+					if strings.Contains(args[1], "AGENTIC_TOPOLOGY") || strings.Contains(args[1], "AGENTIC_CONTROL_PLANE") {
+						return "", fmt.Errorf("HTTP 404: Not Found") // no legacy config
+					}
+					return `{"name":"X","value":"some-value"}`, nil
 				}
 				if args[0] == "secret" && args[1] == "list" {
 					return "PROJECT_PAT\tUpdated 2026-04-01\nPIPELINE_PAT\tUpdated 2026-04-01\nCLAUDE_CREDENTIALS_JSON\tUpdated 2026-04-01", nil
@@ -746,8 +749,8 @@ func TestCheckLabels_VerificationLabels_PresentInRequiredSet(t *testing.T) {
 		wantDescSub string
 	}{
 		{
-			labelName:   "in-verification",
-			wantColor:   "d93f0b",
+			labelName: "in-verification",
+			wantColor: "d93f0b",
 			// Substring chosen to survive description-wording refinements;
 			// the protective intent is "the description mentions Compliance
 			// Verify" — not a specific phrasing.
@@ -855,6 +858,13 @@ func TestContainsLabelName(t *testing.T) {
 }
 
 // --- checkVariable / checkSecret scope-fallback tests (task #531) ---
+
+// isVarAPICall returns true when the faked gh invocation is the
+// `gh api repos/<owner>/<repo>/actions/variables/<name>` read that
+// getRepoVariable issues (#844 — replaced `gh variable get`).
+func isVarAPICall(args []string) bool {
+	return len(args) >= 2 && args[0] == "api" && strings.Contains(args[1], "/actions/variables/")
+}
 
 // ghRun is a minimal fake for deps.Run used in scope-fallback tests. It
 // takes a routing table keyed by the scope flag ("--org" or "--repo") and
@@ -1093,6 +1103,71 @@ func TestCheckVariable_PermissionError_Warns(t *testing.T) {
 	}
 }
 
+// TestCheckVariable_NotFound_Fails verifies a clean HTTP 404 — the one
+// failure mode that proves the variable is missing — still hard-fails.
+func TestCheckVariable_NotFound_Fails(t *testing.T) {
+	deps := CheckDeps{
+		RepoFullName: "acme/repo", Owner: "acme", Topology: "single",
+		Run: func(name string, args ...string) (string, error) {
+			return "gh: Not Found (HTTP 404)", fmt.Errorf("gh: exit status 1")
+		},
+	}
+	res := checkVariable(deps, "RUNNER_LABEL")
+	if res.Status != Fail {
+		t.Fatalf("status: got %d (%s), want Fail", res.Status, res.Message)
+	}
+}
+
+// TestCheckVariable_InconclusiveError_Warns covers #844: gh failures that are
+// neither a 403 nor a 404 — e.g. an outdated gh CLI rejecting the command, or
+// a network failure — must report "unable to check", never "not configured".
+func TestCheckVariable_InconclusiveError_Warns(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+	}{
+		{"old gh unknown command", `unknown command "get" for "gh variable"`},
+		{"network failure", "error connecting to api.github.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := CheckDeps{
+				RepoFullName: "acme/repo", Owner: "acme", Topology: "single",
+				Run: func(name string, args ...string) (string, error) {
+					return tc.output, fmt.Errorf("gh: exit status 1")
+				},
+			}
+			res := checkVariable(deps, "RUNNER_LABEL")
+			if res.Status != Warning {
+				t.Fatalf("status: got %d (%s), want Warning", res.Status, res.Message)
+			}
+			if !strings.Contains(res.Message, "unable to check") {
+				t.Errorf("message: got %q, want 'unable to check'", res.Message)
+			}
+		})
+	}
+}
+
+// TestCheckVariable_ReadsViaAPI pins the #844 fix: the variable read must go
+// through `gh api` (available in every gh version), not `gh variable get`
+// (gh ≥ 2.31 only — absent from distro-packaged gh on self-hosted runners).
+func TestCheckVariable_ReadsViaAPI(t *testing.T) {
+	var got [][]string
+	deps := CheckDeps{
+		RepoFullName: "acme/repo", Owner: "acme", Topology: "single",
+		Run: func(name string, args ...string) (string, error) {
+			got = append(got, append([]string{name}, args...))
+			return `{"name":"RUNNER_LABEL","value":"x"}`, nil
+		},
+	}
+	res := checkVariable(deps, "RUNNER_LABEL")
+	if res.Status != Pass {
+		t.Fatalf("status: got %d (%s), want Pass", res.Status, res.Message)
+	}
+	if len(got) != 1 || got[0][1] != "api" || got[0][2] != "repos/acme/repo/actions/variables/RUNNER_LABEL" {
+		t.Errorf("expected single gh api call, got %v", got)
+	}
+}
+
 // --- checkFederationManifest tests ---
 
 func TestCheckFederationManifest_NoFile_Pass(t *testing.T) {
@@ -1217,10 +1292,10 @@ func TestCheckLegacyFederationConfig_AgenticTopologySet_Warns(t *testing.T) {
 		RepoFullName: "acme/repo",
 		Run: func(name string, args ...string) (string, error) {
 			// AGENTIC_TOPOLOGY is set; AGENTIC_CONTROL_PLANE is not.
-			if len(args) >= 3 && args[0] == "variable" && args[2] == "AGENTIC_TOPOLOGY" {
-				return "federation", nil
+			if isVarAPICall(args) && strings.Contains(args[1], "AGENTIC_TOPOLOGY") {
+				return `{"name":"AGENTIC_TOPOLOGY","value":"federation"}`, nil
 			}
-			return "", fmt.Errorf("not set")
+			return "", fmt.Errorf("HTTP 404: Not Found")
 		},
 	}
 
@@ -1252,10 +1327,10 @@ func TestCheckLegacyFederationConfig_AgenticControlPlaneSet_Warns(t *testing.T) 
 		RepoFullName: "acme/repo",
 		Run: func(name string, args ...string) (string, error) {
 			// AGENTIC_CONTROL_PLANE is set; AGENTIC_TOPOLOGY is not.
-			if len(args) >= 3 && args[0] == "variable" && args[2] == "AGENTIC_CONTROL_PLANE" {
-				return "acme/cp", nil
+			if isVarAPICall(args) && strings.Contains(args[1], "AGENTIC_CONTROL_PLANE") {
+				return `{"name":"AGENTIC_CONTROL_PLANE","value":"acme/cp"}`, nil
 			}
-			return "", fmt.Errorf("not set")
+			return "", fmt.Errorf("HTTP 404: Not Found")
 		},
 	}
 
@@ -1312,11 +1387,11 @@ func TestCheckLegacyFederationConfig_MultipleItems_MultipleWarnings(t *testing.T
 		RepoFullName: "acme/repo",
 		Run: func(name string, args ...string) (string, error) {
 			// Both legacy variables are set.
-			if len(args) >= 3 && args[0] == "variable" &&
-				(args[2] == "AGENTIC_TOPOLOGY" || args[2] == "AGENTIC_CONTROL_PLANE") {
-				return "some-value", nil
+			if isVarAPICall(args) &&
+				(strings.Contains(args[1], "AGENTIC_TOPOLOGY") || strings.Contains(args[1], "AGENTIC_CONTROL_PLANE")) {
+				return `{"name":"X","value":"some-value"}`, nil
 			}
-			return "", fmt.Errorf("not set")
+			return "", fmt.Errorf("HTTP 404: Not Found")
 		},
 	}
 
@@ -1628,4 +1703,3 @@ func TestCheckFederationProjectSync_NotWiredForFrameworkSource(t *testing.T) {
 		}
 	}
 }
-

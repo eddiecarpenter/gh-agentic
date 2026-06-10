@@ -18,8 +18,8 @@ import (
 // label repair, and the label-create calls would otherwise inflate the repair
 // count and break assertions.
 func fakeRunMissingVarsAndSecret(name string, args ...string) (string, error) {
-	if name == "gh" && len(args) > 1 && args[0] == "variable" && args[1] == "get" {
-		return "", nil
+	if name == "gh" && isVarAPICall(args) {
+		return "", fmt.Errorf("HTTP 404: Not Found")
 	}
 	if name == "gh" && len(args) > 1 && args[0] == "secret" && args[1] == "list" {
 		return "", nil
@@ -253,8 +253,8 @@ func TestRepairPipeline_CreatesLabels(t *testing.T) {
 		Run: func(name string, args ...string) (string, error) {
 			if name == "gh" && len(args) > 1 {
 				switch {
-				case args[0] == "variable" && args[1] == "get":
-					return "configured", nil
+				case isVarAPICall(args):
+					return `{"name":"X","value":"configured"}`, nil
 				case args[0] == "secret" && args[1] == "list":
 					return "PROJECT_PAT\tUpdated 2026-04-01", nil
 				case args[0] == "label" && args[1] == "list":
@@ -298,8 +298,8 @@ func TestRepairPipeline_LabelCreateFails_CountsUnrepaired(t *testing.T) {
 		Run: func(name string, args ...string) (string, error) {
 			if name == "gh" && len(args) > 1 {
 				switch {
-				case args[0] == "variable" && args[1] == "get":
-					return "configured", nil
+				case isVarAPICall(args):
+					return `{"name":"X","value":"configured"}`, nil
 				case args[0] == "secret" && args[1] == "list":
 					return "PROJECT_PAT\tUpdated 2026-04-01", nil
 				case args[0] == "label" && args[1] == "list":
@@ -377,8 +377,8 @@ func TestRepairPipeline_NoFailures(t *testing.T) {
 		ProjectID:         "PVT_configured",
 		FetchProjectTitle: func(id string) (string, error) { return "Healthy", nil },
 		Run: func(name string, args ...string) (string, error) {
-			if name == "gh" && len(args) > 1 && args[0] == "variable" && args[1] == "get" {
-				return "configured", nil
+			if name == "gh" && isVarAPICall(args) {
+				return `{"name":"X","value":"configured"}`, nil
 			}
 			if name == "gh" && len(args) > 1 && args[0] == "secret" && args[1] == "list" {
 				return "PROJECT_PAT\tUpdated 2026-04-01", nil
