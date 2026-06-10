@@ -304,6 +304,37 @@ on it:
    Hold the contents available for reference; do NOT quote them
    verbatim into Feature bodies (they're context, not source).
 
+   **Federation manifest detection.** Check whether the active repo
+   is a federation requirements repo by testing for `FEDERATION.md`
+   at the repo root:
+
+   - **Present** → read it with the `Read` tool (NOT shell parsing)
+     and hold the parsed repos-and-purposes list as `<federation>`.
+     The manifest is YAML of the shape:
+     ```yaml
+     repos:
+       - name: owner/repo-a
+         purpose: <what work lives in this repo>
+       - name: owner/repo-b
+         purpose: <…>
+     ```
+     `<federation>.repos` is the candidate target set for feature
+     placement (artefact 3). Do NOT re-validate the manifest here —
+     `gh agentic check` (#824/#827) owns manifest integrity. If the
+     file is present but unreadable or obviously malformed, surface
+     a one-line warning and point the human at `gh agentic check`,
+     then proceed treating `<federation>` as unset (single-repo
+     behaviour) rather than guessing target repos.
+   - **Absent** → leave `<federation>` unset. The repo is single
+     topology: every Feature is created in `<active-repo>` and no
+     target-repo question is ever asked. The entire artefact walk
+     below is textually unchanged from the single-repo flow.
+
+   Throughout the steps below, behaviour gated on "`<federation>` is
+   held" applies ONLY when the manifest was present; when unset, the
+   gated prose is not applicable (no skip-justification needed — it
+   is a conditional-step carve-out).
+
 2. **Pick the parent Requirement.** Query the active repo's
    Requirements:
 
@@ -546,6 +577,15 @@ whether the Requirement spawns 1 or N Features. Everything before
 the pivot is Requirement-level; everything between the pivot and
 artefact 9 is per-Feature.
 
+**Per-Feature header threading (only when `<federation>` is held).**
+Once artefact 3 has assigned a `<target-repo>` to each Feature, every
+per-Feature artefact gate (4–8) for that Feature MUST show the target
+repo in its header, so the human always sees where the Feature they
+are shaping will be created — e.g. `Artefact 4 — <Feature name>
+(→ owner/repo)`. The same `(→ owner/repo)` annotation appears in the
+step-17 creation render. When `<federation>` is unset, headers carry
+no repo annotation (single-repo flow, unchanged).
+
 **Each artefact follows the same gate pattern.** The agent proposes
 content, surfaces it to the human, and invokes `prompt-user`:
 
@@ -628,6 +668,57 @@ prompt-user(
       Feature name (e.g., `Artefact 4 — <Feature name>`). After all
       Features have walked through 4–8, run artefact 9 once.
     - **Cancel** → revert to backlog, raise `USER_CANCELLED`, exit.
+
+    **One-repo rule and target-repo assignment (only when
+    `<federation>` is held).** In a federation requirements repo,
+    every Feature must land in exactly one implementation repo —
+    requirements live with domain knowledge, features live with
+    code. Two sub-rules apply at this checkpoint, BEFORE any
+    per-Feature artefact (4–8) runs:
+
+    1. **One-repo rule (split).** A Feature whose work spans two
+       repos must be split into one Feature per repo, each
+       describing what it does in that repo. When the human names a
+       Feature (or the single-Feature framing) that clearly straddles
+       two manifest repos, surface the split and propose the
+       per-repo Features:
+       ```
+       Feature "<name>" spans <repo-A> and <repo-B>. A Feature must
+       fit one repo, so I'll split it into:
+         - <name> (<repo-A>): <what it does there>
+         - <name> (<repo-B>): <what it does there>
+       ```
+       Confirm the split with the human before proceeding. The split
+       Features then each walk artefacts 4–8 independently.
+
+    2. **Target-repo assignment (propose / confirm / override).**
+       For each Feature (after any split), propose a target repo
+       drawn from `<federation>.repos`, citing the manifest purpose
+       that justifies it, then let the human confirm or override:
+       ```
+       prompt-user(
+         question: "Which repo should Feature \"<name>\" land in? I propose <owner/repo> — <manifest purpose>.",
+         header: "Target repo — <name>",
+         options: [
+           {label: "<owner/repo> (proposed)",
+            description: "<manifest purpose for the proposed repo>"},
+           ...one option per other manifest repo, label "<owner/repo>"...,
+           {label: "Cancel scoping",
+            description: "End the session."}
+         ]
+       )
+       ```
+       If the manifest has more than four repos, render the
+       candidate list as plain conversation (one `owner/repo —
+       purpose` per line) and ask the human to reply with the target,
+       per the >4-option convention used elsewhere in this skill.
+       Capture the confirmed target as `<target-repo>` for that
+       Feature and hold it through the rest of the walk.
+
+    When `<federation>` is unset (single topology), neither sub-rule
+    applies: there is no target-repo question, every Feature's
+    `<target-repo>` is implicitly `<active-repo>`, and the per-Feature
+    headers below carry no repo annotation.
 
 11. **Artefact 4 — Feature definition + User Story (per-Feature).**
     A short paragraph describing what the Feature delivers, plus a
@@ -823,6 +914,12 @@ prompt-user(
     Here is Feature <name> as it would be filed:
     ```
 
+    When `<federation>` is held, the preface MUST name the target
+    repo so placement is explicit before the point of no return:
+    ```
+    Here is Feature <name> (→ <target-repo>) as it would be filed:
+    ```
+
     The body shape is:
     ```markdown
     ## User Story
@@ -868,6 +965,36 @@ prompt-user(
     Part of #<parent-N> (when multiple Features share the parent)
     ```
 
+    **Pre-flight label check (only when `<federation>` is held).**
+    Before the point-of-no-return confirmation, verify that every
+    distinct `<target-repo>` across the Features about to be created
+    carries the labels issue creation needs. For each distinct target
+    repo, query its labels once:
+
+    ```bash
+    gh label list --repo "<target-repo>" --json name --jq '[.[].name]'
+    ```
+
+    The required set is `feature` and `backlog`, plus
+    `needs-interactive-design` for any Feature targeting that repo
+    whose artefact 7 answer was "Yes". If any required label is
+    missing in any target repo, ABORT before creating a single issue
+    — a cross-repo partial is worse than a same-repo one because
+    cleanup spans repos. Surface:
+
+    ```
+    Cannot create Features — missing pipeline labels:
+      - <target-repo-X>: missing <label>, <label>
+      - <target-repo-Y>: missing <label>
+    Run `gh agentic repair` in each repo above, then re-run scoping.
+    No Feature issues were created.
+    ```
+
+    Raise `ISSUE_CREATION_FAILED` (`ERROR`) and exit. When
+    `<federation>` is unset, the single target is `<active-repo>`;
+    `gh agentic check` already guarantees its labels, so this
+    pre-flight is a no-op (skip it — conditional-step carve-out).
+
     Then surface the **point-of-no-return warning** to the human as
     plain conversation BEFORE the prompt-user call (see "State model
     & cancel semantics" in the Steps preamble for the full rules):
@@ -907,11 +1034,13 @@ prompt-user(
     Write the Feature body from step 17 to a temporary file using
     the agent's `Write` tool — never via shell `echo` or heredoc, as
     user-supplied content may contain shell metacharacters (backticks,
-    dollar signs, quotes) that would corrupt the file. Then invoke:
+    dollar signs, quotes) that would corrupt the file. Then invoke,
+    creating the Feature in its own `<target-repo>` (which is
+    `<active-repo>` when `<federation>` is unset):
 
     ```bash
     gh issue create \
-      --repo "<active-repo>" \
+      --repo "<target-repo>" \
       --title "<Feature title>" \
       --label "<labels>" \
       --body-file <path-to-temp-file>
@@ -919,7 +1048,7 @@ prompt-user(
 
     Capture the resulting issue number `<F>` and URL from the
     command's stdout. The output is the full URL
-    (`https://github.com/<active-repo>/issues/<F>`); parse `<F>`
+    (`https://github.com/<target-repo>/issues/<F>`); parse `<F>`
     from the trailing path segment.
 
     **Feature title rule.** ≤70 characters. Noun-phrase summary of
@@ -928,32 +1057,38 @@ prompt-user(
     managers"*, *"Idempotent webhook processing"*. If no concise
     title fits, ask the human directly rather than truncating.
 
-    **Verification gate.** After each create, query the issue back:
+    **Verification gate.** After each create, query the issue back
+    in the repo it was created in:
 
     ```bash
-    gh agentic status feature <F> --raw
+    gh issue view <F> --repo "<target-repo>" --json number,labels --jq '{n:.number, labels:[.labels[].name]}'
     ```
 
     Verify the issue exists with the expected labels. If missing
     or inconsistent, raise `ISSUE_CREATION_FAILED` (`ERROR`).
+    (`gh agentic status feature <F>` aggregates across the
+    federation and also works, but a direct `--repo` query is the
+    unambiguous per-repo check.)
 
     **Partial-creation handling.** If Feature K of N fails (Features
     1..K-1 already exist on GitHub), STOP — do not continue creating
     Features K+1..N, and DO NOT proceed to step 19, 20, or beyond.
     Per "State model & cancel semantics", T1→T2 partial leaves the
-    framework in a state the skill cannot auto-recover from. Surface:
+    framework in a state the skill cannot auto-recover from. Name the
+    repo each Feature landed in (or failed in), since in a federation
+    they differ:
 
     ```
     Partial Feature creation:
-      - #<F1> created successfully (labels: ...)
+      - #<F1> (<target-repo>) created successfully (labels: ...)
       - ...
-      - Feature K (<title>) failed: <gh stderr>
+      - Feature K "<title>" (<target-repo>) failed: <gh stderr>
       - Features K+1..N not attempted
 
     The Requirement remains at Scoping. The successfully-created
     Features are valid pipeline artefacts; the failed one needs
     investigation. Recommended:
-      - Run `gh agentic repair`
+      - Run `gh agentic repair` in <target-repo> for the failed Feature
       - Re-invoke requirement-scoping; the orphan re-entry flow will
         detect the existing Features and surface them. From there,
         either close them and start over, or complete the work
@@ -966,12 +1101,15 @@ prompt-user(
     Feature `<F>`, add it to the project board so it appears in
     pipeline / kanban views. The project ID lives in
     `AGENTIC_PROJECT_ID`; the project number is the trailing
-    integer of the project URL.
+    integer of the project URL. There is one project for the whole
+    federation, and it accepts items from any same-owner repo, so
+    the add uses the Feature's `<target-repo>` issue URL — NOT
+    `<active-repo>`:
 
     ```bash
     gh project item-add <project-number> \
-      --owner "${active_repo%/*}" \
-      --url "https://github.com/<active-repo>/issues/<F>"
+      --owner "${target_repo%/*}" \
+      --url "https://github.com/<target-repo>/issues/<F>"
     ```
 
     On failure → surface as `WARN`; do NOT block scoping. The
@@ -1003,15 +1141,18 @@ prompt-user(
       -F num="<requirement-N>" \
       --jq '.data.repository.issue.id')
 
-    # Per Feature, resolve the child node ID then link:
+    # Per Feature, resolve the child node ID then link. The child
+    # lives in its <target-repo>, which may differ from the parent's
+    # repo in a federation — resolve owner/name from <target-repo>,
+    # NOT <active-repo>:
     CHILD_NODE_ID=$(gh api graphql -f query='
       query($owner:String!, $name:String!, $num:Int!) {
         repository(owner:$owner, name:$name) {
           issue(number:$num) { id }
         }
       }' \
-      -F owner="${active_repo%/*}" \
-      -F name="${active_repo#*/}" \
+      -F owner="${target_repo%/*}" \
+      -F name="${target_repo#*/}" \
       -F num="<F>" \
       --jq '.data.repository.issue.id')
 
@@ -1025,10 +1166,21 @@ prompt-user(
       -F child="$CHILD_NODE_ID"
     ```
 
-    On any failure (node-ID lookup or the mutation itself), propagate
-    `ISSUE_CREATION_FAILED`. The Feature body's `Closes #<parent>` /
-    `Part of #<parent>` line is a fallback; the API-level sub-issue
-    link is the durable signal.
+    **Same-owner precondition.** GitHub's sub-issue mechanism links
+    issues only within a single owner (org or user). Every
+    `<target-repo>` in `<federation>` shares the requirements repo's
+    owner — `gh agentic check` (#827) enforces this — so cross-repo
+    sub-issue links resolve. If `addSubIssue` fails with an
+    owner-mismatch error (a manifest listing a foreign-owner repo,
+    which check should have rejected), propagate
+    `ISSUE_CREATION_FAILED` and point the human at `gh agentic check`:
+    a multi-owner federation is out of scope and cannot be wired this
+    way.
+
+    On any other failure (node-ID lookup or the mutation itself),
+    propagate `ISSUE_CREATION_FAILED`. The Feature body's
+    `Closes #<parent>` / `Part of #<parent>` line is a fallback; the
+    API-level sub-issue link is the durable signal.
 
 ---
 
@@ -1080,12 +1232,15 @@ prompt-user(
     decision rule.
 
     ```
-    trigger-design(issue=<F>)
+    trigger-design(issue=<F>, repo=<target-repo>)
     ```
 
-    `repo` is omitted — `trigger-design` resolves it to the active
-    repo, which is what we want here (the Features were just created
-    in the active repo in step 18).
+    Pass `repo=<target-repo>` so the trigger lands on the Feature in
+    the repo it was created in. When `<federation>` is unset,
+    `<target-repo>` equals `<active-repo>` and this is the same as
+    omitting `repo`. `trigger-design` already accepts the optional
+    `repo` argument for cross-repo callers — do not reimplement its
+    label-choice logic here.
 
     The primitive returns `{ trigger_label, status, triggered: true }`
     on success. Capture `trigger_label` per Feature so step 22 (held
@@ -1135,7 +1290,10 @@ prompt-user(
     Raise `STATUS_TRANSITION_FAILED`.
 
 22. **Annotate held Features.** For each non-triggered Feature,
-    post a comment via `post-issue-comment`:
+    post a comment via `post-issue-comment`, targeting the repo the
+    Feature lives in (`post-issue-comment(repo=<target-repo>,
+    issue=<F>, body=…)`) — in a federation the held Feature may not
+    be in `<active-repo>`:
 
     ```
     Held at backlog — not triggered during scoping.
@@ -1165,15 +1323,21 @@ prompt-user(
     On any failure, propagate `STATUS_TRANSITION_FAILED`.
 
 24. **Emit the exit block** matching the actual outcome. All
-    variants conform to the same Produced / Blocked / Next shape:
+    variants conform to the same Produced / Blocked / Next shape.
+
+    **Repo annotation (only when `<federation>` is held).** Each
+    created Feature is rendered as `#<F> (owner/repo)` so the session
+    record shows where every Feature landed across the federation.
+    When `<federation>` is unset, the `(owner/repo)` suffix is
+    omitted (all Features are in `<active-repo>`).
 
     **Output A — All Features triggered:**
     ```
     === Requirement Scoping Session — Completed ===
 
     Produced:
-      - Feature #<F1> created (triggered for design)
-      - Feature #<F2> created (triggered for design)
+      - Feature #<F1> (owner/repo-a) created (triggered for design)
+      - Feature #<F2> (owner/repo-b) created (triggered for design)
       - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: none
@@ -1187,8 +1351,8 @@ prompt-user(
     === Requirement Scoping Session — Completed ===
 
     Produced:
-      - Feature #<F1> created (triggered for design)
-      - Feature #<F2> created (held at backlog — cross-repo dep)
+      - Feature #<F1> (owner/repo-a) created (triggered for design)
+      - Feature #<F2> (owner/repo-b) created (held at backlog — cross-repo dep)
       - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: #<F2> — upstream PR
@@ -1202,8 +1366,8 @@ prompt-user(
     === Requirement Scoping Session — Completed ===
 
     Produced:
-      - Feature #<F1> created (held at backlog — cross-repo dep)
-      - Feature #<F2> created (held at backlog — deliberate hold)
+      - Feature #<F1> (owner/repo-a) created (held at backlog — cross-repo dep)
+      - Feature #<F2> (owner/repo-b) created (held at backlog — deliberate hold)
       - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: #<F1> — upstream PR; #<F2> — human chose to hold
