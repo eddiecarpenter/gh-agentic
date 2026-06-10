@@ -553,9 +553,9 @@ func TestCheckProjectReachability_ProjectIDAbsent(t *testing.T) {
 }
 
 // TestCheckProjectReachability_RunsForAllTopologies verifies the check is
-// wired into the topology list for single, federated-cp, and federated-domain.
+// wired into the topology list for single and federation topologies.
 func TestCheckProjectReachability_RunsForAllTopologies(t *testing.T) {
-	topologies := []string{"single", "federated-cp", "federated-domain"}
+	topologies := []string{"single", "federation"}
 	for _, topo := range topologies {
 		t.Run(topo, func(t *testing.T) {
 			deps := CheckDeps{Topology: topo}
@@ -697,9 +697,9 @@ func TestCheckLabels_RunFails_Warns(t *testing.T) {
 }
 
 // TestCheckLabels_RunsForAllTopologies verifies the label check is wired into
-// every supported topology variant.
+// both supported topology variants.
 func TestCheckLabels_RunsForAllTopologies(t *testing.T) {
-	topologies := []string{"single", "federated-cp", "federated-domain"}
+	topologies := []string{"single", "federation"}
 	for _, topo := range topologies {
 		t.Run(topo, func(t *testing.T) {
 			deps := CheckDeps{Topology: topo}
@@ -902,69 +902,53 @@ func (r *ghRun) fn() func(string, ...string) (string, error) {
 	}
 }
 
-func TestCheckSecret_Federated_SecretAtOrgOnly_Pass(t *testing.T) {
-	r := &ghRun{
-		Outputs: map[string]string{
-			"secret|--org": "PROJECT_PAT\tUpdated 2026-04-01",
-			// repo listing returns nothing
-		},
-	}
-	deps := CheckDeps{
-		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
-		Run: r.fn(),
-	}
-	res := checkSecret(deps, "PROJECT_PAT")
-	if res.Status != Pass {
-		t.Fatalf("got %d (%s), want Pass — calls: %v", res.Status, res.Message, r.Calls)
-	}
-}
-
-func TestCheckSecret_Federated_SecretAtRepoOnly_Pass(t *testing.T) {
-	// Pass-and-overlap is fine here; shadow is a separate check (#532).
+func TestCheckSecret_SecretAtRepo_Pass(t *testing.T) {
+	// Feature #824: secrets are always --repo scoped.
 	r := &ghRun{
 		Outputs: map[string]string{
 			"secret|--repo": "PROJECT_PAT\tUpdated 2026-04-01",
-			// org listing returns nothing
 		},
 	}
 	deps := CheckDeps{
-		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federation",
 		Run: r.fn(),
 	}
 	res := checkSecret(deps, "PROJECT_PAT")
 	if res.Status != Pass {
 		t.Fatalf("got %d (%s), want Pass", res.Status, res.Message)
 	}
+	// Must NOT consult org scope.
+	for _, c := range r.Calls {
+		for _, a := range c {
+			if a == "--org" {
+				t.Errorf("org scope must never be consulted (calls: %v)", r.Calls)
+			}
+		}
+	}
 }
 
-func TestCheckSecret_Federated_SecretAtNeither_FailWithOrgRemediation(t *testing.T) {
-	r := &ghRun{} // no outputs → both scopes return empty
+func TestCheckSecret_SecretMissing_FailWithRepoRemediation(t *testing.T) {
+	// Feature #824: remediation always points to --repo, not --org.
+	r := &ghRun{} // no outputs → repo listing returns empty
 	deps := CheckDeps{
-		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federation",
 		Run: r.fn(),
 	}
 	res := checkSecret(deps, "PROJECT_PAT")
 	if res.Status != Fail {
 		t.Fatalf("got %d (%s), want Fail", res.Status, res.Message)
 	}
-	wantHint := "gh secret set PROJECT_PAT --org acme"
+	wantHint := "gh secret set PROJECT_PAT --repo acme/domain"
 	if res.Remediation != wantHint {
 		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
 	}
-	// Must have consulted both scopes.
-	var sawRepo, sawOrg bool
+	// Must NOT consult org scope.
 	for _, c := range r.Calls {
 		for _, a := range c {
-			if a == "--repo" {
-				sawRepo = true
-			}
 			if a == "--org" {
-				sawOrg = true
+				t.Errorf("org scope must never be consulted (calls: %v)", r.Calls)
 			}
 		}
-	}
-	if !sawRepo || !sawOrg {
-		t.Errorf("expected both --repo and --org consulted; got --repo=%v --org=%v (calls: %v)", sawRepo, sawOrg, r.Calls)
 	}
 }
 
@@ -1014,246 +998,23 @@ func TestCheckSecret_Single_SecretAtOrgOnly_Fail(t *testing.T) {
 	}
 }
 
-func TestCheckVariable_Federated_SharedName_QueriesOrg(t *testing.T) {
-	r := &ghRun{
-		Outputs: map[string]string{
-			"variable|--org": "RUNNER_LABEL\tsome-value",
-			// repo variable get returns empty (not set)
-		},
-	}
-	deps := CheckDeps{
-		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
-		Run: r.fn(),
-	}
-	res := checkVariable(deps, "RUNNER_LABEL")
-	if res.Status != Pass {
-		t.Fatalf("got %d (%s), want Pass", res.Status, res.Message)
-	}
-}
-
-func TestCheckVariable_Federated_IdentityName_NeverQueriesOrg(t *testing.T) {
-	// AGENTIC_PROJECT_ID is an identity name — even under federated it
-	// belongs at the repo only. The org list must never be consulted.
+func TestCheckVariable_NeverQueriesOrg(t *testing.T) {
+	// Feature #824: org scope is never consulted for any variable.
 	r := &ghRun{}
-	deps := CheckDeps{
-		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
-		Run: r.fn(),
-	}
-	_ = checkVariable(deps, "AGENTIC_PROJECT_ID")
-	for _, c := range r.Calls {
-		for _, a := range c {
-			if a == "--org" {
-				t.Errorf("identity name must not trigger --org lookup (calls: %v)", r.Calls)
+	for _, varName := range []string{"RUNNER_LABEL", "AGENT_PROVIDER", "AGENTIC_PROJECT_ID"} {
+		r.Calls = nil
+		deps := CheckDeps{
+			RepoFullName: "acme/domain", Owner: "acme", Topology: "federation",
+			Run: r.fn(),
+		}
+		_ = checkVariable(deps, varName)
+		for _, c := range r.Calls {
+			for _, a := range c {
+				if a == "--org" {
+					t.Errorf("%s: org scope must never be consulted (calls: %v)", varName, r.Calls)
+				}
 			}
 		}
-	}
-}
-
-// --- checkShadowVars tests (task #532) ---
-
-// shadowScenario configures a ghRun with specific list outputs for each
-// of the four list queries the shadow-vars check issues.
-type shadowScenario struct {
-	VarRepo string
-	VarOrg  string
-	SecRepo string
-	SecOrg  string
-}
-
-func (s shadowScenario) ghRun() *ghRun {
-	return &ghRun{
-		Outputs: map[string]string{
-			"variable|--repo": s.VarRepo,
-			"variable|--org":  s.VarOrg,
-			"secret|--repo":   s.SecRepo,
-			"secret|--org":    s.SecOrg,
-		},
-	}
-}
-
-func TestCheckShadowVars_Federated_NoShadows_Pass(t *testing.T) {
-	r := shadowScenario{
-		// Shared name present only at org — correct federated placement.
-		VarOrg: "RUNNER_LABEL\tvalue",
-		SecOrg: "PROJECT_PAT\tupdated",
-	}.ghRun()
-	deps := CheckDeps{
-		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
-		Run: r.fn(),
-	}
-	g := checkShadowVars(deps)
-	if len(g.Results) != 1 || g.Results[0].Status != Pass {
-		t.Fatalf("expected single Pass result, got %+v", g.Results)
-	}
-	if g.Results[0].Data != nil {
-		t.Errorf("expected nil Data on pass result, got %v", g.Results[0].Data)
-	}
-}
-
-func TestCheckShadowVars_Federated_VariableShadow_FailWithDeleteCommand(t *testing.T) {
-	r := shadowScenario{
-		VarRepo: "RUNNER_LABEL\tshadow",
-		VarOrg:  "RUNNER_LABEL\ttrue-value",
-	}.ghRun()
-	deps := CheckDeps{
-		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
-		Run: r.fn(),
-	}
-	g := checkShadowVars(deps)
-	// Expect: 1 summary Fail + 1 per-item Fail for RUNNER_LABEL variable.
-	if len(g.Results) != 2 {
-		t.Fatalf("expected 2 results (summary + item), got %d: %+v", len(g.Results), g.Results)
-	}
-	if g.Results[0].Status != Fail {
-		t.Errorf("summary: got %d, want Fail", g.Results[0].Status)
-	}
-	data, ok := g.Results[0].Data.([]ShadowValue)
-	if !ok || len(data) != 1 {
-		t.Fatalf("expected []ShadowValue of length 1 on summary, got %v", g.Results[0].Data)
-	}
-	if data[0].Kind != "variable" || data[0].Name != "RUNNER_LABEL" {
-		t.Errorf("structured data: got %+v, want variable/RUNNER_LABEL", data[0])
-	}
-	wantCmd := "gh variable delete --repo acme/cp RUNNER_LABEL"
-	if data[0].DeleteCommand != wantCmd {
-		t.Errorf("structured delete command: got %q, want %q", data[0].DeleteCommand, wantCmd)
-	}
-	if g.Results[1].Remediation != wantCmd {
-		t.Errorf("per-item remediation: got %q, want %q", g.Results[1].Remediation, wantCmd)
-	}
-}
-
-func TestCheckShadowVars_Federated_SecretShadow_FailWithDeleteCommand(t *testing.T) {
-	r := shadowScenario{
-		SecRepo: "PROJECT_PAT\tshadow",
-		SecOrg:  "PROJECT_PAT\ttrue-value",
-	}.ghRun()
-	deps := CheckDeps{
-		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
-		Run: r.fn(),
-	}
-	g := checkShadowVars(deps)
-	data, ok := g.Results[0].Data.([]ShadowValue)
-	if !ok || len(data) != 1 {
-		t.Fatalf("expected 1 shadow, got %v", g.Results[0].Data)
-	}
-	if data[0].Kind != "secret" || data[0].Name != "PROJECT_PAT" {
-		t.Errorf("got %+v, want secret/PROJECT_PAT", data[0])
-	}
-	wantCmd := "gh secret delete --repo acme/cp PROJECT_PAT"
-	if data[0].DeleteCommand != wantCmd {
-		t.Errorf("delete command: got %q, want %q", data[0].DeleteCommand, wantCmd)
-	}
-}
-
-func TestCheckShadowVars_Federated_MixedShadows_AllListed(t *testing.T) {
-	r := shadowScenario{
-		VarRepo: "RUNNER_LABEL\tx\nAGENT_PROVIDER\ty",
-		VarOrg:  "RUNNER_LABEL\tx\nAGENT_PROVIDER\ty",
-		SecRepo: "PROJECT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
-		SecOrg:  "PROJECT_PAT\tz\nCLAUDE_CREDENTIALS_JSON\tw",
-	}.ghRun()
-	deps := CheckDeps{
-		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
-		Run: r.fn(),
-	}
-	g := checkShadowVars(deps)
-	data, ok := g.Results[0].Data.([]ShadowValue)
-	if !ok {
-		t.Fatalf("expected []ShadowValue, got %T", g.Results[0].Data)
-	}
-	if len(data) != 4 {
-		t.Errorf("expected 4 shadows, got %d: %+v", len(data), data)
-	}
-	// Count variables vs secrets.
-	varCount, secCount := 0, 0
-	for _, s := range data {
-		switch s.Kind {
-		case "variable":
-			varCount++
-		case "secret":
-			secCount++
-		}
-	}
-	if varCount != 2 || secCount != 2 {
-		t.Errorf("want 2 variable + 2 secret shadows, got var=%d sec=%d", varCount, secCount)
-	}
-}
-
-func TestCheckShadowVars_Federated_IssuesFourListQueries(t *testing.T) {
-	r := shadowScenario{}.ghRun()
-	deps := CheckDeps{
-		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
-		Run: r.fn(),
-	}
-	_ = checkShadowVars(deps)
-	// Expect 4 list calls: var --repo, var --org, sec --repo, sec --org.
-	want := map[string]int{
-		"variable|--repo": 1,
-		"variable|--org":  1,
-		"secret|--repo":   1,
-		"secret|--org":    1,
-	}
-	got := map[string]int{}
-	for _, c := range r.Calls {
-		if len(c) < 2 || c[1] != "list" {
-			continue
-		}
-		scopeFlag := ""
-		for _, a := range c {
-			if a == "--repo" || a == "--org" {
-				scopeFlag = a
-				break
-			}
-		}
-		got[c[0]+"|"+scopeFlag]++
-	}
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("list query %q: got %d, want %d (all calls: %v)", k, got[k], v, r.Calls)
-		}
-	}
-}
-
-func TestCheckShadowVars_Single_NotApplicable_NoOrgQueries(t *testing.T) {
-	r := &ghRun{}
-	deps := CheckDeps{
-		RepoFullName: "eddie/repo", Owner: "eddie", Topology: "single",
-		Run: r.fn(),
-	}
-	g := checkShadowVars(deps)
-	if len(g.Results) != 1 || g.Results[0].Status != Pass {
-		t.Fatalf("expected single Pass not-applicable result, got %+v", g.Results)
-	}
-	if !strings.Contains(g.Results[0].Message, "not applicable") {
-		t.Errorf("expected 'not applicable' in message, got %q", g.Results[0].Message)
-	}
-	// Must not consult any scope under single.
-	if len(r.Calls) != 0 {
-		t.Errorf("single topology must not issue any gh list queries; got %v", r.Calls)
-	}
-}
-
-func TestFindShadowValues_DeterministicOrder(t *testing.T) {
-	// Same name appears as both a variable and a secret shadow — the slice
-	// should emit the variable entry before the secret entry (declaration
-	// order in the canonical shared list).
-	r := shadowScenario{
-		VarRepo: "RUNNER_LABEL\tv",
-		VarOrg:  "RUNNER_LABEL\tv",
-		SecRepo: "RUNNER_LABEL\ts", // Same name, different kind.
-		SecOrg:  "RUNNER_LABEL\ts",
-	}.ghRun()
-	deps := CheckDeps{
-		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
-		Run: r.fn(),
-	}
-	shadows := FindShadowValues(deps)
-	if len(shadows) != 2 {
-		t.Fatalf("expected 2 shadows, got %d: %+v", len(shadows), shadows)
-	}
-	if shadows[0].Kind != "variable" || shadows[1].Kind != "secret" {
-		t.Errorf("expected variable before secret, got %+v", shadows)
 	}
 }
 
@@ -1280,17 +1041,18 @@ func TestCheckVariable_MissingWithDefault_Warns(t *testing.T) {
 	}
 }
 
-func TestCheckVariable_Federated_SharedAtNeither_FailWithOrgRemediation(t *testing.T) {
+func TestCheckVariable_Missing_FailWithRepoRemediation(t *testing.T) {
+	// Feature #824: remediation always points to --repo regardless of topology.
 	r := &ghRun{}
 	deps := CheckDeps{
-		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
+		RepoFullName: "acme/domain", Owner: "acme", Topology: "federation",
 		Run: r.fn(),
 	}
 	res := checkVariable(deps, "RUNNER_LABEL")
 	if res.Status != Fail {
 		t.Fatalf("got %d (%s), want Fail", res.Status, res.Message)
 	}
-	wantHint := "gh variable set RUNNER_LABEL --org acme"
+	wantHint := "gh variable set RUNNER_LABEL --repo acme/domain"
 	if res.Remediation != wantHint {
 		t.Errorf("remediation: got %q, want %q", res.Remediation, wantHint)
 	}
@@ -1330,75 +1092,243 @@ func TestCheckVariable_PermissionError_Warns(t *testing.T) {
 	}
 }
 
-// TestCheckTopologyStopgap_NotSet covers the post-#585 norm: the variable
-// is absent and the resolver infers topology. The check reports Pass.
-func TestCheckTopologyStopgap_NotSet(t *testing.T) {
-	deps := CheckDeps{
-		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
-		Run: func(name string, args ...string) (string, error) {
-			return "", nil // variable absent
-		},
+// --- checkFederationManifest tests ---
+
+func TestCheckFederationManifest_NoFile_Pass(t *testing.T) {
+	root := t.TempDir() // no FEDERATION.md written
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
 	}
-	res := checkTopologyStopgap(deps)
-	if res.Status != Pass {
-		t.Fatalf("status: got %d (%s), want Pass", res.Status, res.Message)
+	r := g.Results[0]
+	if r.Status != Pass {
+		t.Errorf("status: got %v, want Pass", r.Status)
 	}
-	if !strings.Contains(res.Message, "not set") {
-		t.Errorf("message: got %q, want 'not set' mention", res.Message)
+	if !strings.Contains(r.Message, "not present") {
+		t.Errorf("message: got %q, expected 'not present'", r.Message)
 	}
 }
 
-// TestCheckTopologyStopgap_RedundantFederated covers the stopgap cleanup
-// path: AGENTIC_TOPOLOGY=federated agrees with the resolver's federated-*
-// inference, so the variable is redundant and can be deleted.
-func TestCheckTopologyStopgap_RedundantFederated(t *testing.T) {
-	deps := CheckDeps{
-		RepoFullName: "acme/domain", Owner: "acme", Topology: "federated-domain",
-		Run: func(name string, args ...string) (string, error) {
-			return "federated\n", nil
-		},
+func TestCheckFederationManifest_ValidFile_Pass(t *testing.T) {
+	root := t.TempDir()
+	manifest := "repos:\n  - name: acme/domain\n    purpose: Domain repo\n"
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
 	}
-	res := checkTopologyStopgap(deps)
-	if res.Status != Warning {
-		t.Fatalf("status: got %d (%s), want Warning", res.Status, res.Message)
-	}
-	if !strings.Contains(res.Message, "redundant") {
-		t.Errorf("message: got %q, want 'redundant' mention", res.Message)
-	}
-	if !strings.Contains(res.Remediation, "gh variable delete AGENTIC_TOPOLOGY") {
-		t.Errorf("remediation: got %q, want delete command", res.Remediation)
+	r := g.Results[0]
+	if r.Status != Pass {
+		t.Errorf("status: got %v, want Pass; message: %q", r.Status, r.Message)
 	}
 }
 
-// TestCheckTopologyStopgap_RedundantSingle covers the same path for single
-// topology.
-func TestCheckTopologyStopgap_RedundantSingle(t *testing.T) {
-	deps := CheckDeps{
-		RepoFullName: "user/solo", Owner: "user", Topology: "single",
-		Run: func(name string, args ...string) (string, error) {
-			return "single\n", nil
-		},
+func TestCheckFederationManifest_EmptyFile_Fail(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("   \n"), 0o644)
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
 	}
-	res := checkTopologyStopgap(deps)
-	if res.Status != Warning {
-		t.Fatalf("status: got %d (%s), want Warning", res.Status, res.Message)
+	r := g.Results[0]
+	if r.Status != Fail {
+		t.Errorf("status: got %v, want Fail", r.Status)
+	}
+	if !strings.Contains(r.Message, "file is empty") {
+		t.Errorf("message: got %q, expected 'file is empty'", r.Message)
 	}
 }
 
-// TestCheckTopologyStopgap_ExplicitOverride covers the case where the
-// variable disagrees with the resolver — treat as an intentional override.
-func TestCheckTopologyStopgap_ExplicitOverride(t *testing.T) {
-	deps := CheckDeps{
-		RepoFullName: "acme/cp", Owner: "acme", Topology: "federated-cp",
-		Run: func(name string, args ...string) (string, error) {
-			return "single\n", nil // disagrees with resolver
-		},
+func TestCheckFederationManifest_MalformedYAML_Fail(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("repos: [not: valid: yaml\n"), 0o644)
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
 	}
-	res := checkTopologyStopgap(deps)
-	if res.Status != Pass {
-		t.Fatalf("status: got %d (%s), want Pass", res.Status, res.Message)
+	r := g.Results[0]
+	if r.Status != Fail {
+		t.Errorf("status: got %v, want Fail", r.Status)
 	}
-	if !strings.Contains(res.Message, "explicit override") {
-		t.Errorf("message: got %q, want 'explicit override' mention", res.Message)
+	if !strings.Contains(r.Message, "FEDERATION.md") {
+		t.Errorf("message: got %q, expected 'FEDERATION.md' prefix", r.Message)
 	}
 }
+
+func TestCheckFederationManifest_EmptyReposList_Fail(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("repos: []\n"), 0o644)
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationManifest(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(g.Results))
+	}
+	r := g.Results[0]
+	if r.Status != Fail {
+		t.Errorf("status: got %v, want Fail", r.Status)
+	}
+	if !strings.Contains(r.Message, "repos list is empty") {
+		t.Errorf("message: got %q, expected 'repos list is empty'", r.Message)
+	}
+}
+
+// --- checkLegacyFederationConfig tests ---
+
+func TestCheckLegacyFederationConfig_NoLegacy_Pass(t *testing.T) {
+	root := t.TempDir() // no .cp/ dir
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			// All variable gets return error (not set).
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result (pass), got %d: %+v", len(g.Results), g.Results)
+	}
+	if g.Results[0].Status != Pass {
+		t.Errorf("status: got %v, want Pass; message: %q", g.Results[0].Status, g.Results[0].Message)
+	}
+}
+
+func TestCheckLegacyFederationConfig_AgenticTopologySet_Warns(t *testing.T) {
+	root := t.TempDir()
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			// AGENTIC_TOPOLOGY is set; AGENTIC_CONTROL_PLANE is not.
+			if len(args) >= 3 && args[0] == "variable" && args[2] == "AGENTIC_TOPOLOGY" {
+				return "federation", nil
+			}
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	// Should emit exactly one warning for AGENTIC_TOPOLOGY.
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Warning {
+		t.Errorf("status: got %v, want Warning", r.Status)
+	}
+	if !strings.Contains(r.Message, "AGENTIC_TOPOLOGY") {
+		t.Errorf("message: got %q, expected 'AGENTIC_TOPOLOGY'", r.Message)
+	}
+	if !strings.Contains(r.Remediation, "gh variable delete AGENTIC_TOPOLOGY") {
+		t.Errorf("remediation: got %q, expected gh variable delete command", r.Remediation)
+	}
+	if !strings.Contains(r.Remediation, "acme/repo") {
+		t.Errorf("remediation: got %q, expected repo name 'acme/repo'", r.Remediation)
+	}
+}
+
+func TestCheckLegacyFederationConfig_AgenticControlPlaneSet_Warns(t *testing.T) {
+	root := t.TempDir()
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			// AGENTIC_CONTROL_PLANE is set; AGENTIC_TOPOLOGY is not.
+			if len(args) >= 3 && args[0] == "variable" && args[2] == "AGENTIC_CONTROL_PLANE" {
+				return "acme/cp", nil
+			}
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Warning {
+		t.Errorf("status: got %v, want Warning", r.Status)
+	}
+	if !strings.Contains(r.Message, "AGENTIC_CONTROL_PLANE") {
+		t.Errorf("message: got %q, expected 'AGENTIC_CONTROL_PLANE'", r.Message)
+	}
+	if !strings.Contains(r.Remediation, "gh variable delete AGENTIC_CONTROL_PLANE") {
+		t.Errorf("remediation: got %q", r.Remediation)
+	}
+}
+
+func TestCheckLegacyFederationConfig_CpDirPresent_Warns(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".cp"), 0o755)
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Warning {
+		t.Errorf("status: got %v, want Warning", r.Status)
+	}
+	if !strings.Contains(r.Message, ".cp/") {
+		t.Errorf("message: got %q, expected '.cp/'", r.Message)
+	}
+	if !strings.Contains(r.Remediation, "rm -rf .cp/") {
+		t.Errorf("remediation: got %q, expected rm -rf command", r.Remediation)
+	}
+}
+
+func TestCheckLegacyFederationConfig_MultipleItems_MultipleWarnings(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, ".cp"), 0o755)
+	deps := CheckDeps{
+		Root:         root,
+		RepoFullName: "acme/repo",
+		Run: func(name string, args ...string) (string, error) {
+			// Both legacy variables are set.
+			if len(args) >= 3 && args[0] == "variable" &&
+				(args[2] == "AGENTIC_TOPOLOGY" || args[2] == "AGENTIC_CONTROL_PLANE") {
+				return "some-value", nil
+			}
+			return "", fmt.Errorf("not set")
+		},
+	}
+
+	g := checkLegacyFederationConfig(deps)
+
+	// Expect 3 warnings: AGENTIC_TOPOLOGY, AGENTIC_CONTROL_PLANE, .cp/
+	if len(g.Results) != 3 {
+		t.Fatalf("expected 3 warnings, got %d: %+v", len(g.Results), g.Results)
+	}
+	for _, r := range g.Results {
+		if r.Status != Warning {
+			t.Errorf("result %q: status got %v, want Warning", r.Name, r.Status)
+		}
+	}
+}
+

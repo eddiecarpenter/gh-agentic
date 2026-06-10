@@ -231,50 +231,16 @@ func repairTopologyVars(w io.Writer, deps Deps) error {
 
 	switch ctx.Topology {
 	case TopologyStringSingle:
-		// Single repo: resolver infers topology from the project graph,
+		// Single repo: topology is derived from FEDERATION.md absence,
 		// so no variable writes are required. Report cleanly.
 		fmt.Fprintf(w, "  %s  topology=single — no variable writes required\n", ui.StatusOK.Render("✓"))
 		return nil
 
-	case TopologyStringFederatedCP:
-		fwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-		if strings.TrimSpace(fwVer) != "" {
-			fmt.Fprintf(w, "  %s  topology=federated-cp — %s=%s\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName, fwVer)
-			return nil
-		}
-		releases, err := deps.FetchReleases(mount.FrameworkRepo)
-		if err != nil || len(releases) == 0 {
-			return fmt.Errorf("fetching framework releases: %w", err)
-		}
-		latest := releases[0].TagName
-		if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName, latest); err != nil {
-			return fmt.Errorf("setting %s: %w", FrameworkVersionVarName, err)
-		}
-		fmt.Fprintf(w, "  %s  %s set to %s\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName, latest)
+	case TopologyStringFederation:
+		// Federation topology is declared by FEDERATION.md presence; no
+		// AGENTIC_TOPOLOGY variable writes are required.
+		fmt.Fprintf(w, "  %s  topology=federation — FEDERATION.md present, no variable writes required\n", ui.StatusOK.Render("✓"))
 		return nil
-
-	case TopologyStringFederatedDomain:
-		// Domain repo fixes its own state only: delete a stray local
-		// AGENTIC_FRAMEWORK_VERSION (which must only live on the CP).
-		// If the CP's AGENTIC_FRAMEWORK_VERSION is missing, hard-stop
-		// with a pointed "run repair on the CP" message — never write
-		// cross-repo.
-		localFwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-		if strings.TrimSpace(localFwVer) != "" {
-			if err := deps.DeleteRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName); err != nil {
-				return fmt.Errorf("deleting stray %s on domain repo: %w", FrameworkVersionVarName, err)
-			}
-			fmt.Fprintf(w, "  %s  removed stray %s (domain repos read this value from the CP)\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName)
-		}
-		if strings.TrimSpace(ctx.FrameworkVersion) != "" {
-			fmt.Fprintf(w, "  %s  topology=federated-domain — CP %s=%s\n", ui.StatusOK.Render("✓"), FrameworkVersionVarName, ctx.FrameworkVersion)
-			return nil
-		}
-		cpName := ctx.ControlPlane.NameWithOwner
-		if cpName == "" {
-			return fmt.Errorf("%s is not set on the control plane — run 'gh agentic repair' from the control plane repo to fix it", FrameworkVersionVarName)
-		}
-		return fmt.Errorf("control plane %s is missing %s — run 'gh agentic repair' from %s to fix it", cpName, FrameworkVersionVarName, cpName)
 	}
 
 	return fmt.Errorf("unrecognised topology %q", ctx.Topology)

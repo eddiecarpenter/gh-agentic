@@ -5,22 +5,6 @@ import (
 	"strings"
 )
 
-// Role describes the repository's role in the agentic project topology. It is
-// a derived property of Context.Topology and surfaces the intent callers care
-// about ("am I the CP? a domain? standalone?") without forcing them to parse
-// the canonical topology string.
-const (
-	// RoleStandalone — the repo is not part of a federated setup. Either
-	// single topology (the CP and the code live in one repo) or the repo
-	// has no project affiliation at all.
-	RoleStandalone = "standalone"
-	// RoleCP — the repo is the control plane of a federated setup.
-	RoleCP = "cp"
-	// RoleDomain — the repo is a domain repo in a federated setup. The
-	// control plane lives elsewhere.
-	RoleDomain = "domain"
-)
-
 // Context is the unified resolved project context returned by Resolve. It is
 // the single source of truth for every piece of per-repo project information
 // any gh agentic command needs. No command should read AGENTIC_* variables
@@ -58,80 +42,37 @@ type Context struct {
 
 	// --- Topology ---
 
-	// Topology is the canonical topology string: "single",
-	// "federated-cp", or "federated-domain". Never empty when Resolve
-	// returns a non-nil Context.
+	// Topology is the canonical topology string: "single" or "federation".
+	// "federation" when FEDERATION.md is present at deps.Root; "single"
+	// otherwise. Never empty when Resolve returns a non-nil Context.
 	Topology string
-	// Role is the derived per-repo role: RoleStandalone, RoleCP, or
-	// RoleDomain. Use this instead of string-matching Topology.
-	Role string
-	// ControlPlane is the linked repo that hosts the control plane. For
-	// RoleCP / RoleStandalone this is the current repo; for RoleDomain it
-	// is the other repo; for un-affiliated repos it is the zero value.
-	ControlPlane LinkedRepo
-	// LinkedRepos lists every repo linked to this project. May be empty
-	// when the project is deleted or the fetch failed.
-	LinkedRepos []LinkedRepo
 
 	// --- Framework version ---
 
-	// FrameworkVersion is the authoritative framework version resolved by
-	// topology:
-	//   - single / federated-cp  → AGENTIC_FRAMEWORK_VERSION on this repo
-	//   - federated-domain       → AGENTIC_FRAMEWORK_VERSION on the CP
-	// Empty when none is set (e.g. a single repo that has never published
-	// a version, or a federated setup where the CP has not yet rolled
-	// one out).
+	// FrameworkVersion is the AGENTIC_FRAMEWORK_VERSION on this repo.
+	// Empty when none is set.
 	FrameworkVersion string
 	// LocalAIVersion is the framework version the local .agents/ mount
-	// currently reports — read via Deps.ReadAIVersion. This is kept
-	// separately from FrameworkVersion so callers can detect drift; it
-	// disappears once #585 removes the file.
+	// currently reports — read via Deps.ReadAIVersion.
 	LocalAIVersion string
 	// VersionInSync is true when LocalAIVersion matches FrameworkVersion,
 	// or when no FrameworkVersion is published (nothing to sync to).
 	VersionInSync bool
 }
 
-// IsFederatedControlPlane returns true when this repo is the CP of a
-// federated setup. Use this in preference to direct string comparison.
-func (c *Context) IsFederatedControlPlane() bool {
-	return c != nil && c.Topology == TopologyStringFederatedCP
-}
-
-// IsFederatedDomain returns true when this repo is a domain repo in a
-// federated setup (the CP lives elsewhere).
-func (c *Context) IsFederatedDomain() bool {
-	return c != nil && c.Topology == TopologyStringFederatedDomain
-}
-
-// IsSingle returns true when this repo is a single-topology standalone
-// control plane (CP and code in one repo).
-func (c *Context) IsSingle() bool {
-	return c != nil && c.Topology == TopologyStringSingle
-}
-
 // Resolve is the single canonical entry point for resolving full project
 // context for a repository. Every gh agentic subcommand that needs project
 // metadata calls this — no command may read AGENTIC_* variables directly.
 //
-// Resolve consolidates the earlier ResolveTopology (topology mode string)
-// and ResolveState (ProjectState struct) into one call. Both wrappers remain
-// callable during the incremental migration and delegate here internally.
+// Topology is now determined by FEDERATION.md presence at deps.Root:
+//   - FEDERATION.md present → "federation"
+//   - FEDERATION.md absent  → "single"
 //
 // Error behaviour:
 //   - Missing AGENTIC_PROJECT_ID is not an error — Resolve returns a Context
-//     with Topology="single", Role=RoleStandalone, and the remaining
-//     project fields zero. Callers that require affiliation check
-//     ctx.ProjectID explicitly and surface their own ErrProjectNotConfigured
-//     message (or equivalent).
-//   - A GraphQL failure that denies the linked-repos fetch propagates only
-//     when the topology decision genuinely depends on it. When the
-//     AGENTIC_TOPOLOGY variable is authoritative, the fetch is never
-//     attempted.
-//   - A project whose title cannot be fetched is flagged ProjectDeleted=true
-//     rather than returning an error — UX prefers "stale affiliation" over
-//     "hard failure" so the user can recover via `project unlink`.
+//     with Topology derived from FEDERATION.md and the remaining project
+//     fields zero. Callers that require affiliation check ctx.ProjectID
+//     explicitly and surface their own ErrProjectNotConfigured message.
 func Resolve(deps Deps) (*Context, error) {
 	ctx := &Context{
 		Owner:        deps.Owner,
@@ -141,9 +82,9 @@ func Resolve(deps Deps) (*Context, error) {
 	}
 
 	// Read AGENTIC_PROJECT_ID. Empty means unaffiliated — a safe default,
-	// not an error (see doc comment). A permission error (HTTP 403) means
-	// the token lacks Variables:Read scope; record that separately so the
-	// doctor can emit Warning rather than Fail.
+	// not an error. A permission error (HTTP 403) means the token lacks
+	// Variables:Read scope; record that separately so the doctor can emit
+	// Warning rather than Fail.
 	if deps.GetRepoVariable != nil {
 		pid, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
 		if err != nil {
@@ -156,27 +97,12 @@ func Resolve(deps Deps) (*Context, error) {
 		}
 	}
 
-	// Resolve topology — the canonical precedence: explicit
-	// AGENTIC_TOPOLOGY override, project-owner comparison, then the
-	// linked-repos fallback. Pull the linked-repos list and project owner
-	// out so the rest of the function can populate ControlPlane /
-	// LinkedRepos without a second network round trip.
-	var linked []LinkedRepo
-	var linkedErr error
-	if ctx.ProjectID != "" && deps.FetchLinkedRepos != nil {
-		linked, linkedErr = deps.FetchLinkedRepos(ctx.ProjectID)
+	// Topology: FEDERATION.md presence at deps.Root is the sole signal.
+	if IsFederationRepo(deps.Root) {
+		ctx.Topology = TopologyStringFederation
+	} else {
+		ctx.Topology = TopologyStringSingle
 	}
-	var projectOwner string
-	if ctx.ProjectID != "" && deps.FetchProjectOwner != nil {
-		projectOwner, _ = deps.FetchProjectOwner(ctx.ProjectID)
-	}
-
-	topology, topoErr := resolveTopologyWithLinked(deps, ctx.ProjectID, projectOwner, linked, linkedErr)
-	if topoErr != nil {
-		return nil, topoErr
-	}
-	ctx.Topology = topology
-	ctx.Role = roleForTopology(topology)
 
 	// Project title — fetched only when affiliated. A deleted/unreachable
 	// project is flagged rather than raised as an error.
@@ -193,31 +119,9 @@ func Resolve(deps Deps) (*Context, error) {
 		ctx.ProjectName = ctx.ProjectID
 	}
 
-	// Project graph — linked repos and control plane. If linkedErr is
-	// non-nil the topology resolver has already folded it into the
-	// decision; expose the empty graph here rather than a spurious error.
-	if linkedErr == nil {
-		ctx.LinkedRepos = linked
-		cp, ok := ControlPlaneRepo(linked)
-		if ok {
-			switch topology {
-			case TopologyStringSingle, TopologyStringFederatedCP:
-				// CP is the current repo.
-				ctx.ControlPlane = LinkedRepo{
-					Name:          deps.RepoName,
-					NameWithOwner: deps.RepoFullName,
-				}
-			case TopologyStringFederatedDomain:
-				// CP is the other linked repo. DetectTopology picks the
-				// first linked repo as CP for the Federated enum; do the
-				// same but never pick ourselves.
-				ctx.ControlPlane = pickControlPlane(deps.RepoFullName, linked, cp)
-			}
-		}
-	}
-
-	// Framework versions — authoritative vs local-on-disk.
-	ctx.FrameworkVersion = readAuthoritativeVersion(deps, ctx)
+	// Framework versions — authoritative (AGENTIC_FRAMEWORK_VERSION on this
+	// repo) vs local-on-disk.
+	ctx.FrameworkVersion = readAuthoritativeVersion(deps)
 	if deps.ReadAIVersion != nil {
 		ctx.LocalAIVersion, _ = deps.ReadAIVersion(deps.Root)
 	}
@@ -226,171 +130,21 @@ func Resolve(deps Deps) (*Context, error) {
 	return ctx, nil
 }
 
-// resolveTopologyWithLinked resolves canonical topology from the project
-// graph. The precedence is:
-//
-//  1. Explicit AGENTIC_TOPOLOGY override ("federated" or "single").
-//  2. No project affiliation → single.
-//  3. Project owner differs from repo owner → federated-domain. Fast
-//     path for the cross-owner federation case; works regardless of
-//     linked-graph shape.
-//  4. Linked-graph inspection (project owner matches, or unknown):
-//     - current repo not in the linked list → federated-domain
-//     - current repo in the linked list with siblings (>1):
-//     local AGENTIC_FRAMEWORK_VERSION set → federated-cp
-//     local AGENTIC_FRAMEWORK_VERSION absent → federated-domain
-//     - current repo is the only linked repo:
-//     local AGENTIC_FRAMEWORK_VERSION set → federated-cp
-//     otherwise → single
-//
-// The projectOwner argument is the owner login returned by
-// FetchProjectOwner; empty means the owner could not be resolved (deleted
-// project, network failure, unwired dep) and the function relies on the
-// linked-graph rules alone.
-func resolveTopologyWithLinked(deps Deps, projectID, projectOwner string, linked []LinkedRepo, linkedErr error) (string, error) {
-	if deps.GetRepoVariable == nil {
-		return TopologyStringSingle, nil
-	}
-
-	// Precedence 1: explicit AGENTIC_TOPOLOGY override.
-	topoVal, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, TopologyVarName)
-	switch strings.TrimSpace(topoVal) {
-	case "federated":
-		return resolveFederatedMode(deps), nil
-	case "single":
-		return TopologyStringSingle, nil
-	}
-
-	// Precedence 2: no project affiliation → single.
-	if projectID == "" {
-		return TopologyStringSingle, nil
-	}
-
-	// Precedence 3: project owner vs repo owner.
-	if projectOwner != "" && !strings.EqualFold(projectOwner, deps.Owner) {
-		return TopologyStringFederatedDomain, nil
-	}
-
-	// Precedence 4: inspect linked repos. A linked-graph fetch error blocks
-	// the CP/domain/single decision but not the cross-owner detection above.
-	if linkedErr != nil {
-		return "", linkedErr
-	}
-
-	hasLocalVersion := false
-	if v, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName); strings.TrimSpace(v) != "" {
-		hasLocalVersion = true
-	}
-
-	currentInLinked := false
-	for _, r := range linked {
-		if strings.EqualFold(r.NameWithOwner, deps.RepoFullName) {
-			currentInLinked = true
-			break
-		}
-	}
-
-	if !currentInLinked && len(linked) > 0 {
-		return TopologyStringFederatedDomain, nil
-	}
-
-	if len(linked) > 1 {
-		if hasLocalVersion {
-			return TopologyStringFederatedCP, nil
-		}
-		return TopologyStringFederatedDomain, nil
-	}
-
-	if hasLocalVersion {
-		return TopologyStringFederatedCP, nil
-	}
-	return TopologyStringSingle, nil
-}
-
-// resolveFederatedMode picks between federated-cp and federated-domain by
-// inspecting AGENTIC_FRAMEWORK_VERSION on the current repo. Only the CP
-// broadcasts that value on itself, so its presence is a reliable marker.
-func resolveFederatedMode(deps Deps) string {
-	if deps.GetRepoVariable == nil {
-		return TopologyStringFederatedDomain
-	}
-	out, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-	if err == nil && strings.TrimSpace(out) != "" {
-		return TopologyStringFederatedCP
-	}
-	return TopologyStringFederatedDomain
-}
-
-// roleForTopology maps a canonical topology string to the derived Role.
-func roleForTopology(topology string) string {
-	switch topology {
-	case TopologyStringFederatedCP:
-		return RoleCP
-	case TopologyStringFederatedDomain:
-		return RoleDomain
-	default:
-		return RoleStandalone
-	}
-}
-
-// pickControlPlane selects the control-plane LinkedRepo for a federated
-// domain repo. The caller has already confirmed ControlPlaneRepo reports a
-// non-empty result, so at least one linked repo exists.
-//
-// The rule: the CP is the first linked repo whose NameWithOwner is not the
-// current repo. If every linked repo is the current repo (defensive — the
-// federated-domain path implies at least one other), fall back to the
-// result ControlPlaneRepo returned.
-func pickControlPlane(currentRepoFullName string, linked []LinkedRepo, fallback LinkedRepo) LinkedRepo {
-	for _, r := range linked {
-		if !strings.EqualFold(r.NameWithOwner, currentRepoFullName) {
-			return r
-		}
-	}
-	return fallback
-}
-
-// readAuthoritativeVersion returns the framework version that callers should
-// trust as the source of truth, resolved per-topology:
-//
-//   - single / federated-cp → AGENTIC_FRAMEWORK_VERSION on the current repo
-//   - federated-domain      → AGENTIC_FRAMEWORK_VERSION on the CP repo
-//
-// The function returns "" when no version is published. Errors from the
-// underlying variable-read are treated the same as an absent value — the
-// caller distinguishes "not set" from "lookup failed" only when it matters
-// (the existing commands do not).
-func readAuthoritativeVersion(deps Deps, ctx *Context) string {
+// readAuthoritativeVersion returns the AGENTIC_FRAMEWORK_VERSION on the
+// current repo. Returns "" when no version is published. Errors are treated
+// the same as an absent value.
+func readAuthoritativeVersion(deps Deps) string {
 	if deps.GetRepoVariable == nil {
 		return ""
 	}
-
-	switch ctx.Topology {
-	case TopologyStringSingle, TopologyStringFederatedCP:
-		out, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(out)
-
-	case TopologyStringFederatedDomain:
-		if ctx.ControlPlane.NameWithOwner == "" {
-			return ""
-		}
-		parts := strings.SplitN(ctx.ControlPlane.NameWithOwner, "/", 2)
-		if len(parts) != 2 {
-			return ""
-		}
-		out, err := deps.GetRepoVariable(parts[0], parts[1], FrameworkVersionVarName)
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(out)
+	out, err := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return strings.TrimSpace(out)
 }
 
-// ensureContextValid is an internal sanity check used by the wrappers that
+// ensureContextValid is an internal sanity check used by wrappers that
 // surface a Context-backed legacy type; callers should not call Resolve and
 // then ignore a non-nil error.
 func ensureContextValid(ctx *Context, err error) (*Context, error) {
@@ -402,12 +156,6 @@ func ensureContextValid(ctx *Context, err error) (*Context, error) {
 	}
 	return ctx, nil
 }
-
-// trim is a tiny stand-in for strings.TrimSpace kept as a file-local helper
-// so the topology wrapper (which must not import strings directly — it is
-// deliberately lean) can share the same whitespace-normalisation rule Resolve
-// uses on variable values.
-func trim(s string) string { return strings.TrimSpace(s) }
 
 // isVariablePermissionError returns true when a GetRepoVariable error indicates
 // a token-permission failure (HTTP 403) rather than a genuinely absent variable

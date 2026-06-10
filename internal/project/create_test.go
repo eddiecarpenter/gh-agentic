@@ -247,7 +247,7 @@ func TestCreate_FederatedUserOwner_RefusesWithVerbatimError(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	// Default topology is "federated" (no Topology field → historical behaviour).
+	// Default topology is "federation" (no Topology field — Feature #824).
 	err := Create(&buf, deps, CreateConfig{Title: "x", Version: "v2.0.10"})
 	if err == nil {
 		t.Fatal("expected error for federated+user owner")
@@ -342,8 +342,8 @@ func TestCreate_FederatedOrgOwner_Proceeds(t *testing.T) {
 	if err := Create(&buf, deps, CreateConfig{Title: "x", Version: "v2.0.10"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if topologyWritten != "federated" {
-		t.Errorf("expected AGENTIC_TOPOLOGY=federated, got %q", topologyWritten)
+	if topologyWritten != "federation" {
+		t.Errorf("expected AGENTIC_TOPOLOGY=federation, got %q", topologyWritten)
 	}
 }
 

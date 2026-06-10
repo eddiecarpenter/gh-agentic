@@ -3,6 +3,8 @@ package project
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,8 +27,6 @@ func testDeps(owner, repo string) Deps {
 			switch name {
 			case ProjectVarName:
 				return "PVT_test123", nil
-			case TopologyVarName:
-				return "single", nil
 				// AGENTIC_FRAMEWORK_VERSION intentionally not set — single topology
 				// repos don't broadcast a version; local .ai-version is authoritative.
 			}
@@ -98,6 +98,8 @@ func testDeps(owner, repo string) Deps {
 
 func TestPrintInfo_Single(t *testing.T) {
 	deps := testDeps("owner", "myrepo")
+	// Use a real temp dir so IsFederationRepo returns false (no FEDERATION.md).
+	deps.Root = t.TempDir()
 
 	var buf bytes.Buffer
 	if err := PrintInfo(&buf, deps); err != nil {
@@ -111,8 +113,8 @@ func TestPrintInfo_Single(t *testing.T) {
 	if !strings.Contains(out, "PVT_test123") {
 		t.Error("expected project ID in output")
 	}
-	if !strings.Contains(out, "Single") {
-		t.Error("expected topology Single in output")
+	if !strings.Contains(out, "single") {
+		t.Error("expected topology 'single' in output")
 	}
 	if !strings.Contains(out, "v2.0.10") {
 		t.Error("expected framework version in output")
@@ -121,6 +123,7 @@ func TestPrintInfo_Single(t *testing.T) {
 
 func TestPrintInfo_NoProjectID(t *testing.T) {
 	deps := testDeps("owner", "myrepo")
+	deps.Root = t.TempDir()
 	deps.GetRepoVariable = func(o, r, n string) (string, error) {
 		return "", errors.New("not found")
 	}
@@ -134,6 +137,7 @@ func TestPrintInfo_NoProjectID(t *testing.T) {
 
 func TestPrintInfo_FrameworkNotMounted(t *testing.T) {
 	deps := testDeps("owner", "myrepo")
+	deps.Root = t.TempDir()
 	deps.ReadAIVersion = func(root string) (string, error) {
 		return "", errors.New("not mounted")
 	}
@@ -148,10 +152,16 @@ func TestPrintInfo_FrameworkNotMounted(t *testing.T) {
 }
 
 func TestPrintInfo_Federated(t *testing.T) {
-	deps := testDeps("org", "domain-repo")
-	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
-		return []LinkedRepo{{Name: "control-plane", NameWithOwner: "org/control-plane"}}, nil
+	// Topology is now derived from FEDERATION.md presence — write the file
+	// into a real tempdir so IsFederationRepo returns true.
+	dir := t.TempDir()
+	content := "repos:\n  - name: org/domain-one\n    purpose: \"First domain\"\n"
+	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
+		t.Fatalf("writing FEDERATION.md: %v", err)
 	}
+
+	deps := testDeps("org", "control-plane")
+	deps.Root = dir
 
 	var buf bytes.Buffer
 	if err := PrintInfo(&buf, deps); err != nil {
@@ -159,10 +169,7 @@ func TestPrintInfo_Federated(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, "Federated") {
-		t.Error("expected topology Federated in output")
-	}
-	if !strings.Contains(out, "org/control-plane") {
-		t.Error("expected control plane in output")
+	if !strings.Contains(out, "federation") {
+		t.Error("expected topology 'federation' in output")
 	}
 }

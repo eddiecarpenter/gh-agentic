@@ -2,25 +2,22 @@ package project
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
 // resolveDeps assembles a project.Deps with just the fields Resolve reads,
-// wiring the provided variable store and linked-repo fixture. Everything
+// wiring the provided variable store and project-title fixture. Everything
 // Resolve does not touch stays at the zero value.
-func resolveDeps(owner, repo string, store *variableStore, linked []LinkedRepo, fetchErr error, title string, titleErr error, aiVersion string, aiErr error) Deps {
-	fetchCalls := 0
+func resolveDeps(owner, repo, root string, store *variableStore, title string, titleErr error, aiVersion string, aiErr error) Deps {
 	return Deps{
 		Owner:        owner,
 		RepoName:     repo,
 		RepoFullName: owner + "/" + repo,
-		Root:         "/fake/root",
+		Root:         root,
 		GetRepoVariable: func(o, r, name string) (string, error) {
 			return store.get(o, r, name)
-		},
-		FetchLinkedRepos: func(projectID string) ([]LinkedRepo, error) {
-			fetchCalls++
-			return linked, fetchErr
 		},
 		FetchProjectTitle: func(projectID string) (string, error) {
 			return title, titleErr
@@ -31,13 +28,15 @@ func resolveDeps(owner, repo string, store *variableStore, linked []LinkedRepo, 
 	}
 }
 
-func TestResolve_Single_VariableOverride_ReturnsSingleStandalone(t *testing.T) {
+// TestResolve_NoFederationMD_ReturnsSingleTopology verifies that the absence
+// of FEDERATION.md produces topology="single".
+func TestResolve_NoFederationMD_ReturnsSingleTopology(t *testing.T) {
+	dir := t.TempDir()
 	store := newVariableStore(map[string]string{
-		ProjectVarName:  "PVT_solo",
-		TopologyVarName: "single",
+		ProjectVarName: "PVT_solo",
 	})
 
-	deps := resolveDeps("user", "solo", store, nil, nil, "Solo", nil, "v2.1.0", nil)
+	deps := resolveDeps("user", "solo", dir, store, "Solo", nil, "v2.1.0", nil)
 
 	ctx, err := Resolve(deps)
 	if err != nil {
@@ -46,131 +45,58 @@ func TestResolve_Single_VariableOverride_ReturnsSingleStandalone(t *testing.T) {
 	if ctx.Topology != TopologyStringSingle {
 		t.Errorf("Topology: got %q, want %q", ctx.Topology, TopologyStringSingle)
 	}
-	if ctx.Role != RoleStandalone {
-		t.Errorf("Role: got %q, want %q", ctx.Role, RoleStandalone)
-	}
 	if ctx.ProjectID != "PVT_solo" {
 		t.Errorf("ProjectID: got %q, want %q", ctx.ProjectID, "PVT_solo")
 	}
 	if ctx.ProjectName != "Solo" {
 		t.Errorf("ProjectName: got %q, want %q", ctx.ProjectName, "Solo")
 	}
-	if ctx.ProjectDeleted {
-		t.Error("ProjectDeleted: got true, want false")
-	}
-	if ctx.LocalAIVersion != "v2.1.0" {
-		t.Errorf("LocalAIVersion: got %q, want %q", ctx.LocalAIVersion, "v2.1.0")
-	}
 }
 
-func TestResolve_FederatedCP_HasFrameworkVersion_ReturnsCPRole(t *testing.T) {
+// TestResolve_FederationMDPresent_ReturnsFederationTopology verifies that
+// FEDERATION.md presence at deps.Root produces topology="federation".
+func TestResolve_FederationMDPresent_ReturnsFederationTopology(t *testing.T) {
+	dir := t.TempDir()
+	content := `repos:
+  - name: org/domain-one
+    purpose: "First domain"
+`
+	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
+		t.Fatalf("writing FEDERATION.md: %v", err)
+	}
+
 	store := newVariableStore(map[string]string{
-		ProjectVarName:          "PVT_fed",
-		TopologyVarName:         "federated",
-		FrameworkVersionVarName: "v2.1.0",
+		ProjectVarName: "PVT_fed",
 	})
 
-	deps := resolveDeps("org", "control-plane", store, nil, nil, "Federated", nil, "v2.1.0", nil)
+	deps := resolveDeps("org", "control-plane", dir, store, "Federation", nil, "v2.1.0", nil)
 
 	ctx, err := Resolve(deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ctx.Topology != TopologyStringFederatedCP {
-		t.Errorf("Topology: got %q, want %q", ctx.Topology, TopologyStringFederatedCP)
+	if ctx.Topology != TopologyStringFederation {
+		t.Errorf("Topology: got %q, want %q", ctx.Topology, TopologyStringFederation)
 	}
-	if ctx.Role != RoleCP {
-		t.Errorf("Role: got %q, want %q", ctx.Role, RoleCP)
-	}
-	if !ctx.IsFederatedControlPlane() {
-		t.Error("IsFederatedControlPlane(): got false, want true")
-	}
-	if ctx.FrameworkVersion != "v2.1.0" {
-		t.Errorf("FrameworkVersion: got %q, want %q", ctx.FrameworkVersion, "v2.1.0")
-	}
-	if !ctx.VersionInSync {
-		t.Error("VersionInSync: got false, want true")
+	if ctx.ProjectID != "PVT_fed" {
+		t.Errorf("ProjectID: got %q, want %q", ctx.ProjectID, "PVT_fed")
 	}
 }
 
-func TestResolve_FederatedDomain_ReadsCPVersion(t *testing.T) {
-	// Domain-side variable store: only PROJECT_ID and TOPOLOGY set.
-	// AGENTIC_FRAMEWORK_VERSION is NOT set on the domain; the resolver must
-	// read it from the control plane repo instead.
-	store := &variableStore{
-		values: map[string]string{
-			ProjectVarName:  "PVT_fed",
-			TopologyVarName: "federated",
-		},
-		reads: map[string]int{},
-	}
-	// Intercept the fake: allow the CP lookup to return a version while
-	// the domain lookup returns "not found".
-	getVar := func(owner, repo, name string) (string, error) {
-		// Lookups on the domain repo go through the store.
-		if owner == "org" && repo == "domain-one" {
-			return store.get(owner, repo, name)
-		}
-		// CP broadcasts AGENTIC_FRAMEWORK_VERSION.
-		if owner == "org" && repo == "control-plane" && name == FrameworkVersionVarName {
-			return "v2.1.0", nil
-		}
-		return "", errors.New("not found")
-	}
-
-	deps := Deps{
-		Owner:           "org",
-		RepoName:        "domain-one",
-		RepoFullName:    "org/domain-one",
-		Root:            "/fake/root",
-		GetRepoVariable: getVar,
-		FetchLinkedRepos: func(projectID string) ([]LinkedRepo, error) {
-			return []LinkedRepo{
-				{Name: "control-plane", NameWithOwner: "org/control-plane"},
-				{Name: "domain-one", NameWithOwner: "org/domain-one"},
-			}, nil
-		},
-		FetchProjectTitle: func(projectID string) (string, error) { return "Federated", nil },
-		ReadAIVersion:     func(root string) (string, error) { return "v2.1.0", nil },
-	}
-
-	ctx, err := Resolve(deps)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ctx.Topology != TopologyStringFederatedDomain {
-		t.Errorf("Topology: got %q, want %q", ctx.Topology, TopologyStringFederatedDomain)
-	}
-	if ctx.Role != RoleDomain {
-		t.Errorf("Role: got %q, want %q", ctx.Role, RoleDomain)
-	}
-	if ctx.FrameworkVersion != "v2.1.0" {
-		t.Errorf("FrameworkVersion: got %q, want %q — domain must read CP broadcast", ctx.FrameworkVersion, "v2.1.0")
-	}
-	if ctx.ControlPlane.NameWithOwner != "org/control-plane" {
-		t.Errorf("ControlPlane: got %q, want %q", ctx.ControlPlane.NameWithOwner, "org/control-plane")
-	}
-	if !ctx.VersionInSync {
-		t.Error("VersionInSync: got false, want true — local and CP both v2.1.0")
-	}
-}
-
-func TestResolve_NoProjectAffiliation_ReturnsStandaloneContext(t *testing.T) {
+// TestResolve_NoProjectAffiliation_ReturnsSingleContext verifies that an
+// unaffiliated repo (no AGENTIC_PROJECT_ID) resolves without error and
+// FetchProjectTitle is never called.
+func TestResolve_NoProjectAffiliation_ReturnsSingleContext(t *testing.T) {
+	dir := t.TempDir()
 	store := newVariableStore(map[string]string{})
 
 	deps := Deps{
 		Owner:        "user",
 		RepoName:     "stray",
 		RepoFullName: "user/stray",
-		Root:         "/fake/root",
+		Root:         dir,
 		GetRepoVariable: func(o, r, name string) (string, error) {
 			return store.get(o, r, name)
-		},
-		// FetchLinkedRepos intentionally returns an error marker so the
-		// test can assert it was never invoked.
-		FetchLinkedRepos: func(projectID string) ([]LinkedRepo, error) {
-			t.Fatalf("FetchLinkedRepos must not be called when ProjectID is empty")
-			return nil, nil
 		},
 		FetchProjectTitle: func(projectID string) (string, error) {
 			t.Fatalf("FetchProjectTitle must not be called when ProjectID is empty")
@@ -189,31 +115,27 @@ func TestResolve_NoProjectAffiliation_ReturnsStandaloneContext(t *testing.T) {
 	if ctx.Topology != TopologyStringSingle {
 		t.Errorf("Topology: got %q, want %q", ctx.Topology, TopologyStringSingle)
 	}
-	if ctx.Role != RoleStandalone {
-		t.Errorf("Role: got %q, want %q", ctx.Role, RoleStandalone)
-	}
 }
 
+// TestResolve_DeletedProject_FlagsAsDeleted verifies that when the project
+// title cannot be fetched, ProjectDeleted is true and ProjectName falls back
+// to the ID.
 func TestResolve_DeletedProject_FlagsAsDeleted(t *testing.T) {
+	dir := t.TempDir()
 	store := newVariableStore(map[string]string{
-		ProjectVarName:  "PVT_ghost",
-		TopologyVarName: "single",
+		ProjectVarName: "PVT_ghost",
 	})
 
 	deps := Deps{
 		Owner:        "org",
 		RepoName:     "ex-project",
 		RepoFullName: "org/ex-project",
-		Root:         "/fake/root",
+		Root:         dir,
 		GetRepoVariable: func(o, r, name string) (string, error) {
 			return store.get(o, r, name)
 		},
-		FetchLinkedRepos: func(projectID string) ([]LinkedRepo, error) {
-			return nil, nil
-		},
 		FetchProjectTitle: func(projectID string) (string, error) {
-			// Deleted project → title is empty.
-			return "", nil
+			return "", nil // deleted — title is empty
 		},
 		ReadAIVersion: func(root string) (string, error) { return "v2.0.0", nil },
 	}
@@ -230,144 +152,132 @@ func TestResolve_DeletedProject_FlagsAsDeleted(t *testing.T) {
 	}
 }
 
-func TestResolve_ChargingDomainScenario_NoLocalTopologyOrVersion_DetectsFederatedDomain(t *testing.T) {
-	// Reproduces the exact production misdetection that motivated #569:
-	// the domain repo has AGENTIC_PROJECT_ID set but AGENTIC_TOPOLOGY and
-	// AGENTIC_FRAMEWORK_VERSION are absent locally, and the project has
-	// multiple linked repos including the CP.
+// TestResolve_VersionInSync_WhenLocalMatchesRemote verifies that VersionInSync
+// is true when LocalAIVersion equals FrameworkVersion.
+func TestResolve_VersionInSync_WhenLocalMatchesRemote(t *testing.T) {
+	dir := t.TempDir()
 	store := newVariableStore(map[string]string{
-		ProjectVarName: "PVT_charging",
+		ProjectVarName:          "PVT_v",
+		FrameworkVersionVarName: "v2.1.0",
 	})
 
-	fetchCalls := 0
+	deps := resolveDeps("org", "repo", dir, store, "MyProject", nil, "v2.1.0", nil)
+
+	ctx, err := Resolve(deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.FrameworkVersion != "v2.1.0" {
+		t.Errorf("FrameworkVersion: got %q, want v2.1.0", ctx.FrameworkVersion)
+	}
+	if ctx.LocalAIVersion != "v2.1.0" {
+		t.Errorf("LocalAIVersion: got %q, want v2.1.0", ctx.LocalAIVersion)
+	}
+	if !ctx.VersionInSync {
+		t.Error("VersionInSync: got false, want true — versions match")
+	}
+}
+
+// TestResolve_VersionOutOfSync_WhenVersionsDiffer verifies that VersionInSync
+// is false when LocalAIVersion differs from FrameworkVersion.
+func TestResolve_VersionOutOfSync_WhenVersionsDiffer(t *testing.T) {
+	dir := t.TempDir()
+	store := newVariableStore(map[string]string{
+		ProjectVarName:          "PVT_v",
+		FrameworkVersionVarName: "v2.1.0",
+	})
+
+	deps := resolveDeps("org", "repo", dir, store, "MyProject", nil, "v2.0.5", nil)
+
+	ctx, err := Resolve(deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.VersionInSync {
+		t.Error("VersionInSync: got true, want false — local v2.0.5 ≠ remote v2.1.0")
+	}
+}
+
+// TestResolve_NoFrameworkVersion_VersionInSyncTrue verifies that when no
+// AGENTIC_FRAMEWORK_VERSION is published, VersionInSync is always true
+// (nothing to sync to).
+func TestResolve_NoFrameworkVersion_VersionInSyncTrue(t *testing.T) {
+	dir := t.TempDir()
+	store := newVariableStore(map[string]string{
+		ProjectVarName: "PVT_v",
+	})
+
+	deps := resolveDeps("org", "repo", dir, store, "MyProject", nil, "v2.0.5", nil)
+
+	ctx, err := Resolve(deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ctx.VersionInSync {
+		t.Error("VersionInSync: got false, want true — no remote version to compare against")
+	}
+}
+
+// TestResolve_PermissionError_SetsProjectIDReadFailed verifies that a 403
+// error from GetRepoVariable sets ProjectIDReadFailed without returning an
+// error from Resolve.
+func TestResolve_PermissionError_SetsProjectIDReadFailed(t *testing.T) {
+	dir := t.TempDir()
+
 	deps := Deps{
-		Owner:        "NewOpenBSS",
-		RepoName:     "charging-domain",
-		RepoFullName: "NewOpenBSS/charging-domain",
-		Root:         "/fake/root",
+		Owner:        "org",
+		RepoName:     "repo",
+		RepoFullName: "org/repo",
+		Root:         dir,
 		GetRepoVariable: func(o, r, name string) (string, error) {
-			return store.get(o, r, name)
+			return "", errors.New("HTTP 403: Resource not accessible by integration")
 		},
-		FetchLinkedRepos: func(projectID string) ([]LinkedRepo, error) {
-			fetchCalls++
-			return []LinkedRepo{
-				{Name: "charging-control-plane", NameWithOwner: "NewOpenBSS/charging-control-plane"},
-				{Name: "charging-domain", NameWithOwner: "NewOpenBSS/charging-domain"},
-				{Name: "billing-domain", NameWithOwner: "NewOpenBSS/billing-domain"},
-			}, nil
-		},
-		FetchProjectTitle: func(projectID string) (string, error) { return "Charging", nil },
-		ReadAIVersion:     func(root string) (string, error) { return "v2.0.5", nil },
+		ReadAIVersion: func(root string) (string, error) { return "", nil },
 	}
 
 	ctx, err := Resolve(deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ctx.Topology != TopologyStringFederatedDomain {
-		t.Fatalf("regression: got %q, want %q — charging-domain must be detected as federated-domain without the AGENTIC_TOPOLOGY stopgap",
-			ctx.Topology, TopologyStringFederatedDomain)
+	if !ctx.ProjectIDReadFailed {
+		t.Error("ProjectIDReadFailed: got false, want true for HTTP 403 error")
 	}
-	if ctx.Role != RoleDomain {
-		t.Errorf("Role: got %q, want %q", ctx.Role, RoleDomain)
-	}
-	if ctx.ControlPlane.NameWithOwner != "NewOpenBSS/charging-control-plane" {
-		t.Errorf("ControlPlane: got %q, want %q", ctx.ControlPlane.NameWithOwner, "NewOpenBSS/charging-control-plane")
-	}
-	if fetchCalls != 1 {
-		t.Errorf("FetchLinkedRepos calls: got %d, want 1", fetchCalls)
+	if ctx.ProjectID != "" {
+		t.Errorf("ProjectID: got %q, want empty — permission error means ID is unknown", ctx.ProjectID)
 	}
 }
 
-func TestResolve_LegacyWrappers_ReturnConsistentResults(t *testing.T) {
-	// Drive both Resolve and ResolveTopology / ResolveState with the same
-	// Deps and assert they agree on the topology dimension each exposes.
-	store := newVariableStore(map[string]string{
-		ProjectVarName:          "PVT_fed",
-		TopologyVarName:         "federated",
-		FrameworkVersionVarName: "v2.1.0",
-	})
+// TestResolve_FederationMDPresent_AndNoProjectID verifies that FEDERATION.md
+// presence is detected even when the repo has no AGENTIC_PROJECT_ID.
+func TestResolve_FederationMDPresent_AndNoProjectID(t *testing.T) {
+	dir := t.TempDir()
+	content := `repos:
+  - name: org/domain-one
+    purpose: "First domain"
+`
+	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
+		t.Fatalf("writing FEDERATION.md: %v", err)
+	}
 
 	deps := Deps{
 		Owner:        "org",
 		RepoName:     "control-plane",
 		RepoFullName: "org/control-plane",
-		Root:         "/fake/root",
+		Root:         dir,
 		GetRepoVariable: func(o, r, name string) (string, error) {
-			return store.get(o, r, name)
+			return "", errors.New("not found")
 		},
-		FetchLinkedRepos: func(projectID string) ([]LinkedRepo, error) {
-			return []LinkedRepo{
-				{Name: "control-plane", NameWithOwner: "org/control-plane"},
-				{Name: "domain-one", NameWithOwner: "org/domain-one"},
-			}, nil
-		},
-		FetchProjectTitle: func(projectID string) (string, error) { return "Federated", nil },
-		ReadAIVersion:     func(root string) (string, error) { return "v2.1.0", nil },
+		ReadAIVersion: func(root string) (string, error) { return "", nil },
 	}
 
 	ctx, err := Resolve(deps)
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	topology, err := ResolveTopology(ResolveTopologyDeps{
-		Owner:            deps.Owner,
-		Repo:             deps.RepoName,
-		ProjectID:        ctx.ProjectID,
-		GetRepoVariable:  deps.GetRepoVariable,
-		FetchLinkedRepos: deps.FetchLinkedRepos,
-	})
-	if err != nil {
-		t.Fatalf("ResolveTopology: %v", err)
+	if ctx.Topology != TopologyStringFederation {
+		t.Errorf("Topology: got %q, want %q — FEDERATION.md present", ctx.Topology, TopologyStringFederation)
 	}
-	if topology != ctx.Topology {
-		t.Errorf("ResolveTopology wrapper drifted from Resolve: got %q, want %q", topology, ctx.Topology)
-	}
-
-	state, err := ResolveState(deps)
-	if err != nil {
-		t.Fatalf("ResolveState: %v", err)
-	}
-	if state.ProjectID != ctx.ProjectID {
-		t.Errorf("ResolveState.ProjectID: got %q, want %q", state.ProjectID, ctx.ProjectID)
-	}
-	if state.ProjectName != ctx.ProjectName {
-		t.Errorf("ResolveState.ProjectName: got %q, want %q", state.ProjectName, ctx.ProjectName)
-	}
-	if state.ControlPlaneFrameworkVersion != ctx.FrameworkVersion {
-		t.Errorf("ResolveState.ControlPlaneFrameworkVersion: got %q, want %q",
-			state.ControlPlaneFrameworkVersion, ctx.FrameworkVersion)
-	}
-}
-
-func TestContext_RoleHelpers(t *testing.T) {
-	cases := []struct {
-		topology string
-		wantRole string
-		isCP     bool
-		isDomain bool
-		isSingle bool
-	}{
-		{TopologyStringSingle, RoleStandalone, false, false, true},
-		{TopologyStringFederatedCP, RoleCP, true, false, false},
-		{TopologyStringFederatedDomain, RoleDomain, false, true, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.topology, func(t *testing.T) {
-			ctx := &Context{Topology: tc.topology, Role: roleForTopology(tc.topology)}
-			if ctx.Role != tc.wantRole {
-				t.Errorf("Role: got %q, want %q", ctx.Role, tc.wantRole)
-			}
-			if ctx.IsFederatedControlPlane() != tc.isCP {
-				t.Errorf("IsFederatedControlPlane: got %v, want %v", ctx.IsFederatedControlPlane(), tc.isCP)
-			}
-			if ctx.IsFederatedDomain() != tc.isDomain {
-				t.Errorf("IsFederatedDomain: got %v, want %v", ctx.IsFederatedDomain(), tc.isDomain)
-			}
-			if ctx.IsSingle() != tc.isSingle {
-				t.Errorf("IsSingle: got %v, want %v", ctx.IsSingle(), tc.isSingle)
-			}
-		})
+	if ctx.ProjectID != "" {
+		t.Errorf("ProjectID: got %q, want empty", ctx.ProjectID)
 	}
 }

@@ -4,58 +4,48 @@ This document defines the design of the `gh agentic project` command group — i
 subcommands, guards, and the topology model it implements.
 
 For the content and organisation of project knowledge (briefs, architecture,
-the `.cp/` mount, the `docs/new/` pattern), see `knowledge-plane.md`.
+and the `docs/` pattern), see `knowledge-plane.md`.
 
 ---
 
 ## Topology Model
 
-Topology is **derived**, not configured. The agent determines topology at runtime by:
+Topology is **derived from FEDERATION.md presence**, not from runtime variables.
 
-1. Reading `AGENTIC_PROJECT_ID` from the current repo's variables (repo-level only — see below)
-2. Reading `AGENTIC_CONTROL_PLANE` from the current repo's variables (set to `true` on exactly one repo per federation — the control plane)
-3. Querying the GitHub ProjectV2 API for the project's linked repositories:
+The rule is simple and binary:
 
-```graphql
-query {
-  node(id: "PVT_xxx") {
-    ... on ProjectV2 {
-      repositories(first: 10) {
-        nodes {
-          name
-          nameWithOwner
-          url
-        }
-      }
-    }
-  }
-}
-```
-
-4. Determining topology from the combination:
-
-| Current repo state | Topology |
+| `FEDERATION.md` at repo root | Topology |
 |---|---|
-| Only member linked to the Project and `AGENTIC_CONTROL_PLANE=true` | **Single** — embedded control plane |
-| `AGENTIC_CONTROL_PLANE=true` and ≥1 other repo is linked | **Federated — control plane** |
-| `AGENTIC_CONTROL_PLANE` unset and the current repo is among the linked repos | **Federated — domain** |
+| Present (valid YAML, non-empty `repos` list) | **Federation** — this repo is the federation requirements repo |
+| Absent | **Single** — standalone or domain repo |
 
-**Every member repo is linked to the Project** — control plane and domain repos alike.
-The control plane is identified by its `AGENTIC_CONTROL_PLANE=true` marker variable,
-not by being the sole linked repo. This keeps membership discoverable from the Project
-itself and lets `gh agentic` identify each member's role with one variable read.
+`gh agentic` calls `project.IsFederationRepo(root)` — a single `os.Stat` check on
+`FEDERATION.md` — to classify any repo. No variable reads, no GraphQL queries, and
+no runtime environment are required. The topology is deterministic from the working tree.
 
-The symmetric query (check whether this repo is already linked to any project) uses:
+### FEDERATION.md format
 
-```graphql
-query {
-  repository(owner: "OWNER", name: "REPO") {
-    projectsV2(first: 10) {
-      nodes { id title }
-    }
-  }
-}
+When a repo is the federation requirements repository, it declares the target
+domain repos in `FEDERATION.md` at the repo root. The file is valid YAML with
+the following structure:
+
+```yaml
+repos:
+  - name: owner/domain-repo-1
+    purpose: Short description of this repo's role in the federation
+  - name: owner/domain-repo-2
+    purpose: Another domain's purpose
 ```
+
+Validation rules (enforced by `project.ReadFederation`):
+- File must not be empty
+- `repos` list must contain at least one entry
+- Each entry requires `name` (in `owner/repo` format) and `purpose`
+- Duplicate names are rejected
+
+Domain repos (listed in `FEDERATION.md`) are plain single-topology repos — they
+do not carry any special marker variable or manifest. The federation is declared
+from the requirements repo outward.
 
 ---
 
@@ -64,33 +54,19 @@ query {
 - **Must be set at repo level** — never at org level
 - Org-level would cause every repo in the org to inherit the variable, incorrectly
   treating every repo as a project member
-- `project check` flags it as an error if detected at org level
 - Set by `project create` (on the control plane repo) and `project join` (on domain repos)
 - Removed by `project unlink`
-
-## AGENTIC_CONTROL_PLANE
-
-- **Set to `true` on exactly one repo per federation** — the control plane
-- Must be set at repo level (never at org level)
-- Set by `project create` on the repo being established as the control plane
-- Unset / absent on every domain repo
-- `project check` verifies exactly one repo in the federation carries this marker
 
 ---
 
 ## Org vs Personal Account
 
-Federated topology works on personal accounts but carries operational cost:
+Federation topology requires a GitHub Organisation because `EnsureFederatedOwnerIsOrg`
+blocks federation setup on user-owned repos. All variables and secrets are --repo scoped
+(Feature #824 removed org-scope routing entirely), so there is no per-repo variable
+maintenance overhead as there was under the old model.
 
-| | Org | Personal |
-|---|---|---|
-| Variables | Set once at org level, inherited | Must be set per-repo |
-| Secrets | Set once at org level, inherited | Must be set per-repo |
-| Runners | Register once, shared | Must register per-repo |
-
-`project create` warns (does not block) when federated + personal account is detected.
-`project check` and `project repair` are the mechanism for catching and fixing
-missing per-repo variables in personal-account federated setups.
+`project create` warns (does not block) when single + personal account is detected.
 
 ---
 
@@ -103,24 +79,23 @@ Creates a new GitHub Project and establishes this repo as the control plane.
 **Guards (block if any are true):**
 - `AGENTIC_PROJECT_ID` repo variable already exists — already part of a project
 - Repo already appears in a project's `repositories` — already linked elsewhere
+- Federation topology + user owner (blocked by `EnsureFederatedOwnerIsOrg`)
 
 **Actions:**
 - Create GitHub Project
 - Link this repo to the project
 - Set `AGENTIC_PROJECT_ID` as a repo-level variable
-- Set `AGENTIC_CONTROL_PLANE=true` as a repo-level variable
+- Set `AGENTIC_FRAMEWORK_VERSION` as a repo-level variable
 - Mount the framework (`.agents/`)
 - Scaffold project labels, runner, and project board columns
-- Configure branch protection on `main` where API permissions allow (strongly
-  recommended — see `knowledge-plane.md`)
-- Warn if personal account (federated per-repo maintenance overhead)
+- Warn if personal account
 
 ---
 
 ### `project join`
 
 Joins an existing project as a domain repo. The repo is linked to the GitHub
-Project and marked as a domain (no `AGENTIC_CONTROL_PLANE` variable).
+Project.
 
 **Guards:**
 
@@ -135,23 +110,11 @@ Project and marked as a domain (no `AGENTIC_CONTROL_PLANE` variable).
 **Actions:**
 - Link this repo to the GitHub Project
 - Set `AGENTIC_PROJECT_ID` as a repo-level variable
-- Ensure `AGENTIC_CONTROL_PLANE` is **not** set (this is a domain repo)
 - Mount the framework (`.agents/`)
-- Mount the control plane knowledge into `.cp/` — sparse checkout of the CP
-  repo's `docs/` at `main`. See `knowledge-plane.md` for the mount's contents
-  and refresh cadence.
 
----
-
-### `project sync`
-
-Refreshes the `.cp/` mount on a domain repo. Runs `git pull origin main` inside
-`.cp/` to update system-level knowledge from the control plane.
-
-Session-init runs this automatically at the start of every federated-domain
-session. `project sync` is available for explicit refresh on demand.
-
-See `knowledge-plane.md` for the session-init behaviour and failure modes.
+Domain repos joined via this command are single-topology repos — no special
+filesystem mount or marker variable is required. They can read the federation requirements from
+the control plane repo's `FEDERATION.md` via `gh agentic info` or the API.
 
 ---
 
@@ -165,26 +128,23 @@ Removes this repo's project affiliation.
 |---|---|
 | Is control plane + `docs/` has files | **Block** — migrate system-level content first |
 | Is control plane + `docs/` empty | Warn + confirm |
-| Federated member | Warn + confirm (`.cp/` cache will be removed) |
+| Federated member | Warn + confirm |
 | No affiliation | Nothing to do |
 
 **Actions:**
 - Unlink the repo from the GitHub Project
-- Delete `AGENTIC_PROJECT_ID` and, if present, `AGENTIC_CONTROL_PLANE` repo variables
-- Remove `.cp/` if it exists
+- Delete `AGENTIC_PROJECT_ID` repo variable
 
 ---
 
 ### `project check`
 
 Verifies project health. Reports:
-- `AGENTIC_PROJECT_ID` present and at repo level (not org level)
-- `AGENTIC_CONTROL_PLANE` presence consistent with topology (exactly one CP across the federation)
+- `AGENTIC_PROJECT_ID` present and configured
 - Project exists and is accessible
-- Current repo's role (control plane or domain) matches the marker variable
 - Framework mounted and at expected version
-- `.cp/` present and fresh (for domain repos)
-- Branch protection on CP `main` — warning only if missing (strongly recommended)
+- FEDERATION.md valid (when present)
+- Legacy federation config present (warns when pre-Feature-#824 topology variables or directory layout are still present)
 - Required variables and secrets present
 - Runner registered and reachable
 
@@ -196,7 +156,7 @@ not a hard failure.
 ### `project repair`
 
 Fixes issues reported by `project check`. Interactive — confirms each repair action
-before applying. Includes re-establishing `.cp/` if missing or corrupted.
+before applying.
 
 ---
 
@@ -204,29 +164,29 @@ before applying. Includes re-establishing `.cp/` if missing or corrupted.
 
 Displays current project state:
 - Project name and ID
-- Topology (Single / Federated — derived)
-- Current repo's role (control plane / domain)
-- All linked repositories
+- Topology (Single / Federation — derived from `FEDERATION.md` presence)
+- All federation target repos (when `FEDERATION.md` is present)
 - Framework version
-- `.cp/` freshness (for domain repos)
 - Runner label
 
 ---
 
 ## Knowledge — see `knowledge-plane.md`
 
-The content of `docs/` and the control plane knowledge mount (`.cp/`) are
-defined by the knowledge plane. In brief:
+The content of `docs/` is defined by the knowledge plane. In brief:
 
 | Topology | Location | Writeable |
 |---|---|---|
-| Single (embedded) | Local `docs/` — holds both system-level and repo-level knowledge | Yes |
-| Federated (domain repo) | Local `docs/` (`BRIEF.md` + `ARCHITECTURE.md`) + `.cp/` mount (`SYSTEM_BRIEF.md` + `SYSTEM_ARCHITECTURE.md`) | `docs/` yes; `.cp/` no — write via PR to the CP repo |
-| Federated (control plane) | Local `docs/` (`SYSTEM_BRIEF.md` + `SYSTEM_ARCHITECTURE.md` only) | Yes |
+| Single (standalone or domain repo) | Local `docs/` — holds both system-level and repo-level knowledge | Yes |
+| Federation (requirements repo) | Local `docs/` + `FEDERATION.md` | Yes |
 
-See `knowledge-plane.md` for the full model — naming rules, update mechanisms,
-the `docs/new/` pattern for `ARCHITECTURE.md` contributions, and session-init
-loading behaviour.
+Domain repos in a federation carry their own `docs/BRIEF.md` and
+`docs/ARCHITECTURE.md`. System-level knowledge is maintained in the control
+plane's `docs/` and accessed by domain agents via the GitHub API on demand
+(no directory mount required).
+
+See `knowledge-plane.md` for the full model — naming rules, the `docs/new/`
+pattern, and session-init loading behaviour.
 
 ---
 
@@ -236,16 +196,13 @@ The supported path for moving a single (embedded control plane) repo into
 a federated project is:
 
 1. Create a new control plane repo with `project create`.
-2. Migrate system-level content from the original repo's `docs/` into the new
+2. Add `FEDERATION.md` to the control plane repo listing all domain repos
+   (including the original repo).
+3. Migrate system-level content from the original repo's `docs/` into the new
    control plane's `docs/` as `SYSTEM_BRIEF.md` and `SYSTEM_ARCHITECTURE.md`.
    Leave repo-level content (`BRIEF.md`, `ARCHITECTURE.md`) in the original
-   repo — it describes that repo's own responsibility within the federation.
-3. Run `project join <new-project-id>` on the original repo (will unblock once
-   system-level content is migrated and the original repo's `docs/` holds only
-   repo-level artefacts).
-
-`project join` blocks this move automatically when `docs/` has system-level
-content, forcing the migration to happen explicitly before re-affiliation.
+   repo.
+4. Run `project join <new-project-id>` on the original repo.
 
 ---
 

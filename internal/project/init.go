@@ -45,7 +45,7 @@ func InitRepo(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 	// Create / repairTopologyVars are the last line of defence.
 	if cfg.Mode == InitModeFederated {
 		if ownerType, otErr := deps.DetectOwnerType(deps.Owner); otErr == nil {
-			if guardErr := EnsureFederatedOwnerIsOrg("federated", deps.Owner, ownerType); guardErr != nil {
+			if guardErr := EnsureFederatedOwnerIsOrg(TopologyStringFederation, deps.Owner, ownerType); guardErr != nil {
 				return guardErr
 			}
 		}

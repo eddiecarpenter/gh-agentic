@@ -333,36 +333,13 @@ func checkTopologyVars(deps Deps) CheckResult {
 			Message: "topology=single — no topology vars required",
 		}
 
-	case TopologyStringFederatedCP:
-		fwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-		if strings.TrimSpace(fwVer) == "" {
-			return CheckResult{
-				Name:        "topology-vars",
-				Status:      CheckFail,
-				Message:     FrameworkVersionVarName + " not set on control plane",
-				Remediation: "run 'gh agentic repair' to set it to the latest release",
-			}
-		}
+	case TopologyStringFederation:
+		// Federation topology is declared by FEDERATION.md presence; no
+		// AGENTIC_TOPOLOGY variable writes are required.
 		return CheckResult{
 			Name:    "topology-vars",
 			Status:  CheckPass,
-			Message: "topology=federated-cp, " + FrameworkVersionVarName + "=" + fwVer,
-		}
-
-	case TopologyStringFederatedDomain:
-		fwVer, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, FrameworkVersionVarName)
-		if strings.TrimSpace(fwVer) != "" {
-			return CheckResult{
-				Name:        "topology-vars",
-				Status:      CheckWarn,
-				Message:     FrameworkVersionVarName + " is set on a federated-domain repo — should only be set on the control plane",
-				Remediation: "remove it via 'gh variable delete " + FrameworkVersionVarName + "'",
-			}
-		}
-		return CheckResult{
-			Name:    "topology-vars",
-			Status:  CheckPass,
-			Message: "topology=federated-domain — no local topology vars required",
+			Message: "topology=federation — FEDERATION.md present, no variable writes required",
 		}
 	}
 

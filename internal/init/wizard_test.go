@@ -260,71 +260,11 @@ func TestConfigureRepo_NoCollaboratorGrant(t *testing.T) {
 	}
 }
 
-// --- federated init confirmation tests (task #534) ---
-
-// recordConfirmFunc returns a ConfirmFunc that records each invocation
-// and returns a prearranged yes/no answer.
-func recordConfirmFunc(yes bool) (ConfirmFunc, *int) {
-	count := 0
-	return func(title, description string) (bool, error) {
-		count++
-		return yes, nil
-	}, &count
-}
-
-func TestConfigureRepo_Federated_EmitsNoteAndConfirmsBeforeWriting(t *testing.T) {
-	cfg := configureRepoTestConfig("Federated", "acme", "cp")
-	confirm, called := recordConfirmFunc(true)
-	cfg.Confirm = confirm
-	run, captured := captureSetCalls()
-
-	var buf bytes.Buffer
-	if err := ConfigureRepo(&buf, cfg, run); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	want := "Shared variables and secrets will be stored at organisation 'acme' and will be visible to any other federated control plane in the same organisation."
-	if !strings.Contains(buf.String(), want) {
-		t.Errorf("missing verbatim note. output:\n%s", buf.String())
-	}
-	if *called != 1 {
-		t.Errorf("confirm called %d times, want 1", *called)
-	}
-	// Yes → writes proceed.
-	if _, ok := (*captured)["RUNNER_LABEL"]; !ok {
-		t.Errorf("expected RUNNER_LABEL write on Yes")
-	}
-}
-
-func TestConfigureRepo_Federated_ConfirmNo_AbortsWithoutError(t *testing.T) {
-	cfg := configureRepoTestConfig("Federated", "acme", "cp")
-	confirm, called := recordConfirmFunc(false)
-	cfg.Confirm = confirm
-	run, captured := captureSetCalls()
-
-	var buf bytes.Buffer
-	if err := ConfigureRepo(&buf, cfg, run); err != nil {
-		t.Fatalf("expected no error on No, got %v", err)
-	}
-
-	if *called != 1 {
-		t.Errorf("confirm called %d times, want 1", *called)
-	}
-	if len(*captured) != 0 {
-		t.Errorf("No should not trigger any writes; got: %v", *captured)
-	}
-	if !strings.Contains(buf.String(), "cancelled") {
-		t.Errorf("expected cancellation message in output, got:\n%s", buf.String())
-	}
-}
-
-func TestConfigureRepo_Single_NoNoteNoConfirm(t *testing.T) {
+// TestConfigureRepo_WritesAlwaysProceed verifies that ConfigureRepo always
+// writes variables and secrets regardless of topology — the old federation
+// confirm-gate was removed in Feature #824.
+func TestConfigureRepo_WritesAlwaysProceed(t *testing.T) {
 	cfg := configureRepoTestConfig("Single", "eddie", "repo")
-	// Intentionally wire a confirm that would blow up the test if called.
-	cfg.Confirm = func(title, description string) (bool, error) {
-		t.Errorf("confirm must not be called under single topology")
-		return false, nil
-	}
 	run, captured := captureSetCalls()
 
 	var buf bytes.Buffer
@@ -332,13 +272,13 @@ func TestConfigureRepo_Single_NoNoteNoConfirm(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Writes proceed as before.
+	// Writes always proceed — no gating on topology.
 	if _, ok := (*captured)["RUNNER_LABEL"]; !ok {
-		t.Errorf("expected RUNNER_LABEL write under single")
+		t.Errorf("expected RUNNER_LABEL write")
 	}
-	// The federated note must NOT appear under single topology.
+	// No legacy org-visibility note should appear.
 	if strings.Contains(buf.String(), "will be visible to any other federated") {
-		t.Errorf("federated note must not appear under single topology; output:\n%s", buf.String())
+		t.Errorf("legacy federated note must not appear; output:\n%s", buf.String())
 	}
 }
 
@@ -395,9 +335,9 @@ func scopeFrom(args []string) (string, string) {
 	return "", ""
 }
 
-func TestConfigureRepo_Federated_SharedNames_RouteToOrg(t *testing.T) {
-	// NOTE: topology "Federated" is the capitalised wizard value — it is
-	// normalised to lowercase inside ConfigureRepo before scope routing.
+func TestConfigureRepo_Federated_SharedNames_RouteToRepo(t *testing.T) {
+	// Feature #824: all variables and secrets are now --repo scoped regardless
+	// of topology. The old --org routing for "Federated" topology has been removed.
 	cfg := configureRepoTestConfig("Federated", "acme", "cp")
 	run, captured := captureSetCalls()
 
@@ -414,8 +354,8 @@ func TestConfigureRepo_Federated_SharedNames_RouteToOrg(t *testing.T) {
 			continue
 		}
 		flag, target := scopeFrom(args)
-		if flag != "--org" || target != "acme" {
-			t.Errorf("%s routed to (%q, %q), want (%q, %q)", name, flag, target, "--org", "acme")
+		if flag != "--repo" || target != "acme/cp" {
+			t.Errorf("%s routed to (%q, %q), want (%q, %q)", name, flag, target, "--repo", "acme/cp")
 		}
 	}
 }

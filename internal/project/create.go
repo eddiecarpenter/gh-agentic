@@ -41,12 +41,12 @@ type CreateConfig struct {
 //  7. Set AGENTIC_PROJECT_ID repo variable.
 //  8. Clone the framework into .agents/.
 func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
-	// Default topology for control-plane creation is federated — matches the
-	// historical behaviour of this function and the CLI `project create`
-	// contract. initSingle passes "single" explicitly.
+	// Default topology for control-plane creation is federation — matches the
+	// FEDERATION.md-based model introduced in Feature #824.
+	// initSingle passes "single" explicitly to suppress the federated-owner guard.
 	topology := cfg.Topology
 	if topology == "" {
-		topology = "federated"
+		topology = TopologyStringFederation
 	}
 	// Guard 1: AGENTIC_PROJECT_ID must not already be set.
 	existing, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)

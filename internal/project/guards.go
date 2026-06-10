@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 )
 
 // FederatedRequiresOrgMessage is the verbatim user-facing message emitted when
@@ -34,11 +33,10 @@ const FederatedRequiresOrgMessage = "Federated topology requires a GitHub Organi
 // otherwise.
 func EnsureFederatedOwnerIsOrg(topology, owner, ownerType string) error {
 	// Tolerate capitalised topology strings (the init form emits
-	// "Single"/"Federated"). The stricter scope.IsFederatedTopology helper
-	// used by ScopeFor stays case-sensitive to avoid accidental scope
-	// widening.
+	// "Single"/"Federation"). Compare against the canonical lower-case
+	// TopologyStringFederation value.
 	normalised := strings.ToLower(topology)
-	if !scope.IsFederatedTopology(normalised) {
+	if normalised != TopologyStringFederation {
 		return nil
 	}
 	if ownerType != auth.OwnerTypeUser {

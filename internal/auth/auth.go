@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"io"
 	"time"
-
-	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 )
 
 // RunCommandFunc is a function type for running shell commands.
@@ -151,12 +149,11 @@ func Check(w io.Writer, deps Deps) (CheckResult, error) {
 
 // uploadCredentials reads local credentials and uploads them to GitHub.
 //
-// Scope routing is handled by scope.ScopeFor against a synthetic "federated"
-// topology when the owner is an organisation, preserving the prior
-// ownerType-driven behaviour while centralising the routing logic. User-owned
-// repos (personal accounts) stay at --repo — a user account cannot host
-// org-scoped secrets, and the pre-ScopeFor code already defaulted to --repo
-// for that case.
+// Scope routing: organisation-owned repos write the secret at --org level so
+// every domain repo in the same org inherits it automatically. User-owned
+// repos stay at --repo — personal accounts cannot host org-scoped secrets.
+// This routing is independent of federation topology; it is based solely on
+// whether the GitHub owner is a User or an Organization.
 func uploadCredentials(w io.Writer, deps Deps) error {
 	data, err := deps.ReadCredentials(deps.Run)
 	if err != nil {
@@ -165,11 +162,11 @@ func uploadCredentials(w io.Writer, deps Deps) error {
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	topology := "single"
+	// Route to org scope for organisation owners; repo scope for users.
+	flag, target := "--repo", deps.RepoFullName
 	if deps.OwnerType == OwnerTypeOrg {
-		topology = "federated"
+		flag, target = "--org", deps.Owner
 	}
-	flag, target := scope.ScopeFor(secretName, topology, deps.Owner, deps.RepoFullName)
 	ghArgs := []string{"secret", "set", secretName, "--body", encoded, flag, target}
 
 	if _, setErr := deps.Run("gh", ghArgs...); setErr != nil {

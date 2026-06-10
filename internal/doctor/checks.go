@@ -10,7 +10,6 @@ import (
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
 	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/project"
-	"github.com/eddiecarpenter/gh-agentic/internal/scope"
 )
 
 // CheckDeps holds injectable dependencies for check functions.
@@ -20,7 +19,7 @@ type CheckDeps struct {
 	Owner               string
 	RepoName            string
 	OwnerType           string
-	Topology            string // "single", "federated-cp", "federated-domain", "" (unknown)
+	Topology            string // "single", "federation", "" (unknown)
 	ProjectID           string // value of AGENTIC_PROJECT_ID if set
 	ProjectIDReadFailed bool   // true when AGENTIC_PROJECT_ID could not be read due to token permission error
 	Run                 auth.RunCommandFunc
@@ -222,34 +221,33 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		return base
 	}
 
+	// Feature #824: topology is now binary (single / federation). All repos
+	// run the same set of checks regardless of topology variant.
 	base := []checkGroupStep{
 		{"Checking repository...", checkRepository},
 		{"Checking framework mount...", checkFramework},
 		{"Checking agent files...", checkAgentFiles},
 		{"Checking skill frontmatter...", checkSkillFrontmatter},
+		{"Checking workflows...", checkWorkflows},
+		{"Checking variables and secrets...", checkVariablesAndSecrets},
+		// Pipeline labels must exist on every repo — skills apply them via gh CLI
+		// regardless of topology. Runs before project reachability so the label
+		// remediation is visible alongside other pipeline-infrastructure checks.
+		{"Checking pipeline labels...", checkLabels},
+		// Project reachability applies to every topology — all of them consume the
+		// GitHub Project board via `gh agentic status`. Added last so it lands at
+		// the bottom of the report, near the "what the agent actually needs" view.
+		{"Checking project reachability...", checkProjectReachability},
+		// Project status options run after reachability — no point checking options
+		// on a project that isn't reachable.
+		{"Checking project status options...", checkProjectStatusOptions},
+		// Federation manifest: validates FEDERATION.md when present; passes silently
+		// when absent (single topology).
+		{"Checking federation manifest...", checkFederationManifest},
+		// Legacy federation config: warns when pre-#824 topology variables or .cp/
+		// directory are still present so operators know to clean them up.
+		{"Checking legacy federation config...", checkLegacyFederationConfig},
 	}
-	if deps.Topology == "federated-domain" {
-		base = append(base, checkGroupStep{"Checking agentic project membership...", checkProjectAffiliation})
-	} else {
-		base = append(base, checkGroupStep{"Checking workflows...", checkWorkflows})
-		base = append(base, checkGroupStep{"Checking variables and secrets...", checkVariablesAndSecrets})
-	}
-	// Shadow-vars runs under every federated variant; single topology
-	// gets a no-op result for uniformity (see checkShadowVars).
-	if scope.IsFederatedTopology(deps.Topology) {
-		base = append(base, checkGroupStep{"Checking for shadow values...", checkShadowVars})
-	}
-	// Pipeline labels must exist on every repo — skills apply them via gh CLI
-	// regardless of topology. Runs before project reachability so the label
-	// remediation is visible alongside other pipeline-infrastructure checks.
-	base = append(base, checkGroupStep{"Checking pipeline labels...", checkLabels})
-	// Project reachability applies to every topology — all of them consume the
-	// GitHub Project board via `gh agentic status`. Added last so it lands at
-	// the bottom of the report, near the "what the agent actually needs" view.
-	base = append(base, checkGroupStep{"Checking project reachability...", checkProjectReachability})
-	// Project status options run after reachability — no point checking options
-	// on a project that isn't reachable.
-	base = append(base, checkGroupStep{"Checking project status options...", checkProjectStatusOptions})
 	return base
 }
 
@@ -538,14 +536,6 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 		g.Results = append(g.Results, result)
 	}
 
-	// Federated control plane also needs topology and framework version variables.
-	if deps.Topology == "federated-cp" {
-		for _, v := range []string{"AGENTIC_TOPOLOGY", "AGENTIC_FRAMEWORK_VERSION"} {
-			result := checkVariable(deps, v)
-			g.Results = append(g.Results, result)
-		}
-	}
-
 	// Check secrets.
 	secrets := []string{"PROJECT_PAT", "PIPELINE_PAT"}
 	for _, s := range secrets {
@@ -572,110 +562,6 @@ func checkVariablesAndSecrets(deps CheckDeps) Group {
 	}
 
 	return g
-}
-
-// checkProjectAffiliation reports whether the federated-domain repo has its
-// agentic project membership configured. Values are trusted from the
-// resolver (deps.ProjectID and deps.Topology) — the doctor does not re-read
-// AGENTIC_* variables directly. The check's purpose is to surface a clear
-// diagnostic when the domain repo is missing affiliation; the resolver
-// already validated the variables on the way in.
-//
-// After feature #571 / task #585, AGENTIC_TOPOLOGY is no longer written
-// automatically. Its presence is optional — the resolver infers topology
-// from the project-linked-repo graph. If the variable IS set but agrees
-// with what the resolver would compute, this check emits a Warning
-// pointing to its now-redundant status so operators can remove the
-// stopgap cleanly (the #571 non-goal for domain-repo cleanup).
-func checkProjectAffiliation(deps CheckDeps) Group {
-	g := Group{Name: "Agentic project membership"}
-
-	if strings.TrimSpace(deps.ProjectID) == "" {
-		if deps.ProjectIDReadFailed {
-			// Token lacked Variables:Read (Actions:Read) permission — the variable
-			// may be set but we cannot verify it from this token. Surface as Warning
-			// so CI pipelines using a scoped PIPELINE_PAT don't report false failures.
-			g.Results = append(g.Results, CheckResult{
-				Name: "AGENTIC_PROJECT_ID", Status: Warning,
-				Message: "AGENTIC_PROJECT_ID — unable to verify (token lacks variable-read permission)",
-			})
-		} else {
-			g.Results = append(g.Results, CheckResult{
-				Name: "AGENTIC_PROJECT_ID", Status: Fail,
-				Message:     "AGENTIC_PROJECT_ID not configured",
-				Remediation: remediationSet("variable", "AGENTIC_PROJECT_ID", deps),
-			})
-		}
-	} else {
-		g.Results = append(g.Results, CheckResult{
-			Name: "AGENTIC_PROJECT_ID", Status: Pass,
-			Message: "AGENTIC_PROJECT_ID configured",
-		})
-	}
-
-	// AGENTIC_TOPOLOGY is optional after #585 — a federated-domain repo
-	// resolves correctly without it via the linked-repo signal. When it is
-	// set but the resolver's output matches, flag it as a redundant
-	// stopgap that can be deleted.
-	g.Results = append(g.Results, checkTopologyStopgap(deps))
-
-	return g
-}
-
-// checkTopologyStopgap returns a CheckResult describing the current state of
-// the AGENTIC_TOPOLOGY variable relative to what the resolver would infer.
-// Three outcomes:
-//   - Variable absent: Pass ("AGENTIC_TOPOLOGY not set — resolver infers").
-//   - Variable set, matches the resolver's inferred value: Warning ("redundant
-//     stopgap — safe to delete").
-//   - Variable set, disagrees with the resolver: Pass with an informational
-//     message ("explicit override — honoured").
-//
-// deps.Run is consulted once to read the variable; if the run func is absent
-// the check falls back to a Warning that the stopgap status cannot be
-// determined. This keeps the scanner honest under fully-fake test harnesses.
-func checkTopologyStopgap(deps CheckDeps) CheckResult {
-	if deps.Run == nil {
-		return CheckResult{
-			Name:    "AGENTIC_TOPOLOGY",
-			Status:  Warning,
-			Message: "AGENTIC_TOPOLOGY stopgap status — unable to check (no run func)",
-		}
-	}
-	out, err := deps.Run("gh", "variable", "get", "AGENTIC_TOPOLOGY", "--repo", deps.RepoFullName)
-	val := strings.TrimSpace(out)
-	if err != nil || val == "" {
-		return CheckResult{
-			Name:    "AGENTIC_TOPOLOGY",
-			Status:  Pass,
-			Message: "AGENTIC_TOPOLOGY not set — resolver infers topology from project graph",
-		}
-	}
-
-	// Map the canonical deps.Topology ("single" / "federated-cp" /
-	// "federated-domain") back to the variable's two legal values
-	// ("single" / "federated"). If the variable agrees, it is a redundant
-	// stopgap; otherwise treat it as an explicit override.
-	inferred := ""
-	switch deps.Topology {
-	case "single":
-		inferred = "single"
-	case "federated-cp", "federated-domain":
-		inferred = "federated"
-	}
-	if inferred != "" && val == inferred {
-		return CheckResult{
-			Name:        "AGENTIC_TOPOLOGY",
-			Status:      Warning,
-			Message:     "AGENTIC_TOPOLOGY=" + val + " is redundant — the resolver infers the same value; safe to delete",
-			Remediation: "gh variable delete AGENTIC_TOPOLOGY --repo " + deps.RepoFullName,
-		}
-	}
-	return CheckResult{
-		Name:    "AGENTIC_TOPOLOGY",
-		Status:  Pass,
-		Message: "AGENTIC_TOPOLOGY=" + val + " — explicit override honoured",
-	}
 }
 
 // checkProjectReachability verifies AGENTIC_PROJECT_ID is set and the
@@ -817,49 +703,128 @@ func checkProjectStatusOptions(deps CheckDeps) Group {
 	return g
 }
 
-// checkVariable checks if a GitHub variable exists.
+// checkFederationManifest validates the FEDERATION.md manifest when it is
+// present at deps.Root. When absent, the repo is single-topology and the
+// check passes unconditionally. When present but invalid, each error from
+// project.ReadFederation is surfaced as a Fail result with the exact error
+// text so the operator knows exactly what to fix.
+func checkFederationManifest(deps CheckDeps) Group {
+	g := Group{Name: "Federation manifest"}
+
+	if !project.IsFederationRepo(deps.Root) {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-manifest",
+			Status:  Pass,
+			Message: "FEDERATION.md not present (single topology)",
+		})
+		return g
+	}
+
+	_, err := project.ReadFederation(deps.Root)
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-manifest",
+			Status:  Fail,
+			Message: err.Error(),
+		})
+		return g
+	}
+
+	g.Results = append(g.Results, CheckResult{
+		Name:    "federation-manifest",
+		Status:  Pass,
+		Message: "FEDERATION.md is valid",
+	})
+	return g
+}
+
+// checkLegacyFederationConfig detects remnants of the pre-#824 topology model.
+// It runs unconditionally regardless of topology so repos that still carry
+// the old variables or directory layout are flagged even when they have
+// already adopted FEDERATION.md. Each legacy artefact becomes a Warning with
+// a remediation command.
+func checkLegacyFederationConfig(deps CheckDeps) Group {
+	g := Group{Name: "Legacy federation config"}
+	found := 0
+
+	// AGENTIC_TOPOLOGY variable — was the old topology marker; replaced by
+	// FEDERATION.md presence detection in Feature #824.
+	if deps.Run != nil {
+		out, err := deps.Run("gh", "variable", "get", "AGENTIC_TOPOLOGY", "--repo", deps.RepoFullName)
+		if err == nil && strings.TrimSpace(out) != "" {
+			g.Results = append(g.Results, CheckResult{
+				Name:        "legacy-topology",
+				Status:      Warning,
+				Message:     "AGENTIC_TOPOLOGY is set — no longer used; topology is now inferred from FEDERATION.md presence",
+				Remediation: "gh variable delete AGENTIC_TOPOLOGY --repo " + deps.RepoFullName,
+			})
+			found++
+		}
+	}
+
+	// AGENTIC_CONTROL_PLANE variable — was written by the old federated init
+	// flow; the FEDERATION.md manifest supersedes it.
+	if deps.Run != nil {
+		out, err := deps.Run("gh", "variable", "get", "AGENTIC_CONTROL_PLANE", "--repo", deps.RepoFullName)
+		if err == nil && strings.TrimSpace(out) != "" {
+			g.Results = append(g.Results, CheckResult{
+				Name:        "legacy-control-plane",
+				Status:      Warning,
+				Message:     "AGENTIC_CONTROL_PLANE is set — no longer used; remove it to keep the repo config clean",
+				Remediation: "gh variable delete AGENTIC_CONTROL_PLANE --repo " + deps.RepoFullName,
+			})
+			found++
+		}
+	}
+
+	// .cp/ directory — was created by the old federated domain init; no longer
+	// needed and should be removed.
+	if _, err := os.Stat(filepath.Join(deps.Root, ".cp")); err == nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:        "legacy-cp-dir",
+			Status:      Warning,
+			Message:     ".cp/ directory found — no longer used by the framework",
+			Remediation: "rm -rf .cp/ && git rm -r --cached .cp/ 2>/dev/null || true",
+		})
+		found++
+	}
+
+	if found == 0 {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "legacy-config",
+			Status:  Pass,
+			Message: "No legacy federation config found",
+		})
+	}
+
+	return g
+}
+
+// checkVariable checks if a GitHub variable exists at --repo scope.
 //
-// Under federated topology the shared names (RUNNER_LABEL,
-// AGENT_PROVIDER, AGENT_MODEL) live at the organisation level and are not
-// visible via `gh variable list --repo OWNER/REPO`. The check therefore
-// consults the org scope for shared names under federated topology, treating
-// a hit at either scope as "configured". Identity names (AGENTIC_*) are
-// repo-scoped only under any topology.
-//
-// The remediation message references the authoritative target scope so the
-// human knows where the missing value should actually be set.
+// Feature #824: all variables are --repo scoped. The old org-scope fallback
+// for shared names under federated topology has been removed.
 func checkVariable(deps CheckDeps, name string) CheckResult {
 	if deps.Run == nil {
 		return CheckResult{Name: name, Status: Warning, Message: name + " — unable to check (no run func)"}
 	}
 
-	// Repo scope — always consulted.
-	repoOut, repoErr := deps.Run("gh", "variable", "get", name, "--repo", deps.RepoFullName)
-	repoHit := repoErr == nil && strings.TrimSpace(repoOut) != ""
+	out, err := deps.Run("gh", "variable", "get", name, "--repo", deps.RepoFullName)
+	hit := err == nil && strings.TrimSpace(out) != ""
 
 	// Distinguish an auth/permission failure from a genuine missing variable.
 	// GitHub App tokens used in CI often lack the Actions:Read permission
 	// required to read variables, producing a 403. Treat that as "unable to
 	// check" rather than "not configured" so the check doesn't emit false
 	// positives when the variable is set but the token can't read it.
-	if !repoHit && repoErr != nil && isPermissionError(repoOut) {
+	if !hit && err != nil && isPermissionError(out) {
 		return CheckResult{
 			Name: name, Status: Warning,
 			Message: name + " — unable to check (token lacks variable-read permission)",
 		}
 	}
 
-	// Org scope — only consulted for shared names under federated topology.
-	// Identity names stay repo-only even under federated.
-	orgHit := false
-	if shouldConsultOrg(name, deps.Topology) {
-		orgOut, orgErr := deps.Run("gh", "variable", "list", "--org", deps.Owner)
-		if orgErr == nil && containsVariableName(orgOut, name) {
-			orgHit = true
-		}
-	}
-
-	if repoHit || orgHit {
+	if hit {
 		return CheckResult{Name: name, Status: Pass, Message: name + " configured"}
 	}
 
@@ -882,42 +847,24 @@ func checkVariable(deps CheckDeps, name string) CheckResult {
 	}
 }
 
-// checkSecret checks if a GitHub secret exists.
+// checkSecret checks if a GitHub secret exists at --repo scope.
 //
-// Under federated topology the shared secret names (PROJECT_PAT,
-// CLAUDE_CREDENTIALS_JSON) live at the organisation level and are not
-// visible via `gh secret list --repo OWNER/REPO`. The check therefore
-// consults the org scope for shared names under federated topology,
-// treating a hit at either scope as "configured". Identity names are never
-// looked up at org scope.
+// Feature #824: all secrets are --repo scoped. The old org-scope fallback
+// for shared names under federated topology has been removed.
 func checkSecret(deps CheckDeps, name string) CheckResult {
 	if deps.Run == nil {
 		return CheckResult{Name: name, Status: Warning, Message: name + " — unable to check (no run func)"}
 	}
 
-	// Repo scope — always consulted.
-	repoOut, repoErr := deps.Run("gh", "secret", "list", "--repo", deps.RepoFullName)
-	// A repo listing error is treated as inconclusive unless the org lookup
-	// can confirm the secret for us below.
-	repoHit := repoErr == nil && containsSecretName(repoOut, name)
+	out, err := deps.Run("gh", "secret", "list", "--repo", deps.RepoFullName)
+	hit := err == nil && containsSecretName(out, name)
 
-	// Org scope — only consulted for shared names under federated topology.
-	orgHit := false
-	if shouldConsultOrg(name, deps.Topology) {
-		orgOut, orgErr := deps.Run("gh", "secret", "list", "--org", deps.Owner)
-		if orgErr == nil && containsSecretName(orgOut, name) {
-			orgHit = true
-		}
-	}
-
-	if repoHit || orgHit {
+	if hit {
 		return CheckResult{Name: name, Status: Pass, Message: name + " configured"}
 	}
 
-	// Neither scope returned a hit. If the repo listing errored AND the org
-	// fallback did not confirm, surface the original soft-warning so the
-	// human can distinguish "not configured" from "could not verify".
-	if repoErr != nil && !orgHit {
+	// Listing error — cannot tell whether the secret is configured.
+	if err != nil {
 		return CheckResult{
 			Name: name, Status: Warning,
 			Message: name + " — unable to verify",
@@ -929,14 +876,6 @@ func checkSecret(deps CheckDeps, name string) CheckResult {
 		Message:     name + " not configured",
 		Remediation: remediationSet("secret", name, deps),
 	}
-}
-
-// shouldConsultOrg reports whether the org scope should be queried for the
-// given variable/secret name under the given topology. Shared names under
-// any federated topology variant go to the org; everything else stays at
-// the repo (and the caller must not waste an API call on the org list).
-func shouldConsultOrg(name, topology string) bool {
-	return scope.IsSharedName(name) && scope.IsFederatedTopology(topology)
 }
 
 // isPermissionError returns true when gh CLI output indicates an auth/permission
@@ -981,155 +920,11 @@ func containsSecretName(out, name string) bool {
 	return false
 }
 
-// remediationSet returns the `gh variable set` / `gh secret set` hint
-// pointing at the authoritative scope (org for shared names under
-// federated, repo otherwise). The kind argument is "variable" or "secret".
+// remediationSet returns the `gh variable set` / `gh secret set` hint at
+// --repo scope. Feature #824: all variables and secrets are repo-scoped.
+// The kind argument is "variable" or "secret".
 func remediationSet(kind, name string, deps CheckDeps) string {
-	flag, target := scope.ScopeFor(name, deps.Topology, deps.Owner, deps.RepoFullName)
-	return fmt.Sprintf("gh %s set %s %s %s", kind, name, flag, target)
-}
-
-// --- shadow-vars check ---
-
-// ShadowValue describes a shared variable or secret that is present at
-// both org and repo scope on a federated repo — the write at --repo
-// silently overrides the org-level value, which is the root cause of the
-// federated-org-scoped-vars feature. Emitted by FindShadowValues and
-// consumed by checkShadowVars' CheckResults and the repair pipeline.
-type ShadowValue struct {
-	// Name is the variable or secret name.
-	Name string
-	// Kind is "variable" or "secret".
-	Kind string
-	// DeleteCommand is the exact gh command that removes the shadow.
-	DeleteCommand string
-}
-
-// shadowGhListQuery is a fake-friendly seam: the code path always calls
-// deps.Run but the test harness can assert which list queries happened.
-
-// FindShadowValues returns every shared name that currently exists at
-// both `--org <owner>` and `--repo <owner/repo>` scope. Under single
-// topology (or any topology that is not a federated variant) no
-// consultation happens and the returned slice is nil — shadows are
-// meaningless when everything lives at the repo.
-//
-// This helper is used both by checkShadowVars (to populate CheckResults)
-// and by the repair pipeline (to drive the batch-delete confirmation
-// prompt). Callers that need both the check output and the repair data
-// may call this once and reuse the slice.
-func FindShadowValues(deps CheckDeps) []ShadowValue {
-	if !scope.IsFederatedTopology(deps.Topology) {
-		return nil
-	}
-	if deps.Run == nil {
-		return nil
-	}
-
-	// Query all four lists exactly once. On error we treat the listing as
-	// empty — if the org listing errors we cannot prove a shadow exists
-	// (which is the safer default than false-positive Fail).
-	varRepoOut, _ := deps.Run("gh", "variable", "list", "--repo", deps.RepoFullName)
-	varOrgOut, _ := deps.Run("gh", "variable", "list", "--org", deps.Owner)
-	secRepoOut, _ := deps.Run("gh", "secret", "list", "--repo", deps.RepoFullName)
-	secOrgOut, _ := deps.Run("gh", "secret", "list", "--org", deps.Owner)
-
-	// Ordered iteration so tests get deterministic output without relying
-	// on map iteration order. The names themselves come from scope's
-	// canonical shared set; we iterate a stable slice here.
-	shared := []string{
-		"RUNNER_LABEL",
-		"AGENT_PROVIDER",
-		"AGENT_MODEL",
-		"PROJECT_PAT",
-		"PIPELINE_PAT",
-		"CLAUDE_CREDENTIALS_JSON",
-	}
-
-	var shadows []ShadowValue
-	for _, name := range shared {
-		// Defensive: if scope stops treating a name as shared, skip it
-		// here too. Keeps this helper honest if the canonical list drifts.
-		if !scope.IsSharedName(name) {
-			continue
-		}
-		// Variables are usually ambient; secrets occasionally carry the
-		// same name under a different kind. The feature's contract is
-		// "shared name under federated lives at org", so we check each
-		// kind independently.
-		varAtRepo := containsVariableName(varRepoOut, name)
-		varAtOrg := containsVariableName(varOrgOut, name)
-		if varAtRepo && varAtOrg {
-			shadows = append(shadows, ShadowValue{
-				Name:          name,
-				Kind:          "variable",
-				DeleteCommand: fmt.Sprintf("gh variable delete --repo %s %s", deps.RepoFullName, name),
-			})
-		}
-		secAtRepo := containsSecretName(secRepoOut, name)
-		secAtOrg := containsSecretName(secOrgOut, name)
-		if secAtRepo && secAtOrg {
-			shadows = append(shadows, ShadowValue{
-				Name:          name,
-				Kind:          "secret",
-				DeleteCommand: fmt.Sprintf("gh secret delete --repo %s %s", deps.RepoFullName, name),
-			})
-		}
-	}
-	return shadows
-}
-
-// checkShadowVars reports whether any shared variable/secret exists at
-// both org and repo scope under federated topology. Under single topology
-// it returns an empty group — the concept does not apply.
-//
-// When shadows are present the group contains one Fail CheckResult per
-// shadow, each with the exact delete command as its Remediation. The
-// first such result also carries the structured []ShadowValue on
-// CheckResult.Data so the repair pipeline can consume the list without
-// re-querying.
-func checkShadowVars(deps CheckDeps) Group {
-	g := Group{Name: "Shadow values"}
-
-	if !scope.IsFederatedTopology(deps.Topology) {
-		// Not applicable under single or unknown topology — return a
-		// benign informational result that matches the pattern used by
-		// the other topology-conditional checks.
-		g.Results = append(g.Results, CheckResult{
-			Name:    "shadow-vars",
-			Status:  Pass,
-			Message: "shadow-vars — not applicable under single topology",
-		})
-		return g
-	}
-
-	shadows := FindShadowValues(deps)
-	if len(shadows) == 0 {
-		g.Results = append(g.Results, CheckResult{
-			Name:    "shadow-vars",
-			Status:  Pass,
-			Message: "No repo-scoped shadow values found",
-		})
-		return g
-	}
-
-	// First result carries the structured data so repair can consume the
-	// slice directly.
-	g.Results = append(g.Results, CheckResult{
-		Name:    "shadow-vars",
-		Status:  Fail,
-		Message: fmt.Sprintf("%d shadow value(s) detected — repo-scoped values override org inheritance", len(shadows)),
-		Data:    shadows,
-	})
-	for _, s := range shadows {
-		g.Results = append(g.Results, CheckResult{
-			Name:        fmt.Sprintf("shadow-vars:%s:%s", s.Kind, s.Name),
-			Status:      Fail,
-			Message:     fmt.Sprintf("%s %q shadows the org-level value", s.Kind, s.Name),
-			Remediation: s.DeleteCommand,
-		})
-	}
-	return g
+	return fmt.Sprintf("gh %s set %s --repo %s", kind, name, deps.RepoFullName)
 }
 
 // checkLabels verifies that every label in requiredPipelineLabels exists in
