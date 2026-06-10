@@ -1141,15 +1141,18 @@ prompt-user(
       -F num="<requirement-N>" \
       --jq '.data.repository.issue.id')
 
-    # Per Feature, resolve the child node ID then link:
+    # Per Feature, resolve the child node ID then link. The child
+    # lives in its <target-repo>, which may differ from the parent's
+    # repo in a federation — resolve owner/name from <target-repo>,
+    # NOT <active-repo>:
     CHILD_NODE_ID=$(gh api graphql -f query='
       query($owner:String!, $name:String!, $num:Int!) {
         repository(owner:$owner, name:$name) {
           issue(number:$num) { id }
         }
       }' \
-      -F owner="${active_repo%/*}" \
-      -F name="${active_repo#*/}" \
+      -F owner="${target_repo%/*}" \
+      -F name="${target_repo#*/}" \
       -F num="<F>" \
       --jq '.data.repository.issue.id')
 
@@ -1163,10 +1166,21 @@ prompt-user(
       -F child="$CHILD_NODE_ID"
     ```
 
-    On any failure (node-ID lookup or the mutation itself), propagate
-    `ISSUE_CREATION_FAILED`. The Feature body's `Closes #<parent>` /
-    `Part of #<parent>` line is a fallback; the API-level sub-issue
-    link is the durable signal.
+    **Same-owner precondition.** GitHub's sub-issue mechanism links
+    issues only within a single owner (org or user). Every
+    `<target-repo>` in `<federation>` shares the requirements repo's
+    owner — `gh agentic check` (#827) enforces this — so cross-repo
+    sub-issue links resolve. If `addSubIssue` fails with an
+    owner-mismatch error (a manifest listing a foreign-owner repo,
+    which check should have rejected), propagate
+    `ISSUE_CREATION_FAILED` and point the human at `gh agentic check`:
+    a multi-owner federation is out of scope and cannot be wired this
+    way.
+
+    On any other failure (node-ID lookup or the mutation itself),
+    propagate `ISSUE_CREATION_FAILED`. The Feature body's
+    `Closes #<parent>` / `Part of #<parent>` line is a fallback; the
+    API-level sub-issue link is the durable signal.
 
 ---
 
@@ -1218,12 +1232,15 @@ prompt-user(
     decision rule.
 
     ```
-    trigger-design(issue=<F>)
+    trigger-design(issue=<F>, repo=<target-repo>)
     ```
 
-    `repo` is omitted — `trigger-design` resolves it to the active
-    repo, which is what we want here (the Features were just created
-    in the active repo in step 18).
+    Pass `repo=<target-repo>` so the trigger lands on the Feature in
+    the repo it was created in. When `<federation>` is unset,
+    `<target-repo>` equals `<active-repo>` and this is the same as
+    omitting `repo`. `trigger-design` already accepts the optional
+    `repo` argument for cross-repo callers — do not reimplement its
+    label-choice logic here.
 
     The primitive returns `{ trigger_label, status, triggered: true }`
     on success. Capture `trigger_label` per Feature so step 22 (held
@@ -1273,7 +1290,10 @@ prompt-user(
     Raise `STATUS_TRANSITION_FAILED`.
 
 22. **Annotate held Features.** For each non-triggered Feature,
-    post a comment via `post-issue-comment`:
+    post a comment via `post-issue-comment`, targeting the repo the
+    Feature lives in (`post-issue-comment(repo=<target-repo>,
+    issue=<F>, body=…)`) — in a federation the held Feature may not
+    be in `<active-repo>`:
 
     ```
     Held at backlog — not triggered during scoping.
@@ -1303,15 +1323,21 @@ prompt-user(
     On any failure, propagate `STATUS_TRANSITION_FAILED`.
 
 24. **Emit the exit block** matching the actual outcome. All
-    variants conform to the same Produced / Blocked / Next shape:
+    variants conform to the same Produced / Blocked / Next shape.
+
+    **Repo annotation (only when `<federation>` is held).** Each
+    created Feature is rendered as `#<F> (owner/repo)` so the session
+    record shows where every Feature landed across the federation.
+    When `<federation>` is unset, the `(owner/repo)` suffix is
+    omitted (all Features are in `<active-repo>`).
 
     **Output A — All Features triggered:**
     ```
     === Requirement Scoping Session — Completed ===
 
     Produced:
-      - Feature #<F1> created (triggered for design)
-      - Feature #<F2> created (triggered for design)
+      - Feature #<F1> (owner/repo-a) created (triggered for design)
+      - Feature #<F2> (owner/repo-b) created (triggered for design)
       - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: none
@@ -1325,8 +1351,8 @@ prompt-user(
     === Requirement Scoping Session — Completed ===
 
     Produced:
-      - Feature #<F1> created (triggered for design)
-      - Feature #<F2> created (held at backlog — cross-repo dep)
+      - Feature #<F1> (owner/repo-a) created (triggered for design)
+      - Feature #<F2> (owner/repo-b) created (held at backlog — cross-repo dep)
       - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: #<F2> — upstream PR
@@ -1340,8 +1366,8 @@ prompt-user(
     === Requirement Scoping Session — Completed ===
 
     Produced:
-      - Feature #<F1> created (held at backlog — cross-repo dep)
-      - Feature #<F2> created (held at backlog — deliberate hold)
+      - Feature #<F1> (owner/repo-a) created (held at backlog — cross-repo dep)
+      - Feature #<F2> (owner/repo-b) created (held at backlog — deliberate hold)
       - Requirement #<N> transitioned: scoping → ready-to-implement
 
     Blocked: #<F1> — upstream PR; #<F2> — human chose to hold
