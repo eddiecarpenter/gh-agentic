@@ -8,6 +8,7 @@ loads:
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
   - skills/definitions/state-model-pattern.md
+  - skills/definitions/render-before-confirm.md
   - skills/prompt-user/SKILL.md
   - skills/gh-agentic/SKILL.md
   - skills/apply-label/SKILL.md
@@ -125,6 +126,11 @@ the work.
 - `skills/definitions/step-skip-rule.md` — articulation-as-enforcement
   rule preventing silent skipping. Conditional-step carve-out applies
   to interactive-only steps in headless mode and vice versa.
+- `skills/definitions/render-before-confirm.md` — the turn-boundary
+  rule for the interactive confirm gates (rationale review, task-list
+  review): rendered content is the final output of its turn; the
+  `prompt-user` call comes on the next turn, so the human always sees
+  what they are approving.
 
 ## Dependencies
 
@@ -477,7 +483,12 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
    among the issue's comments. Always include it as the first line.
 
 10. **Confirm rationale. (interactive only)** Render the full
-    rationale verbatim in a fenced markdown block, then:
+    rationale verbatim in a fenced markdown block as the final output
+    of the turn, and stop. Per
+    `skills/definitions/render-before-confirm.md`, the `prompt-user`
+    gate below is invoked on the *next* turn — never render the
+    rationale and prompt for its approval in the same turn, or the
+    human is asked to confirm a Design Plan they cannot see. Then:
 
     ```
     prompt-user(
@@ -630,8 +641,11 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
     traceable to tasks is malformed.
 
 16. **Confirm task list. (interactive only)** Render each task as
-    a fenced markdown block prefaced by `Task K of M (title):`,
-    then:
+    a fenced markdown block prefaced by `Task K of M (title):` as the
+    final output of the turn, and stop. Per
+    `skills/definitions/render-before-confirm.md`, the `prompt-user`
+    gate below is invoked on the *next* turn — never render the task
+    list and prompt for its approval in the same turn. Then:
 
     ```
     prompt-user(
