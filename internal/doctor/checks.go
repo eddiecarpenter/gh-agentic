@@ -35,6 +35,15 @@ type CheckDeps struct {
 	// project.DefaultUpdateStatusFieldOptions.
 	FetchProjectFields       project.FetchProjectFieldsFunc
 	UpdateStatusFieldOptions project.UpdateStatusFieldOptionsFunc
+	// FetchLinkedRepos, FetchOwnerAndRepoIDs, and LinkRepoToProject are used
+	// by checkFederationProjectSync (check) and RepairPipeline (repair) to
+	// detect and fix drift between FEDERATION.md and the GitHub Project's
+	// linked-repo graph. Tests substitute fakes; production wires the
+	// project.Default* implementations. LinkRepoToProject is repair-only; the
+	// check command leaves it nil.
+	FetchLinkedRepos     project.FetchLinkedReposFunc
+	FetchOwnerAndRepoIDs project.FetchOwnerAndRepoIDsFunc
+	LinkRepoToProject    project.LinkRepoToProjectFunc
 	// FrameworkSource signals that this repo IS the gh-agentic framework
 	// source itself (detected by .ai being a symlink). When true, content-
 	// layer checks that inspect a mounted .agents/ tree are replaced with a
@@ -244,6 +253,10 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		// Federation manifest: validates FEDERATION.md when present; passes silently
 		// when absent (single topology).
 		{"Checking federation manifest...", checkFederationManifest},
+		// Federation project sync: checks that every manifest repo is linked to the
+		// federation's GitHub Project, and flags project-linked repos not in the
+		// manifest. Guard: skipped when FEDERATION.md is absent.
+		{"Checking federation project sync...", checkFederationProjectSync},
 		// Legacy federation config: warns when pre-#824 topology variables or .cp/
 		// directory are still present so operators know to clean them up.
 		{"Checking legacy federation config...", checkLegacyFederationConfig},
@@ -735,6 +748,137 @@ func checkFederationManifest(deps CheckDeps) Group {
 		Status:  Pass,
 		Message: "FEDERATION.md is valid",
 	})
+	return g
+}
+
+// checkFederationProjectSync validates that every repo listed in FEDERATION.md
+// is linked to the federation's GitHub Project, and flags project-linked repos
+// that are absent from the manifest. It is active only when FEDERATION.md is
+// present; single-topology repos receive a single Pass result (guard AC-4).
+//
+// Result name conventions:
+//   - "federation-sync"                      — guards (single Pass or Warning)
+//   - "federation-sync:not-linked:<owner/repo>" — AC-1: linked to project missing
+//   - "federation-sync:inaccessible:<owner/repo>" — AC-3: repo not reachable
+//   - "federation-sync:unlisted:<owner/repo>"    — AC-2: linked but not in manifest
+//   - "federation-sync:linked:<owner/repo>"      — AC-1 pass: linked OK
+//
+// The "not-linked" result stores the repo node ID in Data (string) so the
+// repair pass can link the repo without a redundant re-query.
+func checkFederationProjectSync(deps CheckDeps) Group {
+	g := Group{Name: "Federation project sync"}
+
+	// Guard AC-4: no FEDERATION.md → skip silently (single topology).
+	if !project.IsFederationRepo(deps.Root) {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-sync",
+			Status:  Pass,
+			Message: "FEDERATION.md not present — federation sync check skipped",
+		})
+		return g
+	}
+
+	// Guard: invalid manifest → skip; checkFederationManifest owns parse errors.
+	fed, err := project.ReadFederation(deps.Root)
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-sync",
+			Status:  Warning,
+			Message: "federation project sync skipped — manifest invalid (see Federation manifest check)",
+		})
+		return g
+	}
+
+	// Guard: project not configured.
+	projectID := strings.TrimSpace(deps.ProjectID)
+	if projectID == "" {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-sync",
+			Status:  Warning,
+			Message: "federation project sync skipped — AGENTIC_PROJECT_ID not configured",
+		})
+		return g
+	}
+
+	// Guard: no GraphQL client.
+	if deps.FetchLinkedRepos == nil || deps.FetchOwnerAndRepoIDs == nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-sync",
+			Status:  Warning,
+			Message: "federation project sync skipped — no GraphQL client",
+		})
+		return g
+	}
+
+	// Fetch repos currently linked to the project.
+	linked, err := deps.FetchLinkedRepos(projectID)
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name:    "federation-sync",
+			Status:  Warning,
+			Message: fmt.Sprintf("federation project sync skipped — could not fetch linked repos: %v", err),
+		})
+		return g
+	}
+
+	// Build case-insensitive lookup sets.
+	linkedSet := make(map[string]bool, len(linked))
+	for _, r := range linked {
+		linkedSet[strings.ToLower(r.NameWithOwner)] = true
+	}
+	manifestSet := make(map[string]bool, len(fed.Repos))
+	for _, r := range fed.Repos {
+		manifestSet[strings.ToLower(r.Name)] = true
+	}
+
+	// Per-manifest-repo checks: reachability (AC-3) then link status (AC-1).
+	for _, repo := range fed.Repos {
+		parts := strings.SplitN(repo.Name, "/", 2)
+		if len(parts) != 2 {
+			continue // validated by ReadFederation; skip malformed entry defensively
+		}
+		owner, repoName := parts[0], parts[1]
+
+		_, repoID, fetchErr := deps.FetchOwnerAndRepoIDs(owner, repoName)
+		if fetchErr != nil {
+			// AC-3: repo is not accessible via the API.
+			g.Results = append(g.Results, CheckResult{
+				Name:    fmt.Sprintf("federation-sync:inaccessible:%s", repo.Name),
+				Status:  Fail,
+				Message: fmt.Sprintf("manifest repo %s is not accessible: %v", repo.Name, fetchErr),
+			})
+			continue
+		}
+
+		if !linkedSet[strings.ToLower(repo.Name)] {
+			// AC-1: accessible but not linked to the project.
+			g.Results = append(g.Results, CheckResult{
+				Name:        fmt.Sprintf("federation-sync:not-linked:%s", repo.Name),
+				Status:      Fail,
+				Message:     fmt.Sprintf("manifest repo %s is not linked to the federation project", repo.Name),
+				Data:        repoID,
+				Remediation: "run 'gh agentic repair'",
+			})
+		} else {
+			g.Results = append(g.Results, CheckResult{
+				Name:    fmt.Sprintf("federation-sync:linked:%s", repo.Name),
+				Status:  Pass,
+				Message: fmt.Sprintf("manifest repo %s is linked", repo.Name),
+			})
+		}
+	}
+
+	// AC-2: project-linked repos absent from the manifest.
+	for _, r := range linked {
+		if !manifestSet[strings.ToLower(r.NameWithOwner)] {
+			g.Results = append(g.Results, CheckResult{
+				Name:    fmt.Sprintf("federation-sync:unlisted:%s", r.NameWithOwner),
+				Status:  Warning,
+				Message: fmt.Sprintf("project-linked repo %s is not in FEDERATION.md — add it to the manifest or unlink it from the project", r.NameWithOwner),
+			})
+		}
+	}
+
 	return g
 }
 

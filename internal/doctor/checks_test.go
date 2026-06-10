@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
+	"github.com/eddiecarpenter/gh-agentic/internal/project"
 )
 
 // allLabelsListOutput returns fake `gh label list` output that contains every
@@ -1328,6 +1329,302 @@ func TestCheckLegacyFederationConfig_MultipleItems_MultipleWarnings(t *testing.T
 	for _, r := range g.Results {
 		if r.Status != Warning {
 			t.Errorf("result %q: status got %v, want Warning", r.Name, r.Status)
+		}
+	}
+}
+
+// --- checkFederationProjectSync tests ---
+
+// writeFederationManifest writes a minimal valid FEDERATION.md to root.
+func writeFederationManifest(t *testing.T, root string, repos ...string) {
+	t.Helper()
+	content := "repos:\n"
+	for _, r := range repos {
+		content += fmt.Sprintf("  - name: %s\n    purpose: test repo\n", r)
+	}
+	if err := os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("writing FEDERATION.md: %v", err)
+	}
+}
+
+// fakeFetchLinkedRepos returns a FetchLinkedReposFunc that returns the named repos.
+func fakeFetchLinkedRepos(repos ...string) func(projectID string) ([]project.LinkedRepo, error) {
+	return func(projectID string) ([]project.LinkedRepo, error) {
+		var out []project.LinkedRepo
+		for _, r := range repos {
+			out = append(out, project.LinkedRepo{NameWithOwner: r})
+		}
+		return out, nil
+	}
+}
+
+// fakeFetchOwnerAndRepoIDs returns a FetchOwnerAndRepoIDsFunc that succeeds for
+// listed repos (returning a stable node ID) and errors for all others.
+func fakeFetchOwnerAndRepoIDs(accessible ...string) func(owner, repo string) (string, string, error) {
+	set := make(map[string]bool)
+	for _, r := range accessible {
+		set[strings.ToLower(r)] = true
+	}
+	return func(owner, repo string) (string, string, error) {
+		key := strings.ToLower(owner + "/" + repo)
+		if set[key] {
+			return "ownerID-" + owner, "repoID-" + owner + "-" + repo, nil
+		}
+		return "", "", fmt.Errorf("repo %s/%s not found", owner, repo)
+	}
+}
+
+// TestCheckFederationProjectSync_NoManifest_Pass verifies AC-4: when FEDERATION.md
+// is absent, the check returns a single Pass result (single topology guard).
+func TestCheckFederationProjectSync_NoManifest_Pass(t *testing.T) {
+	root := t.TempDir() // no FEDERATION.md
+	deps := CheckDeps{Root: root}
+
+	g := checkFederationProjectSync(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Pass {
+		t.Errorf("status: got %v, want Pass; message: %q", r.Status, r.Message)
+	}
+	if r.Name != "federation-sync" {
+		t.Errorf("name: got %q, want %q", r.Name, "federation-sync")
+	}
+	if !strings.Contains(r.Message, "skipped") {
+		t.Errorf("message: got %q, want 'skipped'", r.Message)
+	}
+}
+
+// TestCheckFederationProjectSync_InvalidManifest_Warns verifies that a parse
+// error in FEDERATION.md produces a single Warning (checkFederationManifest owns
+// the error; this check defers).
+func TestCheckFederationProjectSync_InvalidManifest_Warns(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("repos: []\n"), 0o644)
+	deps := CheckDeps{Root: root, ProjectID: "PVT_abc"}
+
+	g := checkFederationProjectSync(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	if g.Results[0].Status != Warning {
+		t.Errorf("status: got %v, want Warning; message: %q", g.Results[0].Status, g.Results[0].Message)
+	}
+}
+
+// TestCheckFederationProjectSync_NoProjectID_Warns verifies the guard when
+// AGENTIC_PROJECT_ID is not configured.
+func TestCheckFederationProjectSync_NoProjectID_Warns(t *testing.T) {
+	root := t.TempDir()
+	writeFederationManifest(t, root, "acme/domain")
+	deps := CheckDeps{Root: root, ProjectID: ""} // no project ID
+
+	g := checkFederationProjectSync(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	if g.Results[0].Status != Warning {
+		t.Errorf("status: got %v, want Warning; message: %q", g.Results[0].Status, g.Results[0].Message)
+	}
+	if !strings.Contains(g.Results[0].Message, "AGENTIC_PROJECT_ID") {
+		t.Errorf("message: got %q, want AGENTIC_PROJECT_ID mention", g.Results[0].Message)
+	}
+}
+
+// TestCheckFederationProjectSync_NoGraphQLClient_Warns verifies the guard when
+// FetchLinkedRepos or FetchOwnerAndRepoIDs are nil.
+func TestCheckFederationProjectSync_NoGraphQLClient_Warns(t *testing.T) {
+	root := t.TempDir()
+	writeFederationManifest(t, root, "acme/domain")
+	deps := CheckDeps{
+		Root:      root,
+		ProjectID: "PVT_abc",
+		// FetchLinkedRepos and FetchOwnerAndRepoIDs intentionally nil.
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	if g.Results[0].Status != Warning {
+		t.Errorf("status: got %v, want Warning; message: %q", g.Results[0].Status, g.Results[0].Message)
+	}
+	if !strings.Contains(g.Results[0].Message, "no GraphQL client") {
+		t.Errorf("message: got %q, want 'no GraphQL client'", g.Results[0].Message)
+	}
+}
+
+// TestCheckFederationProjectSync_ManifestRepoLinked_Pass verifies AC-1 happy path:
+// a manifest repo that is linked to the project produces a Pass result.
+func TestCheckFederationProjectSync_ManifestRepoLinked_Pass(t *testing.T) {
+	root := t.TempDir()
+	writeFederationManifest(t, root, "acme/domain")
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos("acme/domain"),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs("acme/domain"),
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Pass {
+		t.Errorf("status: got %v, want Pass; message: %q", r.Status, r.Message)
+	}
+	if r.Name != "federation-sync:linked:acme/domain" {
+		t.Errorf("name: got %q, want federation-sync:linked:acme/domain", r.Name)
+	}
+}
+
+// TestCheckFederationProjectSync_ManifestRepoNotLinked_Fail verifies AC-1: a
+// manifest repo that is accessible but not linked produces a Fail result with
+// the repo node ID in Data and a repair Remediation.
+func TestCheckFederationProjectSync_ManifestRepoNotLinked_Fail(t *testing.T) {
+	root := t.TempDir()
+	writeFederationManifest(t, root, "acme/domain")
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos(), // no repos linked
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs("acme/domain"),
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Fail {
+		t.Errorf("status: got %v, want Fail; message: %q", r.Status, r.Message)
+	}
+	if r.Name != "federation-sync:not-linked:acme/domain" {
+		t.Errorf("name: got %q, want federation-sync:not-linked:acme/domain", r.Name)
+	}
+	if r.Data != "repoID-acme-domain" {
+		t.Errorf("Data: got %v, want repoID-acme-domain", r.Data)
+	}
+	if !strings.Contains(r.Remediation, "gh agentic repair") {
+		t.Errorf("Remediation: got %q, want gh agentic repair mention", r.Remediation)
+	}
+}
+
+// TestCheckFederationProjectSync_ManifestRepoInaccessible_Fail verifies AC-3: a
+// manifest repo that cannot be reached via API produces a Fail result.
+func TestCheckFederationProjectSync_ManifestRepoInaccessible_Fail(t *testing.T) {
+	root := t.TempDir()
+	writeFederationManifest(t, root, "acme/domain")
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos(),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs(), // nothing accessible
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	if len(g.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
+	}
+	r := g.Results[0]
+	if r.Status != Fail {
+		t.Errorf("status: got %v, want Fail; message: %q", r.Status, r.Message)
+	}
+	if r.Name != "federation-sync:inaccessible:acme/domain" {
+		t.Errorf("name: got %q, want federation-sync:inaccessible:acme/domain", r.Name)
+	}
+	if !strings.Contains(r.Message, "not accessible") {
+		t.Errorf("message: got %q, want 'not accessible'", r.Message)
+	}
+}
+
+// TestCheckFederationProjectSync_ProjectLinkedRepoNotInManifest_Warns verifies AC-2:
+// a project-linked repo absent from the manifest produces a Warning.
+func TestCheckFederationProjectSync_ProjectLinkedRepoNotInManifest_Warns(t *testing.T) {
+	root := t.TempDir()
+	writeFederationManifest(t, root, "acme/domain") // manifest has only acme/domain
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos("acme/domain", "acme/extra"), // extra linked
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs("acme/domain"),
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	// acme/domain → Pass (linked)
+	// acme/extra  → Warning (unlisted)
+	if len(g.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d: %+v", len(g.Results), g.Results)
+	}
+	var warnResult *CheckResult
+	for i := range g.Results {
+		if g.Results[i].Status == Warning {
+			warnResult = &g.Results[i]
+		}
+	}
+	if warnResult == nil {
+		t.Fatal("expected a Warning result for unlisted linked repo; got none")
+	}
+	if warnResult.Name != "federation-sync:unlisted:acme/extra" {
+		t.Errorf("name: got %q, want federation-sync:unlisted:acme/extra", warnResult.Name)
+	}
+	if !strings.Contains(warnResult.Message, "FEDERATION.md") {
+		t.Errorf("message: got %q, want FEDERATION.md mention", warnResult.Message)
+	}
+}
+
+// TestCheckFederationProjectSync_WiredInChecklist verifies the new check is
+// wired into checksForTopologyWithLabels for the non-framework-source branch
+// and placed between checkFederationManifest and checkLegacyFederationConfig.
+func TestCheckFederationProjectSync_WiredInChecklist(t *testing.T) {
+	deps := CheckDeps{FrameworkSource: false}
+	steps := checksForTopologyWithLabels(deps)
+
+	var manifestIdx, syncIdx, legacyIdx int
+	manifestIdx, syncIdx, legacyIdx = -1, -1, -1
+	for i, s := range steps {
+		switch s.label {
+		case "Checking federation manifest...":
+			manifestIdx = i
+		case "Checking federation project sync...":
+			syncIdx = i
+		case "Checking legacy federation config...":
+			legacyIdx = i
+		}
+	}
+
+	if syncIdx < 0 {
+		t.Fatal("checkFederationProjectSync not wired into checksForTopologyWithLabels")
+	}
+	if manifestIdx < 0 || legacyIdx < 0 {
+		t.Fatalf("manifest/legacy checks not found: manifestIdx=%d legacyIdx=%d", manifestIdx, legacyIdx)
+	}
+	if !(manifestIdx < syncIdx && syncIdx < legacyIdx) {
+		t.Errorf("wrong order: manifestIdx=%d syncIdx=%d legacyIdx=%d (want manifest < sync < legacy)",
+			manifestIdx, syncIdx, legacyIdx)
+	}
+}
+
+// TestCheckFederationProjectSync_NotWiredForFrameworkSource verifies the new
+// check is NOT present in the framework-source branch (where content-layer
+// checks are skipped and only config-layer checks run).
+func TestCheckFederationProjectSync_NotWiredForFrameworkSource(t *testing.T) {
+	deps := CheckDeps{FrameworkSource: true}
+	steps := checksForTopologyWithLabels(deps)
+
+	for _, s := range steps {
+		if s.label == "Checking federation project sync..." {
+			t.Error("checkFederationProjectSync should not be wired in framework-source mode")
 		}
 	}
 }

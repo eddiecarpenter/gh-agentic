@@ -1,9 +1,9 @@
-# Dev Session Recovery — Feature #824
+# Dev Session Recovery — Feature #827
 
 ## Completed Tasks
-- #828 — Task 1: FEDERATION.md manifest parser and presence detection (commit 0ef5a32)
+(none yet)
 
 ## Current Task
-Task 2 of 7: #829 — Task 2: Simplify topology resolution to manifest-presence detection
-Progress: starting
-Files in flight: internal/project/context.go, internal/project/topology.go, internal/project/context_test.go, internal/project/topology_regression_test.go, internal/project/boundary_test.go
+Task 1 of 3: #836 — Task 1: Add checkFederationProjectSync check function and extend CheckDeps
+Progress: implementing checks.go additions and tests
+Files in flight: internal/doctor/checks.go, internal/doctor/checks_test.go
