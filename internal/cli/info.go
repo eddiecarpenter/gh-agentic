@@ -26,11 +26,16 @@ type infoData struct {
 	installed string
 
 	// project
-	repoLabel    string
-	projectLine  string
-	projectHint  string
-	topology     string
-	controlPlane string
+	repoLabel   string
+	projectLine string
+	projectHint string
+	topology    string // display value: "Single" or "Federation"
+
+	// federation manifest (Feature #824) — populated when FEDERATION.md
+	// is present at the repo root. Exactly one of federationRepos or
+	// federationError will be non-zero when FEDERATION.md is present.
+	federationRepos []project.FederationRepo
+	federationError string
 
 	// framework
 	localVersion  string
@@ -154,12 +159,22 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 	} else {
 		data.projectLine = ctx.ProjectName + " (" + ctx.ProjectID + ")"
 	}
-	// Topology is now a plain string ("single" or "federation") derived
-	// from FEDERATION.md presence at the repo root. Display it directly.
-	data.topology = ctx.Topology
-	// Control-plane display has been removed in Feature #824: the
-	// three-way split (single/federated-cp/federated-domain) is gone.
-	// Task 6 (#833) will add a FEDERATION.md entries display here.
+	// Topology is "single" or "federation" (lowercase from context.Resolve).
+	// Capitalise for display. Feature #824 — topology is binary.
+	if ctx.Topology != "" {
+		data.topology = strings.ToUpper(ctx.Topology[:1]) + ctx.Topology[1:]
+	}
+
+	// Federation manifest (Feature #824): when FEDERATION.md is present,
+	// read and display the repo list. Parse error shown as a warning line.
+	if project.IsFederationRepo(deps.Root) {
+		fed, err := project.ReadFederation(deps.Root)
+		if err != nil {
+			data.federationError = err.Error()
+		} else {
+			data.federationRepos = fed.Repos
+		}
+	}
 
 	// Framework versions.
 	data.localVersion = ctx.LocalAIVersion
@@ -282,8 +297,21 @@ func printInfo(w io.Writer, data *infoData) {
 				fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "", ui.Muted.Render(data.projectHint))
 			}
 			fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Topology:", data.topology)
-			if data.controlPlane != "" {
-				fmt.Fprintf(w, "  %-*s %s\n", infoLabelWidth, "Control plane:", data.controlPlane)
+		}
+	}
+
+	// --- Federation section (shown only when FEDERATION.md is present) ---
+	if len(data.federationRepos) > 0 || data.federationError != "" {
+		fmt.Fprintln(w, "")
+		fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Federation"))
+		fmt.Fprintln(w, "  "+ui.Divider(48))
+		if data.federationError != "" {
+			fmt.Fprintf(w, "  %s\n", ui.StatusWarning.Render("⚠ FEDERATION.md present but could not be parsed: "+data.federationError))
+		} else {
+			fmt.Fprintf(w, "  This is a federation requirements repository.\n")
+			fmt.Fprintf(w, "  Target repositories:\n")
+			for _, repo := range data.federationRepos {
+				fmt.Fprintf(w, "    - %s: %s\n", repo.Name, repo.Purpose)
 			}
 		}
 	}
