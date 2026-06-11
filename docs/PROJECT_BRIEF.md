@@ -33,7 +33,7 @@ phases that genuinely require reasoning (requirements, design, development).
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic upgrade [version]` | Install or change the framework version at `.agents/` (control plane only) |
+| `gh agentic upgrade [version]` | Install or change this repo's pinned framework version at `.agents/` |
 | `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
 | `gh agentic auth login` | Force Claude Code login and push credentials to repo secret |
@@ -73,7 +73,7 @@ The wizard detects the current repository and collects configuration:
 1. **Stack** — Go, Java/Quarkus, Java/Spring Boot, TypeScript/Node.js, Python, Rust, or Other
 2. **Framework version** — which version of the framework to mount
 3. **Configuration** — generates `CLAUDE.md`, `AGENTS.md`, and `LOCALRULES.md`; pins
-   the framework version on the control-plane repo's `AGENTIC_FRAMEWORK_VERSION`
+   the framework version on this repo's `AGENTIC_FRAMEWORK_VERSION`
    variable (read through `project.Resolve`).
 
 ### Steps

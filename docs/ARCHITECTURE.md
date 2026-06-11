@@ -79,12 +79,14 @@ template files directly.
 
 ### How it works
 
-1. **Pinned version** — The framework version is pinned by the
-   `AGENTIC_FRAMEWORK_VERSION` GitHub Actions variable on the control-plane
-   repo. For a single-topology repo the CP is the same repo; for a federated
-   setup the CP broadcasts the version to every domain via this variable.
-   The canonical resolver in `internal/project/` (`project.Resolve`) is the
-   single code path that answers "what version should I mount?".
+1. **Pinned version** — The framework version is pinned per repo by that
+   repo's own `AGENTIC_FRAMEWORK_VERSION` GitHub Actions variable. Every repo
+   resolves its version independently — there is no control-plane broadcast.
+   The canonical resolver in `internal/project/` (`project.Resolve`, reading
+   `AGENTIC_FRAMEWORK_VERSION` on the current repo) is the single code path
+   that answers "what version should I mount?". (Federation does not change
+   this — see the Federation section below; a federation is a scoping-time
+   relationship between repos, not a runtime version-distribution mechanism.)
 
 2. **`.agents/` directory** — The mounted framework. This directory is **gitignored**
    and populated on demand by `gh agentic upgrade` (to change version) or
@@ -104,9 +106,9 @@ template files directly.
    - **Remount** (`mount` with no args, `.agents/` already present at the pinned
      version): re-downloads at the current pinned version. Used after a
      fresh clone or to repair a corrupted `.agents/`.
-   - **Version switch** (`mount <new-version>` or a pinned-version change
-     on the CP): prompts for confirmation, remounts at the new version,
-     updates wrapper-workflow tags.
+   - **Version switch** (`mount <new-version>` or a change to this repo's
+     pinned `AGENTIC_FRAMEWORK_VERSION`): prompts for confirmation, remounts
+     at the new version, updates wrapper-workflow tags.
 
 5. **Reusable workflows** — Domain repos invoke the agentic pipeline via thin
    wrapper workflows in `.github/workflows/` that call reusable workflows
@@ -130,6 +132,69 @@ my-domain-repo/
 └── .github/workflows/
     └── agentic-pipeline.yml  ← wrapper calling reusable workflow
 ```
+
+---
+
+## Federation
+
+Federation is a **scoping-time** concern, not a runtime one. A federation is a
+multi-repo project where requirements are captured in one repo (the requirements
+or umbrella repo, which holds domain knowledge) and the Features scoped from them
+are created in the implementation repos where the work will actually happen. In a
+single-topology project those are the same repo; in a federation they differ —
+and that is the *only* difference. Everything downstream of scoping (design,
+dev-session, compliance-verify, PR review) operates within a single repo and is
+identical to single-topology.
+
+> **Note — earlier model removed.** Federation was previously a runtime concern
+> implemented through a control-plane role that broadcast the framework version,
+> org-level shared-variable routing, a `.cp/` sparse-checkout mount, three-way
+> topology inference, and `Closes owner/repo#N` text parsing for cross-repo links.
+> That model was removed (Requirement #823 / Feature #835). It never ran
+> end-to-end, so there is no production state to migrate. Implementation repos are
+> now plain single-topology repos with no federation-specific configuration.
+
+### `FEDERATION.md` manifest
+
+The presence of a `FEDERATION.md` file at a repo's root is the sole signal that
+the repo is a federation requirements repo. No topology variable, no role
+inference — `project.IsFederationRepo` is a stat-only presence check, and a repo
+without the manifest behaves as single topology (Features are always created in
+the same repo as the requirement). The manifest is a small YAML document listing
+the federation's target implementation repos, each with a purpose:
+
+```yaml
+repos:
+  - name: owner/charging-domain
+    purpose: Charging domain — rating, balance management, charging events
+  - name: owner/billing-domain
+    purpose: Billing domain — invoice generation, bill runs, statements
+```
+
+`project.ReadFederation` parses and validates it (`gh agentic check` surfaces any
+validation error; `gh agentic info` lists the target repos). The manifest gives
+the scoping agent its candidate target set and the human an orientation page.
+
+### How federation works at scoping time
+
+- During scoping in a manifest-bearing repo, the agent proposes a target repo for
+  each Feature from the manifest's purpose descriptions; the human confirms or
+  overrides. A Feature must fit entirely in one repo — a Feature spanning two is
+  split into one Feature per repo at the decomposition checkpoint.
+- Features are created in their target repo and wired as **cross-repo sub-issues**
+  of their requirement (GitHub sub-issues work across repos within the same
+  owner), so a requirement's Feature list and progress are visible natively on the
+  requirement issue regardless of which repos the Features live in.
+- One GitHub Project spans the whole federation. `gh agentic status` answers
+  "where is everything" across all linked repos, and a requirement is closed only
+  when all of its cross-repo Features are complete.
+- `gh agentic check` / `repair` validate that `FEDERATION.md` and the GitHub
+  Project's linked repos stay in sync.
+
+The **placement rule** generalises this: an issue lives in the most specific repo
+that fully contains its scope — Features always fit one implementation repo;
+requirements live in the domain repo that contains them; cross-domain requirements
+live in the umbrella repo.
 
 ---
 
@@ -184,7 +249,7 @@ available to CI runners without manual configuration.
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic upgrade [version]` | Install or change the framework version at `.agents/` (control plane only) |
+| `gh agentic upgrade [version]` | Install or change this repo's pinned framework version at `.agents/` |
 | `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
 | `gh agentic auth` | Manage Claude credentials used by the agent pipeline (login, refresh, check) |
