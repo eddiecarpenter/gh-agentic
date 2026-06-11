@@ -37,7 +37,14 @@ jobs:
         with:
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          # Must use PIPELINE_PAT (not github.token) — releases created with
+          # the built-in github.token do NOT emit a `release: published`
+          # event, so the downstream release-notes workflow (release.yml)
+          # never fires. A PAT-created release does trigger it. The PAT needs
+          # `contents: write` for the release + asset upload. This mirrors the
+          # bump step below, which uses PIPELINE_PAT for the same class of
+          # reason (github.token can't drive downstream automation).
+          GITHUB_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
       # gh-agentic is its own framework source — the pipeline pins to
       # AGENTIC_FRAMEWORK_VERSION, so a release that does not also bump
