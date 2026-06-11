@@ -131,6 +131,30 @@ Every checkout step in the workflow uses `submodules: recursive`, so the submodu
 
 The `gh-agentic` repo itself uses a `.agents -> .` symlink as a documented self-mounting exception (the framework can't submodule itself). The CLI's `upgrade` command refuses to operate on this exception.
 
+### Federation
+
+Most projects are **single-topology**: requirements, features, and code all live in one repo. A **federation** is a multi-repo project where requirements are captured in one repo (which holds the domain knowledge) and the features scoped from them are created in the implementation repos where the work actually happens. Requirements live with domain knowledge; features live with code.
+
+Federation is a **scoping-time concern, not a runtime one** — the *only* difference from single-topology is *where a feature issue gets created*. Everything downstream of scoping (design, dev-session, compliance verify, PR review) runs inside a single repo, unchanged.
+
+A repo becomes a federation requirements repo by adding a **`FEDERATION.md`** manifest at its root — a small YAML file listing the federation's implementation repos and what each is for:
+
+```yaml
+repos:
+  - name: your-org/charging-domain
+    purpose: Charging — rating, balance management, charging events
+  - name: your-org/billing-domain
+    purpose: Billing — invoice generation, bill runs, statements
+```
+
+The manifest's presence is the *sole* signal — no topology variable, no control-plane role. With it in place:
+
+- **Scoping targets the right repo.** When you scope a requirement, the agent proposes a target repo for each feature from the manifest's purposes; you confirm or override. A feature must fit one repo — one spanning two is split at the decomposition checkpoint.
+- **Cross-repo sub-issues keep it coherent.** Each feature is created in its target repo and wired as a sub-issue of its requirement, so the requirement's progress is visible natively no matter where its features live (GitHub sub-issues work across repos within one owner).
+- **One project spans the federation.** `gh agentic status` answers "where is everything" across all linked repos, and a requirement closes only when all of its cross-repo features are done. `gh agentic check` keeps `FEDERATION.md` and the project's linked repos in sync.
+
+Implementation repos stay plain single-topology repos — no federation-specific config. A repo without `FEDERATION.md` behaves exactly as before.
+
 ### The workbench
 
 The interactive phases (Requirements, Scoping, interactive Design) run in any **agentic workbench** — such as [Anthropic Claude Code](https://claude.ai/code), [Block Goose](https://block.github.io/goose/), or [Mistral Le Chat](https://chat.mistral.ai/) — wherever the human prefers to work. The headless phases (`in-design`, `in-development`, `pr-review-session`) always run via Goose in GitHub Actions; that's hard-wired in the reusable workflows.

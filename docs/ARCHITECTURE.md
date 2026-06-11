@@ -27,25 +27,23 @@ gh-agentic/
 │   ├── cli/
 │   │   ├── root.go              ← root command, version flag
 │   │   ├── init.go              ← `gh agentic init` subcommand
-│   │   ├── mount.go             ← `gh agentic mount` subcommand (internal; superseded by upgrade/repair for user flows)
 │   │   ├── auth.go              ← `gh agentic auth` subcommand (login, refresh, check)
 │   │   ├── check.go             ← `gh agentic check` subcommand
 │   │   ├── repair.go            ← `gh agentic repair` subcommand
 │   │   ├── upgrade.go           ← `gh agentic upgrade` subcommand
 │   │   ├── project.go           ← `gh agentic project` subcommand tree
 │   │   ├── info.go              ← `gh agentic info` subcommand
-│   │   ├── status.go            ← `gh agentic status` subcommand
-│   │   └── pipeline.go          ← `gh agentic status pipeline` subcommand
+│   │   ├── framework_source.go  ← framework-source (self-mount) guard
+│   │   ├── status*.go           ← `gh agentic status` subcommands + raw renderers
+│   │   └── pipeline.go / pipeline_cmd.go ← `gh agentic status pipeline`
 │   ├── init/                    ← init wizard logic
-│   ├── mount/                   ← mount logic (first-time, remount, switch)
+│   ├── mount/                   ← submodule mount logic (first-time, version switch, legacy migration)
 │   │   └── templates/           ← embedded templates for generated files
 │   ├── auth/                    ← credential management (login, refresh, check)
-│   ├── doctor/                  ← grouped health checks
-│   ├── project/                 ← agentic-project management (create, join, switch)
+│   ├── doctor/                  ← grouped health checks (check + repair)
+│   ├── project/                 ← agentic-project management + context/version resolver
 │   ├── projectstatus/           ← pipeline status reporting
-│   ├── scope/                   ← shared scope routing for gh variable/secret set
-│   ├── frameworkcheck/          ← framework-sync helpers
-│   ├── tarball/                 ← tarball download and extraction
+│   ├── tarball/                 ← tarball download/extraction (legacy mount helper)
 │   ├── fsutil/                  ← filesystem utilities
 │   ├── testutil/                ← shared test helpers
 │   └── ui/
@@ -58,10 +56,12 @@ gh-agentic/
 │   ├── PROJECT_BRIEF.md
 │   └── ARCHITECTURE.md          ← this file
 ├── .github/workflows/
-│   ├── agentic-pipeline.yml     ← domain repo wrapper workflow
-│   ├── agentic-pipeline-reusable.yml ← reusable pipeline workflow
+│   ├── agentic-pipeline.yml     ← pipeline stages (reusable via workflow_call; also this repo's own pipeline)
+│   ├── add-issue-to-project.yml ← adds new issues to the GitHub Project
 │   ├── build-and-test.yml       ← CI build and test
-│   └── publish-release.yml      ← release publishing
+│   ├── sonarcloud.yml           ← SonarQube deep analysis on PRs
+│   ├── release.yml              ← release-notes generation (reusable via workflow_call)
+│   └── publish-release.yml      ← release binary publishing on tag push
 ├── RULEBOOK.md                  ← agent rulebook (active in all sessions)
 ├── LOCALRULES.md                ← project-specific rule overrides
 ├── AGENTS.md                    ← agent entrypoint (references RULEBOOK + LOCALRULES)
@@ -79,34 +79,41 @@ template files directly.
 
 ### How it works
 
-1. **Pinned version** — The framework version is pinned by the
-   `AGENTIC_FRAMEWORK_VERSION` GitHub Actions variable on the control-plane
-   repo. For a single-topology repo the CP is the same repo; for a federated
-   setup the CP broadcasts the version to every domain via this variable.
-   The canonical resolver in `internal/project/` (`project.Resolve`) is the
-   single code path that answers "what version should I mount?".
+1. **Pinned version** — The framework version is pinned per repo by that
+   repo's own `AGENTIC_FRAMEWORK_VERSION` GitHub Actions variable. Every repo
+   resolves its version independently — there is no control-plane broadcast.
+   The canonical resolver in `internal/project/` (`project.Resolve`, reading
+   `AGENTIC_FRAMEWORK_VERSION` on the current repo) is the single code path
+   that answers "what version should I mount?". (Federation does not change
+   this — see the Federation section below; a federation is a scoping-time
+   relationship between repos, not a runtime version-distribution mechanism.)
 
-2. **`.agents/` directory** — The mounted framework. This directory is **gitignored**
-   and populated on demand by `gh agentic upgrade` (to change version) or
-   `gh agentic repair` (to resync). It is not committed. The cloned framework's
-   own `.git` metadata records the exact tag — that is the local source of truth
-   after the clone runs.
+2. **`.agents/` directory** — The mounted framework, installed as a **tracked
+   git submodule** pointing at `eddiecarpenter/gh-agentic` at the pinned
+   version tag. The submodule pointer (its gitlink, recorded in `.gitmodules`
+   and the parent repo's index) is **committed** — `git submodule status` is
+   the local source of truth for the framework version the repo runs at. On a
+   runner the submodule is populated automatically by `submodules: recursive`
+   on checkout; no separate "mount" step is required.
 
-3. **Fetch mechanism** — `gh agentic upgrade` downloads the framework via
-   `git clone --depth 1 --branch <version>` against the `eddiecarpenter/gh-agentic`
-   release at the pinned version. It extracts framework files (`skills/`,
-   `standards/`, `concepts/`, `recipes/`, `RULEBOOK.md`) into `.agents/`.
+3. **Install / upgrade mechanism** — `gh agentic upgrade` runs the underlying
+   `git submodule` operations (`internal/mount/`) to add or re-point `.agents/`
+   at the requested version tag, so `skills/`, `standards/`, `concepts/`,
+   `recipes/`, and `RULEBOOK.md` are served from that tag. Repos still carrying
+   the **legacy gitignored shallow-clone** mount (`.agents/` listed in
+   `.gitignore`, populated by an un-tracked `git clone`) are auto-migrated to
+   the submodule mount by `gh agentic upgrade` / `gh agentic repair`; the
+   doctor detects the legacy state and strips the stale `.gitignore` entry.
 
-4. **Mount flows** — The mount command supports three flows, all driven by
-   the resolver's answer to "what version is pinned?":
-   - **First-time** (no `.agents/` directory yet): downloads the framework,
-     generates `CLAUDE.md`, `AGENTS.md`, and wrapper workflows.
-   - **Remount** (`mount` with no args, `.agents/` already present at the pinned
-     version): re-downloads at the current pinned version. Used after a
-     fresh clone or to repair a corrupted `.agents/`.
-   - **Version switch** (`mount <new-version>` or a pinned-version change
-     on the CP): prompts for confirmation, remounts at the new version,
-     updates wrapper-workflow tags.
+4. **Mount flows** — `internal/mount/` resolves the current mount state and
+   acts accordingly:
+   - **First-time** (no `.agents/` yet): `git submodule add` at the pinned
+     version, then generate `CLAUDE.md`, `AGENTS.md`, and wrapper workflows.
+   - **Version switch** (`gh agentic upgrade <new-version>`): re-point the
+     submodule at the new tag, update the committed pointer, and update
+     wrapper-workflow tags.
+   - **Legacy migration** (`.agents/` present as a gitignored clone):
+     migrate it to a tracked submodule at the pinned version.
 
 5. **Reusable workflows** — Domain repos invoke the agentic pipeline via thin
    wrapper workflows in `.github/workflows/` that call reusable workflows
@@ -118,7 +125,7 @@ template files directly.
 
 ```
 my-domain-repo/
-├── .agents/                 ← gitignored — mounted framework files
+├── .agents/                 ← tracked submodule → eddiecarpenter/gh-agentic@vX.Y.Z
 │   ├── RULEBOOK.md
 │   ├── skills/
 │   ├── standards/
@@ -130,6 +137,69 @@ my-domain-repo/
 └── .github/workflows/
     └── agentic-pipeline.yml  ← wrapper calling reusable workflow
 ```
+
+---
+
+## Federation
+
+Federation is a **scoping-time** concern, not a runtime one. A federation is a
+multi-repo project where requirements are captured in one repo (the requirements
+or umbrella repo, which holds domain knowledge) and the Features scoped from them
+are created in the implementation repos where the work will actually happen. In a
+single-topology project those are the same repo; in a federation they differ —
+and that is the *only* difference. Everything downstream of scoping (design,
+dev-session, compliance-verify, PR review) operates within a single repo and is
+identical to single-topology.
+
+> **Note — earlier model removed.** Federation was previously a runtime concern
+> implemented through a control-plane role that broadcast the framework version,
+> org-level shared-variable routing, a `.cp/` sparse-checkout mount, three-way
+> topology inference, and `Closes owner/repo#N` text parsing for cross-repo links.
+> That model was removed (Requirement #823 / Feature #835). It never ran
+> end-to-end, so there is no production state to migrate. Implementation repos are
+> now plain single-topology repos with no federation-specific configuration.
+
+### `FEDERATION.md` manifest
+
+The presence of a `FEDERATION.md` file at a repo's root is the sole signal that
+the repo is a federation requirements repo. No topology variable, no role
+inference — `project.IsFederationRepo` is a stat-only presence check, and a repo
+without the manifest behaves as single topology (Features are always created in
+the same repo as the requirement). The manifest is a small YAML document listing
+the federation's target implementation repos, each with a purpose:
+
+```yaml
+repos:
+  - name: owner/charging-domain
+    purpose: Charging domain — rating, balance management, charging events
+  - name: owner/billing-domain
+    purpose: Billing domain — invoice generation, bill runs, statements
+```
+
+`project.ReadFederation` parses and validates it (`gh agentic check` surfaces any
+validation error; `gh agentic info` lists the target repos). The manifest gives
+the scoping agent its candidate target set and the human an orientation page.
+
+### How federation works at scoping time
+
+- During scoping in a manifest-bearing repo, the agent proposes a target repo for
+  each Feature from the manifest's purpose descriptions; the human confirms or
+  overrides. A Feature must fit entirely in one repo — a Feature spanning two is
+  split into one Feature per repo at the decomposition checkpoint.
+- Features are created in their target repo and wired as **cross-repo sub-issues**
+  of their requirement (GitHub sub-issues work across repos within the same
+  owner), so a requirement's Feature list and progress are visible natively on the
+  requirement issue regardless of which repos the Features live in.
+- One GitHub Project spans the whole federation. `gh agentic status` answers
+  "where is everything" across all linked repos, and a requirement is closed only
+  when all of its cross-repo Features are complete.
+- `gh agentic check` / `repair` validate that `FEDERATION.md` and the GitHub
+  Project's linked repos stay in sync.
+
+The **placement rule** generalises this: an issue lives in the most specific repo
+that fully contains its scope — Features always fit one implementation repo;
+requirements live in the domain repo that contains them; cross-domain requirements
+live in the umbrella repo.
 
 ---
 
@@ -184,7 +254,7 @@ available to CI runners without manual configuration.
 | `gh agentic init` | Interactive wizard to initialise a new agentic environment |
 | `gh agentic check` | Verify project membership and pipeline readiness |
 | `gh agentic repair` | Auto-fix issues reported by `check` |
-| `gh agentic upgrade [version]` | Install or change the framework version at `.agents/` (control plane only) |
+| `gh agentic upgrade [version]` | Install or change this repo's pinned framework version at `.agents/` |
 | `gh agentic project` | Manage ongoing project membership — create, join, switch, unlink |
 | `gh agentic info` | Show the current state of this repo's agentic setup |
 | `gh agentic auth` | Manage Claude credentials used by the agent pipeline (login, refresh, check) |
@@ -207,15 +277,15 @@ cmd/gh-agentic/main.go
 - `internal/init/`, `internal/mount/`, `internal/auth/`, `internal/doctor/`
   own their respective business logic. They have no knowledge of cobra.
 - `internal/project/` owns agentic-project management — create, join, switch,
-  unlink — and the shared check/repair helpers that the cobra commands compose.
+  unlink — plus the context/version resolver (`project.Resolve`,
+  `IsFederationRepo`, `ReadFederation`) and the shared check/repair helpers
+  that the cobra commands compose.
 - `internal/ui/` owns the shared colour palette and lipgloss styles. No other
   package defines styles inline.
-- `internal/tarball/` provides shared tarball download and extraction used by
-  both mount and init.
 - `internal/fsutil/` provides filesystem utilities shared across packages.
 - `internal/testutil/` provides shared test helpers.
-- `internal/scope/` provides the shared `ScopeFor` routing used by the lower-
-  level packages (auth, init) and re-exported via `internal/project/`.
+- `internal/tarball/` is a legacy tarball download/extraction helper retained
+  from the pre-submodule mount; it is no longer on the active mount path.
 
 ---
 
