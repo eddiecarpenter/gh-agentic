@@ -27,25 +27,23 @@ gh-agentic/
 │   ├── cli/
 │   │   ├── root.go              ← root command, version flag
 │   │   ├── init.go              ← `gh agentic init` subcommand
-│   │   ├── mount.go             ← `gh agentic mount` subcommand (internal; superseded by upgrade/repair for user flows)
 │   │   ├── auth.go              ← `gh agentic auth` subcommand (login, refresh, check)
 │   │   ├── check.go             ← `gh agentic check` subcommand
 │   │   ├── repair.go            ← `gh agentic repair` subcommand
 │   │   ├── upgrade.go           ← `gh agentic upgrade` subcommand
 │   │   ├── project.go           ← `gh agentic project` subcommand tree
 │   │   ├── info.go              ← `gh agentic info` subcommand
-│   │   ├── status.go            ← `gh agentic status` subcommand
-│   │   └── pipeline.go          ← `gh agentic status pipeline` subcommand
+│   │   ├── framework_source.go  ← framework-source (self-mount) guard
+│   │   ├── status*.go           ← `gh agentic status` subcommands + raw renderers
+│   │   └── pipeline.go / pipeline_cmd.go ← `gh agentic status pipeline`
 │   ├── init/                    ← init wizard logic
-│   ├── mount/                   ← mount logic (first-time, remount, switch)
+│   ├── mount/                   ← submodule mount logic (first-time, version switch, legacy migration)
 │   │   └── templates/           ← embedded templates for generated files
 │   ├── auth/                    ← credential management (login, refresh, check)
-│   ├── doctor/                  ← grouped health checks
-│   ├── project/                 ← agentic-project management (create, join, switch)
+│   ├── doctor/                  ← grouped health checks (check + repair)
+│   ├── project/                 ← agentic-project management + context/version resolver
 │   ├── projectstatus/           ← pipeline status reporting
-│   ├── scope/                   ← shared scope routing for gh variable/secret set
-│   ├── frameworkcheck/          ← framework-sync helpers
-│   ├── tarball/                 ← tarball download and extraction
+│   ├── tarball/                 ← tarball download/extraction (legacy mount helper)
 │   ├── fsutil/                  ← filesystem utilities
 │   ├── testutil/                ← shared test helpers
 │   └── ui/
@@ -58,10 +56,12 @@ gh-agentic/
 │   ├── PROJECT_BRIEF.md
 │   └── ARCHITECTURE.md          ← this file
 ├── .github/workflows/
-│   ├── agentic-pipeline.yml     ← domain repo wrapper workflow
-│   ├── agentic-pipeline-reusable.yml ← reusable pipeline workflow
+│   ├── agentic-pipeline.yml     ← pipeline stages (reusable via workflow_call; also this repo's own pipeline)
+│   ├── add-issue-to-project.yml ← adds new issues to the GitHub Project
 │   ├── build-and-test.yml       ← CI build and test
-│   └── publish-release.yml      ← release publishing
+│   ├── sonarcloud.yml           ← SonarQube deep analysis on PRs
+│   ├── release.yml              ← release-notes generation (reusable via workflow_call)
+│   └── publish-release.yml      ← release binary publishing on tag push
 ├── RULEBOOK.md                  ← agent rulebook (active in all sessions)
 ├── LOCALRULES.md                ← project-specific rule overrides
 ├── AGENTS.md                    ← agent entrypoint (references RULEBOOK + LOCALRULES)
@@ -277,15 +277,15 @@ cmd/gh-agentic/main.go
 - `internal/init/`, `internal/mount/`, `internal/auth/`, `internal/doctor/`
   own their respective business logic. They have no knowledge of cobra.
 - `internal/project/` owns agentic-project management — create, join, switch,
-  unlink — and the shared check/repair helpers that the cobra commands compose.
+  unlink — plus the context/version resolver (`project.Resolve`,
+  `IsFederationRepo`, `ReadFederation`) and the shared check/repair helpers
+  that the cobra commands compose.
 - `internal/ui/` owns the shared colour palette and lipgloss styles. No other
   package defines styles inline.
-- `internal/tarball/` provides shared tarball download and extraction used by
-  both mount and init.
 - `internal/fsutil/` provides filesystem utilities shared across packages.
 - `internal/testutil/` provides shared test helpers.
-- `internal/scope/` provides the shared `ScopeFor` routing used by the lower-
-  level packages (auth, init) and re-exported via `internal/project/`.
+- `internal/tarball/` is a legacy tarball download/extraction helper retained
+  from the pre-submodule mount; it is no longer on the active mount path.
 
 ---
 
