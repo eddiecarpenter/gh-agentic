@@ -88,27 +88,32 @@ template files directly.
    this — see the Federation section below; a federation is a scoping-time
    relationship between repos, not a runtime version-distribution mechanism.)
 
-2. **`.agents/` directory** — The mounted framework. This directory is **gitignored**
-   and populated on demand by `gh agentic upgrade` (to change version) or
-   `gh agentic repair` (to resync). It is not committed. The cloned framework's
-   own `.git` metadata records the exact tag — that is the local source of truth
-   after the clone runs.
+2. **`.agents/` directory** — The mounted framework, installed as a **tracked
+   git submodule** pointing at `eddiecarpenter/gh-agentic` at the pinned
+   version tag. The submodule pointer (its gitlink, recorded in `.gitmodules`
+   and the parent repo's index) is **committed** — `git submodule status` is
+   the local source of truth for the framework version the repo runs at. On a
+   runner the submodule is populated automatically by `submodules: recursive`
+   on checkout; no separate "mount" step is required.
 
-3. **Fetch mechanism** — `gh agentic upgrade` downloads the framework via
-   `git clone --depth 1 --branch <version>` against the `eddiecarpenter/gh-agentic`
-   release at the pinned version. It extracts framework files (`skills/`,
-   `standards/`, `concepts/`, `recipes/`, `RULEBOOK.md`) into `.agents/`.
+3. **Install / upgrade mechanism** — `gh agentic upgrade` runs the underlying
+   `git submodule` operations (`internal/mount/`) to add or re-point `.agents/`
+   at the requested version tag, so `skills/`, `standards/`, `concepts/`,
+   `recipes/`, and `RULEBOOK.md` are served from that tag. Repos still carrying
+   the **legacy gitignored shallow-clone** mount (`.agents/` listed in
+   `.gitignore`, populated by an un-tracked `git clone`) are auto-migrated to
+   the submodule mount by `gh agentic upgrade` / `gh agentic repair`; the
+   doctor detects the legacy state and strips the stale `.gitignore` entry.
 
-4. **Mount flows** — The mount command supports three flows, all driven by
-   the resolver's answer to "what version is pinned?":
-   - **First-time** (no `.agents/` directory yet): downloads the framework,
-     generates `CLAUDE.md`, `AGENTS.md`, and wrapper workflows.
-   - **Remount** (`mount` with no args, `.agents/` already present at the pinned
-     version): re-downloads at the current pinned version. Used after a
-     fresh clone or to repair a corrupted `.agents/`.
-   - **Version switch** (`mount <new-version>` or a change to this repo's
-     pinned `AGENTIC_FRAMEWORK_VERSION`): prompts for confirmation, remounts
-     at the new version, updates wrapper-workflow tags.
+4. **Mount flows** — `internal/mount/` resolves the current mount state and
+   acts accordingly:
+   - **First-time** (no `.agents/` yet): `git submodule add` at the pinned
+     version, then generate `CLAUDE.md`, `AGENTS.md`, and wrapper workflows.
+   - **Version switch** (`gh agentic upgrade <new-version>`): re-point the
+     submodule at the new tag, update the committed pointer, and update
+     wrapper-workflow tags.
+   - **Legacy migration** (`.agents/` present as a gitignored clone):
+     migrate it to a tracked submodule at the pinned version.
 
 5. **Reusable workflows** — Domain repos invoke the agentic pipeline via thin
    wrapper workflows in `.github/workflows/` that call reusable workflows
@@ -120,7 +125,7 @@ template files directly.
 
 ```
 my-domain-repo/
-├── .agents/                 ← gitignored — mounted framework files
+├── .agents/                 ← tracked submodule → eddiecarpenter/gh-agentic@vX.Y.Z
 │   ├── RULEBOOK.md
 │   ├── skills/
 │   ├── standards/
