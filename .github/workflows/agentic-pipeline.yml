@@ -19,8 +19,8 @@ name: Agentic Pipeline
 #     permissions are declared. Cannot be used where an event must trigger
 #     another workflow run (GitHub platform restriction).
 #
-#   PIPELINE_PAT — a fine-grained PAT with Issues:write, Pull-requests:write,
-#     and Secrets:write. Required for two distinct reasons:
+#   PIPELINE_PAT — a fine-grained PAT with Contents:write, Issues:write,
+#     Pull-requests:write, and Secrets:write. Required for two distinct reasons:
 #       (a) Label applications that must fire a downstream workflow run
 #           (in-development, in-verification, in-review): github.token events
 #           cannot trigger other workflow runs.

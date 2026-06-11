@@ -43,7 +43,6 @@ gh-agentic/
 │   ├── doctor/                  ← grouped health checks (check + repair)
 │   ├── project/                 ← agentic-project management + context/version resolver
 │   ├── projectstatus/           ← pipeline status reporting
-│   ├── tarball/                 ← tarball download/extraction (legacy mount helper)
 │   ├── fsutil/                  ← filesystem utilities
 │   ├── testutil/                ← shared test helpers
 │   └── ui/
@@ -284,8 +283,6 @@ cmd/gh-agentic/main.go
   package defines styles inline.
 - `internal/fsutil/` provides filesystem utilities shared across packages.
 - `internal/testutil/` provides shared test helpers.
-- `internal/tarball/` is a legacy tarball download/extraction helper retained
-  from the pre-submodule mount; it is no longer on the active mount path.
 
 ---
 
