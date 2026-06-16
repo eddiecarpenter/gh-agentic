@@ -243,6 +243,8 @@ Subcommands and flags:
   - `--interactive` (`-i`)
 - `gh agentic project unlink`
   - `--yes` (`-y`)
+- `gh agentic project control-plane` — print the control-plane repo (the linked repo bearing FEDERATION.md) for this repo's project.
+  - `--raw` — print only `owner/repo` on stdout; prints nothing and exits 0 for single topology (no separate control plane). Used by the CP-rooted checkout composite action to discover the control plane.
 
 ### `gh agentic status` (group)
 
