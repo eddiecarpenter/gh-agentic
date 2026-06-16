@@ -306,37 +306,23 @@ func resolveProjectID(deps project.Deps, arg string) (string, error) {
 	return "", fmt.Errorf("no project named %q found for %s", arg, deps.Owner)
 }
 
-// newProjectJoinCmd constructs the `gh agentic project join` subcommand.
+// newProjectJoinCmd constructs the `gh agentic project join` subcommand. Run on
+// the control plane, it registers a domain repo (pure code — no framework mount).
 func newProjectJoinCmd() *cobra.Command {
-	var list, interactive bool
+	var domain, purpose, domainPurpose string
 
 	cmd := &cobra.Command{
-		Use:   "join [project-name]",
-		Short: "Join an existing project as a domain repo",
-		Long: `Bring this repo into an existing project as a domain repo.
+		Use:   "join <owner/repo>",
+		Short: "Register a domain repo with this control plane (no framework mount)",
+		Long: `Register a domain repository with this federated control plane.
 
-For interactive first-time setup, prefer 'project init' — it guides you through
-topology selection and runs this step automatically.
-
-Use this command directly when scripting or re-joining after an unlink. The
-project name is matched case-insensitively; quote names that contain spaces.`,
-		Example: `  # List available projects
-  gh agentic project join --list
-
-  # Interactive — select from the list
-  gh agentic project join --interactive
-
-  # Direct — provide the project name (quote names with spaces)
-  gh agentic project join "My Agentic Project"`,
-		Args: cobra.MaximumNArgs(1),
+Run on the control plane. Adds <owner/repo> to the domain-grouped FEDERATION.md
+under --domain (creating the domain if it does not exist yet), links the repo to
+the GitHub Project, and sets AGENTIC_PROJECT_ID on the target repo. The domain
+repo is pure code — no framework is mounted into it.`,
+		Example: `  gh agentic project join acme/billing-svc --domain billing --purpose "Bill runs"`,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// No flags and no args — show help.
-			if !list && !interactive && len(args) == 0 {
-				return cmd.Help()
-			}
-
-			// Refuse on the framework source. Joining another project
-			// would overwrite the framework's own AGENTIC_PROJECT_ID.
 			root, rerr := os.Getwd()
 			if rerr != nil {
 				return fmt.Errorf("resolving working directory: %w", rerr)
@@ -344,101 +330,66 @@ project name is matched case-insensitively; quote names that contain spaces.`,
 			if err := refuseIfFrameworkSource(cmd, root, "project join"); err != nil {
 				return err
 			}
+			if strings.TrimSpace(domain) == "" {
+				return fmt.Errorf("--domain is required (the domain the repo belongs to)")
+			}
+			parts := strings.SplitN(args[0], "/", 2)
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+				return fmt.Errorf("expected <owner/repo>, got %q", args[0])
+			}
+			targetOwner, targetRepo := parts[0], parts[1]
 
 			deps, err := resolveProjectDeps()
 			if err != nil {
 				return err
 			}
-
-			// --list: print available projects and exit.
-			if list {
-				return printAvailableProjects(cmd, deps)
+			ctx, err := project.Resolve(deps)
+			if err != nil {
+				return err
+			}
+			if ctx == nil || ctx.ProjectID == "" {
+				return fmt.Errorf("this repo is not a control plane (no agentic project) — run 'gh agentic project create' first")
 			}
 
-			projectID := ""
-			if len(args) == 1 {
-				projectID, err = resolveProjectID(deps, args[0])
+			// A new domain needs a purpose collected before JoinDomain creates it.
+			newDomain := true
+			if fed, ferr := project.ReadFederation(deps.Root); ferr == nil {
+				newDomain = !fed.HasDomain(domain)
+			}
+			if strings.TrimSpace(purpose) == "" {
+				purpose, err = promptText(fmt.Sprintf("Purpose of %s within the federation", args[0]))
 				if err != nil {
 					return err
 				}
-			} else {
-				// --interactive: show pre-guard warning then project picker.
-				preGuard, err := project.EvalPreJoinWarning(deps)
+			}
+			if newDomain && strings.TrimSpace(domainPurpose) == "" {
+				domainPurpose, err = promptText(fmt.Sprintf("Purpose of the new domain %q", domain))
 				if err != nil {
-					return fmt.Errorf("pre-join check: %w", err)
-				}
-				switch preGuard.Guard {
-				case project.JoinGuardBlocked:
-					return fmt.Errorf("%s", preGuard.Message)
-				case project.JoinGuardWarnConfirm:
-					fmt.Fprintf(cmd.OutOrStdout(), "  %s  %s\n\n", ui.StatusWarning.Render("⚠"), preGuard.Message)
-					ok, err := deps.Confirm("Proceed?")
-					if err != nil {
-						return fmt.Errorf("confirmation failed: %w", err)
-					}
-					if !ok {
-						return fmt.Errorf("aborted by user")
-					}
-				}
-
-				ownerType, err := deps.DetectOwnerType(deps.Owner)
-				if err != nil {
-					ownerType = "User"
-				}
-
-				var projects []project.ProjectInfo
-				var fetchErr error
-				_ = ui.RunWithSpinner(cmd.OutOrStdout(), "Fetching agentic projects...", func() error {
-					projects, fetchErr = deps.FetchProjectsForOwner(deps.Owner, ownerType)
-					return fetchErr
-				})
-				if fetchErr != nil {
-					return fmt.Errorf("fetching projects: %w", fetchErr)
-				}
-				if len(projects) == 0 {
-					return fmt.Errorf("no projects found for %s", deps.Owner)
-				}
-
-				currentID := currentProjectID(deps)
-
-				var options []huh.Option[string]
-				for _, p := range projects {
-					label := p.Title
-					if p.ID == currentID {
-						label += " (current)"
-					}
-					options = append(options, huh.NewOption(label, p.ID))
-				}
-
-				form := huh.NewForm(
-					huh.NewGroup(
-						huh.NewSelect[string]().
-							Title("Select project").
-							Description("GitHub ProjectV2 to affiliate this repository with").
-							Options(options...).
-							Value(&projectID),
-					),
-				)
-				if err := form.Run(); err != nil {
-					return fmt.Errorf("form error: %w", err)
+					return err
 				}
 			}
 
-			if projectID == "" {
-				return fmt.Errorf("project name is required")
-			}
-
-			if len(args) == 1 {
-				return project.Join(cmd.OutOrStdout(), deps, projectID)
-			}
-			return project.JoinConfirmed(cmd.OutOrStdout(), deps, projectID)
+			return project.JoinDomain(cmd.OutOrStdout(), deps, ctx.ProjectID, targetOwner, targetRepo, domain, domainPurpose, purpose)
 		},
 	}
 
-	cmd.Flags().BoolVarP(&list, "list", "l", false, "list available projects and exit")
-	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "select project interactively")
+	cmd.Flags().StringVar(&domain, "domain", "", "domain the repo belongs to (required)")
+	cmd.Flags().StringVar(&purpose, "purpose", "", "the repo's purpose within its domain")
+	cmd.Flags().StringVar(&domainPurpose, "domain-purpose", "", "purpose of the domain (used when creating a new domain)")
 
 	return cmd
+}
+
+// promptText runs a single huh text input and returns the trimmed, non-empty value.
+func promptText(title string) (string, error) {
+	var v string
+	if err := huh.NewForm(huh.NewGroup(huh.NewInput().Title(title).Value(&v))).Run(); err != nil {
+		return "", fmt.Errorf("input form: %w", err)
+	}
+	if strings.TrimSpace(v) == "" {
+		return "", fmt.Errorf("%q is required", title)
+	}
+	return v, nil
 }
 
 // printAvailableProjects fetches and prints the projects available to the owner.

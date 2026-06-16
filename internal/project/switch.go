@@ -17,7 +17,17 @@ func SwitchProject(w io.Writer, deps Deps, newProjectID string) error {
 	if err != nil || currentID == "" {
 		return fmt.Errorf("this repo is not affiliated with a project — run 'gh agentic project init' first")
 	}
-	return JoinConfirmed(w, deps, newProjectID)
+	if currentID == newProjectID {
+		fmt.Fprintf(w, "  %s  this repo is already part of agentic project %s\n\n", ui.StatusOK.Render("✓"), ProjectDisplayName(deps, newProjectID))
+		return nil
+	}
+	// Re-point AGENTIC_PROJECT_ID. No framework mount — switching membership is
+	// metadata only (domain repos are pure code; the control plane carries the mount).
+	if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName, newProjectID); err != nil {
+		return fmt.Errorf("setting %s: %w", ProjectVarName, err)
+	}
+	fmt.Fprintf(w, "  %s  Moved to agentic project %s\n\n", ui.StatusOK.Render("✓"), ProjectDisplayName(deps, newProjectID))
+	return nil
 }
 
 // SwitchVersionPreflight holds the pre-resolved data from preflight checks,

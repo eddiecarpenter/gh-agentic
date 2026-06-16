@@ -144,7 +144,7 @@ func TestProjectCmd_SubcommandsRegistered(t *testing.T) {
 
 	// project group now holds only lifecycle operations.
 	// init/check/repair/upgrade are top-level commands.
-	for _, want := range []string{"create [title]", "join [project-name]", "unlink", "switch [project-name]"} {
+	for _, want := range []string{"create [title]", "join <owner/repo>", "unlink", "switch [project-name]"} {
 		if !subs[want] {
 			t.Errorf("subcommand %q not registered under project", want)
 		}

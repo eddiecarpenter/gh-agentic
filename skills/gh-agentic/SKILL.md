@@ -234,10 +234,12 @@ Subcommands and flags:
 - `gh agentic project create [title]`
   - `--version` — framework version to mount (default: latest).
   - `--interactive` (`-i`) — collect title + version via form.
-- `gh agentic project join [project-name]` — inline app-install check.
-  - `--list` (`-l`)
-  - `--interactive` (`-i`)
-  - `--skip-app-install`
+- `gh agentic project join <owner/repo>` — CP-side: register a domain repo with
+  this control plane (writes `FEDERATION.md`, links the Project, sets the target
+  repo's `AGENTIC_PROJECT_ID`; **no framework mount** — domain repos are pure code).
+  - `--domain` — domain the repo belongs to (required; lazy-created if new).
+  - `--purpose` — the repo's purpose within its domain.
+  - `--domain-purpose` — purpose of the domain (used when creating a new domain).
 - `gh agentic project switch [project-name]`
   - `--list` (`-l`)
   - `--interactive` (`-i`)
@@ -442,8 +444,9 @@ Bypass via `--skip-app-install`.
   idempotent. Run it whenever `check` reports failures.
 - **Always re-run `check` after `repair`** — confirm the repair
   succeeded.
-- **Do not run `project join` on an uninitialised repo** — run
-  `gh agentic init` first.
+- **Run `project join` on the control plane** — it registers a named domain
+  repo (`<owner/repo> --domain`) into the federation; it does not affect the
+  current repo or mount the framework.
 - **Use `--raw` for every programmatic read.** Never parse the
   human table.
 - **Use `--raw --verbose` only when timestamps are actually needed.**
@@ -451,7 +454,7 @@ Bypass via `--skip-app-install`.
 - **The `kanban` flag was removed.** Use `gh agentic status pipeline
   --requirements` or `--features`.
 - **The `--json` flag was removed end-to-end.** Use `--raw`.
-- **App install check is inline in `init` and `project join`.**
-  Neither blocks on the install flow. Scrape stdout for the install
-  URL prefix `https://github.com/apps/` or use `--skip-app-install`
-  when the install state is known-good out-of-band.
+- **App install check is inline in `init`.** It does not block on the
+  install flow. Scrape stdout for the install URL prefix
+  `https://github.com/apps/` or use `--skip-app-install` when the install
+  state is known-good out-of-band.

@@ -9,171 +9,69 @@ import (
 	"testing"
 )
 
-// --- Join ---
+// --- JoinDomain ---
 
-func TestJoin_Clear_SetsVariable(t *testing.T) {
+func TestJoinDomain_RegistersRepo_NoMount(t *testing.T) {
 	tmp := t.TempDir()
-	withFakeInstall(t)
-
-	var setVar string
-	deps := testDeps("owner", "repo")
+	deps := testDeps("cp-owner", "cp")
 	deps.Root = tmp
-	deps.GetRepoVariable = func(o, r, n string) (string, error) {
-		return "", errors.New("not set")
-	}
+	var setOwner, setRepo, setVal string
 	deps.SetRepoVariable = func(o, r, n, v string) error {
 		if n == ProjectVarName {
-			setVar = v
+			setOwner, setRepo, setVal = o, r, v
 		}
 		return nil
 	}
-	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
-
-	var buf bytes.Buffer
-	if err := Join(&buf, deps, "PVT_target"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	deps.FetchOwnerAndRepoIDs = func(o, r string) (string, string, error) {
+		return "ownerID", "repoID-" + r, nil
 	}
-
-	if setVar != "PVT_target" {
-		t.Errorf("expected AGENTIC_PROJECT_ID set to PVT_target, got %q", setVar)
-	}
-
-	// .agents/ should now exist via the install stub.
-	if _, err := os.Stat(filepath.Join(tmp, ".agents", "RULEBOOK.md")); err != nil {
-		t.Errorf("expected .agents/RULEBOOK.md to exist after install: %v", err)
-	}
-}
-
-func TestJoin_SameProject_NoOp(t *testing.T) {
-	deps := testDeps("owner", "repo")
-	deps.GetRepoVariable = func(o, r, n string) (string, error) {
-		return "PVT_same", nil
-	}
-
-	var setCalled bool
-	deps.SetRepoVariable = func(o, r, n, v string) error {
-		setCalled = true
+	var linkedRepoID string
+	deps.LinkRepoToProject = func(projectID, repoID string) error {
+		linkedRepoID = repoID
 		return nil
 	}
 
 	var buf bytes.Buffer
-	if err := Join(&buf, deps, "PVT_same"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err := JoinDomain(&buf, deps, "PVT_cp", "cp-owner", "billing-svc", "billing", "Billing domain", "Bill runs"); err != nil {
+		t.Fatalf("JoinDomain: %v", err)
 	}
-	if setCalled {
-		t.Error("expected SetRepoVariable NOT to be called for same project")
+
+	fed, err := ReadFederation(tmp)
+	if err != nil {
+		t.Fatalf("ReadFederation after join: %v", err)
+	}
+	if !fed.HasDomain("billing") {
+		t.Error("expected the billing domain to be created")
+	}
+	all := fed.AllRepos()
+	if len(all) != 1 || all[0].Name != "cp-owner/billing-svc" {
+		t.Errorf("expected cp-owner/billing-svc registered, got %+v", all)
+	}
+	if setOwner != "cp-owner" || setRepo != "billing-svc" || setVal != "PVT_cp" {
+		t.Errorf("expected AGENTIC_PROJECT_ID=PVT_cp on cp-owner/billing-svc, got %s/%s=%s", setOwner, setRepo, setVal)
+	}
+	if linkedRepoID != "repoID-billing-svc" {
+		t.Errorf("expected the target repo linked to the project, got %q", linkedRepoID)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, ".agents")); !os.IsNotExist(err) {
+		t.Error("JoinDomain must not mount the framework into the control-plane working dir")
 	}
 }
 
-func TestJoin_WarnConfirm_Confirmed(t *testing.T) {
+func TestJoinDomain_RejectsDuplicateRepo(t *testing.T) {
 	tmp := t.TempDir()
-	withFakeInstall(t)
-
-	deps := testDeps("owner", "repo")
+	deps := testDeps("cp-owner", "cp")
 	deps.Root = tmp
-	deps.GetRepoVariable = func(o, r, n string) (string, error) {
-		return "PVT_old", nil
-	}
-	// Federated → WarnConfirm.
-	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
-		return []LinkedRepo{{Name: "other", NameWithOwner: "owner/other"}}, nil
-	}
-	deps.Confirm = func(prompt string) (bool, error) { return true, nil }
-
-	var setVar string
-	deps.SetRepoVariable = func(o, r, n, v string) error {
-		setVar = v
-		return nil
-	}
-	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
-
-	var buf bytes.Buffer
-	if err := Join(&buf, deps, "PVT_new"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if setVar != "PVT_new" {
-		t.Errorf("expected AGENTIC_PROJECT_ID set to PVT_new, got %q", setVar)
-	}
-}
-
-func TestJoin_WarnConfirm_Denied(t *testing.T) {
-	deps := testDeps("owner", "repo")
-	deps.GetRepoVariable = func(o, r, n string) (string, error) {
-		return "PVT_old", nil
-	}
-	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
-		return []LinkedRepo{{Name: "other", NameWithOwner: "owner/other"}}, nil
-	}
-	deps.Confirm = func(prompt string) (bool, error) { return false, nil }
-
-	var buf bytes.Buffer
-	err := Join(&buf, deps, "PVT_new")
-	if err == nil {
-		t.Fatal("expected error when user denies confirmation")
-	}
-	if !strings.Contains(err.Error(), "aborted") {
-		t.Errorf("expected 'aborted' in error, got: %v", err)
-	}
-}
-
-func TestJoin_Blocked(t *testing.T) {
-	tmp := t.TempDir()
-	docsDir := tmp + "/docs"
-	if err := os.MkdirAll(docsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(docsDir+"/readme.md", []byte("content"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	deps := testDeps("owner", "repo")
-	deps.Root = tmp
-	deps.GetRepoVariable = func(o, r, n string) (string, error) {
-		return "PVT_old", nil
-	}
-	// Single topology + docs content → Blocked.
-	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
-		return []LinkedRepo{{Name: "repo", NameWithOwner: "owner/repo"}}, nil
-	}
-
-	var buf bytes.Buffer
-	err := Join(&buf, deps, "PVT_new")
-	if err == nil {
-		t.Fatal("expected error when join is blocked")
-	}
-	if !strings.Contains(err.Error(), "blocked") {
-		t.Errorf("expected 'blocked' in error, got: %v", err)
-	}
-}
-
-func TestJoin_FrameworkAlreadyMounted(t *testing.T) {
-	tmp := t.TempDir()
-	// Create .agents/ to simulate already mounted.
-	aiDir := tmp + "/.agents"
-	if err := os.MkdirAll(aiDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	deps := testDeps("owner", "repo")
-	deps.Root = tmp
-	deps.GetRepoVariable = func(o, r, n string) (string, error) {
-		return "", errors.New("not set")
-	}
 	deps.SetRepoVariable = func(o, r, n, v string) error { return nil }
-	deps.ReadAIVersion = func(root string) (string, error) { return "v2.0.10", nil }
-
-	var cloneCalled bool
-	deps.Clone = func(repoURL, tag, destDir string) error {
-		cloneCalled = true
-		return nil
-	}
+	deps.FetchOwnerAndRepoIDs = func(o, r string) (string, string, error) { return "o", "r", nil }
+	deps.LinkRepoToProject = func(p, r string) error { return nil }
 
 	var buf bytes.Buffer
-	if err := Join(&buf, deps, "PVT_target"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err := JoinDomain(&buf, deps, "PVT_cp", "cp-owner", "svc", "charging", "C", "p"); err != nil {
+		t.Fatalf("first JoinDomain: %v", err)
 	}
-	if cloneCalled {
-		t.Error("expected Clone NOT to be called when .agents/ already exists")
+	if err := JoinDomain(&buf, deps, "PVT_cp", "cp-owner", "svc", "billing", "B", "p"); err == nil {
+		t.Fatal("expected a duplicate-repo error on re-registering the same repo")
 	}
 }
 
