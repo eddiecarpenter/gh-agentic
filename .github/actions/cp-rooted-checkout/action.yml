@@ -111,10 +111,11 @@ runs:
         gh repo clone "${CP_REPO}" "${cp_dir}" -- --branch main --recurse-submodules "${depth_args[@]}"
 
         # Ensure the nested work dir can never be committed into the control plane.
+        # Use the repo-local exclude file, NOT the tracked .gitignore — validated
+        # on a real runner (#866): editing .gitignore dirties `git status`, whereas
+        # .git/info/exclude keeps the CP working tree pristine.
         mkdir -p "${cp_dir}/.work"
-        if ! grep -qxF '.work/' "${cp_dir}/.gitignore" 2>/dev/null; then
-          echo '.work/' >> "${cp_dir}/.gitignore"
-        fi
+        echo '/.work/' >> "${cp_dir}/.git/info/exclude"
 
         # Target repo @ target-ref into the gitignored work dir (writable surface).
         mkdir -p "$(dirname "${work_dir}")"
