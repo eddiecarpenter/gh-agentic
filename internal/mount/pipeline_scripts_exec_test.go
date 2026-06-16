@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -189,84 +190,69 @@ func TestExtractFeatureIssueNumber(t *testing.T) {
 }
 
 // -------------------------------------------------------------------
-// Test: dev-session "Resolve feature branch"
+// Test: dev-session "Resolve target repo and feature branch" (#873)
 //
-// Calls curl against the GitHub API and parses the JSON branch list
-// with jq. Mock curl to return a fixed JSON payload; verify the script
-// extracts the right branch name.
+// Resolves the TARGET repo via `gh agentic feature target <N> --raw`,
+// then the feature branch within it via `gh api .../branches --paginate
+// --jq .[].name`. Mock gh: `extension install` is a no-op, `agentic`
+// returns the target, `api` emits one branch name per line (emulating
+// the --jq projection). Verify repo + branch outputs.
 // -------------------------------------------------------------------
 
+// ghResolveStub returns a `gh` stub script: extension install → no-op,
+// `gh agentic ...` → the given target repo, `gh api ...` → the given
+// newline-separated branch names (the gh --jq projection).
+func ghResolveStub(target string, branches ...string) string {
+	body := "if [ \"$1\" = \"extension\" ]; then exit 0; fi\n"
+	body += "if [ \"$1\" = \"agentic\" ]; then echo \"" + target + "\"; exit 0; fi\n"
+	body += "if [ \"$1\" = \"api\" ]; then\n"
+	for _, b := range branches {
+		body += "  echo \"" + b + "\"\n"
+	}
+	body += "  exit 0\nfi\n"
+	return body
+}
+
+func resolveEnv(issue, ghOut string) map[string]string {
+	return map[string]string{
+		"GH_TOKEN":        "stub-token",
+		"GH_REPO":         "owner/cp-repo",
+		"AGENTIC_VERSION": "v9.9.9",
+		"ISSUE":           issue,
+		"GITHUB_OUTPUT":   ghOut,
+	}
+}
+
 func TestResolveFeatureBranch_HappyPath(t *testing.T) {
-	script := scriptByName(t, "dev-session", "Resolve feature branch")
+	script := scriptByName(t, "dev-session", "Resolve target repo and feature branch")
 
 	stubDir, ghOut := makeStubDir(t)
-	// curl stub returns a JSON branch list when page=1; empty page=2.
-	writeStub(t, stubDir, "curl", `
-# Last arg is the URL. Extract the page query parameter.
-URL="${@: -1}"
-case "$URL" in
-  *\&page=1)
-    cat <<'JSON'
-[
-  {"name": "main"},
-  {"name": "feature/41-other-thing"},
-  {"name": "feature/42-add-login"},
-  {"name": "develop"}
-]
-JSON
-    ;;
-  *\&page=2)
-    echo '[]'
-    ;;
-esac
-`)
-	// jq is real (universal command).
+	writeStub(t, stubDir, "gh", ghResolveStub(
+		"owner/target-repo",
+		"main", "feature/41-other-thing", "feature/42-add-login", "develop"))
 
-	env := map[string]string{
-		"GH_TOKEN":      "stub-token",
-		"REPO":          "owner/repo",
-		"ISSUE":         "42",
-		"GITHUB_OUTPUT": ghOut,
-	}
-	stdout, stderr, code := runScript(t, script, stubDir, env)
+	stdout, stderr, code := runScript(t, script, stubDir, resolveEnv("42", ghOut))
 	if code != 0 {
 		t.Fatalf("script exited %d: stdout=%s stderr=%s", code, stdout, stderr)
 	}
 	out := readOutput(t, ghOut)
+	if got, want := out["repo"], "owner/target-repo"; got != want {
+		t.Errorf("repo = %q, want %q (stdout=%q)", got, want, stdout)
+	}
 	if got, want := out["name"], "feature/42-add-login"; got != want {
 		t.Errorf("name = %q, want %q (stdout=%q)", got, want, stdout)
 	}
 }
 
 func TestResolveFeatureBranch_NoMatch(t *testing.T) {
-	script := scriptByName(t, "dev-session", "Resolve feature branch")
+	script := scriptByName(t, "dev-session", "Resolve target repo and feature branch")
 
 	stubDir, ghOut := makeStubDir(t)
-	writeStub(t, stubDir, "curl", `
-URL="${@: -1}"
-case "$URL" in
-  *\&page=1)
-    cat <<'JSON'
-[
-  {"name": "main"},
-  {"name": "feature/41-other-thing"},
-  {"name": "develop"}
-]
-JSON
-    ;;
-  *\&page=2)
-    echo '[]'
-    ;;
-esac
-`)
+	writeStub(t, stubDir, "gh", ghResolveStub(
+		"owner/target-repo",
+		"main", "feature/41-other-thing", "develop"))
 
-	env := map[string]string{
-		"GH_TOKEN":      "stub-token",
-		"REPO":          "owner/repo",
-		"ISSUE":         "999", // no branch matches
-		"GITHUB_OUTPUT": ghOut,
-	}
-	stdout, stderr, code := runScript(t, script, stubDir, env)
+	stdout, stderr, code := runScript(t, script, stubDir, resolveEnv("999", ghOut))
 	if code == 0 {
 		t.Errorf("expected non-zero exit when no branch found, got 0")
 	}
@@ -276,36 +262,19 @@ esac
 	}
 }
 
-// Verifies the paginated loop: branch found on page 2 of 2.
+// Verifies branch extraction when many non-matching branches precede the hit.
 func TestResolveFeatureBranch_PaginatedHit(t *testing.T) {
-	script := scriptByName(t, "dev-session", "Resolve feature branch")
+	script := scriptByName(t, "dev-session", "Resolve target repo and feature branch")
 
 	stubDir, ghOut := makeStubDir(t)
-	writeStub(t, stubDir, "curl", `
-URL="${@: -1}"
-case "$URL" in
-  *\&page=1)
-    # 100 branches, none matching → triggers pagination.
-    echo -n '['
-    for i in $(seq 1 99); do
-      printf '{"name":"feat-%s"},' "$i"
-    done
-    printf '{"name":"feat-100"}'
-    echo ']'
-    ;;
-  *\&page=2)
-    echo '[{"name":"feature/77-found-it"}]'
-    ;;
-esac
-`)
-
-	env := map[string]string{
-		"GH_TOKEN":      "stub-token",
-		"REPO":          "owner/repo",
-		"ISSUE":         "77",
-		"GITHUB_OUTPUT": ghOut,
+	branches := make([]string, 0, 101)
+	for i := 1; i <= 100; i++ {
+		branches = append(branches, "feat-"+strconv.Itoa(i))
 	}
-	stdout, stderr, code := runScript(t, script, stubDir, env)
+	branches = append(branches, "feature/77-found-it")
+	writeStub(t, stubDir, "gh", ghResolveStub("owner/target-repo", branches...))
+
+	stdout, stderr, code := runScript(t, script, stubDir, resolveEnv("77", ghOut))
 	if code != 0 {
 		t.Fatalf("script exited %d: stdout=%s stderr=%s", code, stdout, stderr)
 	}
@@ -446,6 +415,7 @@ exit 99
 	env := map[string]string{
 		"GH_TOKEN":      "stub-token",
 		"GITHUB_OUTPUT": ghOut,
+		"CP_REPO":       "owner/cp-repo",
 	}
 	// substitute ${{ github.event.issue.number }} → 42
 	sub := substituteExpr(script, map[string]string{
@@ -480,6 +450,7 @@ if [ "$1" = "rev-list" ]; then echo 3; fi
 	env := map[string]string{
 		"GH_TOKEN":      "stub-token",
 		"GITHUB_OUTPUT": ghOut,
+		"CP_REPO":       "owner/cp-repo",
 	}
 	sub := substituteExpr(script, map[string]string{
 		"github.event.issue.number": "42",

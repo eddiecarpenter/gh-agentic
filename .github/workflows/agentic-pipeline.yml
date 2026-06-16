@@ -122,13 +122,25 @@ jobs:
       actions: read
 
     steps:
-      - name: Checkout repository
+      # CP-rooted project layout (#873, adapted from the #867 prototype). The repo
+      # running this workflow IS the control plane — it checks itself out at the
+      # workspace root (knowledge layer: .agents + docs) and clones the feature's
+      # TARGET repo into ./project (the code). Uniform across single and federated
+      # topology — only the target differs (single → the CP repo itself).
+      #
+      # Order matters: the knowledge root is checked out first (it carries .agents),
+      # then setup-goose-env installs gh + goose, and only THEN is the target
+      # resolved with `gh agentic feature target`. Self-hosted runners have no gh
+      # until install-ai-tools runs, so no gh call may precede setup-goose-env.
+      - name: Checkout knowledge root (control plane)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          repository: ${{ github.repository }}
           ref: main
+          path: .
           fetch-depth: 0
           submodules: recursive
-          token: ${{ github.token }}
+          token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Setup Goose environment
         uses: ./.agents/.github/actions/setup-goose-env
@@ -141,10 +153,53 @@ jobs:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
+      # gh is available now (installed by setup-goose-env). Resolve the feature's
+      # TARGET repo from the Target-repo field (#872).
+      - name: Resolve target repo
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          GH_REPO: ${{ github.repository }}
+          AGENTIC_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh extension install eddiecarpenter/gh-agentic --pin "${AGENTIC_VERSION}" --force
+          target="$(gh agentic feature target "${ISSUE}" --raw)"
+          if [ -z "${target}" ]; then
+            echo "::error::Could not resolve target repo for feature #${ISSUE}."
+            exit 1
+          fi
+          echo "repo=${target}" >> "$GITHUB_OUTPUT"
+          echo "✓ Feature #${ISSUE} targets ${target}."
+
+      # The code, always at ./project: the target repo @ main (feature-design
+      # branches off main inside ./project).
+      - name: Checkout project (code)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: ${{ steps.target.outputs.repo }}
+          ref: main
+          path: project
+          fetch-depth: 0
+          token: ${{ secrets.PIPELINE_PAT }}
+
+      # Keep the knowledge root pristine (ignore ./project via repo-local exclude,
+      # not the tracked .gitignore) and export the constant layout anchors.
+      - name: Isolate project and export anchors
+        run: |
+          [ -d .git ] && echo '/project/' >> .git/info/exclude
+          echo "AGENTIC_CP_ROOT=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          echo "AGENTIC_PROJECT_DIR=${GITHUB_WORKSPACE}/project" >> "$GITHUB_ENV"
+
+      # Runs with cwd = ./project (the code), but the FRAMEWORK (recipes, skills,
+      # .goose) comes from the knowledge root's mount — the target repo carries no
+      # .agents. So the recipe path and GOOSE_PATH_ROOT are absolute into
+      # $AGENTIC_CP_ROOT/.agents while the agent operates on ./project.
       - name: Run feature-design recipe
+        working-directory: project
         run: |
           goose run \
-            --recipe .agents/.goose/recipes/feature-design.yaml \
+            --recipe ${{ github.workspace }}/.agents/.goose/recipes/feature-design.yaml \
             --params feature_number=${{ github.event.issue.number }}
         env:
           GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
@@ -193,8 +248,9 @@ jobs:
       - name: Commit and push feature branch
         id: push
         if: success()
+        working-directory: project
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           BRANCH=$(git branch --list "feature/${ISSUE}-*" --format='%(refname:short)' | head -1)
@@ -275,45 +331,19 @@ jobs:
       actions: read
 
     steps:
-      # Resolve the branch name before checkout so the checkout ref is known.
-      # Inline (not a composite action) because the workspace has no checkout yet —
-      # local composite actions require the submodule tree to be on disk first.
-      # Uses curl+jq (not gh) because gh is installed by setup-goose-env which
-      # runs after checkout — self-hosted runners do not have gh pre-installed.
-      # Paginated: fetches up to 100 branches per page until branch found or exhausted.
-      - name: Resolve feature branch
-        id: branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          ISSUE: ${{ github.event.issue.number }}
-        run: |
-          PAGE=1
-          BRANCH=""
-          while [ -z "${BRANCH}" ]; do
-            RESPONSE=$(curl --proto '=https' --tlsv1.2 -fsSL \
-              -H "Authorization: token ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${REPO}/branches?per_page=100&page=${PAGE}")
-            BRANCH=$(echo "${RESPONSE}" | jq -r '.[].name' | grep "^feature/${ISSUE}-" | head -1 || true)
-            COUNT=$(echo "${RESPONSE}" | jq '. | length')
-            [ "${COUNT}" -lt 100 ] && break
-            PAGE=$((PAGE + 1))
-          done
-          if [ -z "${BRANCH}" ]; then
-            echo "::error::No branch matching feature/${ISSUE}-* found in ${REPO}."
-            exit 1
-          fi
-          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
-          echo "✓ Found feature branch: ${BRANCH}"
-
-      - name: Checkout repository
+      # CP-rooted project layout (#873). Order: check out the knowledge root (it
+      # carries .agents), install gh + goose via setup-goose-env, THEN resolve the
+      # TARGET repo + feature branch with gh, then clone the code into ./project.
+      # No gh call may precede setup-goose-env (self-hosted runners lack gh).
+      - name: Checkout knowledge root (control plane)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ref: ${{ steps.branch.outputs.name }}
+          repository: ${{ github.repository }}
+          ref: main
+          path: .
           fetch-depth: 0
           submodules: recursive
-          token: ${{ github.token }}
+          token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Setup Goose environment
         uses: ./.agents/.github/actions/setup-goose-env
@@ -326,9 +356,53 @@ jobs:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
+      # gh is available now. Resolve the feature's TARGET repo from the Target-repo
+      # field (#872), then the feature branch within it (paginated, against the
+      # TARGET repo, not the control plane).
+      - name: Resolve target repo and feature branch
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          GH_REPO: ${{ github.repository }}
+          AGENTIC_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh extension install eddiecarpenter/gh-agentic --pin "${AGENTIC_VERSION}" --force
+          TARGET="$(gh agentic feature target "${ISSUE}" --raw)"
+          if [ -z "${TARGET}" ]; then
+            echo "::error::Could not resolve target repo for feature #${ISSUE}."
+            exit 1
+          fi
+          echo "repo=${TARGET}" >> "$GITHUB_OUTPUT"
+          BRANCH=$(gh api "repos/${TARGET}/branches?per_page=100" --paginate \
+            --jq '.[].name' | grep "^feature/${ISSUE}-" | head -1 || true)
+          if [ -z "${BRANCH}" ]; then
+            echo "::error::No branch matching feature/${ISSUE}-* found in ${TARGET}."
+            exit 1
+          fi
+          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "✓ Feature #${ISSUE} targets ${TARGET}, branch ${BRANCH}."
+
+      # The code, always at ./project: the target repo @ the feature branch.
+      - name: Checkout project (code)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: ${{ steps.resolve.outputs.repo }}
+          ref: ${{ steps.resolve.outputs.name }}
+          path: project
+          fetch-depth: 0
+          token: ${{ secrets.PIPELINE_PAT }}
+
+      - name: Isolate project and export anchors
+        run: |
+          [ -d .git ] && echo '/project/' >> .git/info/exclude
+          echo "AGENTIC_CP_ROOT=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          echo "AGENTIC_PROJECT_DIR=${GITHUB_WORKSPACE}/project" >> "$GITHUB_ENV"
+
       # Rebase before the Goose session so the agent works against the latest main.
-      # Force-push with --force-with-lease (safe: aborts if someone else pushed).
+      # Operates inside ./project (the code). Force-push with --force-with-lease.
       - name: Rebase feature branch onto main
+        working-directory: project
         run: |
           git config user.email "agent@gh-agentic.io"
           git config user.name "gh-agentic"
@@ -340,19 +414,20 @@ jobs:
             git rebase --abort
             exit 1
           }
-          git push origin HEAD:${{ steps.branch.outputs.name }} --force-with-lease
+          git push origin HEAD:${{ steps.resolve.outputs.name }} --force-with-lease
 
       # Retry up to 3 times: transient Goose/Claude auth errors are common on
-      # first run (credential warm-up). PIPELINE_PAT: go-gh inside Goose reads
-      # AGENTIC_PROJECT_ID via the Actions variables API; github.token does not
-      # reliably propagate through Goose's subprocess environment.
+      # first run (credential warm-up). cwd = ./project (the code); the recipe
+      # path is absolute into the knowledge root's mount. PIPELINE_PAT: go-gh
+      # inside Goose reads AGENTIC_PROJECT_ID via the Actions variables API.
       - name: Run dev-session recipe
         id: goose
+        working-directory: project
         run: |
           for attempt in 1 2 3; do
             echo "--- Dev session attempt ${attempt} ---"
             goose run \
-              --recipe .agents/.goose/recipes/dev-session.yaml \
+              --recipe ${{ github.workspace }}/.agents/.goose/recipes/dev-session.yaml \
               --params feature_number=${{ github.event.issue.number }} && break
             EXIT_CODE=$?
             if [ $attempt -lt 3 ]; then
@@ -370,20 +445,25 @@ jobs:
           GOOSE_DISABLE_SESSION_NAMING: "true"
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
-      # github.token sufficient for a plain git push (contents: write is declared).
+      # PIPELINE_PAT: the push targets the (cross-repo) target repo; the ./project
+      # checkout is already authenticated with it. Pushes only inside ./project.
       - name: Push branch
         if: success()
-        run: git push origin ${{ steps.branch.outputs.name }}
+        working-directory: project
+        run: git push origin ${{ steps.resolve.outputs.name }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
 
       # PIPELINE_PAT: in-verification must fire the compliance-verify workflow.
       # Skip the transition when the session produced no commits (nothing to verify).
+      # The commit count is read from ./project (the code).
       - name: Apply in-verification label
         id: in_verification
         if: success()
+        working-directory: project
         env:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          CP_REPO: ${{ github.repository }}
         run: |
           COMMITS=$(git rev-list --count origin/main..HEAD)
           if [ "${COMMITS}" -eq 0 ]; then
@@ -392,6 +472,7 @@ jobs:
             exit 0
           fi
           gh issue edit ${{ github.event.issue.number }} \
+            --repo "${CP_REPO}" \
             --remove-label "in-development" \
             --add-label "in-verification"
           echo "skipped=false" >> $GITHUB_OUTPUT
@@ -504,41 +585,18 @@ jobs:
       actions: read
 
     steps:
-      # Inline curl+jq (not gh) — workspace not yet checked out here and
-      # gh is not pre-installed on self-hosted runners.
-      - name: Resolve feature branch
-        id: branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          ISSUE: ${{ github.event.issue.number }}
-        run: |
-          PAGE=1
-          BRANCH=""
-          while [ -z "${BRANCH}" ]; do
-            RESPONSE=$(curl --proto '=https' --tlsv1.2 -fsSL \
-              -H "Authorization: token ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${REPO}/branches?per_page=100&page=${PAGE}")
-            BRANCH=$(echo "${RESPONSE}" | jq -r '.[].name' | grep "^feature/${ISSUE}-" | head -1 || true)
-            COUNT=$(echo "${RESPONSE}" | jq '. | length')
-            [ "${COUNT}" -lt 100 ] && break
-            PAGE=$((PAGE + 1))
-          done
-          if [ -z "${BRANCH}" ]; then
-            echo "::error::No branch matching feature/${ISSUE}-* found in ${REPO}."
-            exit 1
-          fi
-          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
-          echo "✓ Found feature branch: ${BRANCH}"
-
-      - name: Checkout repository
+      # CP-rooted project layout (#873). Order: knowledge root → setup-goose-env
+      # (installs gh + goose) → resolve TARGET repo + branch with gh → clone the
+      # code into ./project. No gh call may precede setup-goose-env.
+      - name: Checkout knowledge root (control plane)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ref: ${{ steps.branch.outputs.name }}
+          repository: ${{ github.repository }}
+          ref: main
+          path: .
           fetch-depth: 0
           submodules: recursive
-          token: ${{ github.token }}
+          token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Setup Goose environment
         uses: ./.agents/.github/actions/setup-goose-env
@@ -551,14 +609,58 @@ jobs:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
+      # gh is available now. Resolve the feature's TARGET repo (#872) and the
+      # feature branch within it (paginated, against the TARGET repo).
+      - name: Resolve target repo and feature branch
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          GH_REPO: ${{ github.repository }}
+          AGENTIC_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh extension install eddiecarpenter/gh-agentic --pin "${AGENTIC_VERSION}" --force
+          TARGET="$(gh agentic feature target "${ISSUE}" --raw)"
+          if [ -z "${TARGET}" ]; then
+            echo "::error::Could not resolve target repo for feature #${ISSUE}."
+            exit 1
+          fi
+          echo "repo=${TARGET}" >> "$GITHUB_OUTPUT"
+          BRANCH=$(gh api "repos/${TARGET}/branches?per_page=100" --paginate \
+            --jq '.[].name' | grep "^feature/${ISSUE}-" | head -1 || true)
+          if [ -z "${BRANCH}" ]; then
+            echo "::error::No branch matching feature/${ISSUE}-* found in ${TARGET}."
+            exit 1
+          fi
+          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "✓ Feature #${ISSUE} targets ${TARGET}, branch ${BRANCH}."
+
+      # The code, always at ./project: the target repo @ the feature branch.
+      - name: Checkout project (code)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: ${{ steps.resolve.outputs.repo }}
+          ref: ${{ steps.resolve.outputs.name }}
+          path: project
+          fetch-depth: 0
+          token: ${{ secrets.PIPELINE_PAT }}
+
+      - name: Isolate project and export anchors
+        run: |
+          [ -d .git ] && echo '/project/' >> .git/info/exclude
+          echo "AGENTIC_CP_ROOT=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          echo "AGENTIC_PROJECT_DIR=${GITHUB_WORKSPACE}/project" >> "$GITHUB_ENV"
+
       # PIPELINE_PAT: the recipe applies compliance-verified or in-development
       # labels that must trigger downstream workflow runs.
       # SONAR_TOKEN: injected so the compliance-verify skill can detect SonarQube
-      # availability and run analysis when configured.
+      # availability and run analysis when configured. cwd = ./project (the code);
+      # recipe path is absolute into the knowledge root's mount.
       - name: Run compliance-verify recipe
+        working-directory: project
         run: |
           goose run \
-            --recipe .agents/.goose/recipes/compliance-verify.yaml \
+            --recipe ${{ github.workspace }}/.agents/.goose/recipes/compliance-verify.yaml \
             --params feature_number=${{ github.event.issue.number }}
         env:
           GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
@@ -573,16 +675,22 @@ jobs:
       # If not (skill handled the FAIL state reset itself), log and exit cleanly.
       # PIPELINE_PAT: the PR creation must fire the pull_request event so
       # pr-review-session can trigger on it.
+      # cwd = ./project (the code) so git ops + `gh pr` default to the TARGET repo,
+      # where the branch and PR live. Feature-issue reads stay explicit on the CP
+      # (--repo "${CP}"). The PR is opened in the target repo; the feature issue it
+      # implements lives on the CP, so the body uses a cross-repo "Closes" reference.
       - name: Open PR if compliance-verified
         id: open_pr
+        working-directory: project
         env:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
+          CP: ${{ github.repository }}
+          TARGET: ${{ steps.resolve.outputs.repo }}
         run: |
-          BRANCH="${{ steps.branch.outputs.name }}"
-          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json labels --jq '[.labels[].name]')
+          BRANCH="${{ steps.resolve.outputs.name }}"
+          LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo "${CP}" --json labels --jq '[.labels[].name]')
           if ! echo "${LABELS}" | jq -e 'contains(["compliance-verified"])' > /dev/null; then
             echo "compliance-verified label not present — recipe did not pass."
             echo "opened=false" >> $GITHUB_OUTPUT
@@ -594,32 +702,32 @@ jobs:
             echo "opened=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          EXISTING=$(gh pr list --repo "${REPO}" --head "${BRANCH}" --json number --jq '.[0].number')
+          EXISTING=$(gh pr list --repo "${TARGET}" --head "${BRANCH}" --json number --jq '.[0].number')
           if [ -n "${EXISTING}" ]; then
-            echo "PR #${EXISTING} already exists for ${BRANCH} — skipping creation."
+            echo "PR #${EXISTING} already exists for ${BRANCH} in ${TARGET} — skipping creation."
             echo "opened=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          # Read the PR body authored by the compliance-verify skill.
-          # The skill posts a <!-- pr-body:v1 --> comment with the implementation
-          # summary, AC table, and static-analysis verdict. Strip the marker line;
-          # fall back to a minimal body if the comment is absent.
+          # Read the PR body authored by the compliance-verify skill (posted as a
+          # <!-- pr-body:v1 --> comment on the CP feature issue). Strip the marker
+          # line; fall back to a minimal cross-repo "Closes" body if absent.
           PR_BODY_RAW=$(gh issue view "${ISSUE_NUMBER}" \
-            --repo "${REPO}" \
+            --repo "${CP}" \
             --json comments \
             --jq '[.comments[] | select(.body | startswith("<!-- pr-body:v1 -->"))] | last | .body // ""')
           if [ -n "${PR_BODY_RAW}" ]; then
             BODY=$(printf "%s" "${PR_BODY_RAW}" | tail -n +3)
           else
-            BODY=$(printf "Closes #%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${ISSUE_NUMBER}")
+            BODY=$(printf "Closes %s#%s\n\n🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)" "${CP}" "${ISSUE_NUMBER}")
           fi
           gh pr create \
+            --repo "${TARGET}" \
             --title "feat: ${ISSUE_TITLE}" \
             --body "${BODY}" \
             --base main \
             --head "${BRANCH}"
           echo "opened=true" >> $GITHUB_OUTPUT
-          echo "✓ PR opened for ${BRANCH}."
+          echo "✓ PR opened for ${BRANCH} in ${TARGET}."
 
       # Safety net: if the recipe exited on the FAIL path without completing
       # the label swap (e.g. context exhaustion mid-step), the issue is stuck
@@ -723,13 +831,28 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Checkout repository
+      # CP-rooted project layout (#873). The PR + its branch live in the TARGET
+      # repo (the code); the control plane (this repo) is the knowledge root. The
+      # target is resolved from the feature number embedded in the PR branch
+      # (feature/<N>-*) via the Target-repo field (#872). For a single-topology
+      # project the target resolves to the CP repo itself — identical layout.
+      #
+      # NOTE — federated trigger gap (surfaced by #873): the `pull_request_review`
+      # event fires in the repo that hosts the PR (the pure-code target repo, which
+      # carries no workflow), so it cannot auto-trigger this CP-hosted job. For a
+      # federation, drive this job via workflow_dispatch (pr_number + branch_name)
+      # or a target-repo event forwarder. The `pull_request_review` trigger remains
+      # valid for single-topology (CP == target). See the feature for the open
+      # decision on a CP-side PR-review trigger.
+      - name: Checkout knowledge root (control plane)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ref: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
+          repository: ${{ github.repository }}
+          ref: main
+          path: .
           fetch-depth: 0
           submodules: recursive
-          token: ${{ github.token }}
+          token: ${{ secrets.PIPELINE_PAT }}
 
       - name: Setup Goose environment
         uses: ./.agents/.github/actions/setup-goose-env
@@ -742,10 +865,48 @@ jobs:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
+      # gh is available now. Resolve the TARGET repo from the feature number
+      # embedded in the PR branch (feature/<N>-*) via the Target-repo field (#872).
+      - name: Resolve target repo
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          GH_REPO: ${{ github.repository }}
+          AGENTIC_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+          BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
+        run: |
+          gh extension install eddiecarpenter/gh-agentic --pin "${AGENTIC_VERSION}" --force
+          FEATURE_N=$(printf '%s' "${BRANCH}" | sed -E 's|^feature/([0-9]+)-.*|\1|')
+          if printf '%s' "${FEATURE_N}" | grep -qE '^[0-9]+$'; then
+            TARGET="$(gh agentic feature target "${FEATURE_N}" --raw || true)"
+          fi
+          if [ -z "${TARGET:-}" ]; then
+            echo "Could not resolve target from feature #${FEATURE_N:-?} — defaulting to ${GH_REPO} (single topology)."
+            TARGET="${GH_REPO}"
+          fi
+          echo "repo=${TARGET}" >> "$GITHUB_OUTPUT"
+          echo "✓ PR review targets ${TARGET}, branch ${BRANCH}."
+
+      - name: Checkout project (code)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: ${{ steps.resolve.outputs.repo }}
+          ref: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
+          path: project
+          fetch-depth: 0
+          token: ${{ secrets.PIPELINE_PAT }}
+
+      - name: Isolate project and export anchors
+        run: |
+          [ -d .git ] && echo '/project/' >> .git/info/exclude
+          echo "AGENTIC_CP_ROOT=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          echo "AGENTIC_PROJECT_DIR=${GITHUB_WORKSPACE}/project" >> "$GITHUB_ENV"
+
       # PIPELINE_PAT: go-gh inside Goose needs to read Actions variables
-      # (AGENTIC_PROJECT_ID). github.token does not propagate reliably through
-      # Goose's subprocess environment.
+      # (AGENTIC_PROJECT_ID). cwd = ./project (the target code + PR); the recipe
+      # path is absolute into the knowledge root's mount.
       - name: Run PR review recipe
+        working-directory: project
         env:
           PR_NUMBER: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
@@ -756,14 +917,16 @@ jobs:
           GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
         run: |
           goose run \
-            --recipe .agents/.goose/recipes/pr-review-session.yaml \
+            --recipe ${{ github.workspace }}/.agents/.goose/recipes/pr-review-session.yaml \
             --params pr_number=${PR_NUMBER}
 
-      # github.token is sufficient for a git push (contents: write declared).
+      # PIPELINE_PAT: the push targets the (cross-repo) target repo; the ./project
+      # checkout is already authenticated with it. Pushes only inside ./project.
       - name: Push fixes
         if: success()
+        working-directory: project
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
           BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name || github.event.pull_request.head.ref }}
         run: |
           LOCAL=$(git rev-parse HEAD)
