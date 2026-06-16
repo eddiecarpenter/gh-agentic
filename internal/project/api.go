@@ -5,6 +5,7 @@ package project
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -50,6 +51,10 @@ type FetchLinkedReposFunc func(projectID string) ([]LinkedRepo, error)
 
 // FetchProjectsForRepoFunc fetches projects linked to a repository.
 type FetchProjectsForRepoFunc func(owner, repo string) ([]ProjectInfo, error)
+
+// RepoHasFederationFileFunc reports whether a repository has FEDERATION.md at
+// its root. Used to identify the control plane among a project's linked repos.
+type RepoHasFederationFileFunc func(owner, repo string) (bool, error)
 
 // GetRepoVariableFunc reads a repo-level Actions variable value.
 type GetRepoVariableFunc func(owner, repo, name string) (string, error)
@@ -160,6 +165,27 @@ func DefaultFetchLinkedRepos(projectID string) ([]LinkedRepo, error) {
 		})
 	}
 	return repos, nil
+}
+
+// DefaultRepoHasFederationFile reports whether owner/repo carries FEDERATION.md
+// at its default-branch root, via the REST contents API. A 404 means "no file"
+// (a normal answer, not an error); any other failure is returned as an error.
+func DefaultRepoHasFederationFile(owner, repo string) (bool, error) {
+	client, err := api.DefaultRESTClient()
+	if err != nil {
+		return false, fmt.Errorf("creating REST client: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("repos/%s/%s/contents/%s", owner, repo, federationFileName)
+	var discard json.RawMessage
+	if err := client.Get(endpoint, &discard); err != nil {
+		var httpErr *api.HTTPError
+		if errors.As(err, &httpErr) && httpErr.StatusCode == 404 {
+			return false, nil
+		}
+		return false, fmt.Errorf("checking %s in %s/%s: %w", federationFileName, owner, repo, err)
+	}
+	return true, nil
 }
 
 // graphqlProjectsForRepoResponse is the response shape for the repo projects query.

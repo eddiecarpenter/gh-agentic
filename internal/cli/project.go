@@ -69,6 +69,74 @@ board or the framework mount.`,
 	cmd.AddCommand(newProjectJoinCmd())
 	cmd.AddCommand(newProjectUnlinkCmd())
 	cmd.AddCommand(newProjectSwitchCmd())
+	cmd.AddCommand(newProjectControlPlaneCmd())
+
+	return cmd
+}
+
+// newProjectControlPlaneCmd constructs the `gh agentic project control-plane`
+// subcommand. It prints the control-plane repo (owner/repo) for the current
+// repo's agentic project — the linked repo bearing FEDERATION.md.
+//
+// It is the runtime entry point the CP-rooted checkout composite action calls
+// (with --raw) to discover where the control plane lives. A single-topology
+// repo has no separate control plane: the command prints nothing under --raw
+// and exits 0, so the action falls back to a plain single-repo checkout.
+func newProjectControlPlaneCmd() *cobra.Command {
+	var raw bool
+
+	cmd := &cobra.Command{
+		Use:   "control-plane",
+		Short: "Print the control-plane repo for this repo's project",
+		Long: `Print the control-plane repository (owner/repo) for this repo's agentic
+project — the linked repo whose root contains FEDERATION.md.
+
+With --raw, prints only the owner/repo value on stdout (for scripting/CI). When
+this is a single-topology project (no separate control plane), --raw prints
+nothing and exits 0 so callers can fall back to single-repo behaviour.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			deps, err := resolveProjectDeps()
+			if err != nil {
+				return err
+			}
+
+			ctx, err := project.Resolve(deps)
+			if err != nil {
+				return err
+			}
+			if ctx == nil || ctx.ProjectID == "" {
+				if !raw {
+					fmt.Fprintln(cmd.OutOrStdout(), "No control plane: this repo is not affiliated with an agentic project.")
+				}
+				return nil
+			}
+
+			linked, err := deps.FetchLinkedRepos(ctx.ProjectID)
+			if err != nil {
+				return fmt.Errorf("fetching linked repos: %w", err)
+			}
+
+			cp, found, err := project.ResolveControlPlane(linked, deps.RepoHasFederationFile)
+			if err != nil {
+				return err
+			}
+			if !found {
+				if !raw {
+					fmt.Fprintln(cmd.OutOrStdout(), "No federated control plane: single topology (this repo is its own control plane).")
+				}
+				return nil
+			}
+
+			if raw {
+				fmt.Fprintln(cmd.OutOrStdout(), cp.NameWithOwner)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "Control plane: %s\n", cp.NameWithOwner)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&raw, "raw", false, "print only the owner/repo value on stdout (for scripting/CI)")
 
 	return cmd
 }
