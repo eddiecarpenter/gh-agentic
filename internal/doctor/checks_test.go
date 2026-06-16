@@ -1192,16 +1192,69 @@ func TestCheckFederationManifest_ValidFile_Pass(t *testing.T) {
 	root := t.TempDir()
 	manifest := "domains:\n  - name: acme\n    purpose: Acme domain\n    repos:\n      - name: acme/domain\n        purpose: Domain repo\n"
 	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	// Domain docs present so the soft doc-folder check (#871) does not warn.
+	_ = os.MkdirAll(filepath.Join(root, "docs", "domains", "acme"), 0o755)
 	deps := CheckDeps{Root: root}
 
 	g := checkFederationManifest(deps)
 
 	if len(g.Results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(g.Results))
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
 	}
 	r := g.Results[0]
 	if r.Status != Pass {
 		t.Errorf("status: got %v, want Pass; message: %q", r.Status, r.Message)
+	}
+}
+
+// TestCheckFederationManifest_MissingDomainDocs_Warns verifies the soft check
+// (#871): a valid manifest whose domain lacks docs/domains/<domain>/ still
+// validates (Pass) but emits a Warning — never a Fail.
+func TestCheckFederationManifest_MissingDomainDocs_Warns(t *testing.T) {
+	root := t.TempDir()
+	manifest := "domains:\n  - name: acme\n    purpose: Acme domain\n    repos:\n      - name: acme/domain\n        purpose: Domain repo\n"
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	// No docs/domains/acme/ directory.
+
+	g := checkFederationManifest(CheckDeps{Root: root})
+
+	var hasValidPass, hasDocsWarn, hasFail bool
+	for _, r := range g.Results {
+		if r.Name == "federation-manifest" && r.Status == Pass {
+			hasValidPass = true
+		}
+		if r.Name == "federation-manifest:domain-docs:acme" && r.Status == Warning {
+			hasDocsWarn = true
+		}
+		if r.Status == Fail {
+			hasFail = true
+		}
+	}
+	if !hasValidPass {
+		t.Error("expected the manifest to still validate (Pass)")
+	}
+	if !hasDocsWarn {
+		t.Errorf("expected a soft Warning for missing docs/domains/acme/, got: %+v", g.Results)
+	}
+	if hasFail {
+		t.Errorf("the soft doc-folder check must never Fail, got: %+v", g.Results)
+	}
+}
+
+// TestCheckFederationManifest_DomainDocsPresent_NoWarn verifies no domain-docs
+// warning fires when docs/domains/<domain>/ exists.
+func TestCheckFederationManifest_DomainDocsPresent_NoWarn(t *testing.T) {
+	root := t.TempDir()
+	manifest := "domains:\n  - name: acme\n    purpose: Acme domain\n    repos:\n      - name: acme/domain\n        purpose: Domain repo\n"
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	_ = os.MkdirAll(filepath.Join(root, "docs", "domains", "acme"), 0o755)
+
+	g := checkFederationManifest(CheckDeps{Root: root})
+
+	for _, r := range g.Results {
+		if strings.HasPrefix(r.Name, "federation-manifest:domain-docs:") {
+			t.Errorf("expected no domain-docs warning when the dir exists, got: %+v", r)
+		}
 	}
 }
 

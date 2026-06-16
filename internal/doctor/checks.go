@@ -733,7 +733,7 @@ func checkFederationManifest(deps CheckDeps) Group {
 		return g
 	}
 
-	_, err := project.ReadFederation(deps.Root)
+	fed, err := project.ReadFederation(deps.Root)
 	if err != nil {
 		g.Results = append(g.Results, CheckResult{
 			Name:    "federation-manifest",
@@ -748,6 +748,23 @@ func checkFederationManifest(deps CheckDeps) Group {
 		Status:  Pass,
 		Message: "FEDERATION.md is valid",
 	})
+
+	// Soft check (#871): each domain's documentation lives at
+	// docs/domains/<domain>/. A missing folder is a Warning, never a Fail —
+	// domain docs are authored incrementally and must not block the manifest
+	// from validating.
+	for _, d := range fed.Domains {
+		dir := filepath.Join(deps.Root, "docs", "domains", d.Name)
+		if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+			g.Results = append(g.Results, CheckResult{
+				Name:        fmt.Sprintf("federation-manifest:domain-docs:%s", d.Name),
+				Status:      Warning,
+				Message:     fmt.Sprintf("domain %q has no docs/domains/%s/ directory yet", d.Name, d.Name),
+				Remediation: fmt.Sprintf("add docs/domains/%s/ on the control plane when domain docs are ready", d.Name),
+			})
+		}
+	}
+
 	return g
 }
 
