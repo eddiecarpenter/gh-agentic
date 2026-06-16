@@ -5,6 +5,7 @@ triggers: hybrid
 user-invocable: true
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/cp-execution-context.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
   - skills/definitions/state-model-pattern.md
@@ -116,6 +117,13 @@ the work.
 
 ## Definitions
 
+- `skills/definitions/cp-execution-context.md` — the control-plane
+  execution context (#873): cwd is the project code
+  (`$AGENTIC_PROJECT_DIR`); docs, the rulebook, and Feature issues live
+  on the control plane (`$AGENTIC_CP_ROOT`). Read architecture context
+  from `$AGENTIC_CP_ROOT/docs`; route Feature / Task / label / comment
+  operations to the control plane; never write to the control-plane
+  checkout; headless doc-insufficiency halts and signals.
 - `skills/definitions/error-handling.md` — severity taxonomy for
   `INVALID_DESIGN_STATE`, `RATIONALE_POST_FAILED`,
   `BRANCH_CREATION_FAILED`, `TASK_CREATION_FAILED`,
@@ -368,18 +376,38 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
    release the beacon (see step 18 happy-path and the slot-release
    rule in Error Handling).
 
-5. **Architecture context.** Read `docs/ARCHITECTURE.md` if it
-   exists; hold its contents as Slice SA context for the rationale.
-   If missing, surface a warning to the response stream:
+5. **Architecture context.** Read the architecture docs **from the
+   control plane** per `skills/definitions/cp-execution-context.md` —
+   the framework and docs live at `$AGENTIC_CP_ROOT`, not in the
+   project code (cwd). Resolve, in order:
 
-   ```
-   Note: docs/ARCHITECTURE.md is missing. Design will proceed
-   without architectural baseline. Slice SA mapping in the rationale
-   will be limited.
-   ```
+   - **Federation** — `$AGENTIC_CP_ROOT/docs/SYSTEM_ARCHITECTURE.md`
+     plus the target repo's domain architecture under
+     `$AGENTIC_CP_ROOT/docs/domains/<domain>/ARCHITECTURE.md`
+     (`<domain>` from `$AGENTIC_CP_ROOT/FEDERATION.md`).
+   - **Single topology** — `$AGENTIC_CP_ROOT/docs/ARCHITECTURE.md`.
+   - **Legacy (no anchor set)** — fall back to `docs/ARCHITECTURE.md`
+     in the current directory.
 
-   Continue. The hard gate for ARCHITECTURE.md lives at
-   requirements-session, not here.
+   Hold the contents as Slice SA context for the rationale.
+
+   If the relevant architecture doc is missing:
+
+   - **Interactive mode** — surface a warning and continue; the human
+     can supply context. The hard gate for ARCHITECTURE.md lives at
+     requirements-session, not here.
+
+     ```
+     Note: architecture doc not found on the control plane. Design will
+     proceed without architectural baseline. Slice SA mapping in the
+     rationale will be limited.
+     ```
+
+   - **Headless mode** — apply the doc-insufficiency halt from
+     `cp-execution-context.md`: make no commit, apply `needs-scoping`
+     on the Feature (`--repo <CP>`), comment naming the missing
+     document, release the beacon, and exit. A headless design phase
+     with no architectural baseline must not guess.
 
 ---
 
@@ -393,8 +421,8 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
 
    Wait for the human's reply. Continue the conversation until the
    human signals readiness (free-form, no prompt-user). Surface
-   architectural assessment from `docs/ARCHITECTURE.md` inline as
-   relevant.
+   architectural assessment from the architecture context loaded in
+   step 5 (the control-plane docs) inline as relevant.
 
 7. **Capture design products if produced. (interactive only)**
    During the conversation the human may share Figma URLs, sketch
@@ -444,8 +472,8 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
    ## Architectural Assessment
 
    <Slice SA mapping: linear addition / extension / novel.
-    What in docs/ARCHITECTURE.md does this touch or extend?
-    What new patterns are introduced, if any?>
+    What in the control-plane architecture docs (step 5) does this
+    touch or extend? What new patterns are introduced, if any?>
 
    ## Technical Approach
 

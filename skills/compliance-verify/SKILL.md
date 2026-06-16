@@ -5,6 +5,7 @@ triggers: automated
 user-invocable: false
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/cp-execution-context.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
   - skills/gh-agentic/SKILL.md
@@ -118,6 +119,14 @@ A return value at exit:
 
 ## Definitions
 
+- `skills/definitions/cp-execution-context.md` — the control-plane
+  execution context (#873): cwd is the project code
+  (`$AGENTIC_PROJECT_DIR`) where the diff and branch live; docs, the
+  rulebook, and the Feature issue live on the control plane
+  (`$AGENTIC_CP_ROOT`). Read docs/standards from `$AGENTIC_CP_ROOT`;
+  route Feature label / comment / report operations to the control
+  plane; the PR lives in the project repo; never write to the
+  control-plane checkout.
 - `skills/definitions/error-handling.md` — severity taxonomy for
   `INVALID_VERIFY_STATE`, `BRANCH_MISSING`, `REPORT_FAILED`.
 - `skills/definitions/verification-procedure.md` — evidence must be

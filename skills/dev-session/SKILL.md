@@ -5,6 +5,7 @@ triggers: automated
 user-invocable: false
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/cp-execution-context.md
   - skills/definitions/concurrency-beacon.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
@@ -81,6 +82,14 @@ clears.
 
 ## Definitions
 
+- `skills/definitions/cp-execution-context.md` — the control-plane
+  execution context (#873): cwd is the project code
+  (`$AGENTIC_PROJECT_DIR`) where code, commits, and the feature branch
+  live; docs, the rulebook, and the Feature / Task issues live on the
+  control plane (`$AGENTIC_CP_ROOT`). Read docs from
+  `$AGENTIC_CP_ROOT/docs`; route Task / label / comment operations to
+  the control plane; commit and push only inside the project; never
+  write to the control-plane checkout.
 - `skills/definitions/error-handling.md` — severity taxonomy applied
   to `INVALID_DEV_STATE`, `BRANCH_MISSING`, `TASK_BLOCKED`,
   `TEST_FAILED_PERSISTENT`, `BUILD_FAILED_PERSISTENT`.

@@ -23,6 +23,9 @@ instructions: |
   You are an automated agent in this project's agentic delivery pipeline.
 
 prompt: |
-  Load `AGENTS.md` (the project rulebook). Then execute the
+  Load `AGENTS.md` (the project rulebook) from the control-plane
+  knowledge root — the directory named by the `AGENTIC_CP_ROOT`
+  environment variable, or the current directory when it is unset.
+  Then execute the
   `feature-design` skill for Feature {{ feature_number }}. The
   skill is the authoritative playbook; do not improvise.

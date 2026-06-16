@@ -122,14 +122,19 @@ set. Custom parameter names fail the lint.
 Extending the vocabulary requires updating this document
 explicitly. Do NOT add ad-hoc parameter names to recipes.
 
-**Note on the active repo.** Recipes do NOT pass `repo` — Goose
-runs in the workflow's checkout, so the working directory IS the
-active repo. Skills resolve it via
-`gh repo view --json nameWithOwner -q .nameWithOwner` when they
-need the `owner/name` string explicitly. If a future cross-repo
-use case arises (e.g., federated workflows acting on a repo other
-than the workspace), `repo` can be reintroduced as an optional
-parameter at that point.
+**Note on the active repo (control-plane execution).** Recipes do
+NOT pass `repo`. Under the control-plane-centralized model (#873) the
+pipeline exports two anchors instead: `AGENTIC_CP_ROOT` (the
+workspace root — the control plane, where docs and Feature issues
+live) and `AGENTIC_PROJECT_DIR` (`./project` — the target code, which
+is the agent's working directory). The recipe loads `AGENTS.md` from
+`$AGENTIC_CP_ROOT`; the skill routes operations per
+`skills/definitions/cp-execution-context.md` — issue/label/comment
+operations to the control plane, code/PR/git operations to the
+project. In a single-topology project both anchors resolve to the
+same repo, so the distinction is transparent. This is the cross-repo
+case the earlier note anticipated; it is handled by the anchors, not
+by a `repo` parameter.
 
 ## Recipes wrap automated / hybrid skills only
 

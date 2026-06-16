@@ -84,6 +84,7 @@ Run 'gh agentic <command> --help' on any command for detailed usage.`,
 	root.AddCommand(newInfoCmd(version, date))
 	root.AddCommand(newAuthCmd())
 	root.AddCommand(newStatusCmd())
+	root.AddCommand(newFeatureCmd())
 
 	return root
 }
