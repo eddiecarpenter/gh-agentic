@@ -108,6 +108,7 @@ type Feature struct {
 	CreatedAt          time.Time           `json:"created_at"`
 	LastTransitionedAt time.Time           `json:"last_transitioned_at"`
 	OwningRepo         string              `json:"owning_repo"`
+	TargetRepo         string              `json:"target_repo"`
 	Blocked            *BlockedInfo        `json:"blocked"`
 	ParentRequirement  *RequirementSummary `json:"parent_requirement"`
 	Tasks              []TaskRef           `json:"tasks"`

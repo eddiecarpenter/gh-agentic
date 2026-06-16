@@ -278,6 +278,35 @@ func TestRunStatusFeature_RawVerbatimBody(t *testing.T) {
 	}
 }
 
+// TestRunStatusFeature_RawTargetRepo verifies the target_repo line (#872, AC-2):
+// the value when the Target repo field is set, and "(unset)" when it is absent so
+// consumers never assume a repo.
+func TestRunStatusFeature_RawTargetRepo(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name   string
+		target string
+		want   string
+	}{
+		{"set", "charging-rating", "target_repo: charging-rating"},
+		{"unset", "", "target_repo: (unset)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			issues := []projectstatus.ProjectIssue{
+				{Number: 492, Title: "feat: x", Body: "b", Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", TargetRepo: tc.target, CreatedAt: now, LastTransitionedAt: now},
+			}
+			sd := featureDetailFixture(issues, nil, nil, nil, nil)
+			buf := &bytes.Buffer{}
+			if err := runStatusFeature(buf, io.Discard, 492, statusDetailFlags{raw: true}, sd); err != nil {
+				t.Fatalf("runStatusFeature --raw: %v", err)
+			}
+			if !strings.Contains(buf.String(), tc.want) {
+				t.Errorf("expected %q in raw output; got:\n%s", tc.want, buf.String())
+			}
+		})
+	}
+}
+
 // TestRunStatusFeature_RawSeparatorAlwaysPresent verifies the `---`
 // separator is emitted even when the issue body is empty.
 func TestRunStatusFeature_RawSeparatorAlwaysPresent(t *testing.T) {
