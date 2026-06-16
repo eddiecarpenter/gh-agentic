@@ -145,6 +145,15 @@ func Create(w io.Writer, deps Deps, cfg CreateConfig) error {
 	fmt.Fprintf(w, "  Scaffolding project from template...\n")
 	scaffoldProject(w, deps, projectID, ownerType)
 
+	// Step 9a (#875): a federated control plane scaffolds its FEDERATION.md
+	// (empty — no domains yet) and federated-tier system docs. Single topology
+	// has no federation manifest. Non-fatal: warn but do not abort.
+	if topology == TopologyStringFederation {
+		if err := ScaffoldFederation(w, deps.Root); err != nil {
+			fmt.Fprintf(w, "  %s  Could not scaffold federation files: %v\n", ui.StatusWarning.Render("⚠"), err)
+		}
+	}
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintf(w, "  %s\n\n", ui.StatusOK.Render("Agentic project created and control plane configured"))
 	return nil

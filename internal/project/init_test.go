@@ -32,8 +32,7 @@ func TestInitRepo_FederatedUserOwner_RefusesWithVerbatimError(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := InitRepo(&buf, deps, InitRepoConfig{
-		Mode:      InitModeFederated,
-		ProjectID: "PVT_fed",
+		Mode: InitModeFederated,
 	})
 	if err == nil {
 		t.Fatal("expected error for federated init on user-owned repo")
@@ -86,42 +85,35 @@ func TestInitRepo_SingleUserOwner_DoesNotRefuse(t *testing.T) {
 	}
 }
 
-// TestInitRepo_FederatedOrgOwner_Proceeds baselines that federated init on
-// an org-owned repo is not accidentally refused.
-func TestInitRepo_FederatedOrgOwner_Proceeds(t *testing.T) {
+// TestInitRepo_FederatedOrgOwner_CreatesControlPlane verifies that federated
+// init on an org-owned repo creates a federated control plane (#875): the org
+// guard does not fire, and an empty FEDERATION.md is scaffolded.
+func TestInitRepo_FederatedOrgOwner_CreatesControlPlane(t *testing.T) {
+	withFakeInstall(t)
 	deps := testDeps("acme", "repo")
+	deps.Root = t.TempDir()
 	deps.GetRepoVariable = func(o, r, n string) (string, error) {
-		switch n {
-		case ProjectVarName:
-			return "", errors.New("not set") // not yet affiliated
-		case FrameworkVersionVarName:
-			return "v2.0.10", nil
-		}
-		return "", errors.New("unknown")
+		return "", errors.New("not set") // not yet affiliated
 	}
-	deps.FetchLinkedRepos = func(projectID string) ([]LinkedRepo, error) {
-		return []LinkedRepo{{Name: "cp", NameWithOwner: "acme/cp"}}, nil
-	}
-	deps.DetectOwnerType = func(owner string) (string, error) {
-		return "Organization", nil
-	}
-	// Allow the federated init to walk through without shelling out.
+	deps.FetchProjectsForRepo = func(o, r string) ([]ProjectInfo, error) { return nil, nil }
+	deps.DetectOwnerType = func(owner string) (string, error) { return "Organization", nil }
+	deps.FetchOwnerAndRepoIDs = func(owner, repo string) (string, string, error) { return "O_acme", "R_repo", nil }
+	deps.CreateProject = func(ownerID, title string) (string, error) { return "PVT_cp", nil }
+	deps.LinkRepoToProject = func(projectID, repoID string) error { return nil }
 	deps.SetRepoVariable = func(o, r, n, v string) error { return nil }
 	deps.Clone = func(repoURL, tag, destDir string) error { return nil }
 
 	var buf bytes.Buffer
+	// No RepoFullName → ConfigureRepo is a no-op; Version drives the create.
 	err := InitRepo(&buf, deps, InitRepoConfig{
-		Mode:      InitModeFederated,
-		ProjectID: "PVT_fed",
-		// No InitCfg so ConfigureRepo is skipped.
+		Mode:    InitModeFederated,
+		InitCfg: &initpkg.InitConfig{Version: "v2.0.10"},
 	})
-	// A non-guard error (e.g. mount-related) is acceptable here — we're
-	// asserting the guard did NOT fire. If an error occurs it must not be
-	// the federated-owner message.
 	if err != nil {
-		wrongMsg := "Federated topology requires a GitHub Organization"
-		if got := err.Error(); len(got) >= len(wrongMsg) && got[:len(wrongMsg)] == wrongMsg {
-			t.Fatalf("guard fired unexpectedly for org owner: %v", err)
-		}
+		t.Fatalf("federated control-plane init should succeed for an org owner, got: %v", err)
+	}
+	// A federated control plane scaffolds an empty-but-valid FEDERATION.md.
+	if !IsFederationRepo(deps.Root) {
+		t.Error("expected FEDERATION.md to be scaffolded for a federated control plane")
 	}
 }
