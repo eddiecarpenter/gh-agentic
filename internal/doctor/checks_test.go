@@ -1560,6 +1560,44 @@ func TestCheckFederationProjectSync_ManifestRepoLinked_Pass(t *testing.T) {
 	}
 }
 
+// TestCheckFederationProjectSync_MultiDomain_AllReposChecked verifies the sync
+// check flattens repos across domains (domains→repos via AllRepos): a linked
+// repo in any domain produces a Pass result for that repo (#871).
+func TestCheckFederationProjectSync_MultiDomain_AllReposChecked(t *testing.T) {
+	root := t.TempDir()
+	manifest := `domains:
+  - name: charging
+    purpose: Charging
+    repos:
+      - name: acme/charging
+        purpose: Charging repo
+  - name: billing
+    purpose: Billing
+    repos:
+      - name: acme/billing
+        purpose: Billing repo
+`
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos("acme/charging", "acme/billing"),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs("acme/charging", "acme/billing"),
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	linked := map[string]bool{}
+	for _, r := range g.Results {
+		if r.Status == Pass && strings.HasPrefix(r.Name, "federation-sync:linked:") {
+			linked[r.Name] = true
+		}
+	}
+	if !linked["federation-sync:linked:acme/charging"] || !linked["federation-sync:linked:acme/billing"] {
+		t.Errorf("expected both domains' repos checked as linked, got results: %+v", g.Results)
+	}
+}
+
 // TestCheckFederationProjectSync_ManifestRepoNotLinked_Fail verifies AC-1: a
 // manifest repo that is accessible but not linked produces a Fail result with
 // the repo node ID in Data and a repair Remediation.
