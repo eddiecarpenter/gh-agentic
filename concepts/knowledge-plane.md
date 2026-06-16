@@ -350,19 +350,34 @@ gap in `project check` output.
 Requirements and features are GitHub Issues, not files. The knowledge plane
 does not store them.
 
-- **Cross-domain requirements** live as Issues on the **control plane** repo.
-  The scoping session produces **one Feature per affected domain**, each
-  Feature living in its own domain repo, each linked to the parent
-  Requirement via `Closes part of owner/cp-repo#N`.
-- **Domain-scoped requirements** live as Issues on the domain repo itself.
-- **Features are always per-repo.** A feature maps to a single branch in a
-  single repo. Cross-domain ordering is expressed with
-  `blocked-by: owner/repo#N` on the dependent feature; the human holds
-  `in-design` on a dependent feature until its blocker closes.
+- **Requirements** live as Issues on the **control plane** repo.
+- **Features also live on the control plane**, as same-repo sub-issues of their
+  parent Requirement. A federated Feature records the single implementation repo
+  it targets in a "Target repo" ProjectV2 field (the owner is always the
+  control-plane owner; the field holds the bare repo name); the pipeline reads
+  that field to clone the target. This reverses the earlier model (#825), where
+  Features were created in their target domain repo via cross-repo sub-issues —
+  domain repos are now pure code with no pipeline of their own, so a Feature
+  issue placed there would have no workflow to fire.
+- **Features are always single-target.** A feature maps to a single branch in a
+  single implementation repo. A feature whose work spans two repos is split at
+  scoping into one Feature per repo, each with its own target. Ordering is
+  expressed with `blocked-by: #N` on the dependent feature (same-repo issue
+  references on the control plane); the human holds the design trigger on a
+  dependent feature until its blocker closes.
 
 This is why no filesystem `docs/requirements/` directory exists. The
 motivation shared across repos lives in the Requirement issue's body on the CP,
 referenced by every child Feature.
+
+**CP-event triggering contract.** Because Features live on the control plane, the
+pipeline fires on **control-plane issue events**: applying a trigger label (e.g.
+`in-design`, `in-development`) to a Feature on the control plane starts the
+corresponding phase, which reads the Feature's "Target repo" field to know which
+repo to clone into `./project`. This CP-event triggering and the checkout it
+drives are implemented by the pipeline workflow (Feature #873); requirement
+scoping's job is to place the Feature on the control plane with its "Target repo"
+field set, so the trigger has a well-formed issue to key off.
 
 ---
 
