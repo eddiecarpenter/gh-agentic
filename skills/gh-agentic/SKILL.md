@@ -274,6 +274,19 @@ Subcommands and flags:
   - `--vertical` — force vertical layout (no-op under `--raw`).
   - `--include-done`, `--this-repo`, `--raw`, `--verbose`.
 
+### `gh agentic feature` (group)
+
+Feature-level helpers used by the pipeline.
+
+Subcommands and flags:
+
+- `gh agentic feature target <number>` — resolve the implementation repo a
+  control-plane Feature targets (its "Target repo" ProjectV2 field). Prints
+  `owner/repo`; the owner is always the control-plane owner. When the field is
+  unset (single topology) it resolves to the current repo. The pipeline reads
+  this to know which repo to clone into `./project`.
+  - `--raw` — print only `owner/repo` on stdout (for scripting/CI).
+
 ---
 
 ## `--raw` Contract
