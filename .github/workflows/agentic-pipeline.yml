@@ -122,13 +122,62 @@ jobs:
       actions: read
 
     steps:
-      - name: Checkout repository
+      # CP-rooted project layout (#867). Inlined (not a composite action) because
+      # it runs before any framework mount exists — local `uses: ./.agents/...`
+      # is unavailable pre-checkout, and `uses:` cannot take the dynamic framework
+      # version. The workspace root becomes the knowledge layer (.agents + docs);
+      # the code lives at ./project. Uniform across single and federated topology
+      # — only WHAT is checked out where differs (see the resolve step). gh is
+      # present on github-hosted runners; self-hosted needs a gh-install first.
+      - name: Resolve control plane
+        id: cproot
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_PAT }}
+          GH_REPO: ${{ github.repository }}
+          AGENTIC_VERSION: ${{ vars.AGENTIC_FRAMEWORK_VERSION }}
+        run: |
+          gh extension install eddiecarpenter/gh-agentic --pin "${AGENTIC_VERSION}" --force
+          cp="$(gh agentic project control-plane --raw || true)"
+          if [ -z "${cp}" ]; then
+            echo "topology=single" >> "$GITHUB_OUTPUT"
+            echo "root-repo=${GH_REPO}" >> "$GITHUB_OUTPUT"
+          else
+            echo "topology=federated" >> "$GITHUB_OUTPUT"
+            echo "root-repo=${cp}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Knowledge root at the workspace root: the control plane @ main (federated)
+      # or this repo @ main (single). Provides .agents (resolved by the
+      # `uses: ./.agents/...` step below and by the recipe) and the docs.
+      - name: Checkout knowledge root
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          repository: ${{ steps.cproot.outputs.root-repo }}
           ref: main
+          path: .
           fetch-depth: 0
           submodules: recursive
-          token: ${{ github.token }}
+          token: ${{ secrets.PIPELINE_PAT }}
+
+      # The code, always at ./project: this repo @ main (feature-design branches
+      # off main inside ./project).
+      - name: Checkout project (code)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: ${{ github.repository }}
+          ref: main
+          path: project
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.PIPELINE_PAT }}
+
+      # Keep the knowledge root pristine (ignore ./project via repo-local exclude,
+      # not the tracked .gitignore) and export the constant layout anchors.
+      - name: Isolate project and export anchors
+        run: |
+          [ -d .git ] && echo '/project/' >> .git/info/exclude
+          echo "AGENTIC_CP_ROOT=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          echo "AGENTIC_PROJECT_DIR=${GITHUB_WORKSPACE}/project" >> "$GITHUB_ENV"
 
       - name: Setup Goose environment
         uses: ./.agents/.github/actions/setup-goose-env
@@ -141,13 +190,16 @@ jobs:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
+      # Runs in ./project (the code); reads docs from $AGENTIC_CP_ROOT. The recipe
+      # path is relative to the project working dir, where .agents is also mounted.
       - name: Run feature-design recipe
+        working-directory: project
         run: |
           goose run \
             --recipe .agents/.goose/recipes/feature-design.yaml \
             --params feature_number=${{ github.event.issue.number }}
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/project/.agents/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
@@ -193,6 +245,7 @@ jobs:
       - name: Commit and push feature branch
         id: push
         if: success()
+        working-directory: project
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
