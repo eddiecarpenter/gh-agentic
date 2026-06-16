@@ -194,6 +194,18 @@ func scaffoldProject(w io.Writer, deps Deps, projectID, ownerType string) {
 		}
 	}
 
+	// Ensure the "Target repo" field exists (#872) — control-plane Feature
+	// issues record their target domain repo here.
+	if deps.FetchProjectFields != nil && deps.CreateProjectField != nil {
+		if created, _, err := EnsureTargetRepoField(projectID, deps.FetchProjectFields, deps.CreateProjectField); err != nil {
+			fmt.Fprintf(w, "  %s  Could not ensure %q field: %v\n", ui.StatusWarning.Render("⚠"), TargetRepoFieldName, err)
+		} else if created {
+			fmt.Fprintf(w, "  %s  %q field created\n", ui.StatusOK.Render("✓"), TargetRepoFieldName)
+		} else {
+			fmt.Fprintf(w, "  %s  %q field present\n", ui.StatusOK.Render("✓"), TargetRepoFieldName)
+		}
+	}
+
 	// Create views via the REST API.
 	if len(tpl.Views) > 0 {
 		projectNumber, err := deps.FetchProjectNumber(projectID)

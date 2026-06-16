@@ -214,6 +214,7 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 		FetchProjectTitle:        project.DefaultFetchProjectTitle,
 		FetchProjectFields:       project.DefaultFetchProjectFields,
 		UpdateStatusFieldOptions: project.DefaultUpdateStatusFieldOptions,
+		CreateProjectField:       project.DefaultCreateProjectField,
 		FetchLinkedRepos:         project.DefaultFetchLinkedRepos,
 		FetchOwnerAndRepoIDs:     project.DefaultFetchOwnerAndRepoIDs,
 		LinkRepoToProject:        project.DefaultLinkRepoToProject,

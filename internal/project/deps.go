@@ -36,6 +36,7 @@ type Deps struct {
 	UpdateProject            UpdateProjectFunc
 	FetchProjectFields       FetchProjectFieldsFunc
 	UpdateStatusFieldOptions UpdateStatusFieldOptionsFunc
+	CreateProjectField       CreateProjectFieldFunc
 	FetchProjectNumber       FetchProjectNumberFunc
 	CreateProjectView        CreateProjectViewFunc
 	FetchProjectViews        FetchProjectViewsFunc
@@ -71,6 +72,7 @@ func DefaultDeps(owner, repoName, root string) Deps {
 		UpdateProject:            DefaultUpdateProject,
 		FetchProjectFields:       DefaultFetchProjectFields,
 		UpdateStatusFieldOptions: DefaultUpdateStatusFieldOptions,
+		CreateProjectField:       DefaultCreateProjectField,
 		FetchProjectNumber:       DefaultFetchProjectNumber,
 		CreateProjectView:        DefaultCreateProjectView,
 		FetchProjectViews:        DefaultFetchProjectViews,

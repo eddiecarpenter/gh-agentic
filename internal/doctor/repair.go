@@ -365,6 +365,34 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 					result.Repaired++
 				}
 
+			case r.Name == "target-repo-field":
+				if setLabel != nil {
+					setLabel("Repairing: project target-repo field...")
+				}
+				if deps.FetchProjectFields == nil || deps.CreateProjectField == nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Cannot repair target-repo field — no GraphQL client available",
+							ui.StatusDanger.Render("✗")))
+					result.Unrepaired++
+					continue
+				}
+				if created, _, err := project.EnsureTargetRepoField(deps.ProjectID, deps.FetchProjectFields, deps.CreateProjectField); err != nil {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Could not create %q field: %v",
+							ui.StatusDanger.Render("✗"), project.TargetRepoFieldName, err))
+					result.Unrepaired++
+				} else if created {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Created project %q field",
+							ui.StatusOK.Render("✓"), project.TargetRepoFieldName))
+					result.Repaired++
+				} else {
+					result.Lines = append(result.Lines,
+						fmt.Sprintf("  %s  Project %q field already present",
+							ui.StatusOK.Render("✓"), project.TargetRepoFieldName))
+					result.Repaired++
+				}
+
 			case strings.HasPrefix(r.Name, "federation-sync:not-linked:"):
 				// Manifest repo not linked to the federation project — link it
 				// automatically using the repo node ID stored in r.Data at check time.
