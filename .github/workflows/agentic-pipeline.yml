@@ -190,16 +190,18 @@ jobs:
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
-      # Runs in ./project (the code); reads docs from $AGENTIC_CP_ROOT. The recipe
-      # path is relative to the project working dir, where .agents is also mounted.
+      # Runs with cwd = ./project (the code), but the FRAMEWORK (recipes, skills,
+      # .goose) comes from the knowledge root's mount — the domain repo itself
+      # carries no .agents. So the recipe path and GOOSE_PATH_ROOT are absolute
+      # into $AGENTIC_CP_ROOT/.agents, while the agent operates on ./project.
       - name: Run feature-design recipe
         working-directory: project
         run: |
           goose run \
-            --recipe .agents/.goose/recipes/feature-design.yaml \
+            --recipe ${{ github.workspace }}/.agents/.goose/recipes/feature-design.yaml \
             --params feature_number=${{ github.event.issue.number }}
         env:
-          GOOSE_PATH_ROOT: ${{ github.workspace }}/project/.agents/.goose
+          GOOSE_PATH_ROOT: ${{ github.workspace }}/.agents/.goose
           GOOSE_PROVIDER: ${{ vars.AGENT_PROVIDER || 'claude-code' }}
           GOOSE_MODEL: ${{ vars.AGENT_MODEL || 'default' }}
           GOOSE_MODE: auto
