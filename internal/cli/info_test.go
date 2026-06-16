@@ -23,37 +23,33 @@ func TestPrintInfo_NoFederation_NoFederationSection(t *testing.T) {
 	}
 }
 
-// TestPrintInfo_FederationRepos_ShowsSection verifies that when federation
-// repos are populated, printInfo renders a "Federation" section with each
-// repo name and purpose listed.
-func TestPrintInfo_FederationRepos_ShowsSection(t *testing.T) {
+// TestPrintInfo_FederationDomains_ShowsGroupedSection verifies AC-1: when
+// federation domains are populated, printInfo renders a "Federation" section
+// listing each domain with its purpose and member repos (grouped, #871).
+func TestPrintInfo_FederationDomains_ShowsGroupedSection(t *testing.T) {
 	data := &infoData{
 		version:   "v2.0.0",
 		repoLabel: "acme/cp",
 		topology:  "Federation",
-		federationRepos: []project.FederationRepo{
-			{Name: "acme/domain-a", Purpose: "Primary domain"},
-			{Name: "acme/domain-b", Purpose: "Analytics domain"},
+		federationDomains: []project.FederationDomain{
+			{Name: "charging", Purpose: "Rating and balance", Repos: []project.FederationRepo{
+				{Name: "acme/charging-rating", Purpose: "Rating engine"},
+				{Name: "acme/charging-balance", Purpose: "Balance management"},
+			}},
+			{Name: "billing", Purpose: "Invoicing", Repos: []project.FederationRepo{
+				{Name: "acme/billing", Purpose: "Bill runs"},
+			}},
 		},
 	}
 	out := printInfoToString(data)
-	if !strings.Contains(out, "Federation") {
-		t.Errorf("expected 'Federation' section heading, got:\n%s", out)
-	}
-	if !strings.Contains(out, "acme/domain-a") {
-		t.Errorf("expected first repo name 'acme/domain-a' in output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "Primary domain") {
-		t.Errorf("expected first repo purpose 'Primary domain' in output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "acme/domain-b") {
-		t.Errorf("expected second repo name 'acme/domain-b' in output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "Analytics domain") {
-		t.Errorf("expected second repo purpose 'Analytics domain' in output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "Target repositories") {
-		t.Errorf("expected 'Target repositories' label, got:\n%s", out)
+	for _, want := range []string{
+		"Federation",
+		"charging", "Rating and balance", "acme/charging-rating", "Rating engine", "acme/charging-balance",
+		"billing", "Invoicing", "acme/billing", "Bill runs",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in grouped federation output, got:\n%s", want, out)
+		}
 	}
 }
 
@@ -111,8 +107,10 @@ func TestPrintInfo_NoControlPlane(t *testing.T) {
 		version:   "v2.0.0",
 		repoLabel: "acme/cp",
 		topology:  "Federation",
-		federationRepos: []project.FederationRepo{
-			{Name: "acme/domain", Purpose: "Domain repo"},
+		federationDomains: []project.FederationDomain{
+			{Name: "platform", Purpose: "Platform", Repos: []project.FederationRepo{
+				{Name: "acme/domain", Purpose: "Domain repo"},
+			}},
 		},
 	}
 	out := printInfoToString(data)

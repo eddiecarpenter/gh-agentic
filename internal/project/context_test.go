@@ -57,9 +57,12 @@ func TestResolve_NoFederationMD_ReturnsSingleTopology(t *testing.T) {
 // FEDERATION.md presence at deps.Root produces topology="federation".
 func TestResolve_FederationMDPresent_ReturnsFederationTopology(t *testing.T) {
 	dir := t.TempDir()
-	content := `repos:
-  - name: org/domain-one
-    purpose: "First domain"
+	content := `domains:
+  - name: example-domain
+    purpose: "Example domain"
+    repos:
+      - name: org/domain-one
+        purpose: "First domain"
 `
 	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
 		t.Fatalf("writing FEDERATION.md: %v", err)
@@ -251,9 +254,12 @@ func TestResolve_PermissionError_SetsProjectIDReadFailed(t *testing.T) {
 // presence is detected even when the repo has no AGENTIC_PROJECT_ID.
 func TestResolve_FederationMDPresent_AndNoProjectID(t *testing.T) {
 	dir := t.TempDir()
-	content := `repos:
-  - name: org/domain-one
-    purpose: "First domain"
+	content := `domains:
+  - name: example-domain
+    purpose: "Example domain"
+    repos:
+      - name: org/domain-one
+        purpose: "First domain"
 `
 	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
 		t.Fatalf("writing FEDERATION.md: %v", err)

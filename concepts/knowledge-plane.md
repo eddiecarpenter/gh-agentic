@@ -81,6 +81,33 @@ Domain repos are plain single-topology repos. They do not carry any special
 filesystem mount or marker variable. The federation is declared from the control plane
 outward, not from domain repos inward.
 
+#### Domain documentation tier (#871)
+
+Under the domain-grouped `FEDERATION.md` schema, a *domain* is one or more
+repos, and a domain's documentation lives centrally on the control plane —
+not scattered across its member repos. The knowledge plane has exactly two
+tiers, both homed on the control plane:
+
+- **Federated / system tier** — the shared architecture and principles, at the
+  control-plane `docs/` root (e.g. `SYSTEM_BRIEF.md`, `SYSTEM_ARCHITECTURE.md`).
+  Never decentralised into domain repos.
+- **Domain tier** — each domain's documentation under `docs/domains/<domain>/`,
+  where `<domain>` is the domain's slug from `FEDERATION.md`. A domain spanning
+  several repos therefore has a single documentation home.
+
+There is no separate per-service documentation tier: member repos carry code,
+not design docs. A domain whose repo list has one entry is just a single-repo
+domain — its docs still live at `docs/domains/<domain>/`.
+
+`gh agentic check` emits a *soft* warning (never a failure) when a manifest
+domain has no `docs/domains/<domain>/` directory yet, since domain docs are
+authored incrementally.
+
+> The broader realignment of this concept to the control-plane-centralized
+> execution model (pipeline-on-CP, pure-code domain repos) is tracked under
+> requirement #870 / Feature #876; this section introduces the domain
+> documentation tier and the `docs/domains/<domain>/` convention.
+
 ---
 
 ## Naming — scope-explicit

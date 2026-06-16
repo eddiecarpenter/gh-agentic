@@ -1190,18 +1190,71 @@ func TestCheckFederationManifest_NoFile_Pass(t *testing.T) {
 
 func TestCheckFederationManifest_ValidFile_Pass(t *testing.T) {
 	root := t.TempDir()
-	manifest := "repos:\n  - name: acme/domain\n    purpose: Domain repo\n"
+	manifest := "domains:\n  - name: acme\n    purpose: Acme domain\n    repos:\n      - name: acme/domain\n        purpose: Domain repo\n"
 	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	// Domain docs present so the soft doc-folder check (#871) does not warn.
+	_ = os.MkdirAll(filepath.Join(root, "docs", "domains", "acme"), 0o755)
 	deps := CheckDeps{Root: root}
 
 	g := checkFederationManifest(deps)
 
 	if len(g.Results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(g.Results))
+		t.Fatalf("expected 1 result, got %d: %+v", len(g.Results), g.Results)
 	}
 	r := g.Results[0]
 	if r.Status != Pass {
 		t.Errorf("status: got %v, want Pass; message: %q", r.Status, r.Message)
+	}
+}
+
+// TestCheckFederationManifest_MissingDomainDocs_Warns verifies the soft check
+// (#871): a valid manifest whose domain lacks docs/domains/<domain>/ still
+// validates (Pass) but emits a Warning — never a Fail.
+func TestCheckFederationManifest_MissingDomainDocs_Warns(t *testing.T) {
+	root := t.TempDir()
+	manifest := "domains:\n  - name: acme\n    purpose: Acme domain\n    repos:\n      - name: acme/domain\n        purpose: Domain repo\n"
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	// No docs/domains/acme/ directory.
+
+	g := checkFederationManifest(CheckDeps{Root: root})
+
+	var hasValidPass, hasDocsWarn, hasFail bool
+	for _, r := range g.Results {
+		if r.Name == "federation-manifest" && r.Status == Pass {
+			hasValidPass = true
+		}
+		if r.Name == "federation-manifest:domain-docs:acme" && r.Status == Warning {
+			hasDocsWarn = true
+		}
+		if r.Status == Fail {
+			hasFail = true
+		}
+	}
+	if !hasValidPass {
+		t.Error("expected the manifest to still validate (Pass)")
+	}
+	if !hasDocsWarn {
+		t.Errorf("expected a soft Warning for missing docs/domains/acme/, got: %+v", g.Results)
+	}
+	if hasFail {
+		t.Errorf("the soft doc-folder check must never Fail, got: %+v", g.Results)
+	}
+}
+
+// TestCheckFederationManifest_DomainDocsPresent_NoWarn verifies no domain-docs
+// warning fires when docs/domains/<domain>/ exists.
+func TestCheckFederationManifest_DomainDocsPresent_NoWarn(t *testing.T) {
+	root := t.TempDir()
+	manifest := "domains:\n  - name: acme\n    purpose: Acme domain\n    repos:\n      - name: acme/domain\n        purpose: Domain repo\n"
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	_ = os.MkdirAll(filepath.Join(root, "docs", "domains", "acme"), 0o755)
+
+	g := checkFederationManifest(CheckDeps{Root: root})
+
+	for _, r := range g.Results {
+		if strings.HasPrefix(r.Name, "federation-manifest:domain-docs:") {
+			t.Errorf("expected no domain-docs warning when the dir exists, got: %+v", r)
+		}
 	}
 }
 
@@ -1243,9 +1296,9 @@ func TestCheckFederationManifest_MalformedYAML_Fail(t *testing.T) {
 	}
 }
 
-func TestCheckFederationManifest_EmptyReposList_Fail(t *testing.T) {
+func TestCheckFederationManifest_EmptyDomainsList_Fail(t *testing.T) {
 	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("repos: []\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("domains: []\n"), 0o644)
 	deps := CheckDeps{Root: root}
 
 	g := checkFederationManifest(deps)
@@ -1257,8 +1310,8 @@ func TestCheckFederationManifest_EmptyReposList_Fail(t *testing.T) {
 	if r.Status != Fail {
 		t.Errorf("status: got %v, want Fail", r.Status)
 	}
-	if !strings.Contains(r.Message, "repos list is empty") {
-		t.Errorf("message: got %q, expected 'repos list is empty'", r.Message)
+	if !strings.Contains(r.Message, "domains list is empty") {
+		t.Errorf("message: got %q, expected 'domains list is empty'", r.Message)
 	}
 }
 
@@ -1413,9 +1466,9 @@ func TestCheckLegacyFederationConfig_MultipleItems_MultipleWarnings(t *testing.T
 // writeFederationManifest writes a minimal valid FEDERATION.md to root.
 func writeFederationManifest(t *testing.T, root string, repos ...string) {
 	t.Helper()
-	content := "repos:\n"
+	content := "domains:\n  - name: test-domain\n    purpose: test domain\n    repos:\n"
 	for _, r := range repos {
-		content += fmt.Sprintf("  - name: %s\n    purpose: test repo\n", r)
+		content += fmt.Sprintf("      - name: %s\n        purpose: test repo\n", r)
 	}
 	if err := os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(content), 0o644); err != nil {
 		t.Fatalf("writing FEDERATION.md: %v", err)
@@ -1557,6 +1610,44 @@ func TestCheckFederationProjectSync_ManifestRepoLinked_Pass(t *testing.T) {
 	}
 	if r.Name != "federation-sync:linked:acme/domain" {
 		t.Errorf("name: got %q, want federation-sync:linked:acme/domain", r.Name)
+	}
+}
+
+// TestCheckFederationProjectSync_MultiDomain_AllReposChecked verifies the sync
+// check flattens repos across domains (domains→repos via AllRepos): a linked
+// repo in any domain produces a Pass result for that repo (#871).
+func TestCheckFederationProjectSync_MultiDomain_AllReposChecked(t *testing.T) {
+	root := t.TempDir()
+	manifest := `domains:
+  - name: charging
+    purpose: Charging
+    repos:
+      - name: acme/charging
+        purpose: Charging repo
+  - name: billing
+    purpose: Billing
+    repos:
+      - name: acme/billing
+        purpose: Billing repo
+`
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos("acme/charging", "acme/billing"),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs("acme/charging", "acme/billing"),
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	linked := map[string]bool{}
+	for _, r := range g.Results {
+		if r.Status == Pass && strings.HasPrefix(r.Name, "federation-sync:linked:") {
+			linked[r.Name] = true
+		}
+	}
+	if !linked["federation-sync:linked:acme/charging"] || !linked["federation-sync:linked:acme/billing"] {
+		t.Errorf("expected both domains' repos checked as linked, got results: %+v", g.Results)
 	}
 }
 

@@ -7,11 +7,33 @@ import (
 	"testing"
 )
 
-func TestIsFederationRepo_FilePresent_ReturnsTrue(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte("repos:\n  - name: owner/repo\n    purpose: test\n"), 0644); err != nil {
+// validManifest is a domain-grouped FEDERATION.md fixture with two domains,
+// one of which spans two repos.
+const validManifest = `domains:
+  - name: charging
+    purpose: "Rating, balance, charging events"
+    repos:
+      - name: owner/charging-rating
+        purpose: "Rating engine"
+      - name: owner/charging-balance
+        purpose: "Balance management"
+  - name: billing
+    purpose: "Invoice generation"
+    repos:
+      - name: owner/billing-domain
+        purpose: "Bill runs and statements"
+`
+
+func writeManifest(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
 		t.Fatalf("writing FEDERATION.md: %v", err)
 	}
+}
+
+func TestIsFederationRepo_FilePresent_ReturnsTrue(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, validManifest)
 	if !IsFederationRepo(dir) {
 		t.Error("IsFederationRepo: expected true when FEDERATION.md exists, got false")
 	}
@@ -26,256 +48,287 @@ func TestIsFederationRepo_FileAbsent_ReturnsFalse(t *testing.T) {
 
 func TestReadFederation_ValidManifest_ParsedCorrectly(t *testing.T) {
 	dir := t.TempDir()
-	content := `repos:
-  - name: owner/repo-one
-    purpose: "First domain area"
-  - name: owner/repo-two
-    purpose: "Second domain area"
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
+	writeManifest(t, dir, validManifest)
 
 	fed, err := ReadFederation(dir)
 	if err != nil {
 		t.Fatalf("ReadFederation: unexpected error: %v", err)
 	}
-	if len(fed.Repos) != 2 {
-		t.Fatalf("expected 2 repos, got %d", len(fed.Repos))
+	if len(fed.Domains) != 2 {
+		t.Fatalf("expected 2 domains, got %d", len(fed.Domains))
 	}
-	if fed.Repos[0].Name != "owner/repo-one" {
-		t.Errorf("repo[0].Name: expected %q, got %q", "owner/repo-one", fed.Repos[0].Name)
+	if fed.Domains[0].Name != "charging" {
+		t.Errorf("domain[0].Name: expected %q, got %q", "charging", fed.Domains[0].Name)
 	}
-	if fed.Repos[0].Purpose != "First domain area" {
-		t.Errorf("repo[0].Purpose: expected %q, got %q", "First domain area", fed.Repos[0].Purpose)
+	if len(fed.Domains[0].Repos) != 2 {
+		t.Fatalf("expected 2 repos in domain charging, got %d", len(fed.Domains[0].Repos))
 	}
-	if fed.Repos[1].Name != "owner/repo-two" {
-		t.Errorf("repo[1].Name: expected %q, got %q", "owner/repo-two", fed.Repos[1].Name)
+	if fed.Domains[0].Repos[0].Name != "owner/charging-rating" {
+		t.Errorf("repo[0].Name: expected %q, got %q", "owner/charging-rating", fed.Domains[0].Repos[0].Name)
+	}
+	if fed.Domains[1].Name != "billing" {
+		t.Errorf("domain[1].Name: expected %q, got %q", "billing", fed.Domains[1].Name)
 	}
 }
 
-func TestReadFederation_ValidManifestSingleRepo_ParsedCorrectly(t *testing.T) {
+func TestReadFederation_AllRepos_Flattens(t *testing.T) {
 	dir := t.TempDir()
-	content := `repos:
-  - name: myorg/my-service
-    purpose: "The only domain repo"
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
+	writeManifest(t, dir, validManifest)
 
 	fed, err := ReadFederation(dir)
 	if err != nil {
 		t.Fatalf("ReadFederation: unexpected error: %v", err)
 	}
-	if len(fed.Repos) != 1 {
-		t.Fatalf("expected 1 repo, got %d", len(fed.Repos))
+	all := fed.AllRepos()
+	if len(all) != 3 {
+		t.Fatalf("AllRepos: expected 3 repos, got %d", len(all))
 	}
-	if fed.Repos[0].Name != "myorg/my-service" {
-		t.Errorf("expected name %q, got %q", "myorg/my-service", fed.Repos[0].Name)
+	want := []string{"owner/charging-rating", "owner/charging-balance", "owner/billing-domain"}
+	for i, w := range want {
+		if all[i].Name != w {
+			t.Errorf("AllRepos[%d]: expected %q, got %q (order must be preserved)", i, w, all[i].Name)
+		}
+	}
+}
+
+// AC-3: a domain with exactly one repo is a valid single-repo domain.
+func TestReadFederation_SingleRepoDomain_ParsedCorrectly(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, `domains:
+  - name: platform
+    purpose: "The only domain"
+    repos:
+      - name: myorg/my-service
+        purpose: "The only domain repo"
+`)
+
+	fed, err := ReadFederation(dir)
+	if err != nil {
+		t.Fatalf("ReadFederation: unexpected error: %v", err)
+	}
+	if len(fed.Domains) != 1 || len(fed.Domains[0].Repos) != 1 {
+		t.Fatalf("expected 1 domain with 1 repo, got %d domain(s)", len(fed.Domains))
+	}
+	if fed.AllRepos()[0].Name != "myorg/my-service" {
+		t.Errorf("expected name %q, got %q", "myorg/my-service", fed.AllRepos()[0].Name)
+	}
+}
+
+// Hard-cut: the legacy flat `repos:` schema is rejected with migration guidance.
+func TestReadFederation_FlatSchema_Rejected(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, `repos:
+  - name: owner/repo-one
+    purpose: "First"
+`)
+
+	_, err := ReadFederation(dir)
+	if err == nil {
+		t.Fatal("expected an error for the legacy flat schema, got nil")
+	}
+	if !strings.Contains(err.Error(), "flat `repos:` schema is no longer supported") {
+		t.Errorf("error should guide migration to domains, got: %q", err.Error())
 	}
 }
 
 func TestReadFederation_EmptyFile_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte("   \n  "), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
+	writeManifest(t, dir, "   \n  ")
 
 	_, err := ReadFederation(dir)
-	if err == nil {
-		t.Fatal("expected an error for empty file, got nil")
-	}
-	if !strings.Contains(err.Error(), "file is empty") {
-		t.Errorf("error message should contain 'file is empty', got: %q", err.Error())
+	if err == nil || !strings.Contains(err.Error(), "file is empty") {
+		t.Fatalf("expected 'file is empty' error, got: %v", err)
 	}
 }
 
 func TestReadFederation_MalformedYAML_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	// Indentation error — valid YAML tokens but unexpected structure that
-	// produces a YAML parse error.
-	content := `repos:
-  - name: [unclosed bracket
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
+	writeManifest(t, dir, "domains:\n  - name: [unclosed bracket\n")
 
 	_, err := ReadFederation(dir)
-	if err == nil {
-		t.Fatal("expected an error for malformed YAML, got nil")
-	}
-	if !strings.Contains(err.Error(), "YAML parse error") {
-		t.Errorf("error message should contain 'YAML parse error', got: %q", err.Error())
+	if err == nil || !strings.Contains(err.Error(), "YAML parse error") {
+		t.Fatalf("expected 'YAML parse error', got: %v", err)
 	}
 }
 
-func TestReadFederation_EmptyReposList_ReturnsError(t *testing.T) {
+func TestReadFederation_EmptyDomainsList_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	content := `repos: []
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
+	writeManifest(t, dir, "domains: []\n")
 
 	_, err := ReadFederation(dir)
-	if err == nil {
-		t.Fatal("expected an error for empty repos list, got nil")
-	}
-	if !strings.Contains(err.Error(), "repos list is empty") {
-		t.Errorf("error message should contain 'repos list is empty', got: %q", err.Error())
+	if err == nil || !strings.Contains(err.Error(), "domains list is empty") {
+		t.Fatalf("expected 'domains list is empty', got: %v", err)
 	}
 }
 
-func TestReadFederation_MissingReposKey_ReturnsError(t *testing.T) {
+func TestReadFederation_MissingDomainsKey_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	content := `something: else
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
+	writeManifest(t, dir, "something: else\n")
 
 	_, err := ReadFederation(dir)
-	if err == nil {
-		t.Fatal("expected an error when repos key is absent, got nil")
-	}
-	if !strings.Contains(err.Error(), "repos list is empty") {
-		t.Errorf("error message should contain 'repos list is empty', got: %q", err.Error())
+	if err == nil || !strings.Contains(err.Error(), "domains list is empty") {
+		t.Fatalf("expected 'domains list is empty', got: %v", err)
 	}
 }
 
-func TestReadFederation_MissingName_ReturnsError(t *testing.T) {
+func TestReadFederation_DomainMissingName_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	content := `repos:
-  - purpose: "Some purpose"
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
+	writeManifest(t, dir, `domains:
+  - purpose: "no name"
+    repos:
+      - name: owner/repo
+        purpose: "p"
+`)
+
+	_, err := ReadFederation(dir)
+	if err == nil || !strings.Contains(err.Error(), "name is required") {
+		t.Fatalf("expected domain 'name is required', got: %v", err)
 	}
+}
+
+func TestReadFederation_DomainBadSlug_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, `domains:
+  - name: "Not A Slug"
+    purpose: "p"
+    repos:
+      - name: owner/repo
+        purpose: "p"
+`)
+
+	_, err := ReadFederation(dir)
+	if err == nil || !strings.Contains(err.Error(), "lowercase slug") {
+		t.Fatalf("expected slug error, got: %v", err)
+	}
+}
+
+func TestReadFederation_DomainMissingPurpose_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, `domains:
+  - name: charging
+    purpose: "   "
+    repos:
+      - name: owner/repo
+        purpose: "p"
+`)
+
+	_, err := ReadFederation(dir)
+	if err == nil || !strings.Contains(err.Error(), "purpose is required") {
+		t.Fatalf("expected domain 'purpose is required', got: %v", err)
+	}
+}
+
+func TestReadFederation_DuplicateDomain_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, `domains:
+  - name: charging
+    purpose: "p"
+    repos:
+      - name: owner/repo-a
+        purpose: "p"
+  - name: charging
+    purpose: "p"
+    repos:
+      - name: owner/repo-b
+        purpose: "p"
+`)
+
+	_, err := ReadFederation(dir)
+	if err == nil || !strings.Contains(err.Error(), "duplicate domain") {
+		t.Fatalf("expected 'duplicate domain', got: %v", err)
+	}
+}
+
+func TestReadFederation_DomainEmptyRepos_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, `domains:
+  - name: charging
+    purpose: "p"
+    repos: []
+`)
+
+	_, err := ReadFederation(dir)
+	if err == nil || !strings.Contains(err.Error(), "repos list is empty") {
+		t.Fatalf("expected 'repos list is empty', got: %v", err)
+	}
+}
+
+// AC-2: a repo with no name yields an error naming the offending domain.
+func TestReadFederation_RepoMissingName_ErrorNamesDomain(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, `domains:
+  - name: charging
+    purpose: "p"
+    repos:
+      - purpose: "no name"
+`)
 
 	_, err := ReadFederation(dir)
 	if err == nil {
-		t.Fatal("expected an error for missing name, got nil")
+		t.Fatal("expected an error for missing repo name, got nil")
 	}
 	if !strings.Contains(err.Error(), "name is required") {
-		t.Errorf("error message should contain 'name is required', got: %q", err.Error())
+		t.Errorf("expected 'name is required', got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "charging") {
+		t.Errorf("expected the error to name the offending domain 'charging', got: %q", err.Error())
 	}
 }
 
-func TestReadFederation_MissingPurpose_ReturnsError(t *testing.T) {
+func TestReadFederation_RepoMissingPurpose_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	content := `repos:
-  - name: owner/repo-name
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
+	writeManifest(t, dir, `domains:
+  - name: charging
+    purpose: "p"
+    repos:
+      - name: owner/repo
+        purpose: "   "
+`)
 
 	_, err := ReadFederation(dir)
-	if err == nil {
-		t.Fatal("expected an error for missing purpose, got nil")
-	}
-	if !strings.Contains(err.Error(), "purpose is required") {
-		t.Errorf("error message should contain 'purpose is required', got: %q", err.Error())
+	if err == nil || !strings.Contains(err.Error(), "purpose is required") {
+		t.Fatalf("expected repo 'purpose is required', got: %v", err)
 	}
 }
 
-func TestReadFederation_BlankPurpose_ReturnsError(t *testing.T) {
-	dir := t.TempDir()
-	content := `repos:
-  - name: owner/repo-name
-    purpose: "   "
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
-
-	_, err := ReadFederation(dir)
-	if err == nil {
-		t.Fatal("expected an error for blank purpose, got nil")
-	}
-	if !strings.Contains(err.Error(), "purpose is required") {
-		t.Errorf("error message should contain 'purpose is required', got: %q", err.Error())
-	}
-}
-
-func TestReadFederation_BadNameFormat_ReturnsError(t *testing.T) {
-	tests := []struct {
-		name    string
-		badName string
-	}{
-		{name: "no slash", badName: "justareponame"},
-		{name: "double slash", badName: "owner/repo/extra"},
-		{name: "empty owner", badName: "/repoonly"},
-		{name: "empty repo", badName: "owneronly/"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+func TestReadFederation_RepoBadNameFormat_ReturnsError(t *testing.T) {
+	for _, badName := range []string{"justareponame", "owner/repo/extra", "/repoonly", "owneronly/"} {
+		t.Run(badName, func(t *testing.T) {
 			dir := t.TempDir()
-			content := "repos:\n  - name: " + tc.badName + "\n    purpose: \"A purpose\"\n"
-			if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-				t.Fatalf("writing FEDERATION.md: %v", err)
-			}
+			writeManifest(t, dir, "domains:\n  - name: charging\n    purpose: \"p\"\n    repos:\n      - name: "+badName+"\n        purpose: \"p\"\n")
 
 			_, err := ReadFederation(dir)
-			if err == nil {
-				t.Fatalf("expected error for name %q, got nil", tc.badName)
-			}
-			if !strings.Contains(err.Error(), "owner/repo format") {
-				t.Errorf("error should mention 'owner/repo format', got: %q", err.Error())
+			if err == nil || !strings.Contains(err.Error(), "owner/repo format") {
+				t.Fatalf("expected 'owner/repo format' error for %q, got: %v", badName, err)
 			}
 		})
 	}
 }
 
-func TestReadFederation_DuplicateName_ReturnsError(t *testing.T) {
+func TestReadFederation_DuplicateRepoAcrossDomains_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	content := `repos:
-  - name: owner/repo-name
-    purpose: "First"
-  - name: owner/repo-name
-    purpose: "Second"
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
+	writeManifest(t, dir, `domains:
+  - name: charging
+    purpose: "p"
+    repos:
+      - name: Owner/Shared-Repo
+        purpose: "p"
+  - name: billing
+    purpose: "p"
+    repos:
+      - name: owner/shared-repo
+        purpose: "p"
+`)
 
 	_, err := ReadFederation(dir)
-	if err == nil {
-		t.Fatal("expected an error for duplicate repo name, got nil")
-	}
-	if !strings.Contains(err.Error(), "duplicate repo") {
-		t.Errorf("error message should contain 'duplicate repo', got: %q", err.Error())
-	}
-}
-
-func TestReadFederation_DuplicateNameCaseInsensitive_ReturnsError(t *testing.T) {
-	dir := t.TempDir()
-	content := `repos:
-  - name: Owner/Repo-Name
-    purpose: "First"
-  - name: owner/repo-name
-    purpose: "Second"
-`
-	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
-		t.Fatalf("writing FEDERATION.md: %v", err)
-	}
-
-	_, err := ReadFederation(dir)
-	if err == nil {
-		t.Fatal("expected an error for case-insensitive duplicate repo name, got nil")
-	}
-	if !strings.Contains(err.Error(), "duplicate repo") {
-		t.Errorf("error message should contain 'duplicate repo', got: %q", err.Error())
+	if err == nil || !strings.Contains(err.Error(), "duplicate repo") {
+		t.Fatalf("expected case-insensitive 'duplicate repo' across domains, got: %v", err)
 	}
 }
 
 func TestReadFederation_FileNotFound_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	// No file written — ReadFederation should report the OS error.
-	_, err := ReadFederation(dir)
-	if err == nil {
+	if _, err := ReadFederation(dir); err == nil {
 		t.Fatal("expected an error when FEDERATION.md is absent, got nil")
 	}
 }

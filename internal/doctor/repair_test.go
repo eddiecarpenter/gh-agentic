@@ -430,7 +430,7 @@ func injectFederationSyncFixture(t *testing.T, ownerRepo, repoNodeID string, lin
 	root := setupHealthyRepo(t)
 
 	// Write a valid FEDERATION.md with the target repo.
-	manifest := fmt.Sprintf("repos:\n  - name: %s\n    purpose: test\n", ownerRepo)
+	manifest := fmt.Sprintf("domains:\n  - name: test-domain\n    purpose: test domain\n    repos:\n      - name: %s\n        purpose: test\n", ownerRepo)
 	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
 
 	linkCalls := &[][]string{}

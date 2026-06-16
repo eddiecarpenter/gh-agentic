@@ -31,11 +31,11 @@ type infoData struct {
 	projectHint string
 	topology    string // display value: "Single" or "Federation"
 
-	// federation manifest (Feature #824) — populated when FEDERATION.md
-	// is present at the repo root. Exactly one of federationRepos or
-	// federationError will be non-zero when FEDERATION.md is present.
-	federationRepos []project.FederationRepo
-	federationError string
+	// federation manifest — populated when FEDERATION.md is present at the
+	// repo root. Exactly one of federationDomains or federationError will be
+	// non-zero when FEDERATION.md is present. (#871 — domain-grouped schema.)
+	federationDomains []project.FederationDomain
+	federationError   string
 
 	// framework
 	localVersion  string
@@ -172,7 +172,7 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 		if err != nil {
 			data.federationError = err.Error()
 		} else {
-			data.federationRepos = fed.Repos
+			data.federationDomains = fed.Domains
 		}
 	}
 
@@ -301,7 +301,7 @@ func printInfo(w io.Writer, data *infoData) {
 	}
 
 	// --- Federation section (shown only when FEDERATION.md is present) ---
-	if len(data.federationRepos) > 0 || data.federationError != "" {
+	if len(data.federationDomains) > 0 || data.federationError != "" {
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Federation"))
 		fmt.Fprintln(w, "  "+ui.Divider(48))
@@ -309,9 +309,11 @@ func printInfo(w io.Writer, data *infoData) {
 			fmt.Fprintf(w, "  %s\n", ui.StatusWarning.Render("⚠ FEDERATION.md present but could not be parsed: "+data.federationError))
 		} else {
 			fmt.Fprintf(w, "  This is a federation requirements repository.\n")
-			fmt.Fprintf(w, "  Target repositories:\n")
-			for _, repo := range data.federationRepos {
-				fmt.Fprintf(w, "    - %s: %s\n", repo.Name, repo.Purpose)
+			for _, d := range data.federationDomains {
+				fmt.Fprintf(w, "  Domain %s — %s\n", d.Name, d.Purpose)
+				for _, repo := range d.Repos {
+					fmt.Fprintf(w, "    - %s: %s\n", repo.Name, repo.Purpose)
+				}
 			}
 		}
 	}
