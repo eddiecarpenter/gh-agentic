@@ -100,7 +100,7 @@ change membership, or --force to re-run setup from scratch.`,
 					Description("How will this repo be used?").
 					Options(
 						huh.NewOption("Single  — this repo is the control plane (one repo does everything)", "single"),
-						huh.NewOption("Federated  — this repo joins an existing federated project", "federated"),
+						huh.NewOption("Federated  — this repo is the control plane of a federated project", "federated"),
 					).
 					Value(&topology),
 			))
@@ -135,34 +135,9 @@ change membership, or --force to re-run setup from scratch.`,
 				return nil
 			}
 
-			// Federated path: list federated projects, user picks one.
-			fmt.Fprintf(w, "\n  Fetching federated projects for %s...\n\n", deps.Owner)
-			projects, err := project.ListFederatedProjects(deps)
-			if err != nil {
-				return fmt.Errorf("listing federated projects: %w", err)
-			}
-			if len(projects) == 0 {
-				return fmt.Errorf("no federated agentic projects found for %s — run 'gh agentic project create' on the control plane repo first", deps.Owner)
-			}
-
-			var projectID string
-			var options []huh.Option[string]
-			for _, p := range projects {
-				options = append(options, huh.NewOption(p.Title, p.ID))
-			}
-			projectForm := huh.NewForm(huh.NewGroup(
-				huh.NewSelect[string]().
-					Title("Select federated project").
-					Description("The federated project to join").
-					Options(options...).
-					Value(&projectID),
-			))
-			if err := projectForm.Run(); err != nil {
-				return fmt.Errorf("project selection: %w", err)
-			}
-
-			// Collect configuration — topology is federated (already captured),
-			// project ID comes from the list picker above (not a form field).
+			// Federated path: create a federated control plane (#875). Domain
+			// repos are registered from the control plane via
+			// 'gh agentic project join <owner/repo> --domain', not initialised here.
 			initCfg, err := initpkg.CollectConfigInteractive(w, deps.RepoFullName, initpkg.FormDeps{
 				RunForm:         initpkg.DefaultFormRun,
 				RunCommand:      auth.DefaultRunCommand,
@@ -175,9 +150,8 @@ change membership, or --force to re-run setup from scratch.`,
 			}
 
 			if err := project.InitRepo(w, deps, project.InitRepoConfig{
-				Mode:      project.InitModeFederated,
-				ProjectID: projectID,
-				InitCfg:   initCfg,
+				Mode:    project.InitModeFederated,
+				InitCfg: initCfg,
 			}); err != nil {
 				return err
 			}

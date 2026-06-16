@@ -3,34 +3,31 @@ package project
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
 
 	initpkg "github.com/eddiecarpenter/gh-agentic/internal/init"
-	"github.com/eddiecarpenter/gh-agentic/internal/mount"
 	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
-// InitMode indicates whether the repo is being set up as a single control
-// plane or as a domain repo joining a federated project.
+// InitMode indicates whether the repo is being set up as a single-topology
+// control plane or as a federated control plane.
 type InitMode int
 
 const (
-	InitModeSingle    InitMode = iota // Create new project, set up as control plane.
-	InitModeFederated                 // Join existing federated project.
+	InitModeSingle    InitMode = iota // Create a single-topology control plane.
+	InitModeFederated                 // Create a federated control plane.
 )
 
 // InitRepoConfig holds the collected configuration for project init.
 type InitRepoConfig struct {
-	Mode      InitMode
-	ProjectID string              // Federated mode only — selected project.
-	InitCfg   *initpkg.InitConfig // Full wizard config.
+	Mode    InitMode
+	InitCfg *initpkg.InitConfig // Full wizard config.
 }
 
 // InitRepo performs first-time setup for a repo.
-// For single: creates project + mount + configure secrets/variables.
-// For federated: joins existing federated project + mount at CP version + configure.
+// For single: creates a single-topology project + mount + configure secrets/variables.
+// For federated: creates a federated control plane — project + an empty FEDERATION.md
+// + federated-tier system docs + mount. Domain repos are registered from the control
+// plane via 'gh agentic project join', not via init.
 func InitRepo(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 	// Guard: must not already be affiliated.
 	existing, _ := deps.GetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName)
@@ -55,7 +52,7 @@ func InitRepo(w io.Writer, deps Deps, cfg InitRepoConfig) error {
 	case InitModeSingle:
 		return initSingle(w, deps, cfg.InitCfg)
 	case InitModeFederated:
-		return initFederated(w, deps, cfg)
+		return initFederatedCP(w, deps, cfg.InitCfg)
 	default:
 		return fmt.Errorf("unknown init mode")
 	}
@@ -91,117 +88,31 @@ func initSingle(w io.Writer, deps Deps, cfg *initpkg.InitConfig) error {
 	return nil
 }
 
-// initFederated joins this repo to an existing federated project and configures it.
-func initFederated(w io.Writer, deps Deps, cfg InitRepoConfig) error {
-	fmt.Fprintln(w, "  Joining federated project...")
+// initFederatedCP creates a federated control plane: a project board, an empty
+// FEDERATION.md + federated-tier system docs (both scaffolded by Create), the
+// framework mount, and the standard agent / config files. Domain repos are
+// registered from the control plane via 'gh agentic project join', not via init.
+func initFederatedCP(w io.Writer, deps Deps, cfg *initpkg.InitConfig) error {
+	fmt.Fprintln(w, "  Creating federated control plane...")
 	fmt.Fprintln(w)
 
-	// Get the control plane version.
-	linked, err := deps.FetchLinkedRepos(cfg.ProjectID)
-	if err != nil {
-		return fmt.Errorf("fetching linked repos: %w", err)
+	createCfg := CreateConfig{
+		Title:    deps.RepoName,
+		Version:  cfg.Version,
+		Topology: TopologyStringFederation,
 	}
-	cp, ok := ControlPlaneRepo(linked)
-	if !ok {
-		return fmt.Errorf("no control plane found for this project")
-	}
-	parts := strings.SplitN(cp.NameWithOwner, "/", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("cannot parse control plane repo name: %s", cp.NameWithOwner)
-	}
-
-	cpVersion, err := deps.GetRepoVariable(parts[0], parts[1], FrameworkVersionVarName)
-	if err != nil || cpVersion == "" {
-		// Fall back to latest release.
-		releases, relErr := deps.FetchReleases(mount.FrameworkRepo)
-		if relErr != nil || len(releases) == 0 {
-			return fmt.Errorf("cannot determine framework version from control plane and no releases available")
-		}
-		cpVersion = releases[0].TagName
-		fmt.Fprintf(w, "  %s  Control plane version not set — using latest: %s\n", ui.StatusWarning.Render("⚠"), cpVersion)
-	} else {
-		fmt.Fprintf(w, "  %s  Control plane framework version: %s\n", ui.StatusOK.Render("✓"), cpVersion)
-	}
-
-	// Set AGENTIC_PROJECT_ID.
-	fmt.Fprintf(w, "  Setting %s...\n", ProjectVarName)
-	if err := deps.SetRepoVariable(deps.Owner, deps.RepoName, ProjectVarName, cfg.ProjectID); err != nil {
-		return fmt.Errorf("setting %s: %w", ProjectVarName, err)
-	}
-	fmt.Fprintf(w, "  %s  %s set\n", ui.StatusOK.Render("✓"), ProjectVarName)
-
-	// Mount the framework at the control plane version. The mounted version
-	// is tracked via .agents/.git metadata — no flat .ai-version file is
-	// written (removed by feature #571 / task #585).
-	aiDir := filepath.Join(deps.Root, ".agents")
-	freshMount := false
-	if _, err := os.Stat(aiDir); os.IsNotExist(err) {
-		fmt.Fprintf(w, "  Mounting framework %s...\n", cpVersion)
-		if err := mount.DownloadFramework(deps.Root, cpVersion, deps.Clone); err != nil {
-			return fmt.Errorf("mounting framework: %w", err)
-		}
-		fmt.Fprintf(w, "  %s  Framework mounted at %s\n", ui.StatusOK.Render("✓"), cpVersion)
-		freshMount = true
-	} else {
-		localVersion, _ := mount.ReadAIVersionFromGit(deps.Root)
-		if localVersion == "" {
-			localVersion = "(unknown)"
-		}
-		fmt.Fprintf(w, "  %s  Framework already mounted at %s\n", ui.StatusOK.Render("✓"), localVersion)
-	}
-
-	// Scaffold agent instruction files and wrapper workflows on fresh mounts.
-	// Skipped when the framework was already present to avoid clobbering edits.
-	if freshMount {
-		if err := mount.ScaffoldProjectFiles(w, deps.Root, cpVersion); err != nil {
-			return fmt.Errorf("scaffolding project files: %w", err)
-		}
-		if err := mount.ScaffoldLocalRules(w, deps.Root, deps.RepoName, deps.Owner, "federated"); err != nil {
-			return fmt.Errorf("scaffolding LOCALRULES.md: %w", err)
-		}
+	if err := Create(w, deps, createCfg); err != nil {
+		return fmt.Errorf("creating control plane: %w", err)
 	}
 
 	// Configure secrets, variables, and agent access.
-	if cfg.InitCfg != nil && cfg.InitCfg.RepoFullName != "" {
-		if err := initpkg.ConfigureRepo(w, cfg.InitCfg, deps.Run); err != nil {
+	if cfg != nil && cfg.RepoFullName != "" {
+		if err := initpkg.ConfigureRepo(w, cfg, deps.Run); err != nil {
 			return fmt.Errorf("configuring repo: %w", err)
 		}
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %s\n\n", ui.StatusOK.Render("Repository initialised as federated domain repo"))
+	fmt.Fprintf(w, "  %s\n\n", ui.StatusOK.Render("Repository initialised as federated control plane"))
 	return nil
-}
-
-// ListFederatedProjects returns only projects whose control plane has AGENTIC_TOPOLOGY=federated.
-func ListFederatedProjects(deps Deps) ([]ProjectInfo, error) {
-	ownerType, err := deps.DetectOwnerType(deps.Owner)
-	if err != nil {
-		ownerType = "User"
-	}
-	all, err := deps.FetchProjectsForOwner(deps.Owner, ownerType)
-	if err != nil {
-		return nil, fmt.Errorf("fetching projects: %w", err)
-	}
-
-	var federated []ProjectInfo
-	for _, p := range all {
-		linked, err := deps.FetchLinkedRepos(p.ID)
-		if err != nil {
-			continue
-		}
-		cp, ok := ControlPlaneRepo(linked)
-		if !ok {
-			continue
-		}
-		parts := strings.SplitN(cp.NameWithOwner, "/", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		topo, _ := deps.GetRepoVariable(parts[0], parts[1], TopologyVarName)
-		if topo == "federated" {
-			federated = append(federated, p)
-		}
-	}
-	return federated, nil
 }
