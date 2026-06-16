@@ -43,6 +43,7 @@ func ScaffoldFederation(w io.Writer, root string) error {
 		}
 		fmt.Fprintf(w, "  %s  %s scaffolded\n", ui.StatusOK.Render("✓"), path)
 	}
+	fmt.Fprintf(w, "  Register domain repos from here with: gh agentic project join <owner/repo> --domain <name>\n")
 	return nil
 }
 

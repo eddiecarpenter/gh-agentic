@@ -1003,8 +1003,13 @@ func checkFederationProjectSync(deps CheckDeps) Group {
 		}
 	}
 
-	// AC-2: project-linked repos absent from the manifest.
+	// AC-2: project-linked repos absent from the manifest. The control-plane repo
+	// itself is linked to its own Project but is legitimately not a domain repo,
+	// so it is excluded from the unlisted warning (#875).
 	for _, r := range linked {
+		if strings.EqualFold(r.NameWithOwner, deps.RepoFullName) {
+			continue
+		}
 		if !manifestSet[strings.ToLower(r.NameWithOwner)] {
 			g.Results = append(g.Results, CheckResult{
 				Name:    fmt.Sprintf("federation-sync:unlisted:%s", r.NameWithOwner),

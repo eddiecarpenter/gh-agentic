@@ -1856,3 +1856,50 @@ func TestIsPureCodeDomainRepo_NegativeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckFederationProjectSync_CPRepoNotFlaggedUnlisted verifies the #875
+// refinement: the control-plane repo itself, linked to its own Project but not a
+// domain repo, is not flagged `unlisted`.
+func TestCheckFederationProjectSync_CPRepoNotFlaggedUnlisted(t *testing.T) {
+	root := t.TempDir()
+	writeFederationManifest(t, root, "acme/domain")
+	deps := CheckDeps{
+		Root:                 root,
+		RepoFullName:         "acme/cp",
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos("acme/domain", "acme/cp"),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs("acme/domain"),
+	}
+
+	g := checkFederationProjectSync(deps)
+	for _, r := range g.Results {
+		if r.Name == "federation-sync:unlisted:acme/cp" {
+			t.Error("the control-plane repo must not be flagged unlisted against its own Project")
+		}
+	}
+}
+
+// TestCheckFederationProjectSync_DomainRepoUnlisted_Warns verifies AC-3: a
+// project-linked repo absent from FEDERATION.md is flagged as drift.
+func TestCheckFederationProjectSync_DomainRepoUnlisted_Warns(t *testing.T) {
+	root := t.TempDir()
+	writeFederationManifest(t, root, "acme/domain")
+	deps := CheckDeps{
+		Root:                 root,
+		RepoFullName:         "acme/cp",
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos("acme/domain", "acme/extra"),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs("acme/domain"),
+	}
+
+	g := checkFederationProjectSync(deps)
+	var found bool
+	for _, r := range g.Results {
+		if r.Name == "federation-sync:unlisted:acme/extra" && r.Status == Warning {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected acme/extra (linked, not in manifest) flagged unlisted, got: %+v", g.Results)
+	}
+}

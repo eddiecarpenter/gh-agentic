@@ -174,3 +174,34 @@ func TestUnlink_Blocked_SingleWithDocsContent(t *testing.T) {
 		t.Errorf("expected 'blocked' in error, got: %v", err)
 	}
 }
+
+// TestJoinDomain_RegistersMultipleReposUnderOneDomain verifies AC-2 (#875): two
+// joins under one --domain register the domain with both repos, both linked.
+func TestJoinDomain_RegistersMultipleReposUnderOneDomain(t *testing.T) {
+	tmp := t.TempDir()
+	deps := testDeps("cp-owner", "cp")
+	deps.Root = tmp
+	deps.SetRepoVariable = func(o, r, n, v string) error { return nil }
+	deps.FetchOwnerAndRepoIDs = func(o, r string) (string, string, error) { return "o", "id-" + r, nil }
+	var linked []string
+	deps.LinkRepoToProject = func(p, r string) error { linked = append(linked, r); return nil }
+
+	var buf bytes.Buffer
+	if err := JoinDomain(&buf, deps, "PVT_cp", "cp-owner", "rating", "charging", "Charging domain", "Rating"); err != nil {
+		t.Fatalf("join 1: %v", err)
+	}
+	if err := JoinDomain(&buf, deps, "PVT_cp", "cp-owner", "balance", "charging", "Charging domain", "Balance"); err != nil {
+		t.Fatalf("join 2: %v", err)
+	}
+
+	fed, err := ReadFederation(tmp)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(fed.Domains) != 1 || len(fed.Domains[0].Repos) != 2 {
+		t.Fatalf("expected one domain with two repos, got %d domain(s)", len(fed.Domains))
+	}
+	if len(linked) != 2 {
+		t.Errorf("expected both repos linked to the project, got %d", len(linked))
+	}
+}
