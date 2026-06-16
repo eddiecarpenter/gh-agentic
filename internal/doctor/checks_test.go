@@ -1794,3 +1794,66 @@ func TestCheckFederationProjectSync_NotWiredForFrameworkSource(t *testing.T) {
 		}
 	}
 }
+
+// TestPureCodeDomainRepo_MinimalChecks verifies a registered pure-code domain
+// repo (AGENTIC_PROJECT_ID + no .agents + no FEDERATION.md) runs only the
+// minimal check list and skips the framework-mount / labels / workflow checks
+// (#874).
+func TestPureCodeDomainRepo_MinimalChecks(t *testing.T) {
+	tmp := t.TempDir() // no .agents, no FEDERATION.md
+	deps := CheckDeps{Root: tmp, ProjectID: "PVT_domain"}
+
+	if !isPureCodeDomainRepo(deps) {
+		t.Fatal("expected a registered pure-code domain repo to be detected")
+	}
+	steps := checksForTopologyWithLabels(deps)
+
+	labels := map[string]bool{}
+	for _, s := range steps {
+		labels[s.label] = true
+	}
+	if !labels["Identifying repo role..."] {
+		t.Errorf("domain repo should emit the domain-role notice, got: %v", labels)
+	}
+	if !labels["Checking repository..."] || !labels["Checking project reachability..."] {
+		t.Errorf("domain repo should run repository + project reachability, got: %v", labels)
+	}
+	for _, skipped := range []string{"Checking framework mount...", "Checking pipeline labels...", "Checking workflows...", "Checking agent files..."} {
+		if labels[skipped] {
+			t.Errorf("domain repo should skip %q", skipped)
+		}
+	}
+}
+
+func TestIsPureCodeDomainRepo_NegativeCases(t *testing.T) {
+	withAgents := func() string {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	withManifest := func() string {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "FEDERATION.md"), []byte("domains: []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	cases := []struct {
+		name string
+		deps CheckDeps
+	}{
+		{"no project id", CheckDeps{Root: t.TempDir()}},
+		{"framework source", CheckDeps{Root: t.TempDir(), ProjectID: "P", FrameworkSource: true}},
+		{"has .agents (single/CP)", CheckDeps{Root: withAgents(), ProjectID: "P"}},
+		{"has FEDERATION.md (CP)", CheckDeps{Root: withManifest(), ProjectID: "P"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if isPureCodeDomainRepo(c.deps) {
+				t.Errorf("%s must not be classified as a pure-code domain repo", c.name)
+			}
+		})
+	}
+}

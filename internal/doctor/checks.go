@@ -235,6 +235,18 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		return base
 	}
 
+	// Feature #874: a pure-code domain repo carries AGENTIC_PROJECT_ID but no
+	// .agents mount and no FEDERATION.md — the control plane holds the framework.
+	// It runs only the minimal checks: it is registered code, not a framework
+	// consumer, so mount/content/label/workflow checks do not apply.
+	if isPureCodeDomainRepo(deps) {
+		return []checkGroupStep{
+			{"Identifying repo role...", checkDomainRepo},
+			{"Checking repository...", checkRepository},
+			{"Checking project reachability...", checkProjectReachability},
+		}
+	}
+
 	// Feature #824: topology is now binary (single / federation). All repos
 	// run the same set of checks regardless of topology variant.
 	base := []checkGroupStep{
@@ -270,6 +282,46 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		{"Checking legacy federation config...", checkLegacyFederationConfig},
 	}
 	return base
+}
+
+// checkDomainRepo reports that the current repo is a registered pure-code domain
+// (execution) repo (#874): it carries AGENTIC_PROJECT_ID but no .agents mount —
+// the framework is managed on the control plane, not here. This is the correct,
+// passing state for a domain repo; the mount / pipeline-infrastructure checks do
+// not apply because the domain repo is not under framework control.
+func checkDomainRepo(deps CheckDeps) Group {
+	g := Group{Name: "Domain repo"}
+	g.Results = append(g.Results, CheckResult{
+		Name:    "domain-repo",
+		Status:  Pass,
+		Message: "pure-code domain (execution) repo — the framework is managed on the control plane; this repo carries code only and is not under framework control here",
+	})
+	return g
+}
+
+// isPureCodeDomainRepo reports whether deps describes a registered pure-code
+// domain repo (#874): it carries AGENTIC_PROJECT_ID but has no .agents mount,
+// is not the framework source, and is not a federation requirements repo (no
+// FEDERATION.md). Such a repo is validated as code, not as a framework consumer.
+//
+// Detection is absence-based: a domain repo carrying a stale .agents from the
+// pre-pivot model is NOT distinguishable here from a single-topology repo, and
+// its cleanup is handled by the #876 migration where the control-plane context
+// is available.
+func isPureCodeDomainRepo(deps CheckDeps) bool {
+	if deps.FrameworkSource {
+		return false
+	}
+	if strings.TrimSpace(deps.ProjectID) == "" {
+		return false
+	}
+	if project.IsFederationRepo(deps.Root) {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(deps.Root, ".agents")); err == nil {
+		return false
+	}
+	return true
 }
 
 // checksForTopology returns the ordered list of check functions for the given topology.
