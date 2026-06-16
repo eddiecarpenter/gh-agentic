@@ -5,6 +5,7 @@ triggers: automated
 user-invocable: false
 loads:
   - skills/definitions/error-handling.md
+  - skills/definitions/cp-execution-context.md
   - skills/definitions/verification-procedure.md
   - skills/definitions/step-skip-rule.md
   - skills/definitions/commit-discipline.md
@@ -93,6 +94,13 @@ addressed.
 
 ## Definitions
 
+- `skills/definitions/cp-execution-context.md` — the control-plane
+  execution context (#873): cwd is the project code
+  (`$AGENTIC_PROJECT_DIR`) where the PR branch lives; the PR and its
+  review threads live in the project repo, while docs and the rulebook
+  live on the control plane (`$AGENTIC_CP_ROOT`). Read docs from
+  `$AGENTIC_CP_ROOT/docs`; commit and push fixes only inside the
+  project; never write to the control-plane checkout.
 - `skills/definitions/error-handling.md` — severity taxonomy for
   `INVALID_REVIEW_STATE`, `BRANCH_MISSING`, `REPLY_FAILED`,
   `COMMIT_DISCIPLINE_FAILED`, `CHANGE_BLOCKED`.
