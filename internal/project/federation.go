@@ -111,48 +111,111 @@ func ReadFederation(root string) (*Federation, error) {
 		return nil, fmt.Errorf("FEDERATION.md: domains list is empty")
 	}
 
+	if err := validateFederation(&fed); err != nil {
+		return nil, err
+	}
+	return &fed, nil
+}
+
+// validateFederation applies the domain-grouped manifest rules. It is shared by
+// ReadFederation (after parsing) and WriteFederation (before writing) so a
+// malformed in-memory Federation never reaches disk.
+func validateFederation(fed *Federation) error {
+	if len(fed.Domains) == 0 {
+		return fmt.Errorf("FEDERATION.md: domains list is empty")
+	}
 	seenRepo := make(map[string]bool)
 	seenDomain := make(map[string]bool)
 	for di, d := range fed.Domains {
 		domainNo := di + 1
 		if d.Name == "" {
-			return nil, fmt.Errorf("FEDERATION.md: domain %d: name is required", domainNo)
+			return fmt.Errorf("FEDERATION.md: domain %d: name is required", domainNo)
 		}
 		if !domainNamePattern.MatchString(d.Name) {
-			return nil, fmt.Errorf("FEDERATION.md: domain %q: name must be a lowercase slug ([a-z0-9-])", d.Name)
+			return fmt.Errorf("FEDERATION.md: domain %q: name must be a lowercase slug ([a-z0-9-])", d.Name)
 		}
 		if strings.TrimSpace(d.Purpose) == "" {
-			return nil, fmt.Errorf("FEDERATION.md: domain %q: purpose is required", d.Name)
+			return fmt.Errorf("FEDERATION.md: domain %q: purpose is required", d.Name)
 		}
 		domainKey := strings.ToLower(d.Name)
 		if seenDomain[domainKey] {
-			return nil, fmt.Errorf("FEDERATION.md: duplicate domain %q", d.Name)
+			return fmt.Errorf("FEDERATION.md: duplicate domain %q", d.Name)
 		}
 		seenDomain[domainKey] = true
 
 		if len(d.Repos) == 0 {
-			return nil, fmt.Errorf("FEDERATION.md: domain %q: repos list is empty", d.Name)
+			return fmt.Errorf("FEDERATION.md: domain %q: repos list is empty", d.Name)
 		}
 		for ri, repo := range d.Repos {
 			repoNo := ri + 1
 			if repo.Name == "" {
-				return nil, fmt.Errorf("FEDERATION.md: domain %q: repo %d: name is required", d.Name, repoNo)
+				return fmt.Errorf("FEDERATION.md: domain %q: repo %d: name is required", d.Name, repoNo)
 			}
 			if strings.TrimSpace(repo.Purpose) == "" {
-				return nil, fmt.Errorf("FEDERATION.md: domain %q: repo %q: purpose is required", d.Name, repo.Name)
+				return fmt.Errorf("FEDERATION.md: domain %q: repo %q: purpose is required", d.Name, repo.Name)
 			}
 			if !isValidOwnerRepo(repo.Name) {
-				return nil, fmt.Errorf("FEDERATION.md: domain %q: repo %q: name must be in owner/repo format", d.Name, repo.Name)
+				return fmt.Errorf("FEDERATION.md: domain %q: repo %q: name must be in owner/repo format", d.Name, repo.Name)
 			}
 			repoKey := strings.ToLower(repo.Name)
 			if seenRepo[repoKey] {
-				return nil, fmt.Errorf("FEDERATION.md: duplicate repo %q", repo.Name)
+				return fmt.Errorf("FEDERATION.md: duplicate repo %q", repo.Name)
 			}
 			seenRepo[repoKey] = true
 		}
 	}
+	return nil
+}
 
-	return &fed, nil
+// HasDomain reports whether a domain with the given name (case-insensitive)
+// already exists in the manifest.
+func (f *Federation) HasDomain(name string) bool {
+	for _, d := range f.Domains {
+		if strings.EqualFold(d.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// AddRepo registers repoName under the named domain, lazy-creating the domain
+// (with domainPurpose) when it does not yet exist. It returns whether a new
+// domain was created. It errors when repoName is already registered in any
+// domain — a repo belongs to exactly one domain.
+func (f *Federation) AddRepo(domain, domainPurpose, repoName, repoPurpose string) (createdDomain bool, err error) {
+	for _, d := range f.Domains {
+		for _, r := range d.Repos {
+			if strings.EqualFold(r.Name, repoName) {
+				return false, fmt.Errorf("repo %q is already registered in domain %q", repoName, d.Name)
+			}
+		}
+	}
+	repo := FederationRepo{Name: repoName, Purpose: repoPurpose}
+	for i := range f.Domains {
+		if strings.EqualFold(f.Domains[i].Name, domain) {
+			f.Domains[i].Repos = append(f.Domains[i].Repos, repo)
+			return false, nil
+		}
+	}
+	f.Domains = append(f.Domains, FederationDomain{Name: domain, Purpose: domainPurpose, Repos: []FederationRepo{repo}})
+	return true, nil
+}
+
+// WriteFederation writes the domain-grouped manifest to FEDERATION.md at root,
+// round-tripping the schema ReadFederation parses. The manifest is validated
+// before writing so a malformed in-memory Federation never reaches disk.
+func WriteFederation(root string, fed *Federation) error {
+	if err := validateFederation(fed); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(fed)
+	if err != nil {
+		return fmt.Errorf("FEDERATION.md: marshalling: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, federationFileName), data, 0644); err != nil {
+		return fmt.Errorf("FEDERATION.md: %w", err)
+	}
+	return nil
 }
 
 // isValidOwnerRepo returns true when name is in "owner/repo" format with

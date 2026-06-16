@@ -332,3 +332,78 @@ func TestReadFederation_FileNotFound_ReturnsError(t *testing.T) {
 		t.Fatal("expected an error when FEDERATION.md is absent, got nil")
 	}
 }
+
+func TestWriteFederation_RoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, validManifest)
+	fed, err := ReadFederation(dir)
+	if err != nil {
+		t.Fatalf("ReadFederation: %v", err)
+	}
+
+	created, err := fed.AddRepo("billing", "Invoice generation", "owner/billing-statements", "Statements")
+	if err != nil {
+		t.Fatalf("AddRepo: %v", err)
+	}
+	if created {
+		t.Error("expected createdDomain=false for an existing domain")
+	}
+	if err := WriteFederation(dir, fed); err != nil {
+		t.Fatalf("WriteFederation: %v", err)
+	}
+
+	reread, err := ReadFederation(dir)
+	if err != nil {
+		t.Fatalf("re-ReadFederation: %v", err)
+	}
+	if len(reread.AllRepos()) != 4 {
+		t.Fatalf("expected 4 repos after round-trip, got %d", len(reread.AllRepos()))
+	}
+	var found bool
+	for _, r := range reread.AllRepos() {
+		if r.Name == "owner/billing-statements" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the added repo did not survive the write/read round-trip")
+	}
+}
+
+func TestWriteFederation_RejectsInvalid(t *testing.T) {
+	dir := t.TempDir()
+	fed := &Federation{Domains: []FederationDomain{{Name: "charging", Purpose: "p", Repos: nil}}}
+	if err := WriteFederation(dir, fed); err == nil {
+		t.Fatal("expected WriteFederation to reject an invalid manifest")
+	}
+	if IsFederationRepo(dir) {
+		t.Error("an invalid manifest must not be written to disk")
+	}
+}
+
+func TestFederation_AddRepo_LazyCreatesDomain(t *testing.T) {
+	fed := &Federation{}
+	created, err := fed.AddRepo("billing", "Invoicing", "acme/billing", "Bill runs")
+	if err != nil {
+		t.Fatalf("AddRepo: %v", err)
+	}
+	if !created {
+		t.Error("expected createdDomain=true for a new domain")
+	}
+	if !fed.HasDomain("Billing") {
+		t.Error("HasDomain should match case-insensitively")
+	}
+	if len(fed.Domains) != 1 || len(fed.Domains[0].Repos) != 1 {
+		t.Fatalf("expected 1 domain with 1 repo, got %d domains", len(fed.Domains))
+	}
+}
+
+func TestFederation_AddRepo_RejectsDuplicate(t *testing.T) {
+	fed := &Federation{}
+	if _, err := fed.AddRepo("charging", "C", "acme/svc", "p"); err != nil {
+		t.Fatalf("first AddRepo: %v", err)
+	}
+	if _, err := fed.AddRepo("billing", "B", "Acme/SVC", "p"); err == nil {
+		t.Fatal("expected a duplicate-repo error (case-insensitive) across domains")
+	}
+}
