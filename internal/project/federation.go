@@ -4,27 +4,62 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// FederationRepo represents a single target repository listed in FEDERATION.md.
+// FederationRepo represents a single target repository within a domain.
 type FederationRepo struct {
 	// Name is the full "owner/repo" identifier of the target repository.
 	Name string `yaml:"name"`
-	// Purpose is a human-readable description of this repo's role in the federation.
+	// Purpose is a human-readable description of this repo's role in the domain.
 	Purpose string `yaml:"purpose"`
+}
+
+// FederationDomain groups one or more repos under a named domain. A domain is
+// the unit of documentation tiering: its docs live centrally on the control
+// plane under docs/domains/<name>/.
+type FederationDomain struct {
+	// Name is a filesystem-safe slug; it maps to docs/domains/<name>/.
+	Name string `yaml:"name"`
+	// Purpose is a human-readable description of the domain.
+	Purpose string `yaml:"purpose"`
+	// Repos are the implementation repositories that make up this domain.
+	// A single-repo domain is valid — its list has one entry.
+	Repos []FederationRepo `yaml:"repos"`
 }
 
 // Federation holds the parsed contents of a FEDERATION.md manifest file.
 type Federation struct {
-	// Repos is the list of target repositories declared in the manifest.
+	// Domains groups the federation's repos under the domains they implement.
+	Domains []FederationDomain `yaml:"domains"`
+}
+
+// flatFederation is used only to detect the legacy flat `repos:` schema so
+// ReadFederation can reject it with a migration-guiding error.
+type flatFederation struct {
 	Repos []FederationRepo `yaml:"repos"`
 }
 
 // federationFileName is the canonical name of the federation manifest file.
 const federationFileName = "FEDERATION.md"
+
+// domainNamePattern validates a domain name as a filesystem-safe slug, since
+// each domain maps to a docs/domains/<name>/ folder.
+var domainNamePattern = regexp.MustCompile(`^[a-z0-9-]+$`)
+
+// AllRepos flattens the manifest's domains into a single ordered slice of
+// repos, preserving domain and in-domain order. Consumers that need the flat
+// target set use this rather than re-walking the nesting.
+func (f *Federation) AllRepos() []FederationRepo {
+	var repos []FederationRepo
+	for _, d := range f.Domains {
+		repos = append(repos, d.Repos...)
+	}
+	return repos
+}
 
 // IsFederationRepo returns true when a FEDERATION.md file exists at root.
 // It uses os.Stat only — no YAML decode — so it is fast and has no side effects.
@@ -35,15 +70,21 @@ func IsFederationRepo(root string) bool {
 	return err == nil
 }
 
-// ReadFederation reads and validates the FEDERATION.md manifest at root.
-// It returns the first validation error found:
+// ReadFederation reads and validates the domain-grouped FEDERATION.md manifest
+// at root. It returns the first validation error found:
 //   - file present but empty → "FEDERATION.md: file is empty"
 //   - YAML parse error → "FEDERATION.md: YAML parse error: <detail>"
-//   - repos list absent or empty → "FEDERATION.md: repos list is empty"
-//   - entry N missing name → "FEDERATION.md: entry N: name is required"
-//   - entry N missing/blank purpose → "FEDERATION.md: entry N: purpose is required"
-//   - entry N name not in owner/repo format → "FEDERATION.md: entry N: name must be in owner/repo format"
-//   - duplicate name → "FEDERATION.md: duplicate repo <name>"
+//   - legacy flat `repos:` schema → "FEDERATION.md: flat `repos:` schema is no longer supported — group repos under `domains:`"
+//   - domains list absent or empty → "FEDERATION.md: domains list is empty"
+//   - domain missing name → "FEDERATION.md: domain N: name is required"
+//   - domain name not a slug → "FEDERATION.md: domain <name>: name must be a lowercase slug ([a-z0-9-])"
+//   - domain missing/blank purpose → "FEDERATION.md: domain <name>: purpose is required"
+//   - duplicate domain → "FEDERATION.md: duplicate domain <name>"
+//   - domain with no repos → "FEDERATION.md: domain <name>: repos list is empty"
+//   - repo missing name → "FEDERATION.md: domain <name>: repo N: name is required"
+//   - repo missing/blank purpose → "FEDERATION.md: domain <name>: repo <name>: purpose is required"
+//   - repo name not owner/repo → "FEDERATION.md: domain <name>: repo <name>: name must be in owner/repo format"
+//   - duplicate repo across the manifest → "FEDERATION.md: duplicate repo <name>"
 func ReadFederation(root string) (*Federation, error) {
 	path := filepath.Join(root, federationFileName)
 	data, err := os.ReadFile(path)
@@ -60,34 +101,62 @@ func ReadFederation(root string) (*Federation, error) {
 		return nil, fmt.Errorf("FEDERATION.md: YAML parse error: %s", err.Error())
 	}
 
-	if len(fed.Repos) == 0 {
-		return nil, fmt.Errorf("FEDERATION.md: repos list is empty")
+	if len(fed.Domains) == 0 {
+		// Hard-cut: a flat `repos:` manifest is rejected with migration guidance
+		// rather than silently treated as empty.
+		var flat flatFederation
+		if yaml.Unmarshal(data, &flat) == nil && len(flat.Repos) > 0 {
+			return nil, fmt.Errorf("FEDERATION.md: flat `repos:` schema is no longer supported — group repos under `domains:`")
+		}
+		return nil, fmt.Errorf("FEDERATION.md: domains list is empty")
 	}
 
-	seen := make(map[string]bool, len(fed.Repos))
-	for i, repo := range fed.Repos {
-		entry := i + 1
-		if repo.Name == "" {
-			return nil, fmt.Errorf("FEDERATION.md: entry %d: name is required", entry)
+	seenRepo := make(map[string]bool)
+	seenDomain := make(map[string]bool)
+	for di, d := range fed.Domains {
+		domainNo := di + 1
+		if d.Name == "" {
+			return nil, fmt.Errorf("FEDERATION.md: domain %d: name is required", domainNo)
 		}
-		if strings.TrimSpace(repo.Purpose) == "" {
-			return nil, fmt.Errorf("FEDERATION.md: entry %d: purpose is required", entry)
+		if !domainNamePattern.MatchString(d.Name) {
+			return nil, fmt.Errorf("FEDERATION.md: domain %q: name must be a lowercase slug ([a-z0-9-])", d.Name)
 		}
-		if !isValidOwnerRepo(repo.Name) {
-			return nil, fmt.Errorf("FEDERATION.md: entry %d: name must be in owner/repo format", entry)
+		if strings.TrimSpace(d.Purpose) == "" {
+			return nil, fmt.Errorf("FEDERATION.md: domain %q: purpose is required", d.Name)
 		}
-		lower := strings.ToLower(repo.Name)
-		if seen[lower] {
-			return nil, fmt.Errorf("FEDERATION.md: duplicate repo %q", repo.Name)
+		domainKey := strings.ToLower(d.Name)
+		if seenDomain[domainKey] {
+			return nil, fmt.Errorf("FEDERATION.md: duplicate domain %q", d.Name)
 		}
-		seen[lower] = true
+		seenDomain[domainKey] = true
+
+		if len(d.Repos) == 0 {
+			return nil, fmt.Errorf("FEDERATION.md: domain %q: repos list is empty", d.Name)
+		}
+		for ri, repo := range d.Repos {
+			repoNo := ri + 1
+			if repo.Name == "" {
+				return nil, fmt.Errorf("FEDERATION.md: domain %q: repo %d: name is required", d.Name, repoNo)
+			}
+			if strings.TrimSpace(repo.Purpose) == "" {
+				return nil, fmt.Errorf("FEDERATION.md: domain %q: repo %q: purpose is required", d.Name, repo.Name)
+			}
+			if !isValidOwnerRepo(repo.Name) {
+				return nil, fmt.Errorf("FEDERATION.md: domain %q: repo %q: name must be in owner/repo format", d.Name, repo.Name)
+			}
+			repoKey := strings.ToLower(repo.Name)
+			if seenRepo[repoKey] {
+				return nil, fmt.Errorf("FEDERATION.md: duplicate repo %q", repo.Name)
+			}
+			seenRepo[repoKey] = true
+		}
 	}
 
 	return &fed, nil
 }
 
 // isValidOwnerRepo returns true when name is in "owner/repo" format with
-// non-empty owner and repo parts. A simple split-count check per the task spec.
+// non-empty owner and repo parts.
 func isValidOwnerRepo(name string) bool {
 	parts := strings.SplitN(name, "/", 3)
 	return len(parts) == 2 && parts[0] != "" && parts[1] != ""

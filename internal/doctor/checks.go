@@ -826,13 +826,14 @@ func checkFederationProjectSync(deps CheckDeps) Group {
 	for _, r := range linked {
 		linkedSet[strings.ToLower(r.NameWithOwner)] = true
 	}
-	manifestSet := make(map[string]bool, len(fed.Repos))
-	for _, r := range fed.Repos {
+	manifestRepos := fed.AllRepos()
+	manifestSet := make(map[string]bool, len(manifestRepos))
+	for _, r := range manifestRepos {
 		manifestSet[strings.ToLower(r.Name)] = true
 	}
 
 	// Per-manifest-repo checks: reachability (AC-3) then link status (AC-1).
-	for _, repo := range fed.Repos {
+	for _, repo := range manifestRepos {
 		parts := strings.SplitN(repo.Name, "/", 2)
 		if len(parts) != 2 {
 			continue // validated by ReadFederation; skip malformed entry defensively

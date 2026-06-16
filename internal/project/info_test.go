@@ -155,7 +155,7 @@ func TestPrintInfo_Federated(t *testing.T) {
 	// Topology is now derived from FEDERATION.md presence — write the file
 	// into a real tempdir so IsFederationRepo returns true.
 	dir := t.TempDir()
-	content := "repos:\n  - name: org/domain-one\n    purpose: \"First domain\"\n"
+	content := "domains:\n  - name: example-domain\n    purpose: \"Example domain\"\n    repos:\n      - name: org/domain-one\n        purpose: \"First domain\"\n"
 	if err := os.WriteFile(filepath.Join(dir, federationFileName), []byte(content), 0644); err != nil {
 		t.Fatalf("writing FEDERATION.md: %v", err)
 	}

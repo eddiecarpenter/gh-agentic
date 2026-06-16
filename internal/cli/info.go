@@ -172,7 +172,7 @@ func collectInfo(data *infoData, version, date string, fetchReleases func(repo s
 		if err != nil {
 			data.federationError = err.Error()
 		} else {
-			data.federationRepos = fed.Repos
+			data.federationRepos = fed.AllRepos()
 		}
 	}
 

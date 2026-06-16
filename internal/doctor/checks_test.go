@@ -1190,7 +1190,7 @@ func TestCheckFederationManifest_NoFile_Pass(t *testing.T) {
 
 func TestCheckFederationManifest_ValidFile_Pass(t *testing.T) {
 	root := t.TempDir()
-	manifest := "repos:\n  - name: acme/domain\n    purpose: Domain repo\n"
+	manifest := "domains:\n  - name: acme\n    purpose: Acme domain\n    repos:\n      - name: acme/domain\n        purpose: Domain repo\n"
 	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(manifest), 0o644)
 	deps := CheckDeps{Root: root}
 
@@ -1243,9 +1243,9 @@ func TestCheckFederationManifest_MalformedYAML_Fail(t *testing.T) {
 	}
 }
 
-func TestCheckFederationManifest_EmptyReposList_Fail(t *testing.T) {
+func TestCheckFederationManifest_EmptyDomainsList_Fail(t *testing.T) {
 	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("repos: []\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("domains: []\n"), 0o644)
 	deps := CheckDeps{Root: root}
 
 	g := checkFederationManifest(deps)
@@ -1257,8 +1257,8 @@ func TestCheckFederationManifest_EmptyReposList_Fail(t *testing.T) {
 	if r.Status != Fail {
 		t.Errorf("status: got %v, want Fail", r.Status)
 	}
-	if !strings.Contains(r.Message, "repos list is empty") {
-		t.Errorf("message: got %q, expected 'repos list is empty'", r.Message)
+	if !strings.Contains(r.Message, "domains list is empty") {
+		t.Errorf("message: got %q, expected 'domains list is empty'", r.Message)
 	}
 }
 
@@ -1413,9 +1413,9 @@ func TestCheckLegacyFederationConfig_MultipleItems_MultipleWarnings(t *testing.T
 // writeFederationManifest writes a minimal valid FEDERATION.md to root.
 func writeFederationManifest(t *testing.T, root string, repos ...string) {
 	t.Helper()
-	content := "repos:\n"
+	content := "domains:\n  - name: test-domain\n    purpose: test domain\n    repos:\n"
 	for _, r := range repos {
-		content += fmt.Sprintf("  - name: %s\n    purpose: test repo\n", r)
+		content += fmt.Sprintf("      - name: %s\n        purpose: test repo\n", r)
 	}
 	if err := os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte(content), 0o644); err != nil {
 		t.Fatalf("writing FEDERATION.md: %v", err)
