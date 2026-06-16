@@ -22,9 +22,9 @@ type Deps struct {
 	FetchProjectsForRepo  FetchProjectsForRepoFunc
 	RepoHasFederationFile RepoHasFederationFileFunc
 	GetRepoVariable       GetRepoVariableFunc
-	SetRepoVariable      SetRepoVariableFunc
-	DeleteRepoVariable   DeleteRepoVariableFunc
-	ReadAIVersion        func(root string) (string, error)
+	SetRepoVariable       SetRepoVariableFunc
+	DeleteRepoVariable    DeleteRepoVariableFunc
+	ReadAIVersion         func(root string) (string, error)
 
 	FetchOwnerAndRepoIDs     FetchOwnerAndRepoIDsFunc
 	CreateProject            CreateProjectFunc

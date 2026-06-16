@@ -11,12 +11,12 @@ import (
 // LinkedRepos fields have been removed as part of Feature #824.
 type ProjectState struct {
 	ProjectID        string
-	ProjectName      string  // human-readable title; falls back to ID if project was deleted
-	ProjectDeleted   bool    // true if the ID is set but the project no longer exists
-	Topology         string  // "single" or "federation"
-	AIVersion        string  // local .ai-version / git-describe version
-	FrameworkVersion string  // AGENTIC_FRAMEWORK_VERSION on this repo (was ControlPlaneFrameworkVersion)
-	VersionInSync    bool    // true if local and remote versions match
+	ProjectName      string // human-readable title; falls back to ID if project was deleted
+	ProjectDeleted   bool   // true if the ID is set but the project no longer exists
+	Topology         string // "single" or "federation"
+	AIVersion        string // local .ai-version / git-describe version
+	FrameworkVersion string // AGENTIC_FRAMEWORK_VERSION on this repo (was ControlPlaneFrameworkVersion)
+	VersionInSync    bool   // true if local and remote versions match
 }
 
 // ResolveState is retained as a thin wrapper over Resolve for call sites that
