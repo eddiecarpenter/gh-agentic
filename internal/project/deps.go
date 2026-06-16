@@ -18,13 +18,12 @@ type Deps struct {
 	// Root is the local repository root path.
 	Root string
 
-	FetchLinkedRepos      FetchLinkedReposFunc
-	FetchProjectsForRepo  FetchProjectsForRepoFunc
-	RepoHasFederationFile RepoHasFederationFileFunc
-	GetRepoVariable       GetRepoVariableFunc
-	SetRepoVariable       SetRepoVariableFunc
-	DeleteRepoVariable    DeleteRepoVariableFunc
-	ReadAIVersion         func(root string) (string, error)
+	FetchLinkedRepos     FetchLinkedReposFunc
+	FetchProjectsForRepo FetchProjectsForRepoFunc
+	GetRepoVariable      GetRepoVariableFunc
+	SetRepoVariable      SetRepoVariableFunc
+	DeleteRepoVariable   DeleteRepoVariableFunc
+	ReadAIVersion        func(root string) (string, error)
 
 	FetchOwnerAndRepoIDs     FetchOwnerAndRepoIDsFunc
 	CreateProject            CreateProjectFunc
@@ -57,7 +56,6 @@ func DefaultDeps(owner, repoName, root string) Deps {
 		Root:                     root,
 		FetchLinkedRepos:         DefaultFetchLinkedRepos,
 		FetchProjectsForRepo:     DefaultFetchProjectsForRepo,
-		RepoHasFederationFile:    DefaultRepoHasFederationFile,
 		GetRepoVariable:          DefaultGetRepoVariable,
 		SetRepoVariable:          DefaultSetRepoVariable,
 		DeleteRepoVariable:       DefaultDeleteRepoVariable,
