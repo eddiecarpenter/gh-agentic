@@ -172,6 +172,7 @@ func FetchFeatures(deps Deps, projectID string, includeDone bool) ([]Feature, er
 			CreatedAt:          issue.CreatedAt,
 			LastTransitionedAt: issue.LastTransitionedAt,
 			OwningRepo:         issue.OwningRepo,
+			TargetRepo:         issue.TargetRepo,
 		}
 		populateBlocked(deps, &f.Blocked, issue.OwningRepo, issue.Number, issue.Body)
 		populateTaskCounts(deps, &f)
@@ -237,6 +238,7 @@ func FetchFeature(deps Deps, projectID string, number int) (*Feature, error) {
 		CreatedAt:          found.CreatedAt,
 		LastTransitionedAt: found.LastTransitionedAt,
 		OwningRepo:         found.OwningRepo,
+		TargetRepo:         found.TargetRepo,
 	}
 	populateBlocked(deps, &feature.Blocked, found.OwningRepo, found.Number, found.Body)
 

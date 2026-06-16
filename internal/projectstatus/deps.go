@@ -25,6 +25,7 @@ type ProjectIssue struct {
 	CreatedAt          time.Time
 	LastTransitionedAt time.Time
 	OwningRepo         string // "owner/name"
+	TargetRepo         string // "Target repo" ProjectV2 field value; "" when unset (#872)
 }
 
 // FetchProjectIssuesFunc returns all issues that appear on the ProjectV2

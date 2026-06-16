@@ -148,6 +148,7 @@ func writeFeatureRaw(w io.Writer, f *projectstatus.Feature, verbose bool) error 
 		{"stage", string(f.Stage)},
 		{"title", f.Title},
 		{"owning_repo", f.OwningRepo},
+		{"target_repo", rawTargetRepoValue(f.TargetRepo)},
 	}
 	if verbose {
 		header = append(header,
@@ -207,6 +208,15 @@ func writeFeatureRaw(w io.Writer, f *projectstatus.Feature, verbose bool) error 
 // rawParentRequirementValue renders the parent-requirement number for the
 // `parent_requirement` header field, or an empty string when the feature
 // has no parent requirement on the project board.
+// rawTargetRepoValue renders the Target repo field value; an unset target is
+// reported as "(unset)" so consumers never assume a repo (#872, AC-2).
+func rawTargetRepoValue(target string) string {
+	if strings.TrimSpace(target) == "" {
+		return "(unset)"
+	}
+	return target
+}
+
 func rawParentRequirementValue(p *projectstatus.RequirementSummary) string {
 	if p == nil {
 		return ""

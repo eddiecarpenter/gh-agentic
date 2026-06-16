@@ -35,6 +35,10 @@ type CheckDeps struct {
 	// project.DefaultUpdateStatusFieldOptions.
 	FetchProjectFields       project.FetchProjectFieldsFunc
 	UpdateStatusFieldOptions project.UpdateStatusFieldOptionsFunc
+	// CreateProjectField is used by RepairPipeline to create the "Target repo"
+	// field (#872) when it is missing on a federation control-plane project.
+	// Repair-only; the check command leaves it nil.
+	CreateProjectField project.CreateProjectFieldFunc
 	// FetchLinkedRepos, FetchOwnerAndRepoIDs, and LinkRepoToProject are used
 	// by checkFederationProjectSync (check) and RepairPipeline (repair) to
 	// detect and fix drift between FEDERATION.md and the GitHub Project's
@@ -226,6 +230,7 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 			{"Checking pipeline labels...", checkLabels},
 			{"Checking project reachability...", checkProjectReachability},
 			{"Checking project status options...", checkProjectStatusOptions},
+			{"Checking project target-repo field...", checkProjectTargetRepoField},
 		}
 		return base
 	}
@@ -250,6 +255,9 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		// Project status options run after reachability — no point checking options
 		// on a project that isn't reachable.
 		{"Checking project status options...", checkProjectStatusOptions},
+		// Target-repo field: required on federation control-plane projects (#872);
+		// skipped for single topology.
+		{"Checking project target-repo field...", checkProjectTargetRepoField},
 		// Federation manifest: validates FEDERATION.md when present; passes silently
 		// when absent (single topology).
 		{"Checking federation manifest...", checkFederationManifest},
@@ -712,6 +720,63 @@ func checkProjectStatusOptions(deps CheckDeps) Group {
 	g.Results = append(g.Results, CheckResult{
 		Name: "status-options", Status: Pass,
 		Message: fmt.Sprintf("project status options OK (%d options)", len(existing)),
+	})
+	return g
+}
+
+// checkProjectTargetRepoField verifies the project board carries the
+// "Target repo" field (#872) that control-plane Feature issues use to record
+// their target domain repo. A missing field is repairable.
+func checkProjectTargetRepoField(deps CheckDeps) Group {
+	g := Group{Name: "Project target-repo field"}
+
+	// The Target repo field is a federation concern — single-topology projects
+	// have no separate target repo, so the field is not required there.
+	if !project.IsFederationRepo(deps.Root) {
+		g.Results = append(g.Results, CheckResult{
+			Name: "target-repo-field", Status: Pass,
+			Message: "target-repo field not required — single topology",
+		})
+		return g
+	}
+
+	projectID := strings.TrimSpace(deps.ProjectID)
+	if projectID == "" {
+		g.Results = append(g.Results, CheckResult{
+			Name: "target-repo-field", Status: Warning,
+			Message: "target-repo field check skipped — AGENTIC_PROJECT_ID not configured",
+		})
+		return g
+	}
+	if deps.FetchProjectFields == nil {
+		g.Results = append(g.Results, CheckResult{
+			Name: "target-repo-field", Status: Warning,
+			Message: "target-repo field check skipped — no GraphQL client",
+		})
+		return g
+	}
+
+	fields, err := deps.FetchProjectFields(projectID)
+	if err != nil {
+		g.Results = append(g.Results, CheckResult{
+			Name: "target-repo-field", Status: Warning,
+			Message: "target-repo field check skipped — could not fetch fields: " + err.Error(),
+		})
+		return g
+	}
+
+	if _, ok := project.FindField(fields, project.TargetRepoFieldName); !ok {
+		g.Results = append(g.Results, CheckResult{
+			Name: "target-repo-field", Status: Fail,
+			Message:     fmt.Sprintf("project %q field is missing", project.TargetRepoFieldName),
+			Remediation: "run 'gh agentic repair'",
+		})
+		return g
+	}
+
+	g.Results = append(g.Results, CheckResult{
+		Name: "target-repo-field", Status: Pass,
+		Message: fmt.Sprintf("project %q field present", project.TargetRepoFieldName),
 	})
 	return g
 }

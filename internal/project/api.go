@@ -108,6 +108,10 @@ type FetchProjectFieldsFunc func(projectID string) ([]ProjectField, error)
 // UpdateStatusFieldOptionsFunc replaces the options on a single-select field.
 type UpdateStatusFieldOptionsFunc func(fieldID string, options []StatusOption) error
 
+// CreateProjectFieldFunc creates a new field on a ProjectV2 and returns its
+// node ID. dataType is a ProjectV2CustomFieldType enum value (e.g. "TEXT").
+type CreateProjectFieldFunc func(projectID, name, dataType string) (fieldID string, err error)
+
 // --- Production implementations ---
 //
 // Pure topology-detection helpers (DetectTopology, ControlPlaneRepo)
@@ -520,6 +524,43 @@ func DefaultUpdateStatusFieldOptions(fieldID string, options []StatusOption) err
 		return fmt.Errorf("updating status field options: %w", err)
 	}
 	return nil
+}
+
+// graphqlCreateFieldResponse is the response shape for the createProjectV2Field mutation.
+type graphqlCreateFieldResponse struct {
+	CreateProjectV2Field struct {
+		ProjectV2Field struct {
+			ID string `json:"id"`
+		} `json:"projectV2Field"`
+	} `json:"createProjectV2Field"`
+}
+
+// DefaultCreateProjectField creates a new field on the given ProjectV2 and
+// returns its node ID. dataType is a ProjectV2CustomFieldType enum value such
+// as "TEXT" or "NUMBER".
+func DefaultCreateProjectField(projectID, name, dataType string) (string, error) {
+	client, err := api.DefaultGraphQLClient()
+	if err != nil {
+		return "", fmt.Errorf("creating GraphQL client: %w", err)
+	}
+
+	mutation := `mutation($projectId: ID!, $dataType: ProjectV2CustomFieldType!, $name: String!) {
+		createProjectV2Field(input: {projectId: $projectId, dataType: $dataType, name: $name}) {
+			projectV2Field {
+				... on ProjectV2Field { id }
+			}
+		}
+	}`
+
+	var resp graphqlCreateFieldResponse
+	if err := client.Do(mutation, map[string]interface{}{
+		"projectId": projectID,
+		"dataType":  dataType,
+		"name":      name,
+	}, &resp); err != nil {
+		return "", fmt.Errorf("creating project field %q: %w", name, err)
+	}
+	return resp.CreateProjectV2Field.ProjectV2Field.ID, nil
 }
 
 // graphqlProjectNumberResponse is the response shape for the project number query.

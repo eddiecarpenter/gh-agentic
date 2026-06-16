@@ -2,6 +2,7 @@ number: 492
 stage: in-development
 title: feat: status command
 owning_repo: eddiecarpenter/gh-agentic
+target_repo: (unset)
 blocked_by:
 parent_requirement: 457
 branch: feature/492 (merged)

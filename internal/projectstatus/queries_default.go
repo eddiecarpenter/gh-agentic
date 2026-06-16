@@ -35,9 +35,12 @@ type graphqlProjectItemsResponse struct {
 				EndCursor   string `json:"endCursor"`
 			} `json:"pageInfo"`
 			Nodes []struct {
-				FieldValueByName struct {
+				Status struct {
 					Name string `json:"name"`
-				} `json:"fieldValueByName"`
+				} `json:"status"`
+				TargetRepo struct {
+					Text string `json:"text"`
+				} `json:"targetRepo"`
 				Content struct {
 					TypeName   string    `json:"__typename"`
 					Number     int       `json:"number"`
@@ -77,8 +80,11 @@ func DefaultFetchProjectIssues(projectID string) ([]ProjectIssue, error) {
 				items(first: 100, after: $after) {
 					pageInfo { hasNextPage endCursor }
 					nodes {
-						fieldValueByName(name: "Status") {
+						status: fieldValueByName(name: "Status") {
 							... on ProjectV2ItemFieldSingleSelectValue { name }
+						}
+						targetRepo: fieldValueByName(name: "Target repo") {
+							... on ProjectV2ItemFieldTextValue { text }
 						}
 						content {
 							__typename
@@ -121,13 +127,14 @@ func DefaultFetchProjectIssues(projectID string) ([]ProjectIssue, error) {
 				Number:             n.Content.Number,
 				Title:              n.Content.Title,
 				Body:               n.Content.Body,
-				Stage:              ParseStage(n.FieldValueByName.Name),
+				Stage:              ParseStage(n.Status.Name),
 				Type:               classifyIssueType(labelNames),
 				State:              strings.ToLower(n.Content.State),
 				Labels:             labelNames,
 				CreatedAt:          n.Content.CreatedAt,
 				LastTransitionedAt: n.Content.UpdatedAt,
 				OwningRepo:         n.Content.Repository.NameWithOwner,
+				TargetRepo:         n.TargetRepo.Text,
 			})
 		}
 
