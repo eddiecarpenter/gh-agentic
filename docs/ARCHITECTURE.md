@@ -11,8 +11,8 @@ The extension serves two roles:
 1. **CLI tooling** — commands to initialise repos, mount the framework, manage
    credentials, and run health checks.
 2. **Framework source** — the canonical source for the AI-Native Delivery Framework
-   files (`skills/`, `standards/`, `concepts/`, `recipes/`). Domain repos mount
-   these files at `.agents/` via `gh agentic upgrade`.
+   files (`skills/`, `standards/`, `concepts/`, `recipes/`). A control plane mounts
+   these files at `.agents/` via `gh agentic upgrade`; domain repos carry no mount.
 
 ---
 
@@ -73,132 +73,127 @@ gh-agentic/
 
 ## Mount model
 
-Domain repos consume the framework via a **mount** mechanism rather than copying
-template files directly.
+The framework is mounted **only on the control plane** — the repo that holds the
+agentic project's knowledge (`.agents`, docs, requirements, scoping). Domain repos
+are pure code and carry no framework mount. This is the headline of the
+control-plane-centralized model (#870): only the control plane is ever
+version-pinned, upgraded, or repaired, so federation maintenance is a single-repo
+operation and domain repos cannot drift.
 
 ### How it works
 
-1. **Pinned version** — The framework version is pinned per repo by that
-   repo's own `AGENTIC_FRAMEWORK_VERSION` GitHub Actions variable. Every repo
-   resolves its version independently — there is no control-plane broadcast.
-   The canonical resolver in `internal/project/` (`project.Resolve`, reading
-   `AGENTIC_FRAMEWORK_VERSION` on the current repo) is the single code path
-   that answers "what version should I mount?". (Federation does not change
-   this — see the Federation section below; a federation is a scoping-time
-   relationship between repos, not a runtime version-distribution mechanism.)
+1. **Pinned version** — the control plane pins its framework version via its own
+   `AGENTIC_FRAMEWORK_VERSION` GitHub Actions variable (read by `project.Resolve`).
+   A single-topology repo is its own control plane and pins its version the same
+   way. Domain repos have no framework to version.
 
-2. **`.agents/` directory** — The mounted framework, installed as a **tracked
-   git submodule** pointing at `eddiecarpenter/gh-agentic` at the pinned
-   version tag. The submodule pointer (its gitlink, recorded in `.gitmodules`
-   and the parent repo's index) is **committed** — `git submodule status` is
-   the local source of truth for the framework version the repo runs at. On a
-   runner the submodule is populated automatically by `submodules: recursive`
-   on checkout; no separate "mount" step is required.
+2. **`.agents/` directory** — the mounted framework (`skills/`, `standards/`,
+   `concepts/`, `recipes/`, `RULEBOOK.md`), installed on the control plane as a
+   **tracked git submodule** pointing at `eddiecarpenter/gh-agentic` at the pinned
+   version tag. On a runner the submodule is populated by `submodules: recursive`
+   on checkout.
 
-3. **Install / upgrade mechanism** — `gh agentic upgrade` runs the underlying
-   `git submodule` operations (`internal/mount/`) to add or re-point `.agents/`
-   at the requested version tag, so `skills/`, `standards/`, `concepts/`,
-   `recipes/`, and `RULEBOOK.md` are served from that tag. Repos still carrying
-   the **legacy gitignored shallow-clone** mount (`.agents/` listed in
-   `.gitignore`, populated by an un-tracked `git clone`) are auto-migrated to
-   the submodule mount by `gh agentic upgrade` / `gh agentic repair`; the
-   doctor detects the legacy state and strips the stale `.gitignore` entry.
+3. **Install / upgrade** — `gh agentic upgrade` re-points `.agents/` at a version
+   tag via the underlying `git submodule` operations (`internal/mount/`). Only the
+   control plane mounts, so only the control plane is upgraded. Legacy gitignored
+   shallow-clone mounts are auto-migrated to the submodule by
+   `gh agentic upgrade` / `gh agentic repair`.
 
-4. **Mount flows** — `internal/mount/` resolves the current mount state and
-   acts accordingly:
-   - **First-time** (no `.agents/` yet): `git submodule add` at the pinned
-     version, then generate `CLAUDE.md`, `AGENTS.md`, and wrapper workflows.
-   - **Version switch** (`gh agentic upgrade <new-version>`): re-point the
-     submodule at the new tag, update the committed pointer, and update
-     wrapper-workflow tags.
-   - **Legacy migration** (`.agents/` present as a gitignored clone):
-     migrate it to a tracked submodule at the pinned version.
+4. **Pipeline checkout** — the agentic pipeline runs **on the control plane** (see
+   Federation). Each execution phase checks the control plane out as the read-only
+   knowledge root (`.agents` + docs) and clones the feature's target domain repo
+   into a uniform `./project` directory; the recipe runs against `./project` with
+   the framework resolved from the control-plane mount.
 
-5. **Reusable workflows** — Domain repos invoke the agentic pipeline via thin
-   wrapper workflows in `.github/workflows/` that call reusable workflows
-   defined in `eddiecarpenter/gh-agentic`. The reusable workflow reads
-   `${{ vars.AGENTIC_FRAMEWORK_VERSION }}` to pick the framework version at
-   runtime — consistent with what `project.Resolve` exposes to the CLI.
-
-### In domain repos
+### On the control plane
 
 ```
-my-domain-repo/
+control-plane-repo/
 ├── .agents/                 ← tracked submodule → eddiecarpenter/gh-agentic@vX.Y.Z
-│   ├── RULEBOOK.md
-│   ├── skills/
-│   ├── standards/
-│   ├── concepts/
-│   └── recipes/
-├── CLAUDE.md            ← committed — references .agents/AGENTS.md
-├── AGENTS.md            ← committed — references RULEBOOK + LOCALRULES
-├── LOCALRULES.md        ← committed — project-specific overrides
+│   ├── RULEBOOK.md / skills/ / standards/ / concepts/ / recipes/
+├── FEDERATION.md            ← domain-grouped manifest (domains → repos)
+├── docs/                    ← SYSTEM_BRIEF, SYSTEM_ARCHITECTURE, docs/domains/<domain>/
+├── CLAUDE.md / AGENTS.md / LOCALRULES.md   ← committed agent entry files
 └── .github/workflows/
-    └── agentic-pipeline.yml  ← wrapper calling reusable workflow
+    └── agentic-pipeline.yml  ← the pipeline runs here, on the control plane
 ```
+
+### Domain repos
+
+A domain repo is **pure code** — no `.agents`, no docs, no pipeline workflow.
+It is registered with the control plane (added to the GitHub Project and
+`FEDERATION.md`, and given an `AGENTIC_PROJECT_ID` variable) via
+`gh agentic project join` run on the control plane (#874), but nothing agentic is
+installed into it.
 
 ---
 
 ## Federation
 
-Federation is a **scoping-time** concern, not a runtime one. A federation is a
-multi-repo project where requirements are captured in one repo (the requirements
-or umbrella repo, which holds domain knowledge) and the Features scoped from them
-are created in the implementation repos where the work will actually happen. In a
-single-topology project those are the same repo; in a federation they differ —
-and that is the *only* difference. Everything downstream of scoping (design,
-dev-session, compliance-verify, PR review) operates within a single repo and is
-identical to single-topology.
+Federation centralizes on the **control plane (CP)** (#870). The control plane
+holds the framework, the docs, the requirements, the scoping, the feature issues,
+and the execution pipeline; domain repos hold only code. A single-topology project
+is its own control plane; a federation is a control plane plus one or more
+pure-code domain repos. The headline win: only the control plane carries anything
+agentic, so federation maintenance collapses from N repos to one and domain repos
+cannot drift.
 
-> **Note — earlier model removed.** Federation was previously a runtime concern
-> implemented through a control-plane role that broadcast the framework version,
-> org-level shared-variable routing, a `.cp/` sparse-checkout mount, three-way
-> topology inference, and `Closes owner/repo#N` text parsing for cross-repo links.
-> That model was removed (Requirement #823 / Feature #835). It never ran
-> end-to-end, so there is no production state to migrate. Implementation repos are
-> now plain single-topology repos with no federation-specific configuration.
+> **Note — pre-pivot model superseded.** Federation was previously a
+> *scoping-time-only* concern: Features were created in their target domain repo
+> and wired as **cross-repo** sub-issues, and domain repos mounted the framework.
+> Decision #869 reversed this — the pipeline runs on the control plane, feature
+> issues live on the control plane targeted at a repo by a field, and domain repos
+> are pure code. Migrating an existing federation is documented in
+> `docs/migration-cp-centralized.md`.
 
 ### `FEDERATION.md` manifest
 
-The presence of a `FEDERATION.md` file at a repo's root is the sole signal that
-the repo is a federation requirements repo. No topology variable, no role
-inference — `project.IsFederationRepo` is a stat-only presence check, and a repo
-without the manifest behaves as single topology (Features are always created in
-the same repo as the requirement). The manifest is a small YAML document listing
-the federation's target implementation repos, each with a purpose:
+The presence of `FEDERATION.md` at a repo's root signals that the repo is a
+federation control plane (`project.IsFederationRepo` is a stat-only check; a repo
+without it is single topology). The manifest is **domain-grouped** (#871) —
+domains, each with a purpose and the repos that implement it (a domain may span
+one or many repos):
 
 ```yaml
-repos:
-  - name: owner/charging-domain
-    purpose: Charging domain — rating, balance management, charging events
-  - name: owner/billing-domain
-    purpose: Billing domain — invoice generation, bill runs, statements
+domains:
+  - name: charging
+    purpose: Rating, balance management, charging events
+    repos:
+      - name: owner/charging-rating
+        purpose: Rating engine
+      - name: owner/charging-balance
+        purpose: Balance management
 ```
 
-`project.ReadFederation` parses and validates it (`gh agentic check` surfaces any
-validation error; `gh agentic info` lists the target repos). The manifest gives
-the scoping agent its candidate target set and the human an orientation page.
+`project.ReadFederation` parses and validates it; an empty `domains:` list is
+valid (a control plane with no domains registered yet). `gh agentic check`
+validates the manifest stays in sync with the Project's linked repos; `gh agentic
+info` lists the domains and their repos.
 
-### How federation works at scoping time
+### How federation works
 
-- During scoping in a manifest-bearing repo, the agent proposes a target repo for
-  each Feature from the manifest's purpose descriptions; the human confirms or
-  overrides. A Feature must fit entirely in one repo — a Feature spanning two is
-  split into one Feature per repo at the decomposition checkpoint.
-- Features are created in their target repo and wired as **cross-repo sub-issues**
-  of their requirement (GitHub sub-issues work across repos within the same
-  owner), so a requirement's Feature list and progress are visible natively on the
-  requirement issue regardless of which repos the Features live in.
-- One GitHub Project spans the whole federation. `gh agentic status` answers
-  "where is everything" across all linked repos, and a requirement is closed only
-  when all of its cross-repo Features are complete.
-- `gh agentic check` / `repair` validate that `FEDERATION.md` and the GitHub
-  Project's linked repos stay in sync.
+- **Create a control plane** — `gh agentic init` → federated (or `gh agentic
+  project create`) establishes the GitHub Project, scaffolds an empty
+  `FEDERATION.md` plus the federated-tier system docs (`docs/SYSTEM_BRIEF.md`,
+  `docs/SYSTEM_ARCHITECTURE.md`), and mounts the framework (#875).
+- **Register a domain repo** — `gh agentic project join <owner/repo> --domain
+  <name>`, run on the control plane, adds the repo to `FEDERATION.md` under the
+  named domain (lazy-creating the domain), links it to the Project, and sets its
+  `AGENTIC_PROJECT_ID` — with **no framework mount** (#874).
+- **Feature issues live on the control plane**, each carrying a "Target repo"
+  ProjectV2 field naming the domain repo it targets, and wired as **same-repo**
+  sub-issues of their requirement (#872; reverses the #825 cross-repo model).
+- **The pipeline runs on the control plane** — each execution phase checks the
+  control plane out as the read-only knowledge root and clones the feature's
+  target repo into the uniform `./project` directory (`$AGENTIC_CP_ROOT` /
+  `$AGENTIC_PROJECT_DIR`). Execution phases are read-only documentation consumers
+  (#873, designed).
+- **One GitHub Project** spans the whole federation; `gh agentic status` answers
+  "where is everything", and `gh agentic check` / `repair` keep `FEDERATION.md`
+  and the Project's linked repos in sync.
 
-The **placement rule** generalises this: an issue lives in the most specific repo
-that fully contains its scope — Features always fit one implementation repo;
-requirements live in the domain repo that contains them; cross-domain requirements
-live in the umbrella repo.
+The two-tier knowledge plane (carried into #870) keeps system-level docs at the
+control-plane root and domain docs under `docs/domains/<domain>/`.
 
 ---
 
@@ -210,15 +205,15 @@ that resolve correctly in two contexts:
 - **At the gh-agentic root** — when working directly in this repository, paths
   like `skills/dev-session.md` resolve relative to the repo root where these
   directories live.
-- **When mounted as `.agents/` in domain repos** — the same paths resolve relative
-  to the `.agents/` mount point. References within framework files (e.g.
+- **When mounted as `.agents/` on a control plane** — the same paths resolve
+  relative to the `.agents/` mount point. References within framework files (e.g.
   `@RULEBOOK.md`, `standards/go.md`) work because they are relative to the
   directory containing the referencing file.
 
 This means framework files never use absolute paths or paths that assume a
 specific repo structure. A reference like `concepts/delivery-philosophy.md`
 works identically whether the file is at `/gh-agentic/concepts/` or at
-`/my-repo/.agents/concepts/`.
+`/my-control-plane/.agents/concepts/`.
 
 ---
 

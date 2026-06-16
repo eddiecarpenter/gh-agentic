@@ -46,40 +46,35 @@ repo/
 In single topology `docs/BRIEF.md` and `docs/ARCHITECTURE.md` carry both
 system-level and repo-level scope — the repo *is* the project.
 
-Domain repos in a federation are single-topology repos. They carry their own
-`docs/BRIEF.md` and `docs/ARCHITECTURE.md` describing their scope within the
-federation. No special mount or marker variable is required on a domain repo.
+In a federation, domain repos are **pure code** — they carry no `.agents` mount
+and no `docs/`. All knowledge, system-level and per-domain, lives on the control
+plane (see the domain documentation tier below).
 
 ### Federation topology
 
-A federation requirements repo declares its target domain repos via `FEDERATION.md`
-at the repo root. The control plane owns system-level knowledge; domain repos own
-their own.
+The control plane declares its domains and their repos via `FEDERATION.md` at the
+repo root, and owns all knowledge for the federation; domain repos hold only code.
 
-**Federation requirements (control plane) repo:**
+**Control plane:**
 ```
 control-plane-repo/
-├── .agents/
-├── FEDERATION.md                     # declares all domain repos + their purpose
+├── .agents/                          # framework mount, read-only
+├── FEDERATION.md                     # declares all domains + their repos
 └── docs/
     ├── SYSTEM_BRIEF.md               # system orientation
-    └── SYSTEM_ARCHITECTURE.md        # seams between repos
+    ├── SYSTEM_ARCHITECTURE.md        # seams between repos
+    └── domains/<domain>/             # each domain's BRIEF + ARCHITECTURE
 ```
 
-**Domain repo (single topology):**
+**Domain repo (pure code):**
 ```
 domain-repo/
-├── .agents/                              # framework mount, read-only
-├── docs/
-│   ├── BRIEF.md                      # this domain's scope
-│   ├── ARCHITECTURE.md               # this domain's internals
-│   └── new/                          # staging for architectural contributions
-└── (code)
+└── (code only — no .agents, no docs)
 ```
 
-Domain repos are plain single-topology repos. They do not carry any special
-filesystem mount or marker variable. The federation is declared from the control plane
-outward, not from domain repos inward.
+Domain repos carry no framework mount and no docs — only an `AGENTIC_PROJECT_ID`
+repo variable set at registration. The federation is declared from the control
+plane outward, not from domain repos inward.
 
 #### Domain documentation tier (#871)
 
@@ -103,10 +98,10 @@ domain — its docs still live at `docs/domains/<domain>/`.
 domain has no `docs/domains/<domain>/` directory yet, since domain docs are
 authored incrementally.
 
-> The broader realignment of this concept to the control-plane-centralized
-> execution model (pipeline-on-CP, pure-code domain repos) is tracked under
-> requirement #870 / Feature #876; this section introduces the domain
-> documentation tier and the `docs/domains/<domain>/` convention.
+> This concept is aligned to the control-plane-centralized execution model
+> (pipeline-on-CP, pure-code domain repos) delivered under requirement #870
+> (Features #871/#872/#874/#875, doc alignment #876). The domain documentation
+> tier and the `docs/domains/<domain>/` convention were introduced in #871.
 
 ---
 
@@ -145,7 +140,7 @@ marker variable is required.
 Discovery:
 1. Query the Project's linked repositories — returns all N members
 2. Find the repo whose root contains `FEDERATION.md` — that is the control plane
-3. The rest are domain repos (single topology)
+3. The rest are pure-code domain repos (no `.agents`, no docs)
 
 The GitHub Project is the single source of truth for membership. A deleted
 repo is automatically absent from the query; a newly-added repo is automatically
@@ -166,9 +161,16 @@ different change frequency, and each uses the mechanism that matches.
 | CP `docs/SYSTEM_ARCHITECTURE.md` | Rare | Direct PR on CP | Human |
 
 The AI integration machinery exists **exactly where frequency justifies it**:
-per-repo `ARCHITECTURE.md` receiving contributions from many features in
-parallel. Everywhere else, rarity makes a direct human-driven PR honest and
-sufficient.
+the frequently-updated `ARCHITECTURE.md` receiving contributions from many
+features in parallel. Everywhere else, rarity makes a direct human-driven PR
+honest and sufficient.
+
+In a single-topology repo these files live at the repo's `docs/` root. In a
+federation they all live on the **control plane** — system docs at the root and
+the domain-tier `BRIEF.md` / `ARCHITECTURE.md` under `docs/domains/<domain>/`
+(domain repos are pure code and hold no docs). The `docs/new/` + merge-triggered
+integration runs on the control plane, where the pipeline and dev sessions
+execute; there is no in-domain-repo doc machinery.
 
 ### Cross-domain architectural changes
 
@@ -307,24 +309,24 @@ mechanism mirrors the `.agents/` mount used by the framework itself.
 For every session, session-init:
 
 1. Detects topology from `FEDERATION.md` presence (single or federation).
-2. In federation mode, reads `FEDERATION.md` to identify target domain repos.
-3. Loads `docs/BRIEF.md` and `docs/ARCHITECTURE.md` from the local repo.
-4. For federation topology: reads `docs/SYSTEM_BRIEF.md` and
-   `docs/SYSTEM_ARCHITECTURE.md` from the control plane repo via the GitHub
-   API on demand (no local mount required).
-5. Proceeds with the session.
+2. Loads `docs/BRIEF.md` and `docs/ARCHITECTURE.md` from the local repo
+   (single topology — the repo is its own control plane).
+3. For federation topology: loads `docs/SYSTEM_BRIEF.md` and
+   `docs/SYSTEM_ARCHITECTURE.md` from the control-plane root, and the relevant
+   domain's `docs/domains/<domain>/` docs — all local, since sessions run on the
+   control plane.
+4. Proceeds with the session.
 
-Domain repos (single topology) load only their own `docs/` — no cross-repo
-knowledge reads are required for ordinary single-topology sessions.
+Federation sessions run on the control plane, where all knowledge already lives
+locally — there are no cross-repo knowledge reads in the ordinary path, and
+domain repos (pure code) hold nothing to read.
 
-### Cross-reads — the rare direction
+### Cross-domain scoping
 
-Scoping a cross-domain requirement on the CP occasionally needs to read an
-affected domain's `BRIEF.md` and `ARCHITECTURE.md`. These reads are rare (only
-during cross-domain scoping) and the content is read-once-and-discarded. No
-mount is installed in that direction — the CP reads via the GitHub API
-(`gh api repos/<owner>/<domain>/contents/docs/BRIEF.md` or equivalent) on
-demand.
+Scoping a cross-domain requirement on the control plane reads the affected
+domains' `docs/domains/<domain>/` docs. These already live on the control plane,
+so the read is a local file read — no cross-repo API call and no mount in any
+direction.
 
 ---
 
@@ -410,9 +412,9 @@ Three artefacts from the framework's previous federation model have been removed
   Issues; there is no parallel filesystem artefact.
 - **Control plane knowledge mount** — the sparse-checkout of `docs/` from the
   control plane repo, previously installed by `project join` and refreshed by
-  `project sync`. Domain repos are now plain single-topology repos; system-level
-  knowledge is read on demand via the GitHub API rather than through a local
-  filesystem mount.
+  `project sync`. Domain repos are now pure code (no `.agents`, no docs);
+  sessions run on the control plane where all knowledge lives locally, so no
+  cross-repo knowledge mount exists.
 
 A reader encountering any of these in old documentation or a legacy repo should
 treat them as obsolete and remove them when touching the surrounding content.
