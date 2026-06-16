@@ -648,7 +648,7 @@ func TestPopulateTaskCounts_ErrorPopulatesOwningRepoError(t *testing.T) {
 		FetchSubIssues: func(string, string, int) ([]TaskRef, error) { return nil, boom },
 	}
 	f := &Feature{
-		Number:    492,
+		Number:     492,
 		OwningRepo: "eddiecarpenter/gh-agentic",
 	}
 	populateTaskCounts(deps, f)
