@@ -1296,7 +1296,10 @@ func TestCheckFederationManifest_MalformedYAML_Fail(t *testing.T) {
 	}
 }
 
-func TestCheckFederationManifest_EmptyDomainsList_Fail(t *testing.T) {
+// TestCheckFederationManifest_EmptyDomains_Pass verifies that a freshly-created
+// control plane's empty `domains:` manifest is valid (#875) — no domains
+// registered yet — and produces a single Pass result with no domain-docs warnings.
+func TestCheckFederationManifest_EmptyDomains_Pass(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "FEDERATION.md"), []byte("domains: []\n"), 0o644)
 	deps := CheckDeps{Root: root}
@@ -1304,14 +1307,10 @@ func TestCheckFederationManifest_EmptyDomainsList_Fail(t *testing.T) {
 	g := checkFederationManifest(deps)
 
 	if len(g.Results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(g.Results))
+		t.Fatalf("expected 1 result (manifest valid, no domains), got %d: %+v", len(g.Results), g.Results)
 	}
-	r := g.Results[0]
-	if r.Status != Fail {
-		t.Errorf("status: got %v, want Fail", r.Status)
-	}
-	if !strings.Contains(r.Message, "domains list is empty") {
-		t.Errorf("message: got %q, expected 'domains list is empty'", r.Message)
+	if g.Results[0].Status != Pass {
+		t.Errorf("status: got %v, want Pass for an empty-but-valid manifest; message: %q", g.Results[0].Status, g.Results[0].Message)
 	}
 }
 

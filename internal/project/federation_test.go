@@ -151,23 +151,36 @@ func TestReadFederation_MalformedYAML_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestReadFederation_EmptyDomainsList_ReturnsError(t *testing.T) {
+func TestReadFederation_EmptyDomainsList_Valid(t *testing.T) {
 	dir := t.TempDir()
 	writeManifest(t, dir, "domains: []\n")
 
-	_, err := ReadFederation(dir)
-	if err == nil || !strings.Contains(err.Error(), "domains list is empty") {
-		t.Fatalf("expected 'domains list is empty', got: %v", err)
+	fed, err := ReadFederation(dir)
+	if err != nil {
+		t.Fatalf("empty domains should be valid (CP with no domains yet), got: %v", err)
+	}
+	if len(fed.Domains) != 0 {
+		t.Errorf("expected 0 domains, got %d", len(fed.Domains))
 	}
 }
 
-func TestReadFederation_MissingDomainsKey_ReturnsError(t *testing.T) {
+func TestWriteFederation_AllowsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteFederation(dir, &Federation{}); err != nil {
+		t.Fatalf("expected WriteFederation to accept an empty manifest, got: %v", err)
+	}
+	fed, err := ReadFederation(dir)
+	if err != nil || len(fed.Domains) != 0 {
+		t.Fatalf("empty manifest round-trip failed: err=%v domains=%d", err, len(fed.Domains))
+	}
+}
+
+func TestReadFederation_MissingDomainsKey_Valid(t *testing.T) {
 	dir := t.TempDir()
 	writeManifest(t, dir, "something: else\n")
 
-	_, err := ReadFederation(dir)
-	if err == nil || !strings.Contains(err.Error(), "domains list is empty") {
-		t.Fatalf("expected 'domains list is empty', got: %v", err)
+	if _, err := ReadFederation(dir); err != nil {
+		t.Fatalf("a manifest with no domains key should be valid (empty), got: %v", err)
 	}
 }
 

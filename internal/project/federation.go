@@ -102,13 +102,14 @@ func ReadFederation(root string) (*Federation, error) {
 	}
 
 	if len(fed.Domains) == 0 {
-		// Hard-cut: a flat `repos:` manifest is rejected with migration guidance
-		// rather than silently treated as empty.
+		// A flat `repos:` manifest is rejected with migration guidance; an empty
+		// `domains:` list is valid — a freshly-created control plane with no
+		// domains registered yet (domains are added later via `project join`).
 		var flat flatFederation
 		if yaml.Unmarshal(data, &flat) == nil && len(flat.Repos) > 0 {
 			return nil, fmt.Errorf("FEDERATION.md: flat `repos:` schema is no longer supported — group repos under `domains:`")
 		}
-		return nil, fmt.Errorf("FEDERATION.md: domains list is empty")
+		return &fed, nil
 	}
 
 	if err := validateFederation(&fed); err != nil {
@@ -121,9 +122,8 @@ func ReadFederation(root string) (*Federation, error) {
 // ReadFederation (after parsing) and WriteFederation (before writing) so a
 // malformed in-memory Federation never reaches disk.
 func validateFederation(fed *Federation) error {
-	if len(fed.Domains) == 0 {
-		return fmt.Errorf("FEDERATION.md: domains list is empty")
-	}
+	// An empty domains list is valid — a control plane with no domains registered
+	// yet. Per-domain/per-repo rules below only apply when domains are present.
 	seenRepo := make(map[string]bool)
 	seenDomain := make(map[string]bool)
 	for di, d := range fed.Domains {
