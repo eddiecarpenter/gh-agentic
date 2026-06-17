@@ -1903,3 +1903,57 @@ func TestCheckFederationProjectSync_DomainRepoUnlisted_Warns(t *testing.T) {
 		t.Errorf("expected acme/extra (linked, not in manifest) flagged unlisted, got: %+v", g.Results)
 	}
 }
+
+// TestCheckWorkflows_StaleVsPin_Fails guards the gap where the OpenBSS CP passed
+// `check` while its wrapper was behind the pinned framework version: when the
+// mounted .agents/ AND the workflow are stale-but-consistent (both at the old
+// version), checkWorkflows used to compare workflow-vs-mount and pass. It now
+// compares the workflow @version against the authoritative AGENTIC_FRAMEWORK_VERSION
+// pin (CheckDeps.FrameworkVersion), so a globally-behind CP is flagged.
+func TestCheckWorkflows_StaleVsPin_Fails(t *testing.T) {
+	root := t.TempDir()
+	// Mount and workflow agree at the OLD version...
+	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.9.0")
+	wfDir := filepath.Join(root, ".github", "workflows")
+	_ = os.MkdirAll(wfDir, 0o755)
+	_ = os.WriteFile(filepath.Join(wfDir, "agentic-pipeline.yml"),
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v2.9.0"), 0o644)
+
+	// ...but the project is pinned to a NEWER version.
+	deps := CheckDeps{Root: root, FrameworkVersion: "v3.0.0"}
+
+	g := checkWorkflows(deps)
+
+	found := false
+	for _, r := range g.Results {
+		if r.Name == "agentic-pipeline.yml" && r.Status == Fail && strings.Contains(r.Message, "mismatch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected agentic-pipeline.yml to FAIL against the pin (v3.0.0); got: %+v", g.Results)
+	}
+}
+
+// TestCheckWorkflows_MatchesPin_Passes verifies the pin is the reference: when
+// the workflow @version equals the pin, it passes even if the local mount
+// reports a different (e.g. not-yet-updated) version.
+func TestCheckWorkflows_MatchesPin_Passes(t *testing.T) {
+	root := t.TempDir()
+	setupAIGitRepo(t, filepath.Join(root, ".agents"), "v2.9.0")
+	wfDir := filepath.Join(root, ".github", "workflows")
+	_ = os.MkdirAll(wfDir, 0o755)
+	_ = os.WriteFile(filepath.Join(wfDir, "agentic-pipeline.yml"),
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v3.0.0"), 0o644)
+	_ = os.WriteFile(filepath.Join(wfDir, "release.yml"),
+		[]byte("uses: eddiecarpenter/gh-agentic/.github/workflows/release.yml@v3.0.0"), 0o644)
+
+	deps := CheckDeps{Root: root, FrameworkVersion: "v3.0.0"}
+
+	g := checkWorkflows(deps)
+	for _, r := range g.Results {
+		if r.Status == Fail {
+			t.Errorf("expected pass against the pin, but %s failed: %s", r.Name, r.Message)
+		}
+	}
+}
