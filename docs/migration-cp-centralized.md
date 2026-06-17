@@ -41,6 +41,17 @@ Run these on the control plane and confirm each before making changes:
       `domains:` (not the flat `repos:`). If it still uses `repos:`, convert it
       first — group the existing repos under one or more `domains:` entries, each
       with a `name` and `purpose`. `gh agentic check` validates the result.
+- [ ] **`FEDERATION.md` is a *pure YAML* file — not a markdown document.**
+      `project.ReadFederation` (`internal/project/federation.go`) runs
+      `yaml.Unmarshal` over the **entire file**, so the file may contain *only*
+      YAML. A markdown manifest — architecture prose plus a fenced
+      ` ```yaml ` block — fails: the prose lines parse as YAML scalars and
+      `gh agentic info` / `check` abort with
+      `cannot unmarshal !!str into project.Federation`. If your `FEDERATION.md`
+      is a markdown doc, convert it: remove all prose and code-fence markers,
+      leaving the bare `domains:` mapping. Move any architecture narrative to
+      `docs/SYSTEM_ARCHITECTURE.md`, or keep short notes inline as YAML `#`
+      comments.
 - [ ] **The control plane is at (or ahead of) the version that ships #870.** The
       "Target repo" field machinery (#872) and CP-side `join` (#874) must be
       available. `gh agentic check` confirms the field exists; `gh agentic repair`
