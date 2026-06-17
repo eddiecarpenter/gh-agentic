@@ -212,10 +212,12 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 				ctx, _ := project.Resolve(projectDeps)
 				projectID := ""
 				topology := ""
+				frameworkVersion := ""
 				projectIDReadFailed := false
 				if ctx != nil {
 					projectID = ctx.ProjectID
 					topology = ctx.Topology
+					frameworkVersion = ctx.FrameworkVersion
 					projectIDReadFailed = ctx.ProjectIDReadFailed
 				}
 
@@ -227,6 +229,7 @@ Run 'gh agentic repair' to auto-fix any issues that can be fixed automatically.`
 					OwnerType:                info.OwnerType,
 					Topology:                 topology,
 					ProjectID:                projectID,
+					FrameworkVersion:         frameworkVersion,
 					ProjectIDReadFailed:      projectIDReadFailed,
 					Run:                      deps.run,
 					ReadCreds:                deps.readCreds,

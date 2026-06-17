@@ -191,10 +191,12 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 	ctx, _ := project.Resolve(pdeps)
 	projectID := ""
 	topology := ""
+	frameworkVersion := ""
 	projectIDReadFailed := false
 	if ctx != nil {
 		projectID = ctx.ProjectID
 		topology = ctx.Topology
+		frameworkVersion = ctx.FrameworkVersion
 		projectIDReadFailed = ctx.ProjectIDReadFailed
 	}
 
@@ -206,6 +208,7 @@ func buildPipelineCheckDeps(pdeps project.Deps) (doctor.CheckDeps, error) {
 		OwnerType:           ownerType,
 		Topology:            topology,
 		ProjectID:           projectID,
+		FrameworkVersion:    frameworkVersion,
 		ProjectIDReadFailed: projectIDReadFailed,
 		Run:                 run,
 		ReadCreds: func(r auth.RunCommandFunc) ([]byte, error) {

@@ -56,6 +56,13 @@ type CheckDeps struct {
 	// checks (variables, secrets, workflows, project reachability) run as
 	// normal. See feature #619 §E.
 	FrameworkSource bool
+	// FrameworkVersion is the authoritative AGENTIC_FRAMEWORK_VERSION the project
+	// is pinned to (from project.Resolve). checkWorkflows compares the wrapper
+	// workflow @version against this — not the local .agents/ mount — so a CP
+	// whose mount AND workflow are stale-but-consistent (both behind the pin) is
+	// still flagged. Empty when no pin is published; the check then falls back to
+	// the mounted version.
+	FrameworkVersion string
 }
 
 // checkGroupStep pairs a spinner label with a check function.
@@ -545,7 +552,16 @@ func checkAgentFiles(deps CheckDeps) Group {
 func checkWorkflows(deps CheckDeps) Group {
 	g := Group{Name: "Workflows"}
 
-	version, _ := mount.ReadAIVersionFromGit(deps.Root)
+	// Reference version: the authoritative AGENTIC_FRAMEWORK_VERSION pin when
+	// published, else the local .agents/ mount version. Comparing against the
+	// pin (not just the mount) catches a CP whose mount and workflow are both
+	// stale-but-consistent — the case `gh agentic upgrade` could silently leave.
+	version := deps.FrameworkVersion
+	versionSource := "pinned framework version"
+	if version == "" {
+		version, _ = mount.ReadAIVersionFromGit(deps.Root)
+		versionSource = "mounted framework version"
+	}
 	workflowsDir := filepath.Join(deps.Root, ".github", "workflows")
 
 	workflows := []string{"agentic-pipeline.yml", "release.yml"}
@@ -586,7 +602,7 @@ func checkWorkflows(deps CheckDeps) Group {
 		default:
 			g.Results = append(g.Results, CheckResult{
 				Name: wf, Status: Fail,
-				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s)", wf, mount.TrimVPrefix(version)),
+				Message:     fmt.Sprintf("%s — version tag mismatch (expected @%s, the %s)", wf, mount.TrimVPrefix(version), versionSource),
 				Remediation: "Run 'gh agentic repair' to update workflow versions",
 			})
 		}

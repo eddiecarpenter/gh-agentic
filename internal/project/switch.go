@@ -103,6 +103,21 @@ func SwitchVersion(w io.Writer, deps Deps, version string, pre SwitchVersionPref
 
 	if pre.CurrentVersion == version {
 		fmt.Fprintf(w, "  %s  Framework is already at %s\n", ui.StatusOK.Render("✓"), version)
+		// Reconcile wrapper workflow refs even when the mounted .agents/ already
+		// matches the target. They can drift from the mount — e.g. a prior
+		// upgrade's workflow-file edit was rejected (GitHub blocks workflow
+		// pushes from runner tokens), or only the submodule pointer moved. The
+		// mount-version short-circuit would otherwise leave a stale @version in
+		// the workflow forever, since RunSwitch (the only other caller of
+		// UpdateWorkflowVersions) runs only on an actual version change.
+		// Idempotent: a no-op when the refs already point at `version`.
+		n, err := mount.UpdateWorkflowVersionsCount(deps.Root, version)
+		if err != nil {
+			return fmt.Errorf("reconciling workflow versions: %w", err)
+		}
+		if n > 0 {
+			fmt.Fprintf(w, "  %s  Reconciled %d wrapper workflow(s) to @%s\n", ui.StatusOK.Render("✓"), n, version)
+		}
 		return writeVariable()
 	}
 

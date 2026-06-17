@@ -388,3 +388,43 @@ func TestSwitchVersion_SkipsVariableWrite_WhenAlreadyCorrect(t *testing.T) {
 // out by a future refactor and the test would silently stop covering
 // the SwitchVersion → RunSwitch path.
 var _ = mount.FrameworkRepo
+
+// TestSwitchVersion_ReconcilesStaleWorkflowWhenMountMatches guards the gap that
+// left the OpenBSS CP wrapper pinned at the old version: when the mounted
+// .agents/ already equals the target, SwitchVersion used to short-circuit to
+// only writing the variable — never reconciling a stale workflow @version. Now
+// it reconciles workflow refs on that path too (idempotent).
+func TestSwitchVersion_ReconcilesStaleWorkflowWhenMountMatches(t *testing.T) {
+	root := t.TempDir()
+	wfDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	wfPath := filepath.Join(wfDir, "agentic-pipeline.yml")
+	stale := "jobs:\n  pipeline:\n    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v2.9.0\n"
+	if err := os.WriteFile(wfPath, []byte(stale), 0o644); err != nil {
+		t.Fatalf("seed workflow: %v", err)
+	}
+
+	writes := map[string]string{}
+	deps := Deps{
+		Root: root, Owner: "o", RepoName: "r", RepoFullName: "o/r",
+		GetRepoVariable: func(_, _, _ string) (string, error) { return "", nil },
+		SetRepoVariable: func(_, _, name, value string) error { writes[name] = value; return nil },
+	}
+	// Mount already at the target — the short-circuit path.
+	pre := SwitchVersionPreflight{CurrentVersion: "v3.0.0", IsFederatedCP: false}
+
+	var buf bytes.Buffer
+	if err := SwitchVersion(&buf, deps, "v3.0.0", pre, nil); err != nil {
+		t.Fatalf("SwitchVersion: %v", err)
+	}
+
+	got, _ := os.ReadFile(wfPath)
+	if strings.Contains(string(got), "@v2.9.0") || !strings.Contains(string(got), "@v3.0.0") {
+		t.Errorf("workflow @version not reconciled on the already-at-version path:\n%s", got)
+	}
+	if writes[FrameworkVersionVarName] != "v3.0.0" {
+		t.Errorf("expected %s=v3.0.0 written, got %q", FrameworkVersionVarName, writes[FrameworkVersionVarName])
+	}
+}
