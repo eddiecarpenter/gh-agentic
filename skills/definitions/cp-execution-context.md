@@ -21,7 +21,7 @@ pipeline before the recipe runs:
 
 | Anchor | Points at | Holds |
 |---|---|---|
-| `AGENTIC_CP_ROOT` | the workspace root | the framework mount (`.agents`), all project docs, `AGENTS.md` / `RULEBOOK.md` / `LOCALRULES.md`, `FEDERATION.md` — and is the repo where **issues live** |
+| `AGENTIC_CP_ROOT` | the workspace root | the framework mount (`.agents`), all project docs, `AGENTS.md` / `RULEBOOK.md` / `LOCALRULES.md`, `FEDERATION.yaml` — and is the repo where **issues live** |
 | `AGENTIC_PROJECT_DIR` | `./project` | the **code** — the target repo at the feature/PR branch. This is the agent's **current working directory** |
 
 In a single-topology project the target *is* the control plane, so both
@@ -80,7 +80,7 @@ reads against `$AGENTIC_CP_ROOT/docs`, never against the project code
   `$AGENTIC_CP_ROOT/docs/SYSTEM_ARCHITECTURE.md` (federation only).
 - **Domain tier** — `$AGENTIC_CP_ROOT/docs/domains/<domain>/BRIEF.md`
   and `.../ARCHITECTURE.md`, where `<domain>` is the target repo's
-  domain from `$AGENTIC_CP_ROOT/FEDERATION.md`.
+  domain from `$AGENTIC_CP_ROOT/FEDERATION.yaml`.
 - **Single topology** — `$AGENTIC_CP_ROOT/docs/BRIEF.md` and
   `.../ARCHITECTURE.md` (the unqualified pair; the repo *is* the project).
 

@@ -41,7 +41,7 @@ type CheckDeps struct {
 	CreateProjectField project.CreateProjectFieldFunc
 	// FetchLinkedRepos, FetchOwnerAndRepoIDs, and LinkRepoToProject are used
 	// by checkFederationProjectSync (check) and RepairPipeline (repair) to
-	// detect and fix drift between FEDERATION.md and the GitHub Project's
+	// detect and fix drift between FEDERATION.yaml and the GitHub Project's
 	// linked-repo graph. Tests substitute fakes; production wires the
 	// project.Default* implementations. LinkRepoToProject is repair-only; the
 	// check command leaves it nil.
@@ -236,7 +236,7 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 	}
 
 	// Feature #874: a pure-code domain repo carries AGENTIC_PROJECT_ID but no
-	// .agents mount and no FEDERATION.md — the control plane holds the framework.
+	// .agents mount and no FEDERATION.yaml — the control plane holds the framework.
 	// It runs only the minimal checks: it is registered code, not a framework
 	// consumer, so mount/content/label/workflow checks do not apply.
 	if isPureCodeDomainRepo(deps) {
@@ -270,12 +270,12 @@ func checksForTopologyWithLabels(deps CheckDeps) []checkGroupStep {
 		// Target-repo field: required on federation control-plane projects (#872);
 		// skipped for single topology.
 		{"Checking project target-repo field...", checkProjectTargetRepoField},
-		// Federation manifest: validates FEDERATION.md when present; passes silently
+		// Federation manifest: validates FEDERATION.yaml when present; passes silently
 		// when absent (single topology).
 		{"Checking federation manifest...", checkFederationManifest},
 		// Federation project sync: checks that every manifest repo is linked to the
 		// federation's GitHub Project, and flags project-linked repos not in the
-		// manifest. Guard: skipped when FEDERATION.md is absent.
+		// manifest. Guard: skipped when FEDERATION.yaml is absent.
 		{"Checking federation project sync...", checkFederationProjectSync},
 		// Legacy federation config: warns when pre-#824 topology variables or .cp/
 		// directory are still present so operators know to clean them up.
@@ -302,7 +302,7 @@ func checkDomainRepo(deps CheckDeps) Group {
 // isPureCodeDomainRepo reports whether deps describes a registered pure-code
 // domain repo (#874): it carries AGENTIC_PROJECT_ID but has no .agents mount,
 // is not the framework source, and is not a federation requirements repo (no
-// FEDERATION.md). Such a repo is validated as code, not as a framework consumer.
+// FEDERATION.yaml). Such a repo is validated as code, not as a framework consumer.
 //
 // Detection is absence-based: a domain repo carrying a stale .agents from the
 // pre-pivot model is NOT distinguishable here from a single-topology repo, and
@@ -833,7 +833,7 @@ func checkProjectTargetRepoField(deps CheckDeps) Group {
 	return g
 }
 
-// checkFederationManifest validates the FEDERATION.md manifest when it is
+// checkFederationManifest validates the FEDERATION.yaml manifest when it is
 // present at deps.Root. When absent, the repo is single-topology and the
 // check passes unconditionally. When present but invalid, each error from
 // project.ReadFederation is surfaced as a Fail result with the exact error
@@ -845,7 +845,7 @@ func checkFederationManifest(deps CheckDeps) Group {
 		g.Results = append(g.Results, CheckResult{
 			Name:    "federation-manifest",
 			Status:  Pass,
-			Message: "FEDERATION.md not present (single topology)",
+			Message: "federation manifest not present (single topology)",
 		})
 		return g
 	}
@@ -863,7 +863,7 @@ func checkFederationManifest(deps CheckDeps) Group {
 	g.Results = append(g.Results, CheckResult{
 		Name:    "federation-manifest",
 		Status:  Pass,
-		Message: "FEDERATION.md is valid",
+		Message: "federation manifest is valid",
 	})
 
 	// Soft check (#871): each domain's documentation lives at
@@ -885,9 +885,9 @@ func checkFederationManifest(deps CheckDeps) Group {
 	return g
 }
 
-// checkFederationProjectSync validates that every repo listed in FEDERATION.md
+// checkFederationProjectSync validates that every repo listed in FEDERATION.yaml
 // is linked to the federation's GitHub Project, and flags project-linked repos
-// that are absent from the manifest. It is active only when FEDERATION.md is
+// that are absent from the manifest. It is active only when FEDERATION.yaml is
 // present; single-topology repos receive a single Pass result (guard AC-4).
 //
 // Result name conventions:
@@ -902,12 +902,12 @@ func checkFederationManifest(deps CheckDeps) Group {
 func checkFederationProjectSync(deps CheckDeps) Group {
 	g := Group{Name: "Federation project sync"}
 
-	// Guard AC-4: no FEDERATION.md → skip silently (single topology).
+	// Guard AC-4: no FEDERATION.yaml → skip silently (single topology).
 	if !project.IsFederationRepo(deps.Root) {
 		g.Results = append(g.Results, CheckResult{
 			Name:    "federation-sync",
 			Status:  Pass,
-			Message: "FEDERATION.md not present — federation sync check skipped",
+			Message: "federation manifest not present — federation sync check skipped",
 		})
 		return g
 	}
@@ -1014,7 +1014,7 @@ func checkFederationProjectSync(deps CheckDeps) Group {
 			g.Results = append(g.Results, CheckResult{
 				Name:    fmt.Sprintf("federation-sync:unlisted:%s", r.NameWithOwner),
 				Status:  Warning,
-				Message: fmt.Sprintf("project-linked repo %s is not in FEDERATION.md — add it to the manifest or unlink it from the project", r.NameWithOwner),
+				Message: fmt.Sprintf("project-linked repo %s is not in the federation manifest — add it to the manifest or unlink it from the project", r.NameWithOwner),
 			})
 		}
 	}
@@ -1025,20 +1025,20 @@ func checkFederationProjectSync(deps CheckDeps) Group {
 // checkLegacyFederationConfig detects remnants of the pre-#824 topology model.
 // It runs unconditionally regardless of topology so repos that still carry
 // the old variables or directory layout are flagged even when they have
-// already adopted FEDERATION.md. Each legacy artefact becomes a Warning with
+// already adopted FEDERATION.yaml. Each legacy artefact becomes a Warning with
 // a remediation command.
 func checkLegacyFederationConfig(deps CheckDeps) Group {
 	g := Group{Name: "Legacy federation config"}
 	found := 0
 
 	// AGENTIC_TOPOLOGY variable — was the old topology marker; replaced by
-	// FEDERATION.md presence detection in Feature #824.
+	// FEDERATION.yaml presence detection in Feature #824.
 	if deps.Run != nil {
 		if hit, _, _ := getRepoVariable(deps, "AGENTIC_TOPOLOGY"); hit {
 			g.Results = append(g.Results, CheckResult{
 				Name:        "legacy-topology",
 				Status:      Warning,
-				Message:     "AGENTIC_TOPOLOGY is set — no longer used; topology is now inferred from FEDERATION.md presence",
+				Message:     "AGENTIC_TOPOLOGY is set — no longer used; topology is now inferred from FEDERATION.yaml presence",
 				Remediation: "gh variable delete AGENTIC_TOPOLOGY --repo " + deps.RepoFullName,
 			})
 			found++
@@ -1046,7 +1046,7 @@ func checkLegacyFederationConfig(deps CheckDeps) Group {
 	}
 
 	// AGENTIC_CONTROL_PLANE variable — was written by the old federated init
-	// flow; the FEDERATION.md manifest supersedes it.
+	// flow; the FEDERATION.yaml manifest supersedes it.
 	if deps.Run != nil {
 		if hit, _, _ := getRepoVariable(deps, "AGENTIC_CONTROL_PLANE"); hit {
 			g.Results = append(g.Results, CheckResult{

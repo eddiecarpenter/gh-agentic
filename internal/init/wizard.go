@@ -97,7 +97,7 @@ func Run(w io.Writer, root string, force bool, deps Deps) error {
 //
 // All variables and secrets are written at --repo scope. The org-scope
 // routing that existed under the old federated topology has been removed
-// as part of Feature #824 — topology is now determined by FEDERATION.md
+// as part of Feature #824 — topology is now determined by FEDERATION.yaml
 // presence, not by variable-level scoping.
 func ConfigureRepo(w io.Writer, cfg *InitConfig, run RunCommandFunc) error {
 	repo := cfg.RepoFullName

@@ -12,7 +12,7 @@ repos no longer have one).
 
 > **No-op for new federations.** A federation created on the current framework is
 > already CP-centralized — `gh agentic init` → federated scaffolds the
-> domain-grouped `FEDERATION.md` and federated-tier docs, `gh agentic project join`
+> domain-grouped `FEDERATION.yaml` and federated-tier docs, `gh agentic project join`
 > registers pure-code domain repos, and features are created on the control plane
 > from the start. There is nothing to migrate. See *No-op path* below.
 
@@ -25,7 +25,7 @@ repos no longer have one).
 | Where features live | In their target domain repo | On the **control plane** |
 | Feature → requirement link | **Cross-repo** sub-issues (#825) | **Same-repo** sub-issues on the CP (#872) |
 | Which repo a feature targets | Implied by the repo it lives in | A **"Target repo"** ProjectV2 field (#872) |
-| `FEDERATION.md` schema | Flat `repos:` | Domain-grouped `domains:` (#871) |
+| `FEDERATION.yaml` schema | Flat `repos:` | Domain-grouped `domains:` (#871) |
 | Domain registration | `project join` run in the domain repo, with a mount | `gh agentic project join <owner/repo> --domain <name>` run on the **CP**, no mount (#874) |
 
 The headline win: only the control plane carries anything agentic. Federation
@@ -36,22 +36,27 @@ maintenance collapses from N repos to one, and domain repos cannot drift.
 Run these on the control plane and confirm each before making changes:
 
 - [ ] **You are on the control plane.** `gh agentic info` reports Federation
-      topology and a local `FEDERATION.md` exists at the repo root.
-- [ ] **The manifest is on the domain-grouped schema.** `FEDERATION.md` uses
-      `domains:` (not the flat `repos:`). If it still uses `repos:`, convert it
-      first — group the existing repos under one or more `domains:` entries, each
-      with a `name` and `purpose`. `gh agentic check` validates the result.
-- [ ] **`FEDERATION.md` is a *pure YAML* file — not a markdown document.**
+      topology and a local federation manifest exists at the repo root —
+      `FEDERATION.yaml` (canonical) or the legacy `FEDERATION.md`.
+- [ ] **The manifest file is named `FEDERATION.yaml`.** The content was always
+      YAML; the `.yaml` extension makes that honest and lets editors/tooling treat
+      it as YAML. The framework still **reads** a legacy `FEDERATION.md` for
+      backward compatibility and migrates it to `FEDERATION.yaml` on the next
+      write (e.g. `gh agentic project join`). To migrate eagerly, just rename it:
+      `git mv FEDERATION.md FEDERATION.yaml`.
+- [ ] **The manifest is on the domain-grouped schema.** It uses `domains:` (not
+      the flat `repos:`). If it still uses `repos:`, convert it first — group the
+      existing repos under one or more `domains:` entries, each with a `name` and
+      `purpose`. `gh agentic check` validates the result.
+- [ ] **The manifest is a *pure YAML* file — not a markdown document.**
       `project.ReadFederation` (`internal/project/federation.go`) runs
-      `yaml.Unmarshal` over the **entire file**, so the file may contain *only*
-      YAML. A markdown manifest — architecture prose plus a fenced
-      ` ```yaml ` block — fails: the prose lines parse as YAML scalars and
-      `gh agentic info` / `check` abort with
-      `cannot unmarshal !!str into project.Federation`. If your `FEDERATION.md`
-      is a markdown doc, convert it: remove all prose and code-fence markers,
-      leaving the bare `domains:` mapping. Move any architecture narrative to
-      `docs/SYSTEM_ARCHITECTURE.md`, or keep short notes inline as YAML `#`
-      comments.
+      `yaml.Unmarshal` over the **entire file**, so it may contain *only* YAML.
+      A markdown manifest — architecture prose plus a fenced ` ```yaml ` block —
+      fails: the prose lines parse as YAML scalars and `gh agentic info` / `check`
+      abort with `cannot unmarshal !!str into project.Federation`. Remove all
+      prose and code-fence markers, leaving the bare `domains:` mapping. Move any
+      architecture narrative to `docs/SYSTEM_ARCHITECTURE.md`, or keep short notes
+      inline as YAML `#` comments.
 - [ ] **The control plane is at (or ahead of) the version that ships #870.** The
       "Target repo" field machinery (#872) and CP-side `join` (#874) must be
       available. `gh agentic check` confirms the field exists; `gh agentic repair`
@@ -66,7 +71,7 @@ If no features have been created in any domain repo (a federation that scoped
 requirements but never started feature work, or a brand-new federation), there is
 **nothing to relocate**. Complete only these steps:
 
-1. Confirm `FEDERATION.md` is domain-grouped and `gh agentic check` is clean.
+1. Confirm `FEDERATION.yaml` is domain-grouped and `gh agentic check` is clean.
 2. Run the **stale-`.agents` cleanup** (below) for each domain repo, in case any
    carried a mount under the old model.
 3. Done. New features will be created on the control plane with the "Target repo"
@@ -130,7 +135,7 @@ deleted.
 
 Under the old model each domain repo mounted the framework at `.agents/`. Under
 the CP-centralized model domain repos are **pure code** — the mount is stale and
-must be removed. For **each repo listed in the control plane's `FEDERATION.md`**:
+must be removed. For **each repo listed in the control plane's `FEDERATION.yaml`**:
 
 1. **Confirm it is a manifest domain repo**, not the control plane itself. The
    control plane keeps its `.agents/` mount; only domain repos shed it.
@@ -147,14 +152,14 @@ must be removed. For **each repo listed in the control plane's `FEDERATION.md`**
    domain repo reports it as *not under agentic control* — which is correct: the
    control plane is under control, the domain repo is just code. Running
    `gh agentic check` on the control plane confirms the repo is still a linked
-   Project member and present in `FEDERATION.md`.
+   Project member and present in `FEDERATION.yaml`.
 
 This is the re-scoped [#874] AC-3 (stale-`.agents` cleanup), homed here because it
-is a CP-side migration step performed where `FEDERATION.md` is local.
+is a CP-side migration step performed where `FEDERATION.yaml` is local.
 
 ## After migration
 
-- `FEDERATION.md` is domain-grouped, and every registered domain repo is pure code.
+- `FEDERATION.yaml` is domain-grouped, and every registered domain repo is pure code.
 - Every feature lives on the control plane with its "Target repo" field set and a
   same-repo sub-issue link to its requirement.
 - The pipeline runs only on the control plane; domain repos have no workflow.

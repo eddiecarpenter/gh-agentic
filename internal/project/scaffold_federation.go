@@ -25,9 +25,9 @@ var systemDocTemplates = map[string]string{
 func ScaffoldFederation(w io.Writer, root string) error {
 	if !IsFederationRepo(root) {
 		if err := WriteFederation(root, &Federation{}); err != nil {
-			return fmt.Errorf("scaffolding FEDERATION.md: %w", err)
+			return fmt.Errorf("scaffolding FEDERATION.yaml: %w", err)
 		}
-		fmt.Fprintf(w, "  %s  FEDERATION.md scaffolded (no domains registered yet)\n", ui.StatusOK.Render("✓"))
+		fmt.Fprintf(w, "  %s  FEDERATION.yaml scaffolded (no domains registered yet)\n", ui.StatusOK.Render("✓"))
 	}
 
 	for path, tmpl := range systemDocTemplates {

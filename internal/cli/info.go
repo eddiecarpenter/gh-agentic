@@ -306,7 +306,7 @@ func printInfo(w io.Writer, data *infoData) {
 		fmt.Fprintln(w, "  "+ui.SectionHeading.Render("Federation"))
 		fmt.Fprintln(w, "  "+ui.Divider(48))
 		if data.federationError != "" {
-			fmt.Fprintf(w, "  %s\n", ui.StatusWarning.Render("⚠ FEDERATION.md present but could not be parsed: "+data.federationError))
+			fmt.Fprintf(w, "  %s\n", ui.StatusWarning.Render("⚠ federation manifest present but could not be parsed: "+data.federationError))
 		} else {
 			fmt.Fprintf(w, "  This is a federation requirements repository.\n")
 			for _, d := range data.federationDomains {

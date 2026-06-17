@@ -235,7 +235,7 @@ Subcommands and flags:
   - `--version` — framework version to mount (default: latest).
   - `--interactive` (`-i`) — collect title + version via form.
 - `gh agentic project join <owner/repo>` — CP-side: register a domain repo with
-  this control plane (writes `FEDERATION.md`, links the Project, sets the target
+  this control plane (writes `FEDERATION.yaml`, links the Project, sets the target
   repo's `AGENTIC_PROJECT_ID`; **no framework mount** — domain repos are pure code).
   - `--domain` — domain the repo belongs to (required; lazy-created if new).
   - `--purpose` — the repo's purpose within its domain.

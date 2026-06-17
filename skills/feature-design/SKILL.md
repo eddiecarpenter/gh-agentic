@@ -384,7 +384,7 @@ human-driven recovery via `gh agentic repair` plus manual finishing.
    - **Federation** — `$AGENTIC_CP_ROOT/docs/SYSTEM_ARCHITECTURE.md`
      plus the target repo's domain architecture under
      `$AGENTIC_CP_ROOT/docs/domains/<domain>/ARCHITECTURE.md`
-     (`<domain>` from `$AGENTIC_CP_ROOT/FEDERATION.md`).
+     (`<domain>` from `$AGENTIC_CP_ROOT/FEDERATION.yaml`).
    - **Single topology** — `$AGENTIC_CP_ROOT/docs/ARCHITECTURE.md`.
    - **Legacy (no anchor set)** — fall back to `docs/ARCHITECTURE.md`
      in the current directory.

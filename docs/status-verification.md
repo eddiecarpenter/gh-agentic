@@ -15,7 +15,7 @@ release.
 
 1. Point a shell at a gh-agentic repo that has an
    `AGENTIC_PROJECT_ID` variable set (for the federated checks, a
-   federation requirements repo — one carrying a `FEDERATION.md` manifest).
+   federation requirements repo — one carrying a `FEDERATION.yaml` manifest).
 2. Confirm `gh auth status` reports a logged-in user with access to the
    project board.
 3. Install the `gh-agentic` extension built from this branch.
