@@ -31,7 +31,7 @@ type FederationDomain struct {
 	Repos []FederationRepo `yaml:"repos"`
 }
 
-// Federation holds the parsed contents of a FEDERATION.md manifest file.
+// Federation holds the parsed contents of a federation manifest file (FEDERATION.yaml).
 type Federation struct {
 	// Domains groups the federation's repos under the domains they implement.
 	Domains []FederationDomain `yaml:"domains"`
@@ -43,8 +43,30 @@ type flatFederation struct {
 	Repos []FederationRepo `yaml:"repos"`
 }
 
-// federationFileName is the canonical name of the federation manifest file.
-const federationFileName = "FEDERATION.md"
+// federationFileName is the canonical name of the federation manifest file. Its
+// content is YAML, so it carries a .yaml extension. The legacy .md name is still
+// read for backward compatibility (see manifestReadPath) and migrated to .yaml
+// on the next write (see WriteFederation).
+const federationFileName = "FEDERATION.yaml"
+
+// legacyFederationFileName is the pre-v3.0.1 manifest name. The file was always
+// YAML; the .md extension was a historical mislabel. Still read, never written.
+const legacyFederationFileName = "FEDERATION.md"
+
+// manifestReadPath returns the manifest path to read at root: the canonical
+// FEDERATION.yaml when present, else the legacy FEDERATION.md, else the canonical
+// path (so a not-found error names the file callers should create).
+func manifestReadPath(root string) string {
+	canonical := filepath.Join(root, federationFileName)
+	if _, err := os.Stat(canonical); err == nil {
+		return canonical
+	}
+	legacy := filepath.Join(root, legacyFederationFileName)
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return canonical
+}
 
 // domainNamePattern validates a domain name as a filesystem-safe slug, since
 // each domain maps to a docs/domains/<name>/ folder.
@@ -61,44 +83,48 @@ func (f *Federation) AllRepos() []FederationRepo {
 	return repos
 }
 
-// IsFederationRepo returns true when a FEDERATION.md file exists at root.
-// It uses os.Stat only — no YAML decode — so it is fast and has no side effects.
-// A false return means the repo is single topology; no further federation config
-// is required.
+// IsFederationRepo returns true when a federation manifest exists at root —
+// FEDERATION.yaml (canonical) or the legacy FEDERATION.md. It uses os.Stat only —
+// no YAML decode — so it is fast and has no side effects. A false return means
+// the repo is single topology; no further federation config is required.
 func IsFederationRepo(root string) bool {
-	_, err := os.Stat(filepath.Join(root, federationFileName))
+	if _, err := os.Stat(filepath.Join(root, federationFileName)); err == nil {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(root, legacyFederationFileName))
 	return err == nil
 }
 
-// ReadFederation reads and validates the domain-grouped FEDERATION.md manifest
-// at root. It returns the first validation error found:
-//   - file present but empty → "FEDERATION.md: file is empty"
-//   - YAML parse error → "FEDERATION.md: YAML parse error: <detail>"
-//   - legacy flat `repos:` schema → "FEDERATION.md: flat `repos:` schema is no longer supported — group repos under `domains:`"
-//   - domains list absent or empty → "FEDERATION.md: domains list is empty"
-//   - domain missing name → "FEDERATION.md: domain N: name is required"
-//   - domain name not a slug → "FEDERATION.md: domain <name>: name must be a lowercase slug ([a-z0-9-])"
-//   - domain missing/blank purpose → "FEDERATION.md: domain <name>: purpose is required"
-//   - duplicate domain → "FEDERATION.md: duplicate domain <name>"
-//   - domain with no repos → "FEDERATION.md: domain <name>: repos list is empty"
-//   - repo missing name → "FEDERATION.md: domain <name>: repo N: name is required"
-//   - repo missing/blank purpose → "FEDERATION.md: domain <name>: repo <name>: purpose is required"
-//   - repo name not owner/repo → "FEDERATION.md: domain <name>: repo <name>: name must be in owner/repo format"
-//   - duplicate repo across the manifest → "FEDERATION.md: duplicate repo <name>"
+// ReadFederation reads and validates the domain-grouped FEDERATION.yaml manifest
+// at root (falling back to the legacy FEDERATION.md). It returns the first
+// validation error found:
+//   - file present but empty → "FEDERATION.yaml: file is empty"
+//   - YAML parse error → "FEDERATION.yaml: YAML parse error: <detail>"
+//   - legacy flat `repos:` schema → "FEDERATION.yaml: flat `repos:` schema is no longer supported — group repos under `domains:`"
+//   - domains list absent or empty → "FEDERATION.yaml: domains list is empty"
+//   - domain missing name → "FEDERATION.yaml: domain N: name is required"
+//   - domain name not a slug → "FEDERATION.yaml: domain <name>: name must be a lowercase slug ([a-z0-9-])"
+//   - domain missing/blank purpose → "FEDERATION.yaml: domain <name>: purpose is required"
+//   - duplicate domain → "FEDERATION.yaml: duplicate domain <name>"
+//   - domain with no repos → "FEDERATION.yaml: domain <name>: repos list is empty"
+//   - repo missing name → "FEDERATION.yaml: domain <name>: repo N: name is required"
+//   - repo missing/blank purpose → "FEDERATION.yaml: domain <name>: repo <name>: purpose is required"
+//   - repo name not owner/repo → "FEDERATION.yaml: domain <name>: repo <name>: name must be in owner/repo format"
+//   - duplicate repo across the manifest → "FEDERATION.yaml: duplicate repo <name>"
 func ReadFederation(root string) (*Federation, error) {
-	path := filepath.Join(root, federationFileName)
+	path := manifestReadPath(root)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("FEDERATION.md: %w", err)
+		return nil, fmt.Errorf("FEDERATION.yaml: %w", err)
 	}
 
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return nil, fmt.Errorf("FEDERATION.md: file is empty")
+		return nil, fmt.Errorf("FEDERATION.yaml: file is empty")
 	}
 
 	var fed Federation
 	if err := yaml.Unmarshal(data, &fed); err != nil {
-		return nil, fmt.Errorf("FEDERATION.md: YAML parse error: %s", err.Error())
+		return nil, fmt.Errorf("FEDERATION.yaml: YAML parse error: %s", err.Error())
 	}
 
 	if len(fed.Domains) == 0 {
@@ -107,7 +133,7 @@ func ReadFederation(root string) (*Federation, error) {
 		// domains registered yet (domains are added later via `project join`).
 		var flat flatFederation
 		if yaml.Unmarshal(data, &flat) == nil && len(flat.Repos) > 0 {
-			return nil, fmt.Errorf("FEDERATION.md: flat `repos:` schema is no longer supported — group repos under `domains:`")
+			return nil, fmt.Errorf("FEDERATION.yaml: flat `repos:` schema is no longer supported — group repos under `domains:`")
 		}
 		return &fed, nil
 	}
@@ -129,37 +155,37 @@ func validateFederation(fed *Federation) error {
 	for di, d := range fed.Domains {
 		domainNo := di + 1
 		if d.Name == "" {
-			return fmt.Errorf("FEDERATION.md: domain %d: name is required", domainNo)
+			return fmt.Errorf("FEDERATION.yaml: domain %d: name is required", domainNo)
 		}
 		if !domainNamePattern.MatchString(d.Name) {
-			return fmt.Errorf("FEDERATION.md: domain %q: name must be a lowercase slug ([a-z0-9-])", d.Name)
+			return fmt.Errorf("FEDERATION.yaml: domain %q: name must be a lowercase slug ([a-z0-9-])", d.Name)
 		}
 		if strings.TrimSpace(d.Purpose) == "" {
-			return fmt.Errorf("FEDERATION.md: domain %q: purpose is required", d.Name)
+			return fmt.Errorf("FEDERATION.yaml: domain %q: purpose is required", d.Name)
 		}
 		domainKey := strings.ToLower(d.Name)
 		if seenDomain[domainKey] {
-			return fmt.Errorf("FEDERATION.md: duplicate domain %q", d.Name)
+			return fmt.Errorf("FEDERATION.yaml: duplicate domain %q", d.Name)
 		}
 		seenDomain[domainKey] = true
 
 		if len(d.Repos) == 0 {
-			return fmt.Errorf("FEDERATION.md: domain %q: repos list is empty", d.Name)
+			return fmt.Errorf("FEDERATION.yaml: domain %q: repos list is empty", d.Name)
 		}
 		for ri, repo := range d.Repos {
 			repoNo := ri + 1
 			if repo.Name == "" {
-				return fmt.Errorf("FEDERATION.md: domain %q: repo %d: name is required", d.Name, repoNo)
+				return fmt.Errorf("FEDERATION.yaml: domain %q: repo %d: name is required", d.Name, repoNo)
 			}
 			if strings.TrimSpace(repo.Purpose) == "" {
-				return fmt.Errorf("FEDERATION.md: domain %q: repo %q: purpose is required", d.Name, repo.Name)
+				return fmt.Errorf("FEDERATION.yaml: domain %q: repo %q: purpose is required", d.Name, repo.Name)
 			}
 			if !isValidOwnerRepo(repo.Name) {
-				return fmt.Errorf("FEDERATION.md: domain %q: repo %q: name must be in owner/repo format", d.Name, repo.Name)
+				return fmt.Errorf("FEDERATION.yaml: domain %q: repo %q: name must be in owner/repo format", d.Name, repo.Name)
 			}
 			repoKey := strings.ToLower(repo.Name)
 			if seenRepo[repoKey] {
-				return fmt.Errorf("FEDERATION.md: duplicate repo %q", repo.Name)
+				return fmt.Errorf("FEDERATION.yaml: duplicate repo %q", repo.Name)
 			}
 			seenRepo[repoKey] = true
 		}
@@ -201,7 +227,7 @@ func (f *Federation) AddRepo(domain, domainPurpose, repoName, repoPurpose string
 	return true, nil
 }
 
-// WriteFederation writes the domain-grouped manifest to FEDERATION.md at root,
+// WriteFederation writes the domain-grouped manifest to FEDERATION.yaml at root,
 // round-tripping the schema ReadFederation parses. The manifest is validated
 // before writing so a malformed in-memory Federation never reaches disk.
 func WriteFederation(root string, fed *Federation) error {
@@ -210,10 +236,16 @@ func WriteFederation(root string, fed *Federation) error {
 	}
 	data, err := yaml.Marshal(fed)
 	if err != nil {
-		return fmt.Errorf("FEDERATION.md: marshalling: %w", err)
+		return fmt.Errorf("FEDERATION.yaml: marshalling: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, federationFileName), data, 0644); err != nil {
-		return fmt.Errorf("FEDERATION.md: %w", err)
+		return fmt.Errorf("FEDERATION.yaml: %w", err)
+	}
+	// Migrate a legacy FEDERATION.md to the canonical name: now that the .yaml
+	// manifest is written, the old .md would be a stale duplicate. Best-effort.
+	legacy := filepath.Join(root, legacyFederationFileName)
+	if _, err := os.Stat(legacy); err == nil {
+		_ = os.Remove(legacy)
 	}
 	return nil
 }

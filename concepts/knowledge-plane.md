@@ -52,14 +52,14 @@ plane (see the domain documentation tier below).
 
 ### Federation topology
 
-The control plane declares its domains and their repos via `FEDERATION.md` at the
+The control plane declares its domains and their repos via `FEDERATION.yaml` at the
 repo root, and owns all knowledge for the federation; domain repos hold only code.
 
 **Control plane:**
 ```
 control-plane-repo/
 ├── .agents/                          # framework mount, read-only
-├── FEDERATION.md                     # declares all domains + their repos
+├── FEDERATION.yaml                     # declares all domains + their repos
 └── docs/
     ├── SYSTEM_BRIEF.md               # system orientation
     ├── SYSTEM_ARCHITECTURE.md        # seams between repos
@@ -78,7 +78,7 @@ plane outward, not from domain repos inward.
 
 #### Domain documentation tier (#871)
 
-Under the domain-grouped `FEDERATION.md` schema, a *domain* is one or more
+Under the domain-grouped `FEDERATION.yaml` schema, a *domain* is one or more
 repos, and a domain's documentation lives centrally on the control plane —
 not scattered across its member repos. The knowledge plane has exactly two
 tiers, both homed on the control plane:
@@ -87,7 +87,7 @@ tiers, both homed on the control plane:
   control-plane `docs/` root (e.g. `SYSTEM_BRIEF.md`, `SYSTEM_ARCHITECTURE.md`).
   Never decentralised into domain repos.
 - **Domain tier** — each domain's documentation under `docs/domains/<domain>/`,
-  where `<domain>` is the domain's slug from `FEDERATION.md`. A domain spanning
+  where `<domain>` is the domain's slug from `FEDERATION.yaml`. A domain spanning
   several repos therefore has a single documentation home.
 
 There is no separate per-service documentation tier: member repos carry code,
@@ -134,12 +134,12 @@ describe seams owned by another repo.
 ## Membership
 
 In federation topology, **every member repo is linked to the GitHub Project**.
-The control plane repo is identified by `FEDERATION.md` at its root — no
+The control plane repo is identified by `FEDERATION.yaml` at its root — no
 marker variable is required.
 
 Discovery:
 1. Query the Project's linked repositories — returns all N members
-2. Find the repo whose root contains `FEDERATION.md` — that is the control plane
+2. Find the repo whose root contains `FEDERATION.yaml` — that is the control plane
 3. The rest are pure-code domain repos (no `.agents`, no docs)
 
 The GitHub Project is the single source of truth for membership. A deleted
@@ -308,7 +308,7 @@ mechanism mirrors the `.agents/` mount used by the framework itself.
 
 For every session, session-init:
 
-1. Detects topology from `FEDERATION.md` presence (single or federation).
+1. Detects topology from `FEDERATION.yaml` presence (single or federation).
 2. Loads `docs/BRIEF.md` and `docs/ARCHITECTURE.md` from the local repo
    (single topology — the repo is its own control plane).
 3. For federation topology: loads `docs/SYSTEM_BRIEF.md` and
@@ -406,7 +406,7 @@ No `docs/decisions/` directory exists in either the CP or domain repos.
 Three artefacts from the framework's previous federation model have been removed:
 
 - **`docs/federation.yaml`** — replaced by GitHub Project linkage and later by
-  `FEDERATION.md`. Membership is now declared in `FEDERATION.md` at the control
+  `FEDERATION.yaml`. Membership is now declared in `FEDERATION.yaml` at the control
   plane repo root.
 - **`docs/requirements/`** — replaced by GitHub Issues. Requirements are
   Issues; there is no parallel filesystem artefact.

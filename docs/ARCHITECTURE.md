@@ -111,7 +111,7 @@ operation and domain repos cannot drift.
 control-plane-repo/
 ├── .agents/                 ← tracked submodule → eddiecarpenter/gh-agentic@vX.Y.Z
 │   ├── RULEBOOK.md / skills/ / standards/ / concepts/ / recipes/
-├── FEDERATION.md            ← domain-grouped manifest (domains → repos)
+├── FEDERATION.yaml            ← domain-grouped manifest (domains → repos)
 ├── docs/                    ← SYSTEM_BRIEF, SYSTEM_ARCHITECTURE, docs/domains/<domain>/
 ├── CLAUDE.md / AGENTS.md / LOCALRULES.md   ← committed agent entry files
 └── .github/workflows/
@@ -122,7 +122,7 @@ control-plane-repo/
 
 A domain repo is **pure code** — no `.agents`, no docs, no pipeline workflow.
 It is registered with the control plane (added to the GitHub Project and
-`FEDERATION.md`, and given an `AGENTIC_PROJECT_ID` variable) via
+`FEDERATION.yaml`, and given an `AGENTIC_PROJECT_ID` variable) via
 `gh agentic project join` run on the control plane (#874), but nothing agentic is
 installed into it.
 
@@ -146,9 +146,9 @@ cannot drift.
 > are pure code. Migrating an existing federation is documented in
 > `docs/migration-cp-centralized.md`.
 
-### `FEDERATION.md` manifest
+### `FEDERATION.yaml` manifest
 
-The presence of `FEDERATION.md` at a repo's root signals that the repo is a
+The presence of `FEDERATION.yaml` at a repo's root signals that the repo is a
 federation control plane (`project.IsFederationRepo` is a stat-only check; a repo
 without it is single topology). The manifest is **domain-grouped** (#871) —
 domains, each with a purpose and the repos that implement it (a domain may span
@@ -174,10 +174,10 @@ info` lists the domains and their repos.
 
 - **Create a control plane** — `gh agentic init` → federated (or `gh agentic
   project create`) establishes the GitHub Project, scaffolds an empty
-  `FEDERATION.md` plus the federated-tier system docs (`docs/SYSTEM_BRIEF.md`,
+  `FEDERATION.yaml` plus the federated-tier system docs (`docs/SYSTEM_BRIEF.md`,
   `docs/SYSTEM_ARCHITECTURE.md`), and mounts the framework (#875).
 - **Register a domain repo** — `gh agentic project join <owner/repo> --domain
-  <name>`, run on the control plane, adds the repo to `FEDERATION.md` under the
+  <name>`, run on the control plane, adds the repo to `FEDERATION.yaml` under the
   named domain (lazy-creating the domain), links it to the Project, and sets its
   `AGENTIC_PROJECT_ID` — with **no framework mount** (#874).
 - **Feature issues live on the control plane**, each carrying a "Target repo"
@@ -189,7 +189,7 @@ info` lists the domains and their repos.
   `$AGENTIC_PROJECT_DIR`). Execution phases are read-only documentation consumers
   (#873, designed).
 - **One GitHub Project** spans the whole federation; `gh agentic status` answers
-  "where is everything", and `gh agentic check` / `repair` keep `FEDERATION.md`
+  "where is everything", and `gh agentic check` / `repair` keep `FEDERATION.yaml`
   and the Project's linked repos in sync.
 
 The two-tier knowledge plane (carried into #870) keeps system-level docs at the

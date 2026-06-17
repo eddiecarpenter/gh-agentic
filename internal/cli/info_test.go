@@ -61,14 +61,14 @@ func TestPrintInfo_FederationError_ShowsWarning(t *testing.T) {
 		version:         "v2.0.0",
 		repoLabel:       "acme/cp",
 		topology:        "Federation",
-		federationError: "FEDERATION.md: repos list is empty",
+		federationError: "FEDERATION.yaml: repos list is empty",
 	}
 	out := printInfoToString(data)
 	if !strings.Contains(out, "Federation") {
 		t.Errorf("expected 'Federation' section heading even on error, got:\n%s", out)
 	}
-	if !strings.Contains(out, "FEDERATION.md present but could not be parsed") {
-		t.Errorf("expected warning phrase 'FEDERATION.md present but could not be parsed', got:\n%s", out)
+	if !strings.Contains(out, "federation manifest present but could not be parsed") {
+		t.Errorf("expected warning phrase 'federation manifest present but could not be parsed', got:\n%s", out)
 	}
 	if !strings.Contains(out, "repos list is empty") {
 		t.Errorf("expected error text 'repos list is empty' in output, got:\n%s", out)

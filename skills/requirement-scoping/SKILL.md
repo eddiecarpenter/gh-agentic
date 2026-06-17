@@ -305,7 +305,7 @@ on it:
    verbatim into Feature bodies (they're context, not source).
 
    **Federation manifest detection.** Check whether the active repo
-   is a federation requirements repo by testing for `FEDERATION.md`
+   is a federation requirements repo by testing for `FEDERATION.yaml`
    at the repo root:
 
    - **Present** → read it with the `Read` tool (NOT shell parsing)

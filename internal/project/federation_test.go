@@ -420,3 +420,67 @@ func TestFederation_AddRepo_RejectsDuplicate(t *testing.T) {
 		t.Fatal("expected a duplicate-repo error (case-insensitive) across domains")
 	}
 }
+
+// --- Backward compatibility: legacy FEDERATION.md (v3.0.1 rename) ---
+
+func TestIsFederationRepo_LegacyMdOnly_ReturnsTrue(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, legacyFederationFileName), []byte(validManifest), 0644); err != nil {
+		t.Fatalf("writing legacy manifest: %v", err)
+	}
+	if !IsFederationRepo(dir) {
+		t.Error("IsFederationRepo: expected true when only the legacy FEDERATION.md exists")
+	}
+}
+
+func TestReadFederation_LegacyMdOnly_Parsed(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, legacyFederationFileName), []byte(validManifest), 0644); err != nil {
+		t.Fatalf("writing legacy manifest: %v", err)
+	}
+	fed, err := ReadFederation(dir)
+	if err != nil {
+		t.Fatalf("ReadFederation (legacy .md): %v", err)
+	}
+	if len(fed.Domains) != 2 {
+		t.Errorf("expected 2 domains from legacy manifest, got %d", len(fed.Domains))
+	}
+}
+
+func TestReadFederation_PrefersYamlOverLegacyMd(t *testing.T) {
+	dir := t.TempDir()
+	// Legacy .md has one domain; canonical .yaml has the two-domain validManifest.
+	legacy := "domains:\n  - name: legacy\n    purpose: old\n    repos:\n      - name: o/r\n        purpose: p\n"
+	if err := os.WriteFile(filepath.Join(dir, legacyFederationFileName), []byte(legacy), 0644); err != nil {
+		t.Fatalf("writing legacy manifest: %v", err)
+	}
+	writeManifest(t, dir, validManifest) // writes FEDERATION.yaml
+	fed, err := ReadFederation(dir)
+	if err != nil {
+		t.Fatalf("ReadFederation: %v", err)
+	}
+	if len(fed.Domains) != 2 || fed.Domains[0].Name == "legacy" {
+		t.Errorf("expected canonical FEDERATION.yaml to win, got domains %+v", fed.Domains)
+	}
+}
+
+func TestWriteFederation_WritesYamlAndMigratesLegacyMd(t *testing.T) {
+	dir := t.TempDir()
+	// Start from a legacy-only manifest.
+	if err := os.WriteFile(filepath.Join(dir, legacyFederationFileName), []byte(validManifest), 0644); err != nil {
+		t.Fatalf("writing legacy manifest: %v", err)
+	}
+	fed, err := ReadFederation(dir)
+	if err != nil {
+		t.Fatalf("ReadFederation: %v", err)
+	}
+	if err := WriteFederation(dir, fed); err != nil {
+		t.Fatalf("WriteFederation: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, federationFileName)); err != nil {
+		t.Errorf("expected FEDERATION.yaml to be written, stat err: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, legacyFederationFileName)); !os.IsNotExist(err) {
+		t.Errorf("expected legacy FEDERATION.md to be removed after write, stat err: %v", err)
+	}
+}

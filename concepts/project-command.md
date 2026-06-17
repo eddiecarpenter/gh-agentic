@@ -10,23 +10,23 @@ and the `docs/` pattern), see `knowledge-plane.md`.
 
 ## Topology Model
 
-Topology is **derived from FEDERATION.md presence**, not from runtime variables.
+Topology is **derived from FEDERATION.yaml presence**, not from runtime variables.
 
 The rule is simple and binary:
 
-| `FEDERATION.md` at repo root | Topology |
+| `FEDERATION.yaml` at repo root | Topology |
 |---|---|
 | Present (valid YAML, domain-grouped `domains` list — may be empty) | **Federation** — this repo is the control plane |
 | Absent | **Single** — standalone repo (its own control plane), or a pure-code domain repo |
 
 `gh agentic` calls `project.IsFederationRepo(root)` — a single `os.Stat` check on
-`FEDERATION.md` — to classify any repo. No variable reads, no GraphQL queries, and
+`FEDERATION.yaml` — to classify any repo. No variable reads, no GraphQL queries, and
 no runtime environment are required. The topology is deterministic from the working tree.
 
-### FEDERATION.md format
+### FEDERATION.yaml format
 
 The control plane declares its domains — and the repos that implement them — in
-`FEDERATION.md` at the repo root. The file is valid YAML, **domain-grouped**
+`FEDERATION.yaml` at the repo root. The file is valid YAML, **domain-grouped**
 (#871): a list of domains, each with a purpose and the repos under it.
 
 ```yaml
@@ -47,10 +47,10 @@ Validation rules (enforced by `project.ReadFederation`):
 - Duplicate repo names are rejected
 - The flat `repos:` schema is no longer accepted (hard cut in #871)
 
-Domain repos (listed in `FEDERATION.md`) are **pure code** — no `.agents` mount,
+Domain repos (listed in `FEDERATION.yaml`) are **pure code** — no `.agents` mount,
 no docs, no pipeline workflow. They carry only an `AGENTIC_PROJECT_ID` repo
 variable, set when registered. The federation — including which domain each repo
-belongs to — is declared entirely from the control plane's `FEDERATION.md`; no
+belongs to — is declared entirely from the control plane's `FEDERATION.yaml`; no
 per-repo marker or domain variable is required.
 
 ---
@@ -108,7 +108,7 @@ plane** (#874), not in the domain repo:
 gh agentic project join <owner/repo> --domain <name> [--purpose <text>] [--domain-purpose <text>]
 ```
 
-It adds the target repo to the control plane's `FEDERATION.md` under the named
+It adds the target repo to the control plane's `FEDERATION.yaml` under the named
 domain (lazy-creating the domain if it does not exist yet), links the repo to the
 GitHub Project, and sets the target repo's `AGENTIC_PROJECT_ID`. It does **not**
 mount the framework into the target repo — domain repos stay pure code.
@@ -117,17 +117,17 @@ mount the framework into the target repo — domain repos stay pure code.
 
 | Current state | Behaviour |
 |---|---|
-| Not run on a control plane (no local `FEDERATION.md`) | **Block** — join is a control-plane operation |
+| Not run on a control plane (no local `FEDERATION.yaml`) | **Block** — join is a control-plane operation |
 | Target repo already a member of a different project | Warn + confirm (re-affiliation) |
 | Target repo already registered in this federation | Info only — no change |
 | Otherwise | Proceed |
 
 **Actions:**
-- Add the target repo to `FEDERATION.md` under `--domain` (via `AddRepo` + `WriteFederation`)
+- Add the target repo to `FEDERATION.yaml` under `--domain` (via `AddRepo` + `WriteFederation`)
 - Link the target repo to the GitHub Project
 - Set `AGENTIC_PROJECT_ID` on the target repo (no framework mount)
 
-The domain a repo belongs to is read from the control plane's `FEDERATION.md` —
+The domain a repo belongs to is read from the control plane's `FEDERATION.yaml` —
 no per-repo domain variable. Agents in a domain repo read system-level knowledge
 from the control plane via the GitHub API on demand.
 
@@ -158,7 +158,7 @@ Verifies project health. Reports:
 - `AGENTIC_PROJECT_ID` present and configured
 - Project exists and is accessible
 - Framework mounted and at expected version
-- FEDERATION.md valid (when present)
+- FEDERATION.yaml valid (when present)
 - Legacy federation config present (warns when pre-Feature-#824 topology variables or directory layout are still present)
 - Required variables and secrets present
 - Runner registered and reachable
@@ -179,8 +179,8 @@ before applying.
 
 Displays current project state:
 - Project name and ID
-- Topology (Single / Federation — derived from `FEDERATION.md` presence)
-- All domains and their repos (when `FEDERATION.md` is present)
+- Topology (Single / Federation — derived from `FEDERATION.yaml` presence)
+- All domains and their repos (when `FEDERATION.yaml` is present)
 - Framework version
 - Runner label
 
@@ -193,7 +193,7 @@ The content of `docs/` is defined by the knowledge plane. In brief:
 | Topology | Location | Writeable |
 |---|---|---|
 | Single (standalone repo, its own control plane) | Local `docs/` — holds both system-level and repo-level knowledge | Yes |
-| Federation (control plane) | Local `docs/` (system-level + `docs/domains/<domain>/`) + `FEDERATION.md` | Yes |
+| Federation (control plane) | Local `docs/` (system-level + `docs/domains/<domain>/`) + `FEDERATION.yaml` | Yes |
 
 In a federation, all knowledge — system-level and per-domain — lives on the
 control plane: system docs at the root (`SYSTEM_BRIEF.md`,
@@ -213,7 +213,7 @@ a federated project is:
 
 1. Create a new control plane repo with `gh agentic init` → federated (or
    `project create` with federated topology), which scaffolds an empty
-   `FEDERATION.md` plus the federated-tier system docs (#875).
+   `FEDERATION.yaml` plus the federated-tier system docs (#875).
 2. Migrate system-level content from the original repo's `docs/` into the new
    control plane's `docs/` as `SYSTEM_BRIEF.md` and `SYSTEM_ARCHITECTURE.md`.
 3. On the control plane, run `gh agentic project join <owner/repo> --domain <name>`

@@ -1291,8 +1291,8 @@ func TestCheckFederationManifest_MalformedYAML_Fail(t *testing.T) {
 	if r.Status != Fail {
 		t.Errorf("status: got %v, want Fail", r.Status)
 	}
-	if !strings.Contains(r.Message, "FEDERATION.md") {
-		t.Errorf("message: got %q, expected 'FEDERATION.md' prefix", r.Message)
+	if !strings.Contains(r.Message, "FEDERATION.yaml") {
+		t.Errorf("message: got %q, expected 'FEDERATION.yaml' prefix", r.Message)
 	}
 }
 
@@ -1743,8 +1743,8 @@ func TestCheckFederationProjectSync_ProjectLinkedRepoNotInManifest_Warns(t *test
 	if warnResult.Name != "federation-sync:unlisted:acme/extra" {
 		t.Errorf("name: got %q, want federation-sync:unlisted:acme/extra", warnResult.Name)
 	}
-	if !strings.Contains(warnResult.Message, "FEDERATION.md") {
-		t.Errorf("message: got %q, want FEDERATION.md mention", warnResult.Message)
+	if !strings.Contains(warnResult.Message, "federation manifest") {
+		t.Errorf("message: got %q, want federation manifest mention", warnResult.Message)
 	}
 }
 
