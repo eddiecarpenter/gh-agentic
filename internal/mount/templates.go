@@ -69,11 +69,22 @@ jobs:
     with:
       pr_number: ${{ inputs.pr_number || '' }}
       branch_name: ${{ inputs.branch_name || '' }}
-    secrets: inherit
+    # Explicit secrets, not 'inherit': inherit does not forward across accounts,
+    # so a domain repo in a different org than the framework owner would supply
+    # none and the required secrets would fail to evaluate. Mirrors the reusable
+    # workflow's workflow_call.secrets.
+    secrets:
+      CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+      PIPELINE_PAT: ${{ secrets.PIPELINE_PAT }}
+      PROJECT_PAT: ${{ secrets.PROJECT_PAT }}
+    # The caller must grant at least the union of the nested jobs' permissions;
+    # the execution jobs request actions: read, so without it the call fails to
+    # load (startup_failure: "requesting 'actions: read', but allowed 'none'").
     permissions:
       contents: write
       issues: write
       pull-requests: write
+      actions: read
 `, "{{VERSION}}", version)
 }
 
@@ -129,7 +140,11 @@ on:
 jobs:
   release:
     uses: eddiecarpenter/gh-agentic/.github/workflows/release.yml@{{VERSION}}
-    secrets: inherit
+    # Explicit secrets, not 'inherit' (inherit does not forward across accounts).
+    # Mirrors release.yml's workflow_call.secrets (both optional).
+    secrets:
+      CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
     permissions:
       contents: write
 `, "{{VERSION}}", version)
