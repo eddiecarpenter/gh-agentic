@@ -3,8 +3,6 @@ package mount
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 )
 
 // RunSwitch handles the version switch flow when a different framework
@@ -32,18 +30,17 @@ func RunSwitch(w io.Writer, root, currentVersion, newVersion string, fetch Clone
 	fmt.Fprintf(w, "  ✓ Mounting AI Framework (%s) at .agents/\n", newVersion)
 	fmt.Fprintf(w, "  ✓ Framework version updated (%s → %s)\n", currentVersion, newVersion)
 
-	if err := UpdateWorkflowVersions(root, newVersion); err != nil {
-		return fmt.Errorf("updating workflows: %w", err)
+	// Regenerate the wrapper workflows from the template rather than only
+	// rewriting the @version tag. The wrapper is a framework-managed thin shell
+	// fully determined by the template + version, so regenerating propagates
+	// template content fixes (e.g. actions: read, explicit secrets) to existing
+	// repos on upgrade — a surgical @version rewrite would leave stale content
+	// behind, which is how a v3.0.0 CP could keep running a wrapper missing
+	// actions: read even after `gh agentic upgrade`.
+	if err := GenerateWorkflows(w, root, newVersion); err != nil {
+		return fmt.Errorf("regenerating workflows: %w", err)
 	}
-	fmt.Fprintf(w, "  ✓ Wrapper workflows updated to @%s\n", newVersion)
-
-	workflowsDir := filepath.Join(root, ".github", "workflows")
-	entries, _ := os.ReadDir(workflowsDir)
-	for _, e := range entries {
-		if !e.IsDir() {
-			fmt.Fprintf(w, "\n    * .github/workflows/%s updated\n", e.Name())
-		}
-	}
+	fmt.Fprintf(w, "  ✓ Wrapper workflows regenerated at @%s\n", newVersion)
 
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "AI Framework successfully mounted at .agents/")

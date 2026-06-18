@@ -269,46 +269,40 @@ func RepairPipeline(deps CheckDeps, setLabel func(string)) RepairResult {
 				}
 
 			case workflowRepairNames[r.Name]:
-				// Multiple workflow files may all be out of date; one rewrite
-				// pass fixes them all, so dedupe.
+				// Regenerate the wrapper workflows from the template (both files in
+				// one pass), so dedupe. Regenerating — rather than regex-rewriting
+				// only the @version — also propagates template content fixes
+				// (actions: read, explicit secrets) to existing repos, closing the
+				// gap where a stale wrapper survived `gh agentic repair`.
 				if workflowRepairAttempted {
 					continue
 				}
 				workflowRepairAttempted = true
 				if setLabel != nil {
-					setLabel("Repairing: workflow version tags...")
+					setLabel("Repairing: regenerating wrapper workflows...")
 				}
-				version, verr := mount.ReadAIVersionFromGit(deps.Root)
-				if verr != nil || version == "" {
+				// Regenerate at the authoritative pinned version when known, else
+				// the mounted version — matching checkWorkflows' reference.
+				version := deps.FrameworkVersion
+				if version == "" {
+					version, _ = mount.ReadAIVersionFromGit(deps.Root)
+				}
+				if version == "" {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  Could not repair workflow versions: framework version unknown",
+						fmt.Sprintf("  %s  Could not repair workflows: framework version unknown",
 							ui.StatusDanger.Render("✗")))
 					result.Unrepaired++
 					continue
 				}
-				rewrites, err := mount.UpdateWorkflowVersionsCount(deps.Root, version)
-				switch {
-				case err != nil:
+				if err := mount.GenerateWorkflows(io.Discard, deps.Root, version); err != nil {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  Could not update workflow versions: %v",
+						fmt.Sprintf("  %s  Could not regenerate workflows: %v",
 							ui.StatusDanger.Render("✗"), err))
 					result.Unrepaired++
-				case rewrites == 0:
-					// The check failed but the rewriter found nothing to change —
-					// the workflows don't reference gh-agentic reusable workflows.
-					// Surface honestly instead of claiming a phantom repair.
+				} else {
 					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  %s",
-							ui.StatusDanger.Render("✗"), r.Message))
-					if r.Remediation != "" {
-						result.Lines = append(result.Lines,
-							"     "+ui.Muted.Render("→ "+r.Remediation))
-					}
-					result.Unrepaired++
-				default:
-					result.Lines = append(result.Lines,
-						fmt.Sprintf("  %s  Workflow version tags updated to %s (%d file(s))",
-							ui.StatusOK.Render("✓"), mount.TrimVPrefix(version), rewrites))
+						fmt.Sprintf("  %s  Wrapper workflows regenerated from the %s template",
+							ui.StatusOK.Render("✓"), mount.TrimVPrefix(version)))
 					result.Repaired++
 				}
 

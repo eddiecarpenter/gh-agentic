@@ -106,15 +106,16 @@ func TestRepairPipeline_FixesGitignoreAndWorkflowTags(t *testing.T) {
 		t.Errorf("expected unrepaired failures for missing vars/secrets, got 0")
 	}
 
-	// The single workflow fix should produce exactly one workflow line, not two.
+	// The single workflow fix (regenerate-from-template) should produce exactly
+	// one workflow line, not two.
 	workflowLines := 0
 	for _, l := range result.Lines {
-		if strings.Contains(l, "Workflow version tags updated") {
+		if strings.Contains(l, "Wrapper workflows regenerated") {
 			workflowLines++
 		}
 	}
 	if workflowLines != 1 {
-		t.Errorf("expected one workflow-tags line, got %d", workflowLines)
+		t.Errorf("expected one workflow-regenerated line, got %d", workflowLines)
 	}
 }
 

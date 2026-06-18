@@ -401,7 +401,10 @@ func TestSwitchVersion_ReconcilesStaleWorkflowWhenMountMatches(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	wfPath := filepath.Join(wfDir, "agentic-pipeline.yml")
-	stale := "jobs:\n  pipeline:\n    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v2.9.0\n"
+	// Stale on BOTH counts: old @version AND stale content (secrets: inherit, no
+	// actions: read) — the exact shape that survived `gh agentic upgrade` before
+	// v3.0.2 made upgrade regenerate from the template instead of regex-patching.
+	stale := "jobs:\n  pipeline:\n    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v2.9.0\n    secrets: inherit\n"
 	if err := os.WriteFile(wfPath, []byte(stale), 0o644); err != nil {
 		t.Fatalf("seed workflow: %v", err)
 	}
@@ -420,9 +423,23 @@ func TestSwitchVersion_ReconcilesStaleWorkflowWhenMountMatches(t *testing.T) {
 		t.Fatalf("SwitchVersion: %v", err)
 	}
 
-	got, _ := os.ReadFile(wfPath)
-	if strings.Contains(string(got), "@v2.9.0") || !strings.Contains(string(got), "@v3.0.0") {
+	got := func() string { b, _ := os.ReadFile(wfPath); return string(b) }()
+	// @version reconciled...
+	if strings.Contains(got, "@v2.9.0") || !strings.Contains(got, "@v3.0.0") {
 		t.Errorf("workflow @version not reconciled on the already-at-version path:\n%s", got)
+	}
+	// ...AND content reconciled from the template (v3.0.2): stale `secrets: inherit`
+	// replaced by explicit passing, and actions: read added.
+	for _, line := range strings.Split(got, "\n") {
+		if strings.TrimSpace(line) == "secrets: inherit" {
+			t.Errorf("stale `secrets: inherit` survived regeneration:\n%s", got)
+		}
+	}
+	if !strings.Contains(got, "CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}") {
+		t.Errorf("regenerated wrapper missing explicit secrets:\n%s", got)
+	}
+	if !strings.Contains(got, "actions: read") {
+		t.Errorf("regenerated wrapper missing actions: read:\n%s", got)
 	}
 	if writes[FrameworkVersionVarName] != "v3.0.0" {
 		t.Errorf("expected %s=v3.0.0 written, got %q", FrameworkVersionVarName, writes[FrameworkVersionVarName])
