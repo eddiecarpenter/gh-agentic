@@ -45,6 +45,120 @@ Never claim an implementation is complete without the build passing cleanly.
 
 ---
 
+## Verification Gate (build + test)
+
+The build+test pass is the **mandatory gate** at two specific
+points in the pipeline. The same command runs in both places.
+
+**Maven:**
+```bash
+mvn clean verify
+```
+
+**Gradle:**
+```bash
+./gradlew build
+```
+
+`mvn clean verify` compiles, runs unit tests, and runs the
+verify-phase checks (integration tests, coverage gates) in one
+pass; `./gradlew build` does the equivalent for Gradle projects.
+The command must exit zero. Any non-zero exit — compilation
+failure, failing test, coverage-gate breach surfaced through
+`verify`, etc. — **fails** the gate.
+
+### Stack-eligibility pre-check (manifest presence)
+
+The Java gate only applies to a repository when its **build
+manifest is present**:
+
+```bash
+test -f pom.xml || test -f build.gradle || test -f build.gradle.kts
+```
+
+If no Java build manifest is present at the repo root (i.e. this
+isn't a Maven/Gradle project), the Java gate is **not eligible**
+for this repository. Compliance and the dev session SKIP the gate
+with a WARN ("Java manifest `pom.xml`/`build.gradle` not present —
+Java gate not applicable to this repo"); the verdict is **not a
+fail**.
+
+This handles the legitimate case where a multi-stack repo (e.g.
+Java + TypeScript) gets a Feature whose diff touches only files in
+a directory that is NOT a Java module — those files are not
+verifiable as a Java project and the gate should not pretend
+otherwise.
+
+### Dev Session — last step before exit
+
+After the final task commit and before the workflow applies
+`in-verification`, the dev session **MUST** run the gate when
+eligible (manifest present). On gate failure the dev session does
+NOT exit cleanly — it loops back to fix the breakage and re-runs
+the gate until it passes. Pushing a broken build or a failing test
+suite and signalling completion is forbidden.
+
+The dev session's exit block must state, for each touched stack,
+whether the gate ran and what its result was (PASS / FAIL / SKIPPED).
+An exit block that omits the gate result is itself a protocol
+violation.
+
+### Compliance Verify — first step before any other check
+
+The compliance verifier **MUST** run the gate (when eligible)
+before evaluating acceptance criteria, static analysis, or any
+other check. On gate failure the verifier emits an immediate FAIL
+verdict and short-circuits — ACs cannot be PASS while the build is
+broken or the tests fail, regardless of what code inspection
+suggests.
+
+The gate's run-and-result is the first item in the compliance
+report. Subsequent sections (static analysis, AC table) appear only
+when the gate passed or was skipped per the rules below.
+
+### When the toolchain is unavailable
+
+If a Java build manifest IS present but the toolchain is **not** on
+the runner's PATH (`mvn` for a Maven project, or a usable JDK / the
+`./gradlew` wrapper for a Gradle project), the gate is treated as
+**SKIPPED with a WARN** — not as PASS, not as FAIL, not as BLOCKED.
+The recipe records:
+
+- a `compliance-warn:v1` comment noting that the Java gate was
+  skipped because the toolchain isn't installed on the runner, with
+  the exact `which mvn` / `java -version` probe output
+- a recommendation to install the JDK + build tool on the runner
+  image (via `actions/setup-java@v4` plus Maven/Gradle, or a runner
+  image that bundles them) so the gate can actually run on the next
+  cycle
+- AC verdicts for build / test fields are marked **WARN — skipped**
+  rather than PASS or FAIL
+
+Compliance still produces an overall verdict, runs the static
+analysis section, and evaluates the AC table. The PR is permitted
+to open. CI (`build-and-test.yml` or equivalent) is the
+authoritative backstop for actually running the tests once the PR
+is open.
+
+This mirrors the Go and TypeScript gates: toolchain absence is a
+runner-image problem, not a reason to leave a real Feature in a
+permanent stuck-state. The intent is preserved by the "WARN, never
+PASS by inspection" rule below.
+
+### What is still forbidden
+
+- **PASS-by-inspection is still forbidden.** Compliance MUST NOT
+  emit a PASS verdict for the gate based on diff inspection alone.
+  The gate is either PASS (commands ran and exited zero), FAIL
+  (commands ran and exited non-zero), or SKIPPED-with-WARN
+  (commands could not run). No fourth state.
+- **FAIL-by-inspection is still forbidden.** Compliance MUST NOT
+  emit FAIL based on a CI run from a closed PR, sibling branch, or
+  any commit other than the current branch HEAD. Same trap, opposite
+  direction.
+
+---
+
 ## Coding Standards
 
 - **Dependency injection** — use constructor injection for all collaborators. Field injection (`@Autowired` on fields) is prohibited. All dependencies must be injectable for testing.
