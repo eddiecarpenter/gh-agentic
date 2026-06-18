@@ -368,7 +368,11 @@ func TestParseCredentialExpiry_AlternateField(t *testing.T) {
 	}
 }
 
-func TestUploadCredentials_OrgScope(t *testing.T) {
+// TestUploadCredentials_OrgOwnerGetsRepoScope (v3.0.2): organisation-owned repos
+// now write the credential at --repo level, not --org. The control plane runs
+// the pipeline and reads CLAUDE_CREDENTIALS_JSON at the repo level; an org secret
+// did not reliably resolve for the CP's own workflow.
+func TestUploadCredentials_OrgOwnerGetsRepoScope(t *testing.T) {
 	var buf bytes.Buffer
 	var capturedArgs []string
 
@@ -390,16 +394,19 @@ func TestUploadCredentials_OrgScope(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should use --org flag.
-	found := false
 	for _, arg := range capturedArgs {
 		if arg == "--org" {
+			t.Errorf("org owner must NOT use --org (v3.0.2 writes repo-level): %v", capturedArgs)
+		}
+	}
+	found := false
+	for i := 0; i < len(capturedArgs)-1; i++ {
+		if capturedArgs[i] == "--repo" && capturedArgs[i+1] == "myorg/repo" {
 			found = true
-			break
 		}
 	}
 	if !found {
-		t.Errorf("expected --org flag in args: %v", capturedArgs)
+		t.Errorf("expected `--repo myorg/repo` in args: %v", capturedArgs)
 	}
 }
 
@@ -438,10 +445,8 @@ func TestUploadCredentials_RepoScope(t *testing.T) {
 	}
 }
 
-// TestUploadCredentials_ScopeForRoute_OrgOwner asserts the ScopeFor-driven
-// refactor preserves behaviour byte-for-byte: an organisation owner gets
-// `--org <owner>` with the correct target, not `--org <repo>` or any other
-// variation.
+// TestUploadCredentials_ScopeForRoute_OrgOwner (v3.0.2): an organisation owner
+// now gets `--repo <repo>` with the correct target — never `--org`.
 func TestUploadCredentials_ScopeForRoute_OrgOwner(t *testing.T) {
 	var buf bytes.Buffer
 	var capturedArgs []string
@@ -463,19 +468,24 @@ func TestUploadCredentials_ScopeForRoute_OrgOwner(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expect: gh secret set CLAUDE_CREDENTIALS_JSON --body <b64> --org acme
+	// Expect: gh secret set CLAUDE_CREDENTIALS_JSON --body <b64> --repo acme/cp
+	for _, arg := range capturedArgs {
+		if arg == "--org" {
+			t.Fatalf("org owner must NOT use --org (v3.0.2 writes repo-level): %v", capturedArgs)
+		}
+	}
 	found := false
 	for i := 0; i < len(capturedArgs)-1; i++ {
-		if capturedArgs[i] == "--org" {
-			if capturedArgs[i+1] != "acme" {
-				t.Fatalf("--org target: got %q, want %q (args: %v)", capturedArgs[i+1], "acme", capturedArgs)
+		if capturedArgs[i] == "--repo" {
+			if capturedArgs[i+1] != "acme/cp" {
+				t.Fatalf("--repo target: got %q, want %q (args: %v)", capturedArgs[i+1], "acme/cp", capturedArgs)
 			}
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected --org flag in args: %v", capturedArgs)
+		t.Fatalf("expected --repo flag in args: %v", capturedArgs)
 	}
 }
 

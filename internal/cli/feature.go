@@ -86,7 +86,7 @@ func runFeatureTarget(w io.Writer, stderr io.Writer, number int, raw bool, deps 
 	var feature *projectstatus.Feature
 	err = deps.busy(stderr, fmt.Sprintf("Resolving target for feature #%d…", number), func() error {
 		var fetchErr error
-		feature, fetchErr = projectstatus.FetchFeature(deps.psDeps, projectID, number)
+		feature, fetchErr = projectstatus.FetchFeature(deps.psDeps, projectID, number, currentRepo)
 		return fetchErr
 	})
 	if err != nil {

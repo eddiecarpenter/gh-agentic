@@ -45,14 +45,22 @@ func TestWorkflowTemplate_HasRequiredFields(t *testing.T) {
 		"pull_request:",
 		"pull_request_review:",
 		"workflow_dispatch:",
-		"secrets: inherit",
+		// Explicit secrets (not inherit — inherit does not forward cross-account)
+		// and actions: read (execution jobs request it; missing = startup_failure).
+		"secrets:",
+		"CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}",
+		"PIPELINE_PAT: ${{ secrets.PIPELINE_PAT }}",
 		"permissions:",
+		"actions: read",
 	}
 
 	for _, field := range required {
 		if !strings.Contains(content, field) {
 			t.Errorf("workflow should contain %q", field)
 		}
+	}
+	if strings.Contains(content, "secrets: inherit") {
+		t.Errorf("workflow must NOT use `secrets: inherit` (does not forward cross-account)")
 	}
 }
 
@@ -78,13 +86,19 @@ func TestReleaseWorkflowTemplate_HasRequiredFields(t *testing.T) {
 		// not by tag push. Release creation is each project's own concern.
 		"release:",
 		"types: [published]",
-		"secrets: inherit",
+		// Explicit secrets (not inherit), mirroring release.yml's workflow_call.
+		"secrets:",
+		"CLAUDE_CREDENTIALS_JSON: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}",
+		"MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}",
 	}
 
 	for _, field := range required {
 		if !strings.Contains(content, field) {
 			t.Errorf("release workflow should contain %q", field)
 		}
+	}
+	if strings.Contains(content, "secrets: inherit") {
+		t.Errorf("release workflow must NOT use `secrets: inherit`")
 	}
 }
 

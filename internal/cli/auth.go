@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eddiecarpenter/gh-agentic/internal/auth"
-	"github.com/eddiecarpenter/gh-agentic/internal/project"
-	"github.com/eddiecarpenter/gh-agentic/internal/ui"
 )
 
 // authDeps holds injectable dependencies for the auth command.
@@ -44,39 +42,26 @@ func defaultClaudeRefreshCmd() *exec.Cmd {
 	return exec.Command("claude", "auth", "login") //nolint:gosec
 }
 
-// warnIfFederatedControlPlane prints an advisory when the current repo is the
-// federated control plane. A pure CP typically does not run Claude agents, but
-// this is not universal — the warning informs rather than blocks.
-func warnIfFederatedControlPlane(w interface{ Write([]byte) (int, error) }) {
-	if isFederatedControlPlane() {
-		fmt.Fprintf(w, "  %s  This repo is the federated control plane — credentials are usually only needed on domain repos.\n", ui.StatusWarning.Render("⚠"))
-		fmt.Fprintf(w, "       Continuing anyway; skip this message by running on a domain repo instead.\n")
-	}
-}
-
-// isFederatedControlPlane returns true when this repo is a federation
-// controller — i.e. FEDERATION.md is present at the repo root.
-//
-// Federation repos typically do not run Claude agents directly (the agents
-// run on the domain repos the manifest lists). The check informs rather than
-// blocks — single-topology repos are never flagged.
-func isFederatedControlPlane() bool {
-	deps, err := resolveProjectDeps()
-	if err != nil {
-		return false
-	}
-	return project.IsFederationRepo(deps.Root)
-}
+// Note: under the control-plane-centralized model the pipeline runs ON the
+// control plane, so the control plane IS where CLAUDE_CREDENTIALS_JSON is
+// needed (it runs the agents). Pure-code domain repos do not run the pipeline
+// and do not need credentials. The credential is written at the repo level
+// (see auth.uploadCredentials) so the running repo's pipeline can read it. There
+// is therefore no "wrong place" advisory for running auth on a control plane —
+// it is the expected place.
 
 // newAuthCmdWithDeps constructs the auth command with injectable dependencies.
 func newAuthCmdWithDeps(deps authDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Manage Claude Code credentials",
-		Long: `Manage Claude Code credentials for domain repos that run Claude agents.
+		Long: `Manage Claude Code credentials for the repo whose pipeline runs Claude agents.
 
-These commands are for domain repos only — the control plane does not run
-Claude agents and does not need credentials.
+Under the control-plane-centralized model the pipeline runs ON the control
+plane, so run these on the control plane (for a federation) or on the repo
+itself (single topology). The credential is stored as a repo-level
+CLAUDE_CREDENTIALS_JSON secret. Pure-code domain repos do not run the pipeline
+and do not need credentials.
 
   gh agentic auth login    — force a new Claude Code login and upload credentials
   gh agentic auth refresh  — upload current local credentials without re-logging in
@@ -130,7 +115,6 @@ without re-logging in, use 'auth refresh' instead.`,
 		Example: `  gh agentic auth login`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
-			warnIfFederatedControlPlane(w)
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {
 				return err
@@ -154,7 +138,6 @@ if your local credentials are missing or expired.`,
 		Example: `  gh agentic auth refresh`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
-			warnIfFederatedControlPlane(w)
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {
 				return err
@@ -178,8 +161,6 @@ CLAUDE_CREDENTIALS_JSON repo secret is set, then report whether they are in sync
 		Example: `  gh agentic auth check`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
-
-			warnIfFederatedControlPlane(w)
 
 			authDeps, err := resolveAuthDeps(deps)
 			if err != nil {

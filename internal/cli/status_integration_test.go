@@ -37,7 +37,7 @@ func fixtureIssues() []projectstatus.ProjectIssue {
 		// Features ----------------------------------------------------------
 		{Number: 483, Title: "feat: ask-user skill", Body: "Closes #466", Stage: projectstatus.StageDone, Type: "feature", State: "closed", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: fixedTime, LastTransitionedAt: fixedTime},
 		{Number: 492, Title: "feat: status command", Body: "## User Story\nCloses #457", Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: fixedTime, LastTransitionedAt: fixedTime},
-		{Number: 511, Title: "feat: domain-X event handler", Body: "Blocked-by: foo/domain-x#507", Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "foo/domain-x", CreatedAt: fixedTime, LastTransitionedAt: fixedTime},
+		{Number: 511, Title: "feat: domain-X event handler", Body: "Blocked-by: foo/domain-x#507", Stage: projectstatus.StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: fixedTime, LastTransitionedAt: fixedTime},
 		{Number: 520, Title: "feat: placeholder", Body: "", Stage: projectstatus.StageBacklog, Type: "feature", State: "open", OwningRepo: "foo/domain-x", CreatedAt: fixedTime, LastTransitionedAt: fixedTime},
 		// Tasks (sub-issues of #492 scoped feature) -------------------------
 		{Number: 494, Title: "Scaffold", Type: "task", State: "closed", Stage: projectstatus.StageBacklog, OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: fixedTime, LastTransitionedAt: fixedTime},
@@ -182,8 +182,8 @@ func TestIntegration_ThisRepoNarrowing(t *testing.T) {
 		t.Fatalf("runStatusFeatures: %v", err)
 	}
 	out := buf.String()
-	if strings.Contains(out, "#511") {
-		t.Errorf("--this-repo should exclude foreign feature #511; got:\n%s", out)
+	if strings.Contains(out, "#520") {
+		t.Errorf("--this-repo should exclude foreign feature #520; got:\n%s", out)
 	}
 	if !strings.Contains(out, "#492") {
 		t.Errorf("--this-repo should include local feature #492; got:\n%s", out)

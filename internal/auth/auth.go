@@ -147,13 +147,16 @@ func Check(w io.Writer, deps Deps) (CheckResult, error) {
 	}, nil
 }
 
-// uploadCredentials reads local credentials and uploads them to GitHub.
+// uploadCredentials reads local credentials and uploads them as the repo-level
+// CLAUDE_CREDENTIALS_JSON secret.
 //
-// Scope routing: organisation-owned repos write the secret at --org level so
-// every domain repo in the same org inherits it automatically. User-owned
-// repos stay at --repo — personal accounts cannot host org-scoped secrets.
-// This routing is independent of federation topology; it is based solely on
-// whether the GitHub owner is a User or an Organization.
+// Scope: always --repo. Under the control-plane-centralized model the pipeline
+// runs on the repo where it is configured (the control plane for a federation,
+// or the repo itself for single topology) and reads CLAUDE_CREDENTIALS_JSON at
+// the REPO level via an explicit `${{ secrets.CLAUDE_CREDENTIALS_JSON }}` pass.
+// Org-level is no longer used: an org secret did not reliably resolve for a
+// control plane's own workflow run (it came through empty), and pure-code domain
+// repos never run the pipeline so they do not need the credential at all.
 func uploadCredentials(w io.Writer, deps Deps) error {
 	data, err := deps.ReadCredentials(deps.Run)
 	if err != nil {
@@ -162,18 +165,13 @@ func uploadCredentials(w io.Writer, deps Deps) error {
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	// Route to org scope for organisation owners; repo scope for users.
-	flag, target := "--repo", deps.RepoFullName
-	if deps.OwnerType == OwnerTypeOrg {
-		flag, target = "--org", deps.Owner
-	}
-	ghArgs := []string{"secret", "set", secretName, "--body", encoded, flag, target}
+	ghArgs := []string{"secret", "set", secretName, "--body", encoded, "--repo", deps.RepoFullName}
 
 	if _, setErr := deps.Run("gh", ghArgs...); setErr != nil {
 		return fmt.Errorf("failed to set secret: %w", setErr)
 	}
 
-	fmt.Fprintf(w, "  ✓ %s updated in %s\n", secretName, deps.RepoFullName)
+	fmt.Fprintf(w, "  ✓ %s updated in %s (repo-level)\n", secretName, deps.RepoFullName)
 	return nil
 }
 

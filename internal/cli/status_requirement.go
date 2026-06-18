@@ -47,7 +47,7 @@ func runStatusRequirement(w io.Writer, stderr io.Writer, number int, flags statu
 	var req *projectstatus.Requirement
 	err = deps.busy(stderr, fmt.Sprintf("Fetching requirement #%d…", number), func() error {
 		var fetchErr error
-		req, fetchErr = projectstatus.FetchRequirement(deps.psDeps, projectID, number)
+		req, fetchErr = projectstatus.FetchRequirement(deps.psDeps, projectID, number, currentRepo)
 		return fetchErr
 	})
 	if err != nil {

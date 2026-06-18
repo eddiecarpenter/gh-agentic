@@ -64,13 +64,17 @@ func FetchRequirements(deps Deps, projectID string, includeDone bool) ([]Require
 // for a `Closes #N` marker that points at this requirement. For each match
 // the function fetches branch and PR state via the injectable Deps so the
 // summary carries a pre-rendered BranchOneLiner.
-func FetchRequirement(deps Deps, projectID string, number int) (*Requirement, error) {
+// FetchRequirement resolves requirement `number` on the control plane. scopeRepo
+// is the control-plane repo; resolution is scoped to it so a foreign-repo issue
+// sharing the number is not picked up. An empty scopeRepo falls back to
+// number-only matching.
+func FetchRequirement(deps Deps, projectID string, number int, scopeRepo string) (*Requirement, error) {
 	issues, err := deps.FetchProjectIssues(projectID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching project issues: %w", err)
 	}
 
-	found := findByNumber(issues, number)
+	found := findByNumberInRepo(issues, number, scopeRepo)
 	if found == nil {
 		return nil, ErrIssueNotFound
 	}
@@ -103,11 +107,13 @@ func FetchRequirement(deps Deps, projectID string, number int) (*Requirement, er
 			req.LinkedFeaturesError = fmt.Sprintf("%s: %v", found.OwningRepo, err)
 		}
 		for _, sub := range subRefs {
-			// Cross-reference with the project board. Features that are native
-			// sub-issues of the requirement but were manually removed from the
-			// project board are silently skipped — without project-board context
-			// (stage, owning repo) they cannot be rendered consistently.
-			issue := findByNumber(issues, sub.Number)
+			// Cross-reference with the project board. Sub-issues are same-repo
+			// (#872), so scope to the requirement's owning repo (the control
+			// plane) — otherwise a foreign-repo issue sharing the number could be
+			// matched. Features manually removed from the board are silently
+			// skipped: without board context (stage, owning repo) they cannot be
+			// rendered consistently.
+			issue := findByNumberInRepo(issues, sub.Number, found.OwningRepo)
 			if issue == nil || issue.Type != "feature" {
 				continue
 			}
@@ -215,14 +221,21 @@ func populateTaskCounts(deps Deps, f *Feature) {
 // branch state, and PR state embedded. Returns ErrIssueNotFound when the
 // issue does not appear on the project board, or *ErrWrongType when the
 // referenced issue is a requirement or task.
-func FetchFeature(deps Deps, projectID string, number int) (*Feature, error) {
+// FetchFeature resolves feature `number` on the control plane. scopeRepo is the
+// control-plane repo (owner/name); resolution is scoped to it so a foreign-repo
+// issue sharing the number (a domain-repo task, a leftover issue) is not picked
+// up by mistake. An empty scopeRepo falls back to number-only matching.
+func FetchFeature(deps Deps, projectID string, number int, scopeRepo string) (*Feature, error) {
 	issues, err := deps.FetchProjectIssues(projectID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching project issues: %w", err)
 	}
 
-	found := findByNumber(issues, number)
+	found := findByNumberInRepo(issues, number, scopeRepo)
 	if found == nil {
+		// No issue with this number on the control plane. A foreign-repo issue
+		// sharing the number (a domain-repo task, a leftover) is intentionally
+		// ignored — it is not the feature being resolved.
 		return nil, ErrIssueNotFound
 	}
 	if found.Type != "feature" {
@@ -426,8 +439,25 @@ func FetchParentRequirement(deps Deps, owner, repo string, featureNumber int, fe
 // number, or nil when no match is found. Returning a pointer avoids an extra
 // struct copy in the caller.
 func findByNumber(issues []ProjectIssue, number int) *ProjectIssue {
+	return findByNumberInRepo(issues, number, "")
+}
+
+// findByNumberInRepo returns the first issue with the given number whose owning
+// repo matches scopeRepo (case-insensitive). When scopeRepo is empty it matches
+// on number alone.
+//
+// The GitHub Project board spans every linked repo, and repo numbering is
+// independent — so the same number collides across a federation (e.g. a CP
+// feature #8 and a domain-repo task #8 both sit on the board). Under the
+// control-plane-centralized model all requirements/features/tasks live on the
+// control plane, so resolution scopes to that repo and ignores any foreign-repo
+// issue that happens to share the number.
+func findByNumberInRepo(issues []ProjectIssue, number int, scopeRepo string) *ProjectIssue {
 	for i := range issues {
-		if issues[i].Number == number {
+		if issues[i].Number != number {
+			continue
+		}
+		if scopeRepo == "" || strings.EqualFold(issues[i].OwningRepo, scopeRepo) {
 			return &issues[i]
 		}
 	}

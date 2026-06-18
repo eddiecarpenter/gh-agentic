@@ -254,7 +254,7 @@ func TestFetchFeature_TaskCountsMirrorTasksSlice(t *testing.T) {
 			},
 		},
 	}
-	feat, err := FetchFeature(f.Deps(), "PROJ", 492)
+	feat, err := FetchFeature(f.Deps(), "PROJ", 492, "")
 	if err != nil {
 		t.Fatalf("FetchFeature: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestFetchFeatures_IncludeDone(t *testing.T) {
 // TestFetchRequirement_NotFound verifies missing issues return ErrIssueNotFound.
 func TestFetchRequirement_NotFound(t *testing.T) {
 	f := fakeDeps{issues: sampleIssues()}
-	_, err := FetchRequirement(f.Deps(), "PROJ", 9999)
+	_, err := FetchRequirement(f.Deps(), "PROJ", 9999, "")
 	if !errors.Is(err, ErrIssueNotFound) {
 		t.Errorf("FetchRequirement(missing) = %v, want ErrIssueNotFound", err)
 	}
@@ -296,7 +296,7 @@ func TestFetchRequirement_NotFound(t *testing.T) {
 // detail return *ErrWrongType with the correct fields.
 func TestFetchRequirement_WrongType(t *testing.T) {
 	f := fakeDeps{issues: sampleIssues()}
-	_, err := FetchRequirement(f.Deps(), "PROJ", 492)
+	_, err := FetchRequirement(f.Deps(), "PROJ", 492, "")
 
 	var wt *ErrWrongType
 	if !errors.As(err, &wt) {
@@ -330,7 +330,7 @@ func TestFetchRequirement_LinkedFeaturesViaSubIssues(t *testing.T) {
 			"feature/492": {Number: 555, State: "open"},
 		},
 	}
-	req, err := FetchRequirement(f.Deps(), "PROJ", 457)
+	req, err := FetchRequirement(f.Deps(), "PROJ", 457, "")
 	if err != nil {
 		t.Fatalf("FetchRequirement: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestFetchRequirement_SubIssueAbsentFromProjectBoard(t *testing.T) {
 			},
 		},
 	}
-	req, err := FetchRequirement(f.Deps(), "PROJ", 457)
+	req, err := FetchRequirement(f.Deps(), "PROJ", 457, "")
 	if err != nil {
 		t.Fatalf("FetchRequirement: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestFetchRequirement_SubIssuesDepNotWired(t *testing.T) {
 		FetchProjectIssues: func(string) ([]ProjectIssue, error) { return sampleIssues(), nil },
 		// FetchSubIssues intentionally absent.
 	}
-	req, err := FetchRequirement(deps, "PROJ", 457)
+	req, err := FetchRequirement(deps, "PROJ", 457, "")
 	if err != nil {
 		t.Fatalf("FetchRequirement with no FetchSubIssues: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestFetchRequirement_SubIssuesDepNotWired(t *testing.T) {
 // TestFetchFeature_NotFound verifies missing issues return ErrIssueNotFound.
 func TestFetchFeature_NotFound(t *testing.T) {
 	f := fakeDeps{issues: sampleIssues()}
-	_, err := FetchFeature(f.Deps(), "PROJ", 9999)
+	_, err := FetchFeature(f.Deps(), "PROJ", 9999, "")
 	if !errors.Is(err, ErrIssueNotFound) {
 		t.Errorf("FetchFeature(missing) = %v, want ErrIssueNotFound", err)
 	}
@@ -404,7 +404,7 @@ func TestFetchFeature_NotFound(t *testing.T) {
 // detail return *ErrWrongType.
 func TestFetchFeature_WrongType(t *testing.T) {
 	f := fakeDeps{issues: sampleIssues()}
-	_, err := FetchFeature(f.Deps(), "PROJ", 457)
+	_, err := FetchFeature(f.Deps(), "PROJ", 457, "")
 
 	var wt *ErrWrongType
 	if !errors.As(err, &wt) {
@@ -415,6 +415,33 @@ func TestFetchFeature_WrongType(t *testing.T) {
 	}
 	if wt.WantedType != "feature" {
 		t.Errorf("WantedType = %q, want %q", wt.WantedType, "feature")
+	}
+}
+
+// TestFetchFeature_ScopeResolvesCollision verifies that when the project board
+// spans multiple repos and the same issue number exists in two repos (a CP
+// feature #8 and a foreign task #8), scoping the lookup to the current repo
+// resolves the CP feature rather than matching the foreign issue by number
+// alone. This is the federation issue-number-collision fix.
+func TestFetchFeature_ScopeResolvesCollision(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	issues := []ProjectIssue{
+		// CP-owned feature #8 — the one we want.
+		{Number: 8, Title: "feat: branding", Body: "Closes #5", Stage: StageInDevelopment, Type: "feature", State: "open", OwningRepo: "eddiecarpenter/gh-agentic", CreatedAt: now, LastTransitionedAt: now},
+		// Foreign task #8 — a stale pre-pivot item sharing the number.
+		{Number: 8, Title: "task: stale", Body: "", Stage: StageBacklog, Type: "task", State: "closed", OwningRepo: "foo/platform-portal", CreatedAt: now, LastTransitionedAt: now},
+	}
+	f := fakeDeps{issues: issues}
+
+	feat, err := FetchFeature(f.Deps(), "PROJ", 8, "eddiecarpenter/gh-agentic")
+	if err != nil {
+		t.Fatalf("FetchFeature(#8, CP scope): %v", err)
+	}
+	if feat.Title != "feat: branding" {
+		t.Errorf("resolved Title = %q, want the CP feature %q", feat.Title, "feat: branding")
+	}
+	if feat.OwningRepo != "eddiecarpenter/gh-agentic" {
+		t.Errorf("resolved OwningRepo = %q, want CP", feat.OwningRepo)
 	}
 }
 
@@ -436,7 +463,7 @@ func TestFetchFeature_PopulatesTasksBranchPR(t *testing.T) {
 			"feature/492": {Number: 777, State: "open", Reviewers: []string{"eddie"}},
 		},
 	}
-	feat, err := FetchFeature(f.Deps(), "PROJ", 492)
+	feat, err := FetchFeature(f.Deps(), "PROJ", 492, "")
 	if err != nil {
 		t.Fatalf("FetchFeature: %v", err)
 	}
@@ -595,7 +622,7 @@ func TestFetchRequirement_SubIssuesErrorPopulatesLinkedFeaturesError(t *testing.
 		FetchProjectIssues: func(string) ([]ProjectIssue, error) { return sampleIssues(), nil },
 		FetchSubIssues:     func(owner, repo string, number int) ([]TaskRef, error) { return nil, boom },
 	}
-	req, err := FetchRequirement(deps, "PROJ", 457)
+	req, err := FetchRequirement(deps, "PROJ", 457, "")
 	if err != nil {
 		t.Fatalf("FetchRequirement should not return an error on partial fetch failure; got: %v", err)
 	}
@@ -624,7 +651,7 @@ func TestFetchFeature_BranchErrorPopulatesOwningRepoError(t *testing.T) {
 		FetchSubIssues:     func(string, string, int) ([]TaskRef, error) { return nil, nil },
 		FetchBranch:        func(owner, repo, name string) (*BranchState, error) { return nil, boom },
 	}
-	feature, err := FetchFeature(deps, "PROJ", 492)
+	feature, err := FetchFeature(deps, "PROJ", 492, "")
 	if err != nil {
 		t.Fatalf("FetchFeature should not return an error on branch fetch failure; got: %v", err)
 	}
