@@ -745,6 +745,20 @@ jobs:
             echo "in-verification already removed by skill — no safety-net action needed."
             exit 0
           fi
+          # Deliberate terminal block (compliance-verify Output D / Output F):
+          # the skill posts a <!-- compliance-blocked:v1 --> comment and
+          # INTENTIONALLY keeps the Feature at in-verification WITHOUT counting
+          # a cycle (e.g. STACK_GATE_UNDEFINED, toolchain absent on the runner).
+          # This is a human-actionable block, not a mid-FAIL abort — do NOT
+          # cycle it back to in-development or fail the run, or the feature
+          # ping-pongs in-development ↔ in-verification forever.
+          BLOCKED_COUNT=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" \
+            --json comments \
+            --jq '[.comments[] | select(.body | startswith("<!-- compliance-blocked:v1 -->"))] | length')
+          if [ "${BLOCKED_COUNT}" -gt 0 ]; then
+            echo "::notice::compliance-verify posted a compliance-blocked:v1 comment — Feature #${ISSUE_NUMBER} stays at in-verification awaiting human action (environment/toolchain block, not counted toward the cycle cap). Safety net taking no action."
+            exit 0
+          fi
           # Post a minimal feedback comment if the skill did not post one, so
           # the next dev session has context about what failed.
           FEEDBACK_COUNT=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" \
