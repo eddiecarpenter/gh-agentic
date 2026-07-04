@@ -188,20 +188,46 @@ and reuse as `<active-repo>`.
      already past compliance verification; this run is a no-op or a
      workflow bug.
 
-3b. **Check the feedback cycle count.** Count how many
-    `<!-- compliance-feedback:v1 -->` comments already exist on the
-    Feature issue:
+3b. **Check the feedback cycle count (progress-aware).** The cap
+    counts only *unaddressed* feedback — FAIL cycles the branch has
+    not responded to yet. A `<!-- compliance-feedback:v1 -->` comment
+    **older than the branch's current HEAD commit** has been
+    superseded by later work and does **not** count. Counting all
+    feedback comments cumulatively is a latch bug: a Feature that
+    failed three times and was then fixed would be capped out forever,
+    and neither re-triggering nor clearing labels could ever release
+    it (the fix lands, but compliance halts before it looks).
+
+    The feature branch is already checked out in the project dir, so
+    take its HEAD commit time and count only feedback newer than it:
 
     ```bash
+    HEAD_TIME=$(git log -1 --format=%cI HEAD)
     gh issue view <N> --repo <active-repo> --json comments \
-      --jq '[.comments[] | select(.body | startswith("<!-- compliance-feedback:v1 -->"))] | length'
+      --jq --arg head "$HEAD_TIME" \
+        '[.comments[]
+          | select(.body | startswith("<!-- compliance-feedback:v1 -->"))
+          | select(.createdAt > $head)] | length'
     ```
 
-    Hold as `<feedback-count>`.
+    Hold as `<feedback-count>`. If `HEAD_TIME` cannot be determined
+    (no branch, detached tree), fall back to counting **all**
+    `compliance-feedback:v1` comments — the conservative
+    pre-progress-aware behaviour.
 
-    **Cap:** if `<feedback-count>` ≥ 3, the dev-session and
-    compliance-verify cycle has exceeded its permitted retries. Do
-    NOT continue verification. Instead:
+    **Stale-cap cleanup:** if `<feedback-count>` is **below** the cap
+    but a `needs-human-review` label is present, it is a leftover from
+    a prior cap that later work has superseded. Remove it and continue
+    — the pipeline has resumed:
+
+    ```bash
+    gh issue edit <N> --repo <active-repo> --remove-label "needs-human-review"
+    ```
+
+    **Cap:** if `<feedback-count>` ≥ 3, three FAIL cycles have
+    occurred with **no intervening progress** on the branch. The
+    dev-session and compliance-verify cycle has exceeded its permitted
+    retries. Do NOT continue verification. Instead:
 
     a. Post an escalation comment via `post-issue-comment`:
 
