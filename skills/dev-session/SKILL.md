@@ -1,6 +1,6 @@
 ---
 name: dev-session
-description: Implements a Feature's tasks in order — reading the rationale comment and the ordered Task sub-issues, then walking each open task (read body, implement with reuse discipline, run tests, commit with the prescribed message format, push, close the task issue) until all tasks are done. On exit, the surrounding GitHub Actions workflow opens the PR and transitions the Feature to in-review. Use when workflow automation fires on in-development label apply against a Feature whose feature-design phase has produced a rationale, ordered tasks, and a feature branch. Headless only; humans running implementation interactively use this skill as a guide.
+description: Implements a Feature's tasks in order — reading the rationale comment and the ordered Task sub-issues, then walking each open task (read body, implement with reuse discipline, run tests, commit with the prescribed message format, push, close the task issue) until all tasks are done. On exit, the surrounding GitHub Actions workflow opens the PR and transitions the Feature to in-review. On a fix run — the Feature is kicked back to in-development with compliance-feedback while all tasks are already closed — it implements the failed acceptance criteria directly on the branch rather than no-opping. Use when workflow automation fires on in-development label apply against a Feature whose feature-design phase has produced a rationale, ordered tasks, and a feature branch. Headless only; humans running implementation interactively use this skill as a guide.
 triggers: automated
 user-invocable: false
 loads:
@@ -49,17 +49,21 @@ A return value at exit summarising the run:
 ```
 { repo: <string>, feature: <int>, branch: <string>,
   tasks_total: <int>, tasks_completed_this_run: <int>,
-  exit_state: "completed" | "no-op" | "blocked" }
+  exit_state: "completed" | "remediated" | "no-op" | "blocked" }
 ```
 
 `exit_state`:
 - `completed` — all tasks closed by end of session.
-- `no-op` — entered with all tasks already closed (re-run case).
+- `remediated` — a fix run entered with all tasks already closed but
+  outstanding compliance feedback; the failed acceptance criteria were
+  implemented directly on the branch (step 7b).
+- `no-op` — entered with all tasks already closed AND no outstanding
+  compliance feedback (a genuine re-run, nothing to do).
 - `blocked` — the agent could not complete a task (build/test
   refused to pass, ambiguous task body, missing dependency); the
   Feature stays at `in-development` and the human takes over.
 
-The skill's four valid terminal outputs:
+The skill's five valid terminal outputs:
 
 **A. Completed.** Walked through K open tasks, all committed,
 pushed, closed. Feature still at `in-development`; the workflow's
@@ -69,9 +73,18 @@ post-agent steps will push (no-op) and open the PR.
 entry (a prior run committed them); walked the remaining open ones
 and finished. Same exit shape as A.
 
-**C. Re-run no-op.** Entered with zero open tasks. Nothing to do;
-exit cleanly. The workflow's PR-creation step is idempotent (`gh pr
-create` no-ops when a PR already exists for the branch).
+**C. Re-run no-op.** Entered with zero open tasks **and no
+outstanding compliance feedback**. Nothing to do; exit cleanly. The
+workflow's PR-creation step is idempotent (`gh pr create` no-ops when
+a PR already exists for the branch). Output C is a bug when
+compliance feedback is outstanding — see E.
+
+**E. Feedback-remediated.** Entered a *fix run* (compliance kicked
+the Feature back with `compliance-feedback:v1`) with all tasks
+already closed. The failed acceptance criteria were implemented
+directly on the branch (step 7b) and committed; the work list came
+from the feedback, not from open task issues. Same downstream
+handoff as A/B: the workflow pushes and re-runs compliance.
 
 **D. Blocked.** The agent could not finish one of the tasks. Surface
 the failure clearly in the exit block (which task, what failed,
@@ -336,9 +349,55 @@ discipline at task granularity:
    preserving order. The recovery probe (step 6a) trims tasks
    already completed by a prior run.
 
-   - **`<open-tasks>` empty** → all tasks already closed. Skip the
-     walk; emit Output C in step 18.
-   - **Non-empty** → walk through.
+   - **`<open-tasks>` empty AND `<compliance-feedback>` (step 6b) is
+     null** → all tasks closed and no outstanding feedback. A genuine
+     re-run no-op: skip the walk; emit Output C in step 18.
+   - **`<open-tasks>` empty AND `<compliance-feedback>` present** →
+     this is a *fix run* whose failed work lives inside one or more
+     already-closed tasks (a task was closed before its acceptance
+     criteria were truly met). It is **not** a no-op — emitting
+     Output C here is the bug that produces the endless
+     `in-development ↔ in-review` cycle (the task cursor is blind to
+     work that a *closed* task failed to deliver, so every re-run
+     no-ops until the cycle cap, and clearing the count cannot help
+     because the tasks stay closed). Go to step 7b.
+   - **Non-empty** → walk through (step 8). If `<compliance-feedback>`
+     is also present, the remediation obligation in step 7b applies
+     to the closed-task ACs *in addition to* completing the open tasks.
+
+7b. **Feedback-remediation flow (fix run with no open task to carry
+    the work).** Entered from step 7 when `<compliance-feedback>` is
+    present. Because the responsible task issue is already closed, the
+    compliance feedback **is** the work list.
+
+    - Read the latest `<!-- compliance-feedback:v1 -->` comment and the
+      `<!-- compliance-report:v1 -->` it references (both on the Feature
+      issue, on the control plane). Extract every acceptance criterion
+      marked **FAIL** or **PARTIAL**, with the report's stated reason.
+    - For each failed / partial AC, implement the fix **directly on the
+      feature branch**. There is no open task issue to close — the
+      branch is the work surface. Apply the same discipline as the
+      per-task walk: the reuse outcome (recorded in the commit
+      trailer), narrow scope (touch only what the AC requires), and the
+      verification gate (tests + build must pass before the commit).
+    - Commit with a body naming the AC(s) addressed, e.g.
+      `fix: satisfy AC-<n> (<short>) — compliance remediation (#<N>)`,
+      carrying the mandatory `Co-Authored-By` and `Reuse:` trailers.
+      Push.
+    - Re-run the verification gate (step 15pre's commands) over the
+      whole branch before exit.
+    - If a failed AC genuinely cannot be satisfied (the feedback is
+      wrong, or the work is truly blocked), raise `TASK_BLOCKED`
+      (`WARN`) and emit Output D naming the AC — do **not** silently
+      no-op. That is a real human-review event.
+    - On success, jump to step 16 (verify), step 17 (release slot),
+      and emit **Output E** in step 18. Do not run the task walk
+      (steps 8–15) when `<open-tasks>` was empty — every task is
+      already closed.
+
+    This is what makes the cycle self-healing: each fix run now does
+    real work, so the 3-cycle cap means "the agent tried three times
+    and could not satisfy the ACs," not "the agent no-op'd three times."
 
 8. **Per-task — read.** For the next open task `T_K` (where K is
    its position in `<tasks>` and M is `len(<tasks>)`):
@@ -698,11 +757,37 @@ discipline at task granularity:
     ```
     === Dev Session — No-op ===
 
-    Entered with zero open tasks. All <M> tasks for #<N> were
-    already closed.
+    Entered with zero open tasks and no outstanding compliance
+    feedback. All <M> tasks for #<N> were already closed.
 
     Next: workflow applies in-verification, triggering compliance-verify.
     ```
+
+    Output C is valid ONLY when step 6b found no
+    `compliance-feedback:v1` comment. Emitting Output C while feedback
+    is outstanding is a protocol violation: it guarantees an identical
+    compliance failure and an endless cycle. In that case the correct
+    output is E (work done) or D (fix impossible).
+
+    **Output E — Feedback-remediated:**
+    ```
+    === Dev Session — Completed (feedback remediation) ===
+
+    Fix run: entered with all <M> tasks already closed and outstanding
+    compliance feedback. The feedback carried the work list.
+
+    Produced:
+      - <K> remediation commit(s) on feature/<N>-<slug>
+      - Acceptance criteria addressed: AC-<a>, AC-<b>, ...
+
+    Verification gate: PASS (stacks: <stack-1>[, <stack-2>...])
+      - <stack-1>: <command-1> ✓ ; <command-2> ✓ ; ...
+
+    Next: workflow applies in-verification, triggering compliance-verify.
+    ```
+
+    The "Verification gate" line is mandatory in Output E for the same
+    reason as A/B.
 
     **Output D — Blocked:**
     ```
