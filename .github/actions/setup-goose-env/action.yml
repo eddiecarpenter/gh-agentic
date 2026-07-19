@@ -222,7 +222,7 @@ runs:
         SERVER_ID_OVERRIDE: ${{ inputs.maven-packages-server-id }}
       run: |
         if [ -z "${PACKAGES_TOKEN}" ]; then
-          echo "::warning::PROJECT_PAT was not provided to setup-goose-env — Maven cannot authenticate to GitHub Packages. Private artifacts (e.g. io.openbss:* parent POM) will 401. Pass project-pat: \${{ secrets.PROJECT_PAT }} at the call site."
+          echo "::warning::PROJECT_PAT was not provided to setup-goose-env — Maven cannot authenticate to GitHub Packages. Private artifacts (e.g. io.openbss:* parent POM) will 401. Pass the project-pat input from the PROJECT_PAT secret at the call site."
         fi
         SERVER_ID="${SERVER_ID_OVERRIDE:-$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')}"
         mkdir -p "$HOME/.m2"
