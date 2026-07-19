@@ -152,6 +152,7 @@ jobs:
           pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          project-pat: ${{ secrets.PROJECT_PAT }}
 
       # gh is available now (installed by setup-goose-env). Resolve the feature's
       # TARGET repo from the Target-repo field (#872).
@@ -355,6 +356,7 @@ jobs:
           pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          project-pat: ${{ secrets.PROJECT_PAT }}
 
       # gh is available now. Resolve the feature's TARGET repo from the Target-repo
       # field (#872), then the feature branch within it (paginated, against the
@@ -608,6 +610,7 @@ jobs:
           pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          project-pat: ${{ secrets.PROJECT_PAT }}
 
       # gh is available now. Resolve the feature's TARGET repo (#872) and the
       # feature branch within it (paginated, against the TARGET repo).
@@ -878,6 +881,7 @@ jobs:
           pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          project-pat: ${{ secrets.PROJECT_PAT }}
 
       # gh is available now. Resolve the TARGET repo from the feature number
       # embedded in the PR branch (feature/<N>-*) via the Target-repo field (#872).
@@ -992,6 +996,7 @@ jobs:
           pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          project-pat: ${{ secrets.PROJECT_PAT }}
 
       # PIPELINE_PAT: go-gh inside Goose needs to read Actions variables
       # (AGENTIC_PROJECT_ID). github.token does not propagate reliably through
@@ -1101,6 +1106,7 @@ jobs:
           pipeline-pat: ${{ secrets.PIPELINE_PAT }}
           claude-credentials-json: ${{ secrets.CLAUDE_CREDENTIALS_JSON }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          project-pat: ${{ secrets.PROJECT_PAT }}
 
       - name: Extract feature issue number
         id: feature
