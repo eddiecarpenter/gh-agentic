@@ -58,6 +58,24 @@ inputs:
       mistral; silently unused otherwise.
     required: false
     default: ''
+  project-pat:
+    description: >
+      PROJECT_PAT secret — a CLASSIC PAT carrying read:packages. Used to
+      authenticate Maven to the GitHub Packages registry (maven.pkg.github.com)
+      for Java projects that pull private artifacts (e.g. the io.openbss:* parent
+      POM). The fine-grained PIPELINE_PAT cannot authenticate to the legacy
+      Maven/npm Packages API, so a classic token is required here. Silently
+      unused for non-Java projects.
+    required: false
+    default: ''
+  maven-packages-server-id:
+    description: >
+      The <server> id written into ~/.m2/settings.xml, which MUST match the
+      <repository> id the project POM declares for GitHub Packages. Defaults to
+      the repo owner login lowercased (the OpenBSS convention, e.g. "openbss").
+      Override only if a POM uses a non-conventional repository id.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -161,6 +179,73 @@ runs:
       with:
         distribution: temurin
         java-version: '21'
+
+    # setup-java installs the JDK but not Maven itself. GitHub-hosted images ship
+    # Maven, but self-hosted runners generally do not — so the agent's mandatory
+    # `mvn clean verify` gate is unrunnable and every Java task blocks. Install a
+    # pinned Apache Maven into $HOME (no sudo/apt needed, works on any Linux
+    # runner) when it is absent, and add it to PATH for the recipe step.
+    - name: Install Maven (if absent)
+      if: steps.stacks.outputs.java == 'true'
+      shell: bash
+      run: |
+        if command -v mvn >/dev/null 2>&1; then
+          echo "✓ Maven already present: $(mvn -v | head -1)"
+          exit 0
+        fi
+        MAVEN_VERSION=3.9.9
+        echo "Maven not found — installing Apache Maven ${MAVEN_VERSION} to \$HOME/.local."
+        curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" -o /tmp/apache-maven.tar.gz
+        mkdir -p "$HOME/.local/apache-maven"
+        tar -xzf /tmp/apache-maven.tar.gz -C "$HOME/.local/apache-maven" --strip-components=1
+        rm -f /tmp/apache-maven.tar.gz
+        echo "$HOME/.local/apache-maven/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/apache-maven/bin/mvn" -v | head -1
+        echo "✓ Maven ${MAVEN_VERSION} installed."
+
+    # Java projects in this federation pull private artifacts (e.g. the
+    # io.openbss:* parent POM) from GitHub Packages. Maven never reads GH_TOKEN,
+    # and the fine-grained PIPELINE_PAT cannot authenticate to the legacy Maven
+    # Packages registry anyway — a CLASSIC token with read:packages is required.
+    # PROJECT_PAT is that token. Wire it in via ~/.m2/settings.xml so `mvn` can
+    # resolve private artifacts; without this the parent POM 401s and nothing
+    # compiles. The <server> id must match the POM's <repository> id (OpenBSS
+    # convention: owner login lowercased). The token is referenced as
+    # ${env.MAVEN_PACKAGES_TOKEN} — resolved by Maven at build time from the job
+    # env (exported below, masked) — so it is never written to disk in plaintext.
+    - name: Configure Maven for GitHub Packages
+      if: steps.stacks.outputs.java == 'true'
+      shell: bash
+      env:
+        PACKAGES_TOKEN: ${{ inputs.project-pat }}
+        OWNER: ${{ github.repository_owner }}
+        SERVER_ID_OVERRIDE: ${{ inputs.maven-packages-server-id }}
+      run: |
+        if [ -z "${PACKAGES_TOKEN}" ]; then
+          echo "::warning::PROJECT_PAT was not provided to setup-goose-env — Maven cannot authenticate to GitHub Packages. Private artifacts (e.g. io.openbss:* parent POM) will 401. Pass project-pat: \${{ secrets.PROJECT_PAT }} at the call site."
+        fi
+        SERVER_ID="${SERVER_ID_OVERRIDE:-$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')}"
+        mkdir -p "$HOME/.m2"
+        # Unquoted heredoc: ${SERVER_ID}/${OWNER} are expanded by the shell now;
+        # \${env.MAVEN_PACKAGES_TOKEN} is written literally for Maven to resolve.
+        cat > "$HOME/.m2/settings.xml" <<SETTINGSEOF
+        <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
+          <servers>
+            <server>
+              <id>${SERVER_ID}</id>
+              <username>${OWNER}</username>
+              <password>\${env.MAVEN_PACKAGES_TOKEN}</password>
+            </server>
+          </servers>
+        </settings>
+        SETTINGSEOF
+        # Export the token to the job env (masked) so the recipe step's `mvn`
+        # resolves ${env.MAVEN_PACKAGES_TOKEN}. No token is written to settings.xml.
+        echo "::add-mask::${PACKAGES_TOKEN}"
+        echo "MAVEN_PACKAGES_TOKEN=${PACKAGES_TOKEN}" >> "$GITHUB_ENV"
+        echo "✓ Wrote ~/.m2/settings.xml for GitHub Packages server id '${SERVER_ID}'."
 
     # Write provider/model to the Goose config file so they are the defaults even
     # if the env vars are not inherited by a subprocess. The recipe run step also
