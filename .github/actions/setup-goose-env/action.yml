@@ -169,16 +169,19 @@ runs:
         go-version-file: go.mod
         cache: false
 
-    # Install JDK only when the repo is actually a Java project. java-version
-    # is 21 (current LTS) as a pragmatic default; per-project version pinning
-    # can be added later via `java-version-file` (.java-version, etc.) if a
-    # project needs it.
+    # Install JDK only when the repo is actually a Java project. java-version is
+    # 25 (current LTS) — it MUST be at least the highest maven.compiler.release
+    # any consuming project targets, or the build fails at compile with
+    # "release version N not supported". The default reflects the release the
+    # projects using this framework actually compile to; per-project version
+    # pinning can be added later via `java-version-file` (.java-version, etc.)
+    # if a project ever diverges from that default.
     - name: Setup Java
       if: steps.stacks.outputs.java == 'true'
       uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
       with:
         distribution: temurin
-        java-version: '21'
+        java-version: '25'
 
     # setup-java installs the JDK but not Maven itself. GitHub-hosted images ship
     # Maven, but self-hosted runners generally do not — so the agent's mandatory
