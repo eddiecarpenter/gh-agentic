@@ -1957,3 +1957,150 @@ func TestCheckWorkflows_MatchesPin_Passes(t *testing.T) {
 		}
 	}
 }
+
+// --- Federation sync above the old twenty-repo page cap (#916) ---
+//
+// Before #916, DefaultFetchLinkedRepos requested repositories(first: 20) with no
+// pagination, so a project linking more than 20 repos returned a truncated set
+// and the check reported the invisible repos as unlinked. No test crossed that
+// boundary, which is why the defect survived. These cases all do.
+
+// manyRepos returns n manifest-style repo names, enough to exceed the old cap.
+func manyRepos(n int) []string {
+	out := make([]string, 0, n)
+	for i := 1; i <= n; i++ {
+		out = append(out, fmt.Sprintf("acme/repo-%02d", i))
+	}
+	return out
+}
+
+// resultSignature flattens a group into comparable (name, status) pairs so two
+// runs can be compared exactly.
+func resultSignature(g Group) []string {
+	out := make([]string, 0, len(g.Results))
+	for _, r := range g.Results {
+		out = append(out, fmt.Sprintf("%s=%v", r.Name, r.Status))
+	}
+	return out
+}
+
+// AC-1: every manifest repo linked, above the old cap → all Pass, no failures.
+func TestCheckFederationProjectSync_AboveOldCap_AllLinked_NoFailures(t *testing.T) {
+	repos := manyRepos(25)
+	root := t.TempDir()
+	writeFederationManifest(t, root, repos...)
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos(repos...),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs(repos...),
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	if len(g.Results) != len(repos) {
+		t.Fatalf("expected %d results, got %d", len(repos), len(g.Results))
+	}
+	for _, r := range g.Results {
+		if r.Status != Pass {
+			t.Errorf("expected all Pass above the old cap; %s was %v: %q", r.Name, r.Status, r.Message)
+		}
+	}
+}
+
+// AC-2: above the old cap with exactly one manifest repo genuinely unlinked →
+// only that repo is reported; the other 24 stay Pass.
+func TestCheckFederationProjectSync_AboveOldCap_OneGenuinelyUnlinked(t *testing.T) {
+	repos := manyRepos(25)
+	linked := repos[:len(repos)-1] // last repo is genuinely not linked
+	missing := repos[len(repos)-1]
+
+	root := t.TempDir()
+	writeFederationManifest(t, root, repos...)
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos(linked...),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs(repos...),
+	}
+
+	g := checkFederationProjectSync(deps)
+
+	var failed []string
+	for _, r := range g.Results {
+		if r.Status == Fail {
+			failed = append(failed, r.Name)
+		}
+	}
+	if len(failed) != 1 {
+		t.Fatalf("expected exactly 1 failure, got %d: %v", len(failed), failed)
+	}
+	if want := "federation-sync:not-linked:" + missing; failed[0] != want {
+		t.Errorf("failure: got %q, want %q", failed[0], want)
+	}
+}
+
+// AC-4: the same inputs produce an identical result set on consecutive runs.
+// Instability previously came from truncation combined with GitHub ordering the
+// connection by link recency, so the failing set shifted between runs.
+func TestCheckFederationProjectSync_AboveOldCap_StableAcrossRuns(t *testing.T) {
+	repos := manyRepos(25)
+	root := t.TempDir()
+	writeFederationManifest(t, root, repos...)
+	deps := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos(repos[:20]...),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs(repos...),
+	}
+
+	first := resultSignature(checkFederationProjectSync(deps))
+	second := resultSignature(checkFederationProjectSync(deps))
+
+	if len(first) != len(second) {
+		t.Fatalf("run length differs: %d vs %d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Errorf("result %d differs between runs: %q vs %q", i, first[i], second[i])
+		}
+	}
+}
+
+// AC-3: a linked set representing post-repair state reports no link failures,
+// i.e. repair → check converges rather than looping.
+func TestCheckFederationProjectSync_AboveOldCap_ConvergesAfterRepair(t *testing.T) {
+	repos := manyRepos(25)
+	root := t.TempDir()
+	writeFederationManifest(t, root, repos...)
+
+	// Pre-repair: only some repos linked — the check reports the rest.
+	preRepair := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos(repos[:18]...),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs(repos...),
+	}
+	var before int
+	for _, r := range checkFederationProjectSync(preRepair).Results {
+		if r.Status == Fail {
+			before++
+		}
+	}
+	if before == 0 {
+		t.Fatal("pre-repair state should report link failures; test setup is wrong")
+	}
+
+	// Post-repair: repair linked the rest. The next check must be clean.
+	postRepair := CheckDeps{
+		Root:                 root,
+		ProjectID:            "PVT_abc",
+		FetchLinkedRepos:     fakeFetchLinkedRepos(repos...),
+		FetchOwnerAndRepoIDs: fakeFetchOwnerAndRepoIDs(repos...),
+	}
+	for _, r := range checkFederationProjectSync(postRepair).Results {
+		if r.Status == Fail {
+			t.Errorf("repair → check did not converge: %s still %v (%q)", r.Name, r.Status, r.Message)
+		}
+	}
+}
