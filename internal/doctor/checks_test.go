@@ -2104,3 +2104,71 @@ func TestCheckFederationProjectSync_AboveOldCap_ConvergesAfterRepair(t *testing.
 		}
 	}
 }
+
+// --- usesFrameworkWorkflow (#927) ---
+//
+// The version-tag check previously treated any mention of the framework as a
+// `uses:` pin, failing repos whose workflows only name it in a comment, a
+// `gh extension install` command, or an attribution URL — none of which repair
+// can rewrite.
+
+func TestUsesFrameworkWorkflow_TrueForUsesLine(t *testing.T) {
+	content := `jobs:
+  pipeline:
+    uses: eddiecarpenter/gh-agentic/.github/workflows/agentic-pipeline.yml@v3.1.3
+`
+	if !usesFrameworkWorkflow(content) {
+		t.Error("a real uses: reference must be detected")
+	}
+}
+
+func TestUsesFrameworkWorkflow_TrueForListPrefixedUsesLine(t *testing.T) {
+	content := "steps:\n  - uses: eddiecarpenter/gh-agentic/.github/workflows/release.yml@v3.1.3\n"
+	if !usesFrameworkWorkflow(content) {
+		t.Error("a list-prefixed uses: reference must be detected")
+	}
+}
+
+func TestUsesFrameworkWorkflow_FalseForComment(t *testing.T) {
+	content := "# Managed by eddiecarpenter/gh-agentic. Do not edit.\njobs:\n  build:\n    runs-on: ubuntu-latest\n"
+	if usesFrameworkWorkflow(content) {
+		t.Error("a prose comment naming the framework is not a uses: pin")
+	}
+}
+
+func TestUsesFrameworkWorkflow_FalseForExtensionInstall(t *testing.T) {
+	content := "      - run: gh extension install eddiecarpenter/gh-agentic --pin \"${AGENTIC_VERSION}\" --force\n"
+	if usesFrameworkWorkflow(content) {
+		t.Error("gh extension install already pins via the variable; it is not a uses: pin")
+	}
+}
+
+func TestUsesFrameworkWorkflow_FalseForAttributionURL(t *testing.T) {
+	content := "          BODY=$(printf \"🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)\")\n"
+	if usesFrameworkWorkflow(content) {
+		t.Error("the attribution URL the framework itself generates is not a uses: pin")
+	}
+}
+
+func TestUsesFrameworkWorkflow_FalseForOtherActionUses(t *testing.T) {
+	content := "      - uses: actions/checkout@v6.0.2\n"
+	if usesFrameworkWorkflow(content) {
+		t.Error("a uses: line for a different action must not match")
+	}
+}
+
+func TestUsesFrameworkWorkflow_FalseForInlinedCanonicalWorkflow(t *testing.T) {
+	// The shape of this repo's own agentic-pipeline.yml: mentions the framework
+	// three ways, pins it none.
+	content := `# Canonical pipeline workflow for eddiecarpenter/gh-agentic.
+jobs:
+  design:
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - run: gh extension install eddiecarpenter/gh-agentic --pin "${AGENTIC_VERSION}" --force
+      - run: echo "🤖 Generated with [gh-agentic](https://github.com/eddiecarpenter/gh-agentic)"
+`
+	if usesFrameworkWorkflow(content) {
+		t.Error("an inlined canonical workflow has no uses: pin and must not be version-checked")
+	}
+}

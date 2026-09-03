@@ -589,7 +589,7 @@ func checkWorkflows(deps CheckDeps) Group {
 		// references gh-agentic via a 'uses:' line. Inlined workflows (the
 		// current framework template) don't reference gh-agentic at all and
 		// don't need a version tag.
-		referencesFramework := strings.Contains(string(data), "eddiecarpenter/gh-agentic")
+		referencesFramework := usesFrameworkWorkflow(string(data))
 		switch {
 		case version == "" || !referencesFramework:
 			g.Results = append(g.Results, CheckResult{
@@ -1354,6 +1354,33 @@ func gitignoreContainsAI(root string) bool {
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.TrimSpace(line) == ".agents/" {
+			return true
+		}
+	}
+	return false
+}
+
+// usesFrameworkWorkflow reports whether a workflow file calls a gh-agentic
+// reusable workflow via a `uses:` line.
+//
+// It deliberately does not match the framework's name anywhere else in the file.
+// Workflows legitimately mention gh-agentic in prose comments, in
+// `gh extension install eddiecarpenter/gh-agentic --pin "${AGENTIC_VERSION}"`
+// (already pinned via the variable), and in the attribution URL the framework
+// itself writes into generated PR bodies. None of those is a version pin, and
+// treating them as one fails repos that have nothing to fix — `repair` cannot
+// rewrite a tag that does not exist.
+func usesFrameworkWorkflow(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if i := strings.Index(trimmed, "#"); i == 0 {
+			continue // whole-line comment
+		}
+		trimmed = strings.TrimPrefix(trimmed, "- ")
+		if !strings.HasPrefix(trimmed, "uses:") {
+			continue
+		}
+		if strings.Contains(trimmed, "eddiecarpenter/gh-agentic") {
 			return true
 		}
 	}
