@@ -128,42 +128,14 @@ type graphqlLinkedReposResponse struct {
 }
 
 // DefaultFetchLinkedRepos queries the GitHub GraphQL API for repos linked to a ProjectV2.
+// The fetch logic lives in linked_repos.go so it stays under test coverage; this
+// function is the network-bound shell that supplies the real client.
 func DefaultFetchLinkedRepos(projectID string) ([]LinkedRepo, error) {
 	client, err := api.DefaultGraphQLClient()
 	if err != nil {
 		return nil, fmt.Errorf("creating GraphQL client: %w", err)
 	}
-
-	query := `query($id: ID!) {
-		node(id: $id) {
-			... on ProjectV2 {
-				title
-				repositories(first: 20) {
-					nodes {
-						name
-						nameWithOwner
-						url
-					}
-				}
-			}
-		}
-	}`
-
-	var resp graphqlLinkedReposResponse
-	if err := client.Do(query, map[string]interface{}{"id": projectID}, &resp); err != nil {
-		return nil, fmt.Errorf("querying linked repos for project %s: %w", projectID, err)
-	}
-
-	nodes := resp.Node.Repositories.Nodes
-	repos := make([]LinkedRepo, 0, len(nodes))
-	for _, n := range nodes {
-		repos = append(repos, LinkedRepo{
-			Name:          n.Name,
-			NameWithOwner: n.NameWithOwner,
-			URL:           n.URL,
-		})
-	}
-	return repos, nil
+	return fetchLinkedRepos(client, projectID)
 }
 
 // graphqlProjectsForRepoResponse is the response shape for the repo projects query.
