@@ -113,20 +113,6 @@ type CreateProjectFieldFunc func(projectID, name, dataType string) (fieldID stri
 // were extracted to topology_detect.go so they remain coverable while
 // this file is excluded from coverage as network-bound.
 
-// graphqlLinkedReposResponse is the response shape for the linked repos query.
-type graphqlLinkedReposResponse struct {
-	Node struct {
-		Title        string `json:"title"`
-		Repositories struct {
-			Nodes []struct {
-				Name          string `json:"name"`
-				NameWithOwner string `json:"nameWithOwner"`
-				URL           string `json:"url"`
-			} `json:"nodes"`
-		} `json:"repositories"`
-	} `json:"node"`
-}
-
 // DefaultFetchLinkedRepos queries the GitHub GraphQL API for repos linked to a ProjectV2.
 // The fetch logic lives in linked_repos.go so it stays under test coverage; this
 // function is the network-bound shell that supplies the real client.
