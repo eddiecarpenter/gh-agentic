@@ -355,61 +355,13 @@ func DefaultUpdateProject(projectID, shortDescription, readme string) error {
 	return nil
 }
 
-// graphqlProjectFieldsResponse is the response shape for the project fields query.
-type graphqlProjectFieldsResponse struct {
-	Node struct {
-		Fields struct {
-			Nodes []struct {
-				ID       string `json:"id"`
-				Name     string `json:"name"`
-				DataType string `json:"dataType"`
-				Options  []struct {
-					ID   string `json:"id"`
-					Name string `json:"name"`
-				} `json:"options"`
-			} `json:"nodes"`
-		} `json:"fields"`
-	} `json:"node"`
-}
-
 // DefaultFetchProjectFields fetches the fields defined on a GitHub ProjectV2.
 func DefaultFetchProjectFields(projectID string) ([]ProjectField, error) {
 	client, err := api.DefaultGraphQLClient()
 	if err != nil {
 		return nil, fmt.Errorf("creating GraphQL client: %w", err)
 	}
-
-	query := `query($id: ID!) {
-		node(id: $id) {
-			... on ProjectV2 {
-				fields(first: 20) {
-					nodes {
-						... on ProjectV2Field { id name dataType }
-						... on ProjectV2SingleSelectField {
-							id name dataType
-							options { id name }
-						}
-						... on ProjectV2IterationField { id name dataType }
-					}
-				}
-			}
-		}
-	}`
-
-	var resp graphqlProjectFieldsResponse
-	if err := client.Do(query, map[string]interface{}{"id": projectID}, &resp); err != nil {
-		return nil, fmt.Errorf("fetching fields for project %s: %w", projectID, err)
-	}
-
-	fields := make([]ProjectField, 0, len(resp.Node.Fields.Nodes))
-	for _, n := range resp.Node.Fields.Nodes {
-		f := ProjectField{ID: n.ID, Name: n.Name, DataType: n.DataType}
-		for _, o := range n.Options {
-			f.Options = append(f.Options, FieldOption{ID: o.ID, Name: o.Name})
-		}
-		fields = append(fields, f)
-	}
-	return fields, nil
+	return fetchProjectFields(client, projectID)
 }
 
 // graphqlUpdateFieldResponse is the response shape for the updateProjectV2Field mutation.
