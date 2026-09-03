@@ -35,10 +35,7 @@ type graphqlLinkedReposResponse struct {
 				NameWithOwner string `json:"nameWithOwner"`
 				URL           string `json:"url"`
 			} `json:"nodes"`
-			PageInfo struct {
-				HasNextPage bool   `json:"hasNextPage"`
-				EndCursor   string `json:"endCursor"`
-			} `json:"pageInfo"`
+			PageInfo pageInfo `json:"pageInfo"`
 		} `json:"repositories"`
 	} `json:"node"`
 }
@@ -74,34 +71,26 @@ const linkedReposQuery = `query($id: ID!, $after: String) {
 // callers must never receive a partial set: any page error aborts the whole
 // fetch and returns no repos.
 func fetchLinkedRepos(doer graphQLDoer, projectID string) ([]LinkedRepo, error) {
-	var (
-		repos []LinkedRepo
-		after interface{} // nil on the first request — GraphQL `after: null`
-	)
+	var repos []LinkedRepo
 
-	for {
+	err := paginate(func(after interface{}) (pageInfo, error) {
 		var resp graphqlLinkedReposResponse
 		vars := map[string]interface{}{"id": projectID, "after": after}
 		if err := doer.Do(linkedReposQuery, vars, &resp); err != nil {
-			return nil, fmt.Errorf("querying linked repos for project %s: %w", projectID, err)
+			return pageInfo{}, fmt.Errorf("querying linked repos for project %s: %w", projectID, err)
 		}
 
-		connection := resp.Node.Repositories
-		for _, n := range connection.Nodes {
+		for _, n := range resp.Node.Repositories.Nodes {
 			repos = append(repos, LinkedRepo{
 				Name:          n.Name,
 				NameWithOwner: n.NameWithOwner,
 				URL:           n.URL,
 			})
 		}
-
-		// Stop when the connection says there is no more, and also when it
-		// claims another page but hands back no cursor to fetch it with —
-		// without that guard a malformed response loops forever.
-		if !connection.PageInfo.HasNextPage || connection.PageInfo.EndCursor == "" {
-			break
-		}
-		after = connection.PageInfo.EndCursor
+		return resp.Node.Repositories.PageInfo, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	if repos == nil {
