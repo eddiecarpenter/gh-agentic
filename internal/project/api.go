@@ -124,47 +124,13 @@ func DefaultFetchLinkedRepos(projectID string) ([]LinkedRepo, error) {
 	return fetchLinkedRepos(client, projectID)
 }
 
-// graphqlProjectsForRepoResponse is the response shape for the repo projects query.
-type graphqlProjectsForRepoResponse struct {
-	Repository struct {
-		ProjectsV2 struct {
-			Nodes []struct {
-				ID    string `json:"id"`
-				Title string `json:"title"`
-			} `json:"nodes"`
-		} `json:"projectsV2"`
-	} `json:"repository"`
-}
-
 // DefaultFetchProjectsForRepo queries the GitHub GraphQL API for projects linked to a repo.
 func DefaultFetchProjectsForRepo(owner, repo string) ([]ProjectInfo, error) {
 	client, err := api.DefaultGraphQLClient()
 	if err != nil {
 		return nil, fmt.Errorf("creating GraphQL client: %w", err)
 	}
-
-	query := `query($owner: String!, $repo: String!) {
-		repository(owner: $owner, name: $repo) {
-			projectsV2(first: 10) {
-				nodes {
-					id
-					title
-				}
-			}
-		}
-	}`
-
-	var resp graphqlProjectsForRepoResponse
-	if err := client.Do(query, map[string]interface{}{"owner": owner, "repo": repo}, &resp); err != nil {
-		return nil, fmt.Errorf("querying projects for %s/%s: %w", owner, repo, err)
-	}
-
-	nodes := resp.Repository.ProjectsV2.Nodes
-	projects := make([]ProjectInfo, 0, len(nodes))
-	for _, n := range nodes {
-		projects = append(projects, ProjectInfo{ID: n.ID, Title: n.Title})
-	}
-	return projects, nil
+	return fetchProjectsForRepo(client, owner, repo)
 }
 
 // repoVariableResponse is the REST response shape for a single variable.
@@ -355,61 +321,13 @@ func DefaultUpdateProject(projectID, shortDescription, readme string) error {
 	return nil
 }
 
-// graphqlProjectFieldsResponse is the response shape for the project fields query.
-type graphqlProjectFieldsResponse struct {
-	Node struct {
-		Fields struct {
-			Nodes []struct {
-				ID       string `json:"id"`
-				Name     string `json:"name"`
-				DataType string `json:"dataType"`
-				Options  []struct {
-					ID   string `json:"id"`
-					Name string `json:"name"`
-				} `json:"options"`
-			} `json:"nodes"`
-		} `json:"fields"`
-	} `json:"node"`
-}
-
 // DefaultFetchProjectFields fetches the fields defined on a GitHub ProjectV2.
 func DefaultFetchProjectFields(projectID string) ([]ProjectField, error) {
 	client, err := api.DefaultGraphQLClient()
 	if err != nil {
 		return nil, fmt.Errorf("creating GraphQL client: %w", err)
 	}
-
-	query := `query($id: ID!) {
-		node(id: $id) {
-			... on ProjectV2 {
-				fields(first: 20) {
-					nodes {
-						... on ProjectV2Field { id name dataType }
-						... on ProjectV2SingleSelectField {
-							id name dataType
-							options { id name }
-						}
-						... on ProjectV2IterationField { id name dataType }
-					}
-				}
-			}
-		}
-	}`
-
-	var resp graphqlProjectFieldsResponse
-	if err := client.Do(query, map[string]interface{}{"id": projectID}, &resp); err != nil {
-		return nil, fmt.Errorf("fetching fields for project %s: %w", projectID, err)
-	}
-
-	fields := make([]ProjectField, 0, len(resp.Node.Fields.Nodes))
-	for _, n := range resp.Node.Fields.Nodes {
-		f := ProjectField{ID: n.ID, Name: n.Name, DataType: n.DataType}
-		for _, o := range n.Options {
-			f.Options = append(f.Options, FieldOption{ID: o.ID, Name: o.Name})
-		}
-		fields = append(fields, f)
-	}
-	return fields, nil
+	return fetchProjectFields(client, projectID)
 }
 
 // graphqlUpdateFieldResponse is the response shape for the updateProjectV2Field mutation.
@@ -533,90 +451,17 @@ type ProjectView struct {
 // FetchProjectsForOwnerFunc lists all ProjectV2s owned by a user or organisation.
 type FetchProjectsForOwnerFunc func(owner, ownerType string) ([]ProjectInfo, error)
 
-// graphqlUserProjectsResponse is the response shape for the user projects query.
-type graphqlUserProjectsResponse struct {
-	Viewer struct {
-		ProjectsV2 struct {
-			Nodes []struct {
-				ID    string `json:"id"`
-				Title string `json:"title"`
-			} `json:"nodes"`
-		} `json:"projectsV2"`
-	} `json:"viewer"`
-}
-
-// graphqlOrgProjectsResponse is the response shape for the org projects query.
-type graphqlOrgProjectsResponse struct {
-	Organization struct {
-		ProjectsV2 struct {
-			Nodes []struct {
-				ID    string `json:"id"`
-				Title string `json:"title"`
-			} `json:"nodes"`
-		} `json:"projectsV2"`
-	} `json:"organization"`
-}
-
 // DefaultFetchProjectsForOwner lists all ProjectV2s for a user or organisation.
 func DefaultFetchProjectsForOwner(owner, ownerType string) ([]ProjectInfo, error) {
 	client, err := api.DefaultGraphQLClient()
 	if err != nil {
 		return nil, fmt.Errorf("creating GraphQL client: %w", err)
 	}
-
-	if ownerType == "Organization" {
-		query := `query($login: String!) {
-			organization(login: $login) {
-				projectsV2(first: 50) {
-					nodes { id title }
-				}
-			}
-		}`
-		var resp graphqlOrgProjectsResponse
-		if err := client.Do(query, map[string]interface{}{"login": owner}, &resp); err != nil {
-			return nil, fmt.Errorf("fetching projects for org %s: %w", owner, err)
-		}
-		nodes := resp.Organization.ProjectsV2.Nodes
-		projects := make([]ProjectInfo, 0, len(nodes))
-		for _, n := range nodes {
-			projects = append(projects, ProjectInfo{ID: n.ID, Title: n.Title})
-		}
-		return projects, nil
-	}
-
-	// User — use viewer query (works for the authenticated user).
-	query := `query {
-		viewer {
-			projectsV2(first: 50) {
-				nodes { id title }
-			}
-		}
-	}`
-	var resp graphqlUserProjectsResponse
-	if err := client.Do(query, map[string]interface{}{}, &resp); err != nil {
-		return nil, fmt.Errorf("fetching projects for user %s: %w", owner, err)
-	}
-	nodes := resp.Viewer.ProjectsV2.Nodes
-	projects := make([]ProjectInfo, 0, len(nodes))
-	for _, n := range nodes {
-		projects = append(projects, ProjectInfo{ID: n.ID, Title: n.Title})
-	}
-	return projects, nil
+	return fetchProjectsForOwner(client, owner, ownerType)
 }
 
 // FetchProjectViewsFunc lists the view names for a GitHub ProjectV2 by its node ID.
 type FetchProjectViewsFunc func(projectID string) ([]ProjectView, error)
-
-// graphqlProjectViewsResponse is the response shape for the project views query.
-type graphqlProjectViewsResponse struct {
-	Node struct {
-		Views struct {
-			Nodes []struct {
-				Name string `json:"name"`
-			} `json:"nodes"`
-		} `json:"views"`
-	} `json:"node"`
-}
 
 // DefaultFetchProjectViews lists the views for a GitHub ProjectV2 via GraphQL.
 func DefaultFetchProjectViews(projectID string) ([]ProjectView, error) {
@@ -624,27 +469,7 @@ func DefaultFetchProjectViews(projectID string) ([]ProjectView, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating GraphQL client: %w", err)
 	}
-
-	query := `query($id: ID!) {
-		node(id: $id) {
-			... on ProjectV2 {
-				views(first: 20) {
-					nodes { name }
-				}
-			}
-		}
-	}`
-
-	var resp graphqlProjectViewsResponse
-	if err := client.Do(query, map[string]interface{}{"id": projectID}, &resp); err != nil {
-		return nil, fmt.Errorf("fetching views for project %s: %w", projectID, err)
-	}
-
-	views := make([]ProjectView, 0, len(resp.Node.Views.Nodes))
-	for _, n := range resp.Node.Views.Nodes {
-		views = append(views, ProjectView{Name: n.Name})
-	}
-	return views, nil
+	return fetchProjectViews(client, projectID)
 }
 
 // FetchProjectTitleFunc fetches the title of a ProjectV2 by its node ID.
